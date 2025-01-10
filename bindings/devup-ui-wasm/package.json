@@ -1,0 +1,27 @@
+{
+  "name": "@devup-ui/wasm",
+  "version": "1.0.0",
+  "keywords": [
+    "react",
+    "css-in-js",
+    "zero-runtime",
+    "front-end",
+    "design-system"
+  ],
+  "files": [
+    "pkg"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./pkg/index.js",
+      "require": "./pkg/index.js",
+      "types": "./pkg/index.d.ts"
+    }
+  },
+  "types": "./pkg/index.d.ts",
+  "scripts": {
+    "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index",
+    "test": "cargo test"
+  }
+}

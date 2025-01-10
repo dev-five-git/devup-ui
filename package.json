@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "description": "devup-ui",
+  "type": "module",
+  "scripts": {
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev"
+  },
+  "devDependencies": {
+    "eslint-plugin-devup": "^2.0.1",
+    "nx": "^20.3.0"
+  },
+  "author": "devfive",
+  "packageManager": "pnpm@9.15.3"
+}

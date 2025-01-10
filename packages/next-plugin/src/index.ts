@@ -1,0 +1,3 @@
+export {
+  DevupUiNextPlugin
+} from './plugin'

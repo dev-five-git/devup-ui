@@ -1,0 +1,13 @@
+[package]
+name = "extractor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+oxc_parser = "0.44.0"
+oxc_syntax = "0.44.0"
+oxc_span = "0.44.0"
+oxc_allocator = "0.44.0"
+oxc_ast = "0.44.0"
+oxc_codegen = "0.44.0"
+

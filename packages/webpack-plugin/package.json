@@ -1,0 +1,36 @@
+{
+  "name": "@devup-ui/webpack-plugin",
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "webpack": "^5.97.1",
+    "@devup-ui/wasm": "workspace:*"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./loader": {
+      "import": "./dist/loader.js",
+      "require": "./dist/loader.cjs"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "test": "vitest run --coverage",
+    "test:s": "vitest run -u",
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7",
+    "@types/webpack": "^5.28.5",
+    "vite-plugin-dts": "^4.4.0",
+    "vitest": "^2.1.8",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "webpack": "*"
+  }
+}
