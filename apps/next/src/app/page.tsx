@@ -1,20 +1,28 @@
 'use client'
-import styles from "./page.module.css";
-import {Box} from "@devup-ui/react";
-import {useState} from "react";
 
-export default function Home() {
-  const bg = "red"
-  const [color, setColor] = useState("yellow")
+import { Box } from '@devup-ui/react'
+import { useState } from 'react'
+
+export default function HomePage() {
+  const [color, setColor] = useState('yellow')
+  const [enabled, setEnabled] = useState(false)
 
   return (
-    <div className={styles.page}>
-      <Box bg={bg} color={color} fontSize={32}>hello</Box>
-      <button onClick={() => setColor("blue")}>
+    <div>
+      <Box bg="red" color={color} cursor="pointer" fontSize={32}>
+        hello
+      </Box>
+      <Box color={enabled ? 'red' : 'blue'} fontSize={32}>
+        hello
+      </Box>
+      <button
+        onClick={() => {
+          setColor('blue')
+          setEnabled((prev) => !prev)
+        }}
+      >
         Change
       </button>
-
-
     </div>
-  );
+  )
 }

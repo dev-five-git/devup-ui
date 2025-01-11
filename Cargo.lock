@@ -105,6 +105,8 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "extractor",
+ "once_cell",
+ "sheet",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -709,6 +711,10 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "sheet"
+version = "0.1.0"
 
 [[package]]
 name = "shlex"

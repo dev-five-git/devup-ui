@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.1",
+    "eslint": "^9.18.0",
     "nx": "^20.3.0"
   },
   "author": "devfive",

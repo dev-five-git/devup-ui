@@ -1,5 +1,5 @@
 import dts from 'vite-plugin-dts'
-import {defineConfig} from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -22,7 +22,7 @@ export default defineConfig({
         '**/*.test-d.(tsx|ts|js|jsx)',
         'vite.config.ts',
       ],
-      include: ['**/src/**/*.ts'],
+      include: ['**/src/**/*.ts', '**/src/**/*.tsx'],
       copyDtsFiles: true,
       compilerOptions: {
         isolatedModules: false,
@@ -47,7 +47,7 @@ export default defineConfig({
         preserveModulesRoot: 'src',
 
         exports: 'named',
-        assetFileNames({name}) {
+        assetFileNames({ name }) {
           return name?.replace(/^src\//g, '') ?? ''
         },
       },
@@ -55,7 +55,7 @@ export default defineConfig({
     lib: {
       formats: ['es', 'cjs'],
       entry: {
-        index: 'src/index.tsx',
+        index: 'src/index.ts',
       },
     },
     outDir: 'dist',

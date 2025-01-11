@@ -18,6 +18,9 @@
       "require": "./dist/index.cjs"
     }
   },
+  "files": [
+    "dist"
+  ],
   "types": "./dist/index.d.ts",
   "devDependencies": {
     "vite": "^6.0.7",

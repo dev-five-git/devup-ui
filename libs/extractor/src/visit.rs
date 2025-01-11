@@ -7,34 +7,56 @@ use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, ImportDeclaration, JSXElement, TaggedTemplateExpression, TemplateElementValue,
+    Expression, ImportDeclaration, ImportOrExportKind, JSXElement, Program, Statement,
+    TaggedTemplateExpression, TemplateElementValue, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
-    walk_import_declaration, walk_jsx_element, walk_tagged_template_expression,
+    walk_import_declaration, walk_jsx_element, walk_program, walk_tagged_template_expression,
 };
 use oxc_ast::{AstBuilder, VisitMut};
 use oxc_span::SPAN;
 use std::collections::HashMap;
 
 pub struct DevupVisitor<'a> {
-    ast: AstBuilder<'a>,
+    pub ast: AstBuilder<'a>,
     imports: HashMap<String, ExportVariableKind>,
     package: String,
+    css_file: String,
     pub styles: Vec<ExtractStyleValue>,
 }
 
 impl<'a> DevupVisitor<'a> {
-    pub fn new(allocator: &'a Allocator, package: &str) -> Self {
+    pub fn new(allocator: &'a Allocator, package: &str, css_file: &str) -> Self {
         Self {
             ast: AstBuilder::new(allocator),
             imports: HashMap::new(),
             package: package.to_string(),
+            css_file: css_file.to_string(),
             styles: vec![],
         }
     }
 }
 
 impl<'a> VisitMut<'a> for DevupVisitor<'a> {
+    fn visit_program(&mut self, it: &mut Program<'a>) {
+        walk_program(self, it);
+        if !self.styles.is_empty() {
+            it.body.insert(
+                0,
+                Statement::ImportDeclaration(
+                    self.ast.alloc_import_declaration::<Option<WithClause>>(
+                        SPAN,
+                        None,
+                        self.ast
+                            .string_literal(SPAN, self.css_file.to_string(), None),
+                        None,
+                        None,
+                        ImportOrExportKind::Value,
+                    ),
+                ),
+            );
+        }
+    }
     fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
         if let Expression::Identifier(ident) = &it.tag {
             if ident.name != "css" {

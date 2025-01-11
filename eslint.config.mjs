@@ -1,4 +1,3 @@
-import { configs } from '@devup/eslint-plugin'
-
+import { configs } from 'eslint-plugin-devup'
 
 export default configs.recommended

@@ -16,6 +16,9 @@
       "require": "./dist/loader.cjs"
     }
   },
+  "files": [
+    "dist"
+  ],
   "types": "./dist/index.d.ts",
   "scripts": {
     "test": "vitest run --coverage",

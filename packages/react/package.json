@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "react": "^19.0"
+    "react": "^19.0",
+    "csstype": "^3.1"
   },
   "scripts": {
     "test": "vitest run --coverage",
@@ -17,6 +18,9 @@
       "require": "./dist/index.cjs"
     }
   },
+  "files": [
+    "dist"
+  ],
   "types": "./dist/index.d.ts",
   "devDependencies": {
     "vite": "^6.0.7",
@@ -26,6 +30,7 @@
     "@types/react": "^19"
   },
   "peerDependencies": {
-    "react": "*"
+    "react": "*",
+    "csstype": "*"
   }
 }

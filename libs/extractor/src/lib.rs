@@ -74,11 +74,11 @@ pub trait ExtractStyleProperty {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ExtractStaticStyle {
     /// property
-    property: String,
+    pub property: String,
     /// fixed value
-    value: String,
+    pub value: String,
     /// responsive level
-    level: u8,
+    pub level: u8,
 }
 
 impl ExtractStyleProperty for ExtractStaticStyle {
@@ -95,7 +95,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ExtractCss {
     /// css code
-    css: String,
+    pub css: String,
 }
 
 impl ExtractStyleProperty for ExtractCss {
@@ -110,9 +110,9 @@ impl ExtractStyleProperty for ExtractCss {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ExtractDynamicStyle {
     /// property
-    property: String,
+    pub property: String,
     /// responsive
-    level: u8,
+    pub level: u8,
     identifier: String,
 }
 
@@ -154,6 +154,7 @@ pub struct ExtractOutput {
 
 pub struct ExtractOption {
     pub package: String,
+    pub css_file: Option<String>,
 }
 
 pub fn extract(
@@ -161,6 +162,13 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    if !code.contains(option.package.as_str()) {
+        // skip if not using package
+        return Ok(ExtractOutput {
+            styles: vec![],
+            code: code.to_string(),
+        });
+    }
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(filename)?;
 
@@ -181,7 +189,14 @@ pub fn extract(
             .join("\n")
             .into());
     }
-    let mut visitor = DevupVisitor::new(&allocator, &option.package);
+    let mut visitor = DevupVisitor::new(
+        &allocator,
+        &option.package,
+        option
+            .css_file
+            .unwrap_or(format!("{}/devup-ui.css", option.package))
+            .as_str(),
+    );
     visitor.visit_program(&mut program);
 
     Ok(ExtractOutput {
@@ -203,12 +218,14 @@ mod tests {
                 "const a = 1;",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
+                    css_file: None
                 },
             )
             .unwrap(),
             ExtractOutput {
                 styles: vec![],
-                code: "const a = 1;\n".to_string(),
+                // keep code
+                code: "const a = 1;".to_string(),
             }
         );
 
@@ -218,12 +235,13 @@ mod tests {
                 "<Box gap={1} />",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
+                    css_file: None
                 },
             )
             .unwrap(),
             ExtractOutput {
                 styles: vec![],
-                code: "<Box gap={1} />;\n".to_string(),
+                code: "<Box gap={1} />".to_string(),
             }
         );
     }
@@ -236,7 +254,8 @@ mod tests {
         <Box padding={1} margin={2} wrong={} />
         ",
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -253,7 +272,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box wrong={} className="padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -266,7 +286,8 @@ mod tests {
                 <C padding={1} margin={2} />
                 ",
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -283,7 +304,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className="padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -300,7 +322,8 @@ mod tests {
         <C padding={1} margin={2} className="exists class name" />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -317,7 +340,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className="exists class name padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -331,7 +355,8 @@ mod tests {
         <C padding={1} margin={2} className="  exists class name  " />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -348,7 +373,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className="exists class name padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -362,7 +388,8 @@ mod tests {
         <C padding={1} margin={2} className={"exists class name"} />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -379,7 +406,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className="exists class name padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -393,7 +421,8 @@ mod tests {
         <C padding={1} margin={2} className={} />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -410,7 +439,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className="padding-4px-0 margin-8px-0" />;
 "#
                 .to_string(),
@@ -423,7 +453,8 @@ mod tests {
         <C padding={1} margin={2} className={"a"+"b"} />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -440,7 +471,8 @@ mod tests {
                         level: 0
                     })
                 ],
-                code: r#"import { Box as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box as C } from "@devup-ui/core";
 <C className={`padding-4px-0 margin-8px-0 ${"a" + "b"}`} />;
 "#
                 .to_string(),
@@ -457,7 +489,8 @@ mod tests {
         <C padding={1} margin={2} className={"a"+"b"} />
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -484,7 +517,8 @@ mod tests {
                         level: 0
                     }),
                 ],
-                code: r#"import { VStack as C } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { VStack as C } from "@devup-ui/core";
 <C className={`display-flex-0 flexDirection-column-0 padding-4px-0 margin-8px-0 ${"a" + "b"}`} />;
 "#
                 .to_string(),
@@ -500,7 +534,8 @@ mod tests {
 <Box padding={[null,1]} margin={[2,null,4]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -522,7 +557,8 @@ mod tests {
                         level: 2
                     })
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className="padding-4px-1 margin-8px-0 margin-16px-2" />;
 "#
                 .to_string(),
@@ -539,7 +575,8 @@ mod tests {
 <Box padding={someStyleVar} margin={someStyleVar2} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -557,7 +594,8 @@ mod tests {
                     }),
                 ],
                 code: format!(
-                    r#"import {{ Box }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className="padding-0 margin-0" style={{{{
 {}"--padding-0": someStyleVar,
 {}"--margin-0": someStyleVar2
@@ -579,7 +617,8 @@ mod tests {
 <Box padding={[someStyleVar,null,someStyleVar1]} margin={[null,someStyleVar2]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -602,7 +641,8 @@ mod tests {
                     }),
                 ],
                 code: format!(
-                    r#"import {{ Box }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className="padding-0 padding-2 margin-1" style={{{{
 {}"--padding-0": someStyleVar,
 {}"--padding-2": someStyleVar1,
@@ -625,7 +665,8 @@ mod tests {
 <Box padding={[someStyleVar,undefined,someStyleVar1]} margin={[null,someStyleVar2]} bg="red" />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -652,7 +693,8 @@ mod tests {
                         level: 0,
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className="padding-0 padding-2 margin-1 bg-red-0" style={{
 	"--padding-0": someStyleVar,
 	"--padding-2": someStyleVar1,
@@ -673,7 +715,8 @@ mod tests {
 <Box padding={[NaN,undefined,null]} margin={Infinity} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -703,7 +746,8 @@ mod tests {
 <Box margin={a} style={{ key:value }} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -714,7 +758,8 @@ mod tests {
                     identifier: "a".to_string(),
                 }),],
                 code: format!(
-                    r#"import {{ Box }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className="margin-0" style={{{{
 {}...{{ key: value }},
 {}"--margin-0": a
@@ -733,7 +778,8 @@ mod tests {
 <Box margin={a} style={styles} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -744,7 +790,8 @@ mod tests {
                     identifier: "a".to_string(),
                 })],
                 code: format!(
-                    r#"import {{ Box }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className="margin-0" style={{{{
 {}...styles,
 {}"--margin-0": a
@@ -766,7 +813,8 @@ mod tests {
 <Box margin={a === b ? "4px" : "3px"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -783,7 +831,8 @@ mod tests {
                         value: "3px".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "margin-4px-0" : "margin-3px-0"} />;
 "#
                 .to_string()
@@ -797,7 +846,8 @@ mod tests {
 <Box margin={a === b ? c : d} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -814,7 +864,8 @@ mod tests {
                         identifier: "d".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className="margin-0" style={{ "--margin-0": a === b ? c : d }} />;
 "#
                 .to_string()
@@ -828,7 +879,8 @@ mod tests {
 <Box margin={a === b ? "4px" : d} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -845,7 +897,8 @@ mod tests {
                         identifier: "d".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "margin-4px-0" : "margin-0"} style={{ "--margin-0": d }} />;
 "#
                 .to_string()
@@ -862,7 +915,8 @@ mod tests {
 <Box margin={[null, a === b ? "4px" : "3px"]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -879,7 +933,8 @@ mod tests {
                         value: "3px".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "margin-4px-1" : "margin-3px-1"} />;
 "#
                 .to_string()
@@ -893,7 +948,8 @@ mod tests {
         <Box margin={["6px", a === b ? "4px" : "3px"]} />;
         "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -915,7 +971,8 @@ mod tests {
                         value: "3px".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={`margin-6px-0 ${a === b ? "margin-4px-1" : "margin-3px-1"}`} />;
 "#
                 .to_string()
@@ -929,7 +986,8 @@ mod tests {
 <Box margin={a === b ? c : [d, e, f, "2px"]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -962,7 +1020,8 @@ mod tests {
                     }),
                 ],
                 code: format!(
-                    r#"import {{ Box }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className={{a === b ? "margin-0" : "margin-0 margin-1 margin-2 margin-2px-3"}} style={{{{
 {}"--margin-0": a === b ? c : d,
 {}"--margin-1": e,
@@ -983,6 +1042,7 @@ mod tests {
 "#,
                         ExtractOption {
                             package: "@devup-ui/core".to_string()
+                            ,css_file: None
                         }
                     )
                     .unwrap(),
@@ -1019,7 +1079,8 @@ mod tests {
                                 value: "2px".to_string(),
                             }),
                         ],
-                        code: format!(r#"import {{ Box }} from "@devup-ui/core";
+                        code: format!(r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className={{a === b ? "margin-0" : `margin-0 margin-1 margin-2 ${{x === y ? "margin-4px-3" : "margin-2px-3"}}`}} style={{{{
 {}"--margin-0": a === b ? c : d,
 {}"--margin-1": e,
@@ -1038,6 +1099,7 @@ mod tests {
 "#,
                         ExtractOption {
                             package: "@devup-ui/core".to_string()
+                            ,css_file: None
                         }
                     )
                         .unwrap(),
@@ -1074,7 +1136,8 @@ mod tests {
                                 identifier: "c".to_string(),
                             }),
                         ],
-                        code: format!(r#"import {{ Box }} from "@devup-ui/core";
+                        code: format!(r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className={{a === b ? `margin-0 margin-1 margin-2 ${{x === y ? "margin-4px-3" : "margin-2px-3"}}` : "margin-0"}} style={{{{
 {}"--margin-0": a === b ? d : c,
 {}"--margin-1": e,
@@ -1093,6 +1156,7 @@ mod tests {
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string()
+                    ,css_file: None
                 }
             )
                 .unwrap(),
@@ -1139,7 +1203,8 @@ mod tests {
                         value: "3px".to_string(),
                     }),
                 ],
-                code: format!(r#"import {{ Box }} from "@devup-ui/core";
+                code: format!(r#"import "@devup-ui/core/devup-ui.css";
+import {{ Box }} from "@devup-ui/core";
 <Box className={{a === b ? `margin-0 margin-1 margin-2 ${{x === y ? "margin-4px-3" : "margin-2px-3"}}` : "margin-1px-0 margin-2px-1 margin-3px-2"}} style={{{{
 {}"--margin-0": d,
 {}"--margin-1": e,
@@ -1156,7 +1221,8 @@ mod tests {
 <Box margin={[null, a === b && "4px"]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1166,7 +1232,8 @@ mod tests {
                     level: 1,
                     value: "4px".to_string(),
                 }),],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "margin-4px-1" : ""} />;
 "#
                 .to_string()
@@ -1180,7 +1247,8 @@ mod tests {
 <Box margin={[null, a === b && "4px", c === d ? "5px" : null]} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1197,7 +1265,8 @@ mod tests {
                         value: "5px".to_string(),
                     })
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={`${a === b ? "margin-4px-1" : ""} ${c === d ? "margin-5px-2" : ""}`} />;
 "#
                 .to_string()
@@ -1214,7 +1283,8 @@ mod tests {
 <Box margin={a===b && "1px"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1224,7 +1294,8 @@ mod tests {
                     level: 0,
                     value: "1px".to_string(),
                 }),],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "margin-1px-0" : ""} />;
 "#
                 .to_string()
@@ -1238,7 +1309,8 @@ mod tests {
 <Box margin={a===b || "1px"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1248,7 +1320,8 @@ mod tests {
                     level: 0,
                     value: "1px".to_string(),
                 }),],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a === b ? "" : "margin-1px-0"} />;
 "#
                 .to_string()
@@ -1262,7 +1335,8 @@ mod tests {
 <Box margin={a ?? "1px"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1272,7 +1346,8 @@ mod tests {
                     level: 0,
                     value: "1px".to_string(),
                 }),],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={a !== null && a !== undefined ? "" : "margin-1px-0"} />;
 "#
                 .to_string()
@@ -1288,7 +1363,8 @@ mod tests {
 <Box margin={[null, a === b ? (q > w ? "4px" : "8px") : "3px"]} className={"exists"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1310,7 +1386,8 @@ mod tests {
                         value: "3px".to_string(),
                     }),
                 ],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={`exists ${a === b ? q > w ? "margin-4px-1" : "margin-8px-1" : "margin-3px-1"}`} />;
 "#
                 .to_string()
@@ -1324,7 +1401,8 @@ mod tests {
 <Box margin={[null, a === b || "4px"]} className={"exists"} />;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1334,7 +1412,8 @@ mod tests {
                     level: 1,
                     value: "4px".to_string(),
                 }),],
-                code: r#"import { Box } from "@devup-ui/core";
+                code: r#"import "@devup-ui/core/devup-ui.css";
+import { Box } from "@devup-ui/core";
 <Box className={`exists ${a === b ? "" : "margin-4px-1"}`} />;
 "#
                 .to_string()
@@ -1354,7 +1433,8 @@ mod tests {
 `}/>;
 "#,
                 ExtractOption {
-                    package: "@devup-ui/core".to_string()
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
                 }
             )
             .unwrap(),
@@ -1363,7 +1443,8 @@ mod tests {
                     css: "background-color: red;".to_string(),
                 }),],
                 code: format!(
-                    r#"import {{ css }} from "@devup-ui/core";
+                    r#"import "@devup-ui/core/devup-ui.css";
+import {{ css }} from "@devup-ui/core";
 <Box className={{css`{}`}} />;
 "#,
                     format!("d{}", hasher.finish())

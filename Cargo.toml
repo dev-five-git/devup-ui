@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["libs/extractor", "bindings/devup-ui-wasm"]
+members = ["libs/extractor", "bindings/devup-ui-wasm", "libs/sheet"]
