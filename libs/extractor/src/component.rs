@@ -43,6 +43,7 @@ impl ExportVariableKind {
                 value: "flex".to_string(),
                 property: "display".to_string(),
                 level: 0,
+                selector: None,
             })],
             ExportVariableKind::VStack => {
                 vec![
@@ -50,11 +51,13 @@ impl ExportVariableKind {
                         value: "flex".to_string(),
                         property: "display".to_string(),
                         level: 0,
+                        selector: None,
                     }),
                     Static(ExtractStaticStyle {
                         value: "column".to_string(),
                         property: "flexDirection".to_string(),
                         level: 0,
+                        selector: None,
                     }),
                 ]
             }
@@ -64,16 +67,19 @@ impl ExportVariableKind {
                         value: "flex".to_string(),
                         property: "display".to_string(),
                         level: 0,
+                        selector: None,
                     }),
                     Static(ExtractStaticStyle {
                         value: "center".to_string(),
                         property: "justifyContent".to_string(),
                         level: 0,
+                        selector: None,
                     }),
                     Static(ExtractStaticStyle {
                         value: "center".to_string(),
                         property: "alignItems".to_string(),
                         level: 0,
+                        selector: None,
                     }),
                 ]
             }

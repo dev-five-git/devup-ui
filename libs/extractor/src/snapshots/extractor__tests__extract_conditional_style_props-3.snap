@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "margin",
                 value: "4px",
                 level: 0,
+                selector: None,
             },
         ),
         Dynamic(
@@ -16,6 +17,7 @@ ExtractOutput {
                 property: "margin",
                 level: 0,
                 identifier: "d",
+                selector: None,
             },
         ),
     ],

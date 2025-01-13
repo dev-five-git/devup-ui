@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "padding",
                 level: 0,
                 identifier: "someStyleVar",
+                selector: None,
             },
         ),
         Dynamic(
@@ -16,6 +17,7 @@ ExtractOutput {
                 property: "padding",
                 level: 2,
                 identifier: "someStyleVar1",
+                selector: None,
             },
         ),
         Dynamic(
@@ -23,6 +25,7 @@ ExtractOutput {
                 property: "margin",
                 level: 1,
                 identifier: "someStyleVar2",
+                selector: None,
             },
         ),
     ],

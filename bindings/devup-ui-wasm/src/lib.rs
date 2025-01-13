@@ -41,9 +41,13 @@ impl Output {
             };
             match style {
                 ExtractStyleValue::Static(st) => {
-                    if let Some(css) =
-                        sheet.add_property(cls, st.property.clone(), st.level, st.value.clone())
-                    {
+                    if let Some(css) = sheet.add_property(
+                        cls,
+                        st.property.clone(),
+                        st.level,
+                        st.value.clone(),
+                        st.selector.clone(),
+                    ) {
                         collected = true;
                     }
                 }
@@ -53,6 +57,7 @@ impl Output {
                         dy.property.clone(),
                         dy.level,
                         format!("var({})", variable.unwrap()),
+                        dy.selector.clone(),
                     ) {
                         collected = true;
                     }

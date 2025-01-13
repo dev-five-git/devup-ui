@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "margin",
                 value: "4px",
                 level: 1,
+                selector: None,
             },
         ),
         Static(
@@ -16,6 +17,7 @@ ExtractOutput {
                 property: "margin",
                 value: "5px",
                 level: 2,
+                selector: None,
             },
         ),
     ],

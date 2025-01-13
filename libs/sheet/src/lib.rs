@@ -10,18 +10,27 @@ pub struct StyleSheetProperty {
     pub class_name: String,
     pub property: String,
     pub value: String,
-    pub media: Option<String>,
+    pub selector: Option<String>,
 }
 
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
+        let selector = if let Some(selector) = &self.selector {
+            format!(":{}", selector)
+        } else {
+            String::new()
+        };
         match convert_property(self.property.as_str()) {
             PropertyType::Single(prop) => {
-                format!(".{}{{{}:{}}}", self.class_name, prop, self.value)
+                format!(
+                    ".{}{}{{{}:{}}}",
+                    self.class_name, selector, prop, self.value
+                )
             }
             PropertyType::Multi(multi) => format!(
-                ".{}{{{}}}",
+                ".{}{}{{{}}}",
                 self.class_name,
+                selector,
                 multi
                     .into_iter()
                     .map(|prop| format!("{}:{};", prop, self.value))
@@ -70,12 +79,13 @@ impl StyleSheet {
         property: String,
         level: u8,
         value: String,
+        selector: Option<String>,
     ) -> Option<String> {
         let prop = StyleSheetProperty {
             class_name,
             property,
             value,
-            media: None,
+            selector,
         };
         let css = prop.extract();
         if self.properties.entry(level).or_default().insert(prop) {

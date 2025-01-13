@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "padding",
                 value: "4px",
                 level: 0,
+                selector: None,
             },
         ),
     ],

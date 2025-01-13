@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "margin",
                 value: "1px",
                 level: 0,
+                selector: None,
             },
         ),
     ],

@@ -1,6 +1,7 @@
 mod component;
 mod gen_class_name;
 mod gen_style;
+mod media_prop_extract_utils;
 mod prop_extract_utils;
 mod prop_modify_utils;
 mod utils;
@@ -45,10 +46,10 @@ impl ExtractStyleProp<'_> {
             } => {
                 let mut styles = vec![];
                 if let Some(consequent) = consequent {
-                    styles.extend(consequent.extract());
+                    styles.append(&mut consequent.extract());
                 }
                 if let Some(alternate) = alternate {
-                    styles.extend(alternate.extract());
+                    styles.append(&mut alternate.extract());
                 }
                 styles
             }
@@ -80,6 +81,8 @@ pub struct ExtractStaticStyle {
     pub value: String,
     /// responsive level
     pub level: u8,
+    /// selector
+    pub selector: Option<String>,
 }
 
 impl ExtractStyleProperty for ExtractStaticStyle {
@@ -114,6 +117,9 @@ pub struct ExtractDynamicStyle {
     /// responsive
     pub level: u8,
     identifier: String,
+
+    /// selector
+    pub selector: Option<String>,
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
@@ -652,6 +658,57 @@ mod tests {
         )
         .unwrap());
     }
+
+    #[test]
+    fn extract_selector() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          mx: 1
+        }} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn extract_selector_with_responsive() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          mx: [1, 2]
+        }} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={[{
+          mx: 10
+        },{
+          mx: 20
+        }]} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
     #[test]
     fn extract_static_css_class_name_props() {
         let mut hasher = DefaultHasher::new();

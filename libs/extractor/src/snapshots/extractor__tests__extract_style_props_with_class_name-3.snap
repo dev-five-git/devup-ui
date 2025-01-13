@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "padding",
                 value: "4px",
                 level: 0,
+                selector: None,
             },
         ),
         Static(
@@ -16,6 +17,7 @@ ExtractOutput {
                 property: "margin",
                 value: "8px",
                 level: 0,
+                selector: None,
             },
         ),
     ],

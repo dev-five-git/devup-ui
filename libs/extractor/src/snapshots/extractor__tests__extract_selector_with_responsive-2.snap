@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box _hover={[{\n          mx: 10\n        },{\n          mx: 20\n        }]} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "mx",
+                value: "80px",
+                level: 1,
+                selector: Some(
+                    "hover",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mx",
+                value: "40px",
+                level: 0,
+                selector: Some(
+                    "hover",
+                ),
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d11278482831902935138 d16183396896303532164\" />;\n",
+}

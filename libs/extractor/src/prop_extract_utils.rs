@@ -23,6 +23,7 @@ pub fn extract_style_prop<'a>(
                 value: convert_value(str.value.as_str()),
                 level: 0,
                 property: name,
+                selector: None,
             })))
         }
         JSXAttributeValue::ExpressionContainer(expression) => {
@@ -34,17 +35,19 @@ pub fn extract_style_prop<'a>(
                     name.as_str(),
                     expression.expression.to_expression(),
                     0,
+                    None,
                 )
             }
         }
         _ => None,
     }
 }
-fn extract_style_prop_from_express<'a>(
+pub fn extract_style_prop_from_express<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
     expression: &Expression<'a>,
     level: u8,
+    selector: Option<&str>,
 ) -> Option<ExtractStyleProp<'a>> {
     match &expression {
         Expression::NumericLiteral(num) => {
@@ -52,6 +55,7 @@ fn extract_style_prop_from_express<'a>(
                 value: convert_value(num.value.to_string().as_str()),
                 level,
                 property: name.to_string(),
+                selector: selector.map(|s| s.to_string()),
             })))
         }
         Expression::StringLiteral(str) => {
@@ -59,6 +63,7 @@ fn extract_style_prop_from_express<'a>(
                 value: convert_value(str.value.as_str()),
                 level,
                 property: name.to_string(),
+                selector: selector.map(|s| s.to_string()),
             })))
         }
         Expression::Identifier(identifier) => {
@@ -69,6 +74,7 @@ fn extract_style_prop_from_express<'a>(
                     level,
                     property: name.to_string(),
                     identifier: identifier.name.to_string(),
+                    selector: selector.map(|s| s.to_string()),
                 })))
             }
         }
@@ -81,6 +87,7 @@ fn extract_style_prop_from_express<'a>(
                     name,
                     &logical.right,
                     level,
+                    selector,
                 )
                 .map(Box::new),
             }),
@@ -91,6 +98,7 @@ fn extract_style_prop_from_express<'a>(
                     name,
                     &logical.right,
                     level,
+                    selector,
                 )
                 .map(Box::new),
                 alternate: None,
@@ -120,18 +128,29 @@ fn extract_style_prop_from_express<'a>(
                     name,
                     &logical.right,
                     level,
+                    selector,
                 )
                 .map(Box::new),
             }),
         },
-        Expression::ParenthesizedExpression(parenthesized) => {
-            extract_style_prop_from_express(ast_builder, name, &parenthesized.expression, level)
-        }
+        Expression::ParenthesizedExpression(parenthesized) => extract_style_prop_from_express(
+            ast_builder,
+            name,
+            &parenthesized.expression,
+            level,
+            selector,
+        ),
         Expression::ArrayExpression(array) => {
-            extract_style_prop_from_array_express(ast_builder, name, array)
+            extract_style_prop_from_array_express(ast_builder, name, array, selector)
         }
         Expression::ConditionalExpression(conditional) => {
-            extract_style_prop_from_conditional_express(ast_builder, name, conditional, level)
+            extract_style_prop_from_conditional_express(
+                ast_builder,
+                name,
+                conditional,
+                level,
+                selector,
+            )
         }
         _ => None,
     }
@@ -142,6 +161,7 @@ fn extract_style_prop_from_conditional_express<'a>(
     name: &str,
     conditional: &ConditionalExpression<'a>,
     level: u8,
+    media: Option<&str>,
 ) -> Option<ExtractStyleProp<'a>> {
     Some(ExtractStyleProp::Conditional {
         condition: conditional.test.clone_in(ast_builder.allocator),
@@ -150,6 +170,7 @@ fn extract_style_prop_from_conditional_express<'a>(
             name,
             &conditional.consequent,
             level,
+            media,
         )
         .map(Box::new),
         alternate: extract_style_prop_from_express(
@@ -157,6 +178,7 @@ fn extract_style_prop_from_conditional_express<'a>(
             name,
             &conditional.alternate,
             level,
+            media,
         )
         .map(Box::new),
     })
@@ -166,13 +188,20 @@ fn extract_style_prop_from_array_express<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
     array: &ArrayExpression<'a>,
+    selector: Option<&str>,
 ) -> Option<ExtractStyleProp<'a>> {
     let ret = array
         .elements
         .iter()
         .enumerate()
         .filter_map(|(idx, element)| {
-            extract_style_prop_from_express(ast_builder, name, element.to_expression(), idx as u8)
+            extract_style_prop_from_express(
+                ast_builder,
+                name,
+                element.to_expression(),
+                idx as u8,
+                selector,
+            )
         })
         .collect::<Vec<ExtractStyleProp>>();
     if ret.is_empty() {

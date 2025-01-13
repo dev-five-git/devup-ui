@@ -9,6 +9,7 @@ ExtractOutput {
                 property: "margin",
                 level: 0,
                 identifier: "c",
+                selector: None,
             },
         ),
         Dynamic(
@@ -16,6 +17,7 @@ ExtractOutput {
                 property: "margin",
                 level: 0,
                 identifier: "d",
+                selector: None,
             },
         ),
         Dynamic(
@@ -23,6 +25,7 @@ ExtractOutput {
                 property: "margin",
                 level: 1,
                 identifier: "e",
+                selector: None,
             },
         ),
         Dynamic(
@@ -30,6 +33,7 @@ ExtractOutput {
                 property: "margin",
                 level: 2,
                 identifier: "f",
+                selector: None,
             },
         ),
         Static(
@@ -37,6 +41,7 @@ ExtractOutput {
                 property: "margin",
                 value: "2px",
                 level: 3,
+                selector: None,
             },
         ),
     ],

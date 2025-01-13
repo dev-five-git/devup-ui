@@ -1,4 +1,5 @@
 use crate::component::ExportVariableKind;
+use crate::media_prop_extract_utils::extract_media_prop;
 use crate::prop_extract_utils::extract_style_prop;
 use crate::prop_modify_utils::modify_props;
 use crate::{ExtractCss, ExtractStyleProp, ExtractStyleValue, StyleProperty};
@@ -131,13 +132,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             continue;
                         }
 
-                        // media query
-                        if name.starts_with("_") {
-                            attrs.remove(i);
-                            continue;
-                        }
-
                         if let Some(value) = &attr.value {
+                            // media query
+                            if name.starts_with("_") {
+                                if let Some(prop_styles) = &mut extract_media_prop(
+                                    &self.ast,
+                                    value,
+                                    name.trim_start_matches('_'),
+                                ) {
+                                    props_styles.append(prop_styles);
+                                    attrs.remove(i);
+                                }
+                                continue;
+                            }
                             let prop_styles = extract_style_prop(&self.ast, name, value);
                             if let Some(prop_styles) = prop_styles {
                                 props_styles.push(prop_styles);

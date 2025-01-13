@@ -12,7 +12,8 @@ export default function HomePage() {
       <a />
       <Box
         _hover={{
-          bg: 'red',
+          bg: ['yellow', 'red'],
+          cursor: 'cell',
         }}
         as="span"
         bg="blue"
