@@ -1,1 +1,1 @@
-export { DevupUiNextPlugin } from './plugin'
+export { DevupUI } from './plugin'

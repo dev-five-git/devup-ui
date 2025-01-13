@@ -12,7 +12,7 @@ type DevupUiNextPluginOptions = Partial<DevupUiWebpackPluginOptions>
  * @param options
  * @constructor
  */
-export function DevupUiNextPlugin(
+export function DevupUI(
   config: NextConfig,
   options: DevupUiNextPluginOptions = {},
 ): NextConfig {
