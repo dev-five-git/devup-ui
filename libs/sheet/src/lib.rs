@@ -1,3 +1,6 @@
+pub mod theme;
+
+use crate::theme::Theme;
 use css::{convert_property, PropertyType};
 use std::collections::{BTreeMap, HashSet};
 
@@ -24,7 +27,10 @@ impl ExtractStyle for StyleSheetProperty {
             PropertyType::Single(prop) => {
                 format!(
                     ".{}{}{{{}:{}}}",
-                    self.class_name, selector, prop, self.value
+                    self.class_name,
+                    selector,
+                    prop,
+                    convert_theme_variable_value(&self.value)
                 )
             }
             PropertyType::Multi(multi) => format!(
@@ -33,11 +39,19 @@ impl ExtractStyle for StyleSheetProperty {
                 selector,
                 multi
                     .into_iter()
-                    .map(|prop| format!("{}:{};", prop, self.value))
+                    .map(|prop| format!("{}:{};", prop, convert_theme_variable_value(&self.value)))
                     .collect::<Vec<String>>()
                     .join("")
             ),
         }
+    }
+}
+
+fn convert_theme_variable_value(value: &String) -> String {
+    if let Some(value) = value.strip_prefix("$") {
+        format!("var(--{})", value)
+    } else {
+        value.to_string()
     }
 }
 
@@ -57,6 +71,7 @@ pub struct StyleSheet {
     /// level -> properties
     pub properties: BTreeMap<u8, HashSet<StyleSheetProperty>>,
     pub css: HashSet<StyleSheetCss>,
+    theme_declaration: String,
 }
 
 impl Default for StyleSheet {
@@ -70,6 +85,7 @@ impl StyleSheet {
         Self {
             properties: BTreeMap::new(),
             css: HashSet::new(),
+            theme_declaration: String::new(),
         }
     }
 
@@ -80,32 +96,29 @@ impl StyleSheet {
         level: u8,
         value: String,
         selector: Option<String>,
-    ) -> Option<String> {
+    ) -> bool {
         let prop = StyleSheetProperty {
             class_name,
             property,
             value,
             selector,
         };
-        let css = prop.extract();
-        if self.properties.entry(level).or_default().insert(prop) {
-            Some(css)
-        } else {
-            None
-        }
+        self.properties.entry(level).or_default().insert(prop)
     }
 
-    pub fn add_css(&mut self, class_name: String, css: String) -> Option<String> {
+    pub fn add_css(&mut self, class_name: String, css: String) -> bool {
         let prop = StyleSheetCss { class_name, css };
-        let css = prop.extract();
-        if self.css.insert(prop) {
-            Some(css)
-        } else {
-            None
-        }
+        self.css.insert(prop)
     }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        let mut theme_declaration = String::new();
+        theme_declaration.push_str(theme.colors.to_css().as_str());
+        self.theme_declaration = theme_declaration;
+    }
+
     pub fn create_css(&self, break_points: Vec<u16>) -> String {
-        let mut css = String::new();
+        let mut css = self.theme_declaration.clone();
         for (level, props) in self.properties.iter() {
             let inner_css = props
                 .iter()

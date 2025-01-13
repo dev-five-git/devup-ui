@@ -1,6 +1,6 @@
 'use client'
 
-import { Box } from '@devup-ui/react'
+import { Box, css, Text } from '@devup-ui/react'
 import { useState } from 'react'
 
 export default function HomePage() {
@@ -26,6 +26,15 @@ export default function HomePage() {
       >
         hello
       </Box>
+      <Text
+        className={css`
+          background: red;
+          color: blue;
+        `}
+      >
+        text
+      </Text>
+      <Text color="$text">text</Text>
       <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
         hello
       </Box>

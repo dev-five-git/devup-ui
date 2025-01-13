@@ -727,4 +727,19 @@ mod tests {
         )
         .unwrap());
     }
+
+    #[test]
+    fn extract_static_css_with_theme() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box color="$nice" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 }

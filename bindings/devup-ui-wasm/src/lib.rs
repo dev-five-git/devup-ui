@@ -1,5 +1,7 @@
 use extractor::{extract, ExtractOption, ExtractStyleValue, StyleProperty};
+use js_sys::{Object, Reflect};
 use once_cell::sync::Lazy;
+use sheet::theme::{ColorTheme, Theme};
 use sheet::StyleSheet;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
@@ -14,7 +16,7 @@ pub struct Output {
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
+    fn log(s: &JsValue);
 }
 
 #[wasm_bindgen]
@@ -41,7 +43,7 @@ impl Output {
             };
             match style {
                 ExtractStyleValue::Static(st) => {
-                    if let Some(css) = sheet.add_property(
+                    if sheet.add_property(
                         cls,
                         st.property.clone(),
                         st.level,
@@ -52,7 +54,7 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
-                    if let Some(css) = sheet.add_property(
+                    if sheet.add_property(
                         cls,
                         dy.property.clone(),
                         dy.level,
@@ -63,7 +65,7 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Css(cs) => {
-                    if let Some(css) = sheet.add_css(cls, cs.css.clone()) {
+                    if sheet.add_css(cls, cs.css.clone()) {
                         collected = true;
                     }
                 }
@@ -76,7 +78,7 @@ impl Output {
     }
 }
 
-#[wasm_bindgen(js_name = "codeExtract", catch)]
+#[wasm_bindgen(js_name = "codeExtract")]
 pub fn code_extract(
     filename: &str,
     code: &str,
@@ -101,4 +103,59 @@ pub fn code_extract(
         }),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
+}
+pub fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
+    let mut theme = Theme::new();
+
+    if let Some(obj) = js_value.dyn_into::<Object>().ok() {
+        // get colors
+        if let Some(colors_obj) = Reflect::get(&obj, &JsValue::from_str("colors"))
+            .ok()
+            .and_then(|v| v.dyn_into::<Object>().ok())
+        {
+            for entry in Object::entries(&colors_obj).into_iter() {
+                if let (Ok(key), Ok(value)) = (
+                    Reflect::get(&entry, &JsValue::from_f64(0f64)),
+                    Reflect::get(&entry, &JsValue::from_f64(1f64)),
+                ) {
+                    if let (Some(key_str), Some(theme_value)) =
+                        (key.as_string(), value.dyn_into::<Object>().ok())
+                    {
+                        let mut color_theme = ColorTheme::new();
+                        for var_entry in Object::entries(&theme_value).into_iter() {
+                            if let (Ok(var_key), Ok(var_value)) = (
+                                Reflect::get(&var_entry, &JsValue::from_f64(0f64)),
+                                Reflect::get(&var_entry, &JsValue::from_f64(1f64)),
+                            ) {
+                                if let (Some(var_key_str), Some(var_value_str)) =
+                                    (var_key.as_string(), var_value.as_string())
+                                {
+                                    color_theme.add_color(var_key_str, var_value_str);
+                                } else {
+                                    return Err(JsValue::from_str(
+                                        "Failed to get key and value from the theme object",
+                                    ));
+                                }
+                            }
+                        }
+                        theme.colors.add_theme(key_str, color_theme);
+                    }
+                }
+            }
+        }
+    } else {
+        return Err(JsValue::from_str(
+            "Failed to convert the provided object to a hashmap",
+        ));
+    }
+    Ok(theme)
+}
+
+#[wasm_bindgen(js_name = "registerTheme")]
+pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
+    log(&theme_object);
+    let theme_object = theme_object_to_hashmap(theme_object)?;
+    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    sheet.set_theme(theme_object);
+    Ok(())
 }

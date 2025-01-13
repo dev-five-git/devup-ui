@@ -1,0 +1,12 @@
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "text": "#333"
+      },
+      "dark": {
+        "text": "#fff"
+      }
+    }
+  }
+}

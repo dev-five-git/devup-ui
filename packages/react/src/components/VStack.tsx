@@ -1,6 +1,9 @@
 import type { DevupProps } from '../types/props'
 import type { Merge } from '../types/utils'
 
-export function VStack(props: Merge<React.ComponentProps<'div'>, DevupProps>) {
-  return <div {...(props as React.ComponentProps<'div'>)} />
+export function VStack(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  props: Merge<React.ComponentProps<'div'>, DevupProps>,
+): React.ReactElement {
+  throw new Error('Cannot run on the runtime')
 }

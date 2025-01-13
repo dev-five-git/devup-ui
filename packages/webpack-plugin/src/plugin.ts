@@ -1,14 +1,16 @@
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { registerTheme } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
 export interface DevupUiWebpackPluginOptions {
   package: string
   cssFile: string
+  devupTheme: Record<string, Record<string, string>>
 }
 
-export class DevupUiWebpackPlugin {
+export class DevupUIWebpackPlugin {
   options: DevupUiWebpackPluginOptions
 
   constructor(options: Partial<DevupUiWebpackPluginOptions>) {
@@ -20,10 +22,12 @@ export class DevupUiWebpackPlugin {
       cssFile:
         inputOptions.cssFile ||
         fileURLToPath(import.meta.resolve('./devup-ui.css')),
+      devupTheme: inputOptions.devupTheme || {},
     }
   }
 
   apply(compiler: Compiler) {
+    if (this.options.devupTheme) registerTheme(this.options.devupTheme)
     // Create an empty CSS file
     writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
     compiler.options.experiments.asyncWebAssembly = true
