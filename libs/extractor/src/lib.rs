@@ -234,6 +234,20 @@ mod tests {
         .unwrap());
     }
     #[test]
+    fn ignore_special_props() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+    #[test]
     fn extract_style_props() {
         assert_debug_snapshot!(extract(
             "test.tsx",
