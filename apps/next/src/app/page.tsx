@@ -9,12 +9,26 @@ export default function HomePage() {
 
   return (
     <div>
-      <Box bg="red" color={color} cursor="pointer" fontSize={32}>
+      <a />
+      <Box
+        _hover={{
+          bg: 'red',
+        }}
+        as="span"
+        bg="blue"
+        color={color}
+        cursor="pointer"
+        data-testid="box"
+        fontSize={32}
+        position="relative"
+        py="28px"
+      >
         hello
       </Box>
-      <Box color={enabled ? 'red' : 'blue'} fontSize={32}>
+      <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
         hello
       </Box>
+      <Box fontSize={[12, 32]}>hello</Box>
       <button
         onClick={() => {
           setColor('blue')

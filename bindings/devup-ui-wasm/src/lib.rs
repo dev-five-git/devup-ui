@@ -29,7 +29,7 @@ impl Output {
     #[wasm_bindgen(getter)]
     pub fn css(&self) -> Option<String> {
         let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-        let mut collected = vec![];
+        let mut collected = false;
         for style in self.styles.iter() {
             let (cls, variable) = match style.extract() {
                 StyleProperty::ClassName(cls) => (cls, None),
@@ -42,32 +42,32 @@ impl Output {
             match style {
                 ExtractStyleValue::Static(st) => {
                     if let Some(css) =
-                        sheet.add_property(cls, st.property.clone(), st.value.clone())
+                        sheet.add_property(cls, st.property.clone(), st.level, st.value.clone())
                     {
-                        collected.push(css);
+                        collected = true;
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
                     if let Some(css) = sheet.add_property(
                         cls,
                         dy.property.clone(),
+                        dy.level,
                         format!("var({})", variable.unwrap()),
                     ) {
-                        collected.push(css);
+                        collected = true;
                     }
                 }
                 ExtractStyleValue::Css(cs) => {
                     if let Some(css) = sheet.add_css(cls, cs.css.clone()) {
-                        collected.push(css);
+                        collected = true;
                     }
                 }
             }
         }
-        if collected.is_empty() {
+        if !collected {
             return None;
         }
-        collected.push("".to_string());
-        Some(collected.join("\n"))
+        Some(sheet.create_css(vec![0, 480, 768, 992, 1280]))
     }
 }
 

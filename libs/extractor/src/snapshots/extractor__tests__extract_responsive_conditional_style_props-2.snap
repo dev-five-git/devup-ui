@@ -1,0 +1,30 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n        <Box margin={[\"6px\", a === b ? \"4px\" : \"3px\"]} />;\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "6px",
+                level: 0,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 1,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "3px",
+                level: 1,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={`d15301160700019119219 ${a === b ? \"d14510378607275106202\" : \"d10070419513062272579\"}`} />;\n",
+}

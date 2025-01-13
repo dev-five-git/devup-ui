@@ -2,13 +2,13 @@ use crate::component::ExportVariableKind;
 use crate::prop_extract_utils::extract_style_prop;
 use crate::prop_modify_utils::modify_props;
 use crate::{ExtractCss, ExtractStyleProp, ExtractStyleValue, StyleProperty};
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, ImportDeclaration, ImportOrExportKind, JSXElement, Program, Statement,
-    TaggedTemplateExpression, TemplateElementValue, WithClause,
+    Expression, ImportDeclaration, ImportOrExportKind, JSXAttributeValue, JSXElement,
+    JSXElementName, Program, Statement, TaggedTemplateExpression, TemplateElementValue, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
     walk_import_declaration, walk_jsx_element, walk_program, walk_tagged_template_expression,
@@ -100,6 +100,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
+            let mut tag_name = kind.to_tag();
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
@@ -108,10 +109,34 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Attribute(attr) = attr {
                     if let Identifier(name) = &attr.name {
                         let name = name.to_string();
-                        // ignore style and className
-                        if name == "style" || name == "className" {
+
+                        // ignore special attributes
+                        if name == "style"
+                            || name == "className"
+                            || name.starts_with("on")
+                            || name.starts_with("data-")
+                            || name.starts_with("aria-")
+                            || name == "role"
+                            || name == "ref"
+                            || name == "key"
+                            || name == "children"
+                        {
                             continue;
                         }
+                        if name == "as" {
+                            if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
+                                tag_name = ident.value.to_string();
+                            }
+                            attrs.remove(i);
+                            continue;
+                        }
+
+                        // media query
+                        if name.starts_with("_") {
+                            attrs.remove(i);
+                            continue;
+                        }
+
                         if let Some(value) = &attr.value {
                             let prop_styles = extract_style_prop(&self.ast, name, value);
                             if let Some(prop_styles) = prop_styles {
@@ -131,6 +156,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
             // modify!!
             modify_props(&self.ast, attrs, props_styles);
+
+            // change tag name
+            let ident = JSXElementName::Identifier(self.ast.alloc_jsx_identifier(SPAN, tag_name));
+            opening_element.name = ident.clone_in(self.ast.allocator);
+            if let Some(el) = &mut elem.closing_element {
+                el.name = ident;
+            }
         }
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {

@@ -32,7 +32,6 @@ const devupUiLoader: RawLoaderDefinitionFunction<DevupUiLoaderOptions> =
         // should be reset css
         writeFileSync(cssFile, css, {
           encoding: 'utf-8',
-          flag: 'a',
         })
       }
 

@@ -7,9 +7,3 @@ pub fn convert_value(value: &str) -> String {
     }
     value
 }
-pub fn get_variable_name(property: &str, level: u8) -> String {
-    format!("--{}-{}", property, level)
-}
-pub fn get_variable_class_name(property: &str, level: u8) -> String {
-    format!("{}-{}", property, level)
-}

@@ -15,6 +15,7 @@ import type { DevupUiImageProps } from './image'
 import type { DevupUiInlineProps } from './inline'
 import type { DevupUiListProps } from './list'
 import type { DevupUiMaskingProps } from './masking'
+import type { DevupMediaProps } from './media'
 import type { DevupUiMotionPathProps } from './motion-path'
 import type { DevupUiOverflowProps } from './overflow'
 import type { DevupUiOverflowBehaviorProps } from './overflow-behavior'
@@ -28,7 +29,7 @@ import type { DevupUiTransitionProps } from './transition'
 import type { DevupUiUiProps } from './ui'
 import type { DevupUiViewTransitionProps } from './view-transition'
 
-export interface DevupProps
+export interface DevupCommonProps
   extends DevupUiAnimationProps,
     DevupUiBackgroundProps,
     DevupUiBlendingProps,
@@ -58,3 +59,7 @@ export interface DevupProps
     DevupUiTransitionProps,
     DevupUiUiProps,
     DevupUiViewTransitionProps {}
+
+export interface DevupProps extends DevupCommonProps, DevupMediaProps {
+  as?: React.ElementType
+}

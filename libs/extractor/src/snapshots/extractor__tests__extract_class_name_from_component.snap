@@ -1,0 +1,37 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import {VStack as C} from '@devup-ui/core'\n        <C padding={1} margin={2} className={\"a\"+\"b\"} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flexDirection",
+                value: "column",
+                level: 0,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { VStack as C } from \"@devup-ui/core\";\n<div className={`d1317701749553269676 d6446653468614263203 d13564892828075531325 d7164797882338261018 ${\"a\" + \"b\"}`} />;\n",
+}

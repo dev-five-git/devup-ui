@@ -1,0 +1,30 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={[null, a === b ? (q > w ? \"4px\" : \"8px\") : \"3px\"]} className={\"exists\"} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 1,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 1,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "3px",
+                level: 1,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={`exists ${a === b ? q > w ? \"d14510378607275106202\" : \"d10901344257048489196\" : \"d10070419513062272579\"}`} />;\n",
+}

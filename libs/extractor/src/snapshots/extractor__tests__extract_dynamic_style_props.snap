@@ -1,0 +1,23 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={someStyleVar} margin={someStyleVar2} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "padding",
+                level: 0,
+                identifier: "someStyleVar",
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 0,
+                identifier: "someStyleVar2",
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d169756389412877303 d13763791968754421226\" style={{\n\t\"--d15617356007119957826\": someStyleVar,\n\t\"--d15632935115870867517\": someStyleVar2\n}} />;\n",
+}

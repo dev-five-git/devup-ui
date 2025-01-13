@@ -15,6 +15,23 @@ pub enum ExportVariableKind {
 }
 
 impl ExportVariableKind {
+    /// Convert the kind to a tag
+    pub fn to_tag(&self) -> String {
+        match self {
+            ExportVariableKind::Center
+            | ExportVariableKind::VStack
+            | ExportVariableKind::Flex
+            | ExportVariableKind::Box => "div",
+            ExportVariableKind::Text => "span",
+            ExportVariableKind::Button => "button",
+            ExportVariableKind::Input => "input",
+            ExportVariableKind::Css => unreachable!(),
+        }
+        .to_string()
+    }
+}
+
+impl ExportVariableKind {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
             ExportVariableKind::Input

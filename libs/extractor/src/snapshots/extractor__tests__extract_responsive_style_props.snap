@@ -1,0 +1,30 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={[null,1]} margin={[2,null,4]} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 1,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "8px",
+                level: 0,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "16px",
+                level: 2,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d12337250774849131248 d7164797882338261018 d16415411185073132372\" />;\n",
+}

@@ -10,6 +10,8 @@ export interface DevupUiBoxModelProps {
   marginTop?: ResponsiveValue<Property.MarginTop>
 
   m?: ResponsiveValue<Property.Margin>
+  mx?: ResponsiveValue<Property.MarginLeft | Property.MarginRight>
+  my?: ResponsiveValue<Property.MarginTop | Property.MarginBottom>
   mb?: ResponsiveValue<Property.MarginBottom>
   ml?: ResponsiveValue<Property.MarginLeft>
   mr?: ResponsiveValue<Property.MarginRight>
@@ -22,6 +24,8 @@ export interface DevupUiBoxModelProps {
   paddingTop?: ResponsiveValue<Property.PaddingTop>
 
   p?: ResponsiveValue<Property.Padding>
+  px?: ResponsiveValue<Property.PaddingLeft | Property.PaddingRight>
+  py?: ResponsiveValue<Property.PaddingTop | Property.PaddingBottom>
   pb?: ResponsiveValue<Property.PaddingBottom>
   pl?: ResponsiveValue<Property.PaddingLeft>
   pr?: ResponsiveValue<Property.PaddingRight>
