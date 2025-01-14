@@ -1,5 +1,5 @@
 import dts from 'vite-plugin-dts'
-import {defineConfig} from 'vitest/config'
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -47,7 +47,7 @@ export default defineConfig({
         preserveModulesRoot: 'src',
 
         exports: 'named',
-        assetFileNames({name}) {
+        assetFileNames({ name }) {
           return name?.replace(/^src\//g, '') ?? ''
         },
       },
