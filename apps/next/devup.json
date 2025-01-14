@@ -2,7 +2,7 @@
   "theme": {
     "colors": {
       "default": {
-        "text": "#333"
+        "text": "green"
       },
       "dark": {
         "text": "#fff"

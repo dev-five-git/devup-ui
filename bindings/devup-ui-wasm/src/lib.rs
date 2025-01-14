@@ -74,7 +74,7 @@ impl Output {
         if !collected {
             return None;
         }
-        Some(sheet.create_css(vec![0, 480, 768, 992, 1280]))
+        Some(sheet.create_css())
     }
 }
 
@@ -104,7 +104,7 @@ pub fn code_extract(
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
 }
-pub fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
+fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
     let mut theme = Theme::new();
 
     if let Some(obj) = js_value.dyn_into::<Object>().ok() {
@@ -153,9 +153,14 @@ pub fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
 
 #[wasm_bindgen(js_name = "registerTheme")]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    log(&theme_object);
     let theme_object = theme_object_to_hashmap(theme_object)?;
     let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
     sheet.set_theme(theme_object);
     Ok(())
+}
+
+#[wasm_bindgen(js_name = "getCss")]
+pub fn get_css() -> Result<String, JsValue> {
+    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    Ok(sheet.create_css())
 }

@@ -8,7 +8,7 @@ interface DevupUiLoaderOptions {
   cssFile: string
 }
 
-const devupUiLoader: RawLoaderDefinitionFunction<DevupUiLoaderOptions> =
+const devupUILoader: RawLoaderDefinitionFunction<DevupUiLoaderOptions> =
   function (source) {
     const { package: libPackage, cssFile } = this.getOptions()
     const callback = this.async()
@@ -41,4 +41,4 @@ const devupUiLoader: RawLoaderDefinitionFunction<DevupUiLoaderOptions> =
     }
     return
   }
-export default devupUiLoader
+export default devupUILoader

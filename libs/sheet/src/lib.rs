@@ -1,7 +1,7 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{convert_property, PropertyType};
+use css::{convert_property, to_kebab_case, PropertyType};
 use std::collections::{BTreeMap, HashSet};
 
 trait ExtractStyle {
@@ -19,7 +19,7 @@ pub struct StyleSheetProperty {
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
         let selector = if let Some(selector) = &self.selector {
-            format!(":{}", selector)
+            format!(":{}", to_kebab_case(selector))
         } else {
             String::new()
         };
@@ -71,6 +71,7 @@ pub struct StyleSheet {
     /// level -> properties
     pub properties: BTreeMap<u8, HashSet<StyleSheetProperty>>,
     pub css: HashSet<StyleSheetCss>,
+    theme: Theme,
     theme_declaration: String,
 }
 
@@ -86,6 +87,7 @@ impl StyleSheet {
             properties: BTreeMap::new(),
             css: HashSet::new(),
             theme_declaration: String::new(),
+            theme: Theme::new(),
         }
     }
 
@@ -114,13 +116,20 @@ impl StyleSheet {
     pub fn set_theme(&mut self, theme: Theme) {
         let mut theme_declaration = String::new();
         theme_declaration.push_str(theme.colors.to_css().as_str());
+        self.theme = theme;
         self.theme_declaration = theme_declaration;
     }
 
-    pub fn create_css(&self, break_points: Vec<u16>) -> String {
+    pub fn create_css(&self) -> String {
         let mut css = self.theme_declaration.clone();
         for (level, props) in self.properties.iter() {
-            let inner_css = props
+            // If has a selector property, move it to the back
+            let (mut select_props, other_props): (Vec<_>, Vec<_>) =
+                props.iter().partition(|prop| prop.selector.is_some());
+            let mut sorted_props = other_props;
+            sorted_props.append(&mut select_props);
+
+            let inner_css = sorted_props
                 .iter()
                 .map(|prop| prop.extract())
                 .collect::<Vec<String>>()
@@ -131,12 +140,18 @@ impl StyleSheet {
                 css.push_str(
                     format!(
                         "\n@media (min-width:{}px){{{}}}",
-                        break_points
+                        self.theme
+                            .break_points
                             .iter()
                             .enumerate()
                             .find(|(idx, _)| (*idx as u8) == *level)
                             .map(|(_, bp)| *bp)
-                            .unwrap_or_else(|| break_points.last().cloned().unwrap_or(0)),
+                            .unwrap_or_else(|| self
+                                .theme
+                                .break_points
+                                .last()
+                                .cloned()
+                                .unwrap_or(0)),
                         inner_css
                     )
                     .as_str(),

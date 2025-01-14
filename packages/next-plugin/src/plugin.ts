@@ -1,12 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
-
 import {
   DevupUIWebpackPlugin,
-  DevupUiWebpackPluginOptions,
+  type DevupUIWebpackPluginOptions,
 } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
-type DevupUiNextPluginOptions = Partial<DevupUiWebpackPluginOptions>
+type DevupUiNextPluginOptions = Partial<DevupUIWebpackPluginOptions>
 
 /**
  * Devup UI Next Plugin
@@ -19,16 +17,6 @@ export function DevupUI(
   options: DevupUiNextPluginOptions = {},
 ): NextConfig {
   const { webpack } = config
-  if (!options.devupTheme && existsSync('devup.json')) {
-    try {
-      options.devupTheme = JSON.parse(readFileSync('devup.json', 'utf-8'))?.[
-        'theme'
-      ]
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
   config.webpack = (config, _options) => {
     config.plugins.push(new DevupUIWebpackPlugin(options))
     if (typeof webpack === 'function') return webpack(config, _options)

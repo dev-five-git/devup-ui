@@ -9,7 +9,7 @@ export default function HomePage() {
 
   return (
     <div>
-      <a />
+      <p>Track & field champions:</p>
       <Box
         _hover={{
           bg: ['yellow', 'red'],
@@ -24,7 +24,20 @@ export default function HomePage() {
         position="relative"
         py="28px"
       >
-        hello
+        <Box
+          _lastChild={{
+            color: 'purple',
+          }}
+        >
+          hello
+        </Box>
+        <Box
+          _lastChild={{
+            color: 'purple',
+          }}
+        >
+          hello
+        </Box>
       </Box>
       <Text
         className={css`

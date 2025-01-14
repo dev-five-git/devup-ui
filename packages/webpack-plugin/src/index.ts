@@ -1,4 +1,4 @@
 export {
   DevupUIWebpackPlugin,
-  type DevupUiWebpackPluginOptions,
+  type DevupUIWebpackPluginOptions,
 } from './plugin'

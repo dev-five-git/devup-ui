@@ -66,7 +66,7 @@ static GLOBAL_STYLE_PROPERTY: Lazy<Mutex<HashMap<&str, PropertyType>>> = Lazy::n
         map
     })
 });
-fn to_kebab_case(value: &str) -> String {
+pub fn to_kebab_case(value: &str) -> String {
     value
         .chars()
         .enumerate()

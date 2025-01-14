@@ -168,6 +168,7 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    let source_type = SourceType::from_path(filename)?;
     if !code.contains(option.package.as_str()) {
         // skip if not using package
         return Ok(ExtractOutput {
@@ -176,24 +177,14 @@ pub fn extract(
         });
     }
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(filename)?;
 
     let ParserReturn {
         mut program, // AST
-        errors,      // Syntax errors
         panicked,    // Parser encountered an error it couldn't recover from
         ..
     } = Parser::new(&allocator, code, source_type).parse();
     if panicked {
         return Err("Parser panicked".into());
-    }
-    if !errors.is_empty() {
-        return Err(errors
-            .iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .into());
     }
     let mut visitor = DevupVisitor::new(
         &allocator,
@@ -741,5 +732,34 @@ mod tests {
             }
         )
         .unwrap());
+    }
+
+    #[test]
+    fn raise_error() {
+        assert!(extract(
+            "test.wrong",
+            "const a = 1;",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .starts_with("Unknown file extension"));
+
+        assert_eq!(
+            extract(
+                "test.tsx",
+                "import {} '@devup-ui/core';\na a = 1;",
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                },
+            )
+            .unwrap_err()
+            .to_string(),
+            "Parser panicked"
+        );
     }
 }

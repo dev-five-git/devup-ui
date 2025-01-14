@@ -95,6 +95,7 @@ impl Color {
 
 pub struct Theme {
     pub colors: Color,
+    pub break_points: Vec<u16>,
 }
 
 impl Default for Theme {
@@ -107,6 +108,18 @@ impl Theme {
     pub fn new() -> Self {
         Self {
             colors: Color::new(),
+            break_points: vec![0, 480, 768, 992, 1280],
+        }
+    }
+
+    pub fn update_break_points(&mut self, break_points: Vec<u16>) {
+        for (idx, value) in break_points.iter().enumerate() {
+            let prev = self.break_points.get_mut(idx);
+            if let Some(prev) = prev {
+                *prev = *value;
+            } else {
+                self.break_points.push(*value);
+            }
         }
     }
 
