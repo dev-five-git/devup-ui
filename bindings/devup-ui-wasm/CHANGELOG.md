@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.1
+
+### Patch Changes
+
+- f947f33: Fix gen classname logic with selector
+
 ## 0.1.0
 
 ### Minor Changes
