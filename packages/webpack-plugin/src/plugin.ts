@@ -5,6 +5,7 @@ import {
   stat,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -106,7 +107,9 @@ export class DevupUIWebpackPlugin {
       exclude: /node_modules/,
       use: [
         {
-          loader: join(_dirname, 'loader.js'),
+          loader: createRequire(import.meta.url).resolve(
+            '@devup-ui/webpack-plugin/loader',
+          ),
           options: {
             package: this.options.package,
             cssFile: this.options.cssFile,
