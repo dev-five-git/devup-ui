@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/next-plugin",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
