@@ -32,6 +32,9 @@ impl ColorTheme {
     pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
         self.data.iter()
     }
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.data.keys()
+    }
 }
 
 pub struct Color {
@@ -92,10 +95,39 @@ impl Color {
         theme_declaration
     }
 }
+pub struct Typography {
+    pub font_family: String,
+    pub font_size: String,
+    pub font_weight: String,
+    pub line_height: String,
+    pub letter_spacing: String,
+    pub level: u8,
+}
+
+impl Typography {
+    pub fn new(
+        font_family: String,
+        font_size: String,
+        font_weight: String,
+        line_height: String,
+        letter_spacing: String,
+        level: u8,
+    ) -> Self {
+        Self {
+            font_family,
+            font_size,
+            font_weight,
+            line_height,
+            letter_spacing,
+            level,
+        }
+    }
+}
 
 pub struct Theme {
     pub colors: Color,
     pub break_points: Vec<u16>,
+    pub typography: HashMap<String, Vec<Typography>>,
 }
 
 impl Default for Theme {
@@ -109,6 +141,7 @@ impl Theme {
         Self {
             colors: Color::new(),
             break_points: vec![0, 480, 768, 992, 1280],
+            typography: HashMap::new(),
         }
     }
 
@@ -125,6 +158,42 @@ impl Theme {
 
     pub fn add_color_theme(&mut self, name: String, theme: ColorTheme) {
         self.colors.add_theme(name, theme);
+    }
+
+    pub fn add_typography(&mut self, name: String, typography: Vec<Typography>) {
+        self.typography.insert(name, typography);
+    }
+
+    pub fn to_css(&self) -> String {
+        let mut css = self.colors.to_css();
+        for ty in self.typography.iter() {
+            for t in ty.1.iter() {
+                if t.level == 0 {
+                    css.push_str(
+                        format!(
+                            ".typo-{}{{font-family:{};font-size:{};font-weight:{};line-height:{};letter-spacing:{}}}",
+                            ty.0, t.font_family, t.font_size, t.font_weight, t.line_height, t.letter_spacing
+                        )
+                            .as_str(),
+                    );
+                } else {
+                    let media = self
+                        .break_points
+                        .get(t.level as usize)
+                        .map(|v| format!("(min-width:{}px)", v));
+                    if let Some(media) = media {
+                        css.push_str(
+                            format!(
+                                "\n@media {}{{.typo-{}{{font-family:{};font-size:{};font-weight:{};line-height:{};letter-spacing:{}}}}}",
+                                media, ty.0, t.font_family, t.font_size, t.font_weight, t.line_height, t.letter_spacing
+                            )
+                                .as_str(),
+                        );
+                    }
+                }
+            }
+        }
+        css
     }
 
     pub fn get_color_theme(&self, name: &str) -> Option<&ColorTheme> {

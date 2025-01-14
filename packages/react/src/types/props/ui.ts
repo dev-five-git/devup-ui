@@ -1,6 +1,7 @@
 import type { Property } from 'csstype'
 
 import type { ResponsiveValue } from '../responsive-value'
+import type { DevupThemeColors } from '../theme'
 
 export interface DevupUiUiProps {
   accentColor?: ResponsiveValue<Property.AccentColor>
@@ -10,7 +11,7 @@ export interface DevupUiUiProps {
   caretShape?: ResponsiveValue<Property.CaretShape>
   cursor?: ResponsiveValue<Property.Cursor>
   outline?: ResponsiveValue<Property.Outline>
-  outlineColor?: ResponsiveValue<Property.OutlineColor>
+  outlineColor?: ResponsiveValue<Property.OutlineColor | keyof DevupThemeColors>
   outlineStyle?: ResponsiveValue<Property.OutlineStyle>
   outlineWidth?: ResponsiveValue<Property.OutlineWidth>
   outlineOffset?: ResponsiveValue<Property.OutlineOffset>

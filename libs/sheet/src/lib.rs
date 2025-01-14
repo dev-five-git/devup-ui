@@ -71,7 +71,7 @@ pub struct StyleSheet {
     /// level -> properties
     pub properties: BTreeMap<u8, HashSet<StyleSheetProperty>>,
     pub css: HashSet<StyleSheetCss>,
-    theme: Theme,
+    pub theme: Theme,
     theme_declaration: String,
 }
 
@@ -115,7 +115,7 @@ impl StyleSheet {
 
     pub fn set_theme(&mut self, theme: Theme) {
         let mut theme_declaration = String::new();
-        theme_declaration.push_str(theme.colors.to_css().as_str());
+        theme_declaration.push_str(theme.to_css().as_str());
         self.theme = theme;
         self.theme_declaration = theme_declaration;
     }
@@ -162,5 +162,19 @@ impl StyleSheet {
             css.push_str(&prop.extract());
         }
         css
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_theme_variable_value() {
+        assert_eq!(convert_theme_variable_value(&"1px".to_string()), "1px");
+        assert_eq!(
+            convert_theme_variable_value(&"$var".to_string()),
+            "var(--var)"
+        );
     }
 }

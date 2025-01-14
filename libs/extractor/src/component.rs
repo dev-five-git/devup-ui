@@ -87,18 +87,20 @@ impl ExportVariableKind {
     }
 }
 
-impl From<String> for ExportVariableKind {
-    fn from(kind: String) -> Self {
-        match kind.as_str() {
-            "Box" => ExportVariableKind::Box,
-            "Text" => ExportVariableKind::Text,
-            "Button" => ExportVariableKind::Button,
-            "Input" => ExportVariableKind::Input,
-            "Flex" => ExportVariableKind::Flex,
-            "VStack" => ExportVariableKind::VStack,
-            "Center" => ExportVariableKind::Center,
-            "css" => ExportVariableKind::Css,
-            _ => panic!("Unknown component kind: {}", kind),
+impl TryFrom<String> for ExportVariableKind {
+    type Error = ();
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "Box" => Ok(ExportVariableKind::Box),
+            "Text" => Ok(ExportVariableKind::Text),
+            "Button" => Ok(ExportVariableKind::Button),
+            "Input" => Ok(ExportVariableKind::Input),
+            "Flex" => Ok(ExportVariableKind::Flex),
+            "VStack" => Ok(ExportVariableKind::VStack),
+            "Center" => Ok(ExportVariableKind::Center),
+            "css" => Ok(ExportVariableKind::Css),
+            _ => Err(()),
         }
     }
 }

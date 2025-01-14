@@ -135,6 +135,7 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExtractStyleValue {
     Static(ExtractStaticStyle),
+    Typography(String),
     Dynamic(ExtractDynamicStyle),
     Css(ExtractCss),
 }
@@ -145,6 +146,9 @@ impl ExtractStyleValue {
             ExtractStyleValue::Static(style) => style.extract(),
             ExtractStyleValue::Dynamic(style) => style.extract(),
             ExtractStyleValue::Css(css) => css.extract(),
+            ExtractStyleValue::Typography(typo) => {
+                StyleProperty::ClassName(format!("typo-{}", typo))
+            }
         }
     }
 }
@@ -725,6 +729,21 @@ mod tests {
             "test.tsx",
             r#"import {Box} from '@devup-ui/core'
         <Box color="$nice" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn apply_typography() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography="bold" />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

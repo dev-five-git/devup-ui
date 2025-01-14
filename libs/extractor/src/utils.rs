@@ -7,3 +7,16 @@ pub fn convert_value(value: &str) -> String {
     }
     value
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_value() {
+        assert_eq!(convert_value("1px"), "1px");
+        assert_eq!(convert_value("1%"), "1%");
+        assert_eq!(convert_value("foo"), "foo");
+        assert_eq!(convert_value("4"), "16px");
+    }
+}

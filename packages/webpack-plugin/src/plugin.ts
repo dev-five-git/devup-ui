@@ -1,13 +1,21 @@
-import { existsSync, readFileSync, stat, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  stat,
+  writeFileSync,
+} from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { getCss, registerTheme } from '@devup-ui/wasm'
+import { getCss, getThemeInterface, registerTheme } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
   cssFile: string
   devupPath: string
+  interfacePath: string
 }
 
 export class DevupUIWebpackPlugin {
@@ -23,31 +31,51 @@ export class DevupUIWebpackPlugin {
         inputOptions.cssFile ||
         fileURLToPath(import.meta.resolve('./devup-ui.css')),
       devupPath: inputOptions.devupPath ?? 'devup.json',
+      interfacePath: inputOptions.interfacePath ?? '.df',
     }
+  }
+
+  writeDataFiles() {
+    registerTheme(
+      JSON.parse(readFileSync(this.options.devupPath, 'utf-8'))?.['theme'],
+    )
+    const interfaceCode = getThemeInterface(
+      this.options.package,
+      'DevupThemeColors',
+      'DevupThemeTypography',
+    )
+    if (interfaceCode) {
+      if (!existsSync(this.options.interfacePath))
+        mkdirSync(this.options.interfacePath)
+      writeFileSync(
+        join(this.options.interfacePath, 'theme.d.ts'),
+        interfaceCode,
+        {
+          encoding: 'utf-8',
+        },
+      )
+    }
+    writeFileSync(this.options.cssFile, getCss(), {
+      encoding: 'utf-8',
+    })
   }
 
   apply(compiler: Compiler) {
     // read devup.json
     if (existsSync(this.options.devupPath)) {
       try {
-        const devupTheme = JSON.parse(
-          readFileSync(this.options.devupPath, 'utf-8'),
-        )?.['theme']
-        registerTheme(devupTheme)
+        this.writeDataFiles()
       } catch (error) {
         console.error(error)
       }
 
       let lastModifiedTime: number | null = null
 
-      compiler.hooks.afterCompile.tap(
-        'ReloadCssOnDevupChangePlugin',
-        (compilation) => {
-          compilation.fileDependencies.add(this.options.devupPath)
-        },
-      )
+      compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
+        compilation.fileDependencies.add(this.options.devupPath)
+      })
       compiler.hooks.watchRun.tapAsync(
-        'ReloadCssOnDevupChangePlugin',
+        'DevupUIWebpackPlugin',
         (_, callback) => {
           stat(this.options.devupPath, (err, stats) => {
             if (err) {
@@ -57,14 +85,7 @@ export class DevupUIWebpackPlugin {
 
             const modifiedTime = stats.mtimeMs
             if (lastModifiedTime && lastModifiedTime !== modifiedTime) {
-              registerTheme(
-                JSON.parse(readFileSync(this.options.devupPath, 'utf-8'))?.[
-                  'theme'
-                ],
-              )
-              writeFileSync(this.options.cssFile, getCss(), {
-                encoding: 'utf-8',
-              })
+              this.writeDataFiles()
             }
 
             lastModifiedTime = modifiedTime

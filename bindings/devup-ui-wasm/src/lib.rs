@@ -1,8 +1,9 @@
 use extractor::{extract, ExtractOption, ExtractStyleValue, StyleProperty};
 use js_sys::{Object, Reflect};
 use once_cell::sync::Lazy;
-use sheet::theme::{ColorTheme, Theme};
+use sheet::theme::{ColorTheme, Theme, Typography};
 use sheet::StyleSheet;
+use std::collections::HashSet;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
@@ -69,6 +70,7 @@ impl Output {
                         collected = true;
                     }
                 }
+                ExtractStyleValue::Typography(_) => {}
             }
         }
         if !collected {
@@ -104,10 +106,31 @@ pub fn code_extract(
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
 }
+fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValue> {
+    Ok(Typography::new(
+        Reflect::get(&obj, &JsValue::from_str("fontFamily"))?
+            .as_string()
+            .unwrap(),
+        Reflect::get(&obj, &JsValue::from_str("fontSize"))?
+            .as_string()
+            .unwrap(),
+        Reflect::get(&obj, &JsValue::from_str("fontWeight"))?
+            .as_string()
+            .unwrap(),
+        Reflect::get(&obj, &JsValue::from_str("lineHeight"))?
+            .as_string()
+            .unwrap(),
+        Reflect::get(&obj, &JsValue::from_str("letterSpacing"))?
+            .as_string()
+            .unwrap(),
+        level,
+    ))
+}
+
 fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
     let mut theme = Theme::new();
 
-    if let Some(obj) = js_value.dyn_into::<Object>().ok() {
+    if let Ok(obj) = js_value.dyn_into::<Object>() {
         // get colors
         if let Some(colors_obj) = Reflect::get(&obj, &JsValue::from_str("colors"))
             .ok()
@@ -143,6 +166,38 @@ fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
                 }
             }
         }
+
+        if let Some(typography_obj) = Reflect::get(&obj, &JsValue::from_str("typography"))
+            .ok()
+            .and_then(|v| v.dyn_into::<Object>().ok())
+        {
+            for entry in Object::entries(&typography_obj).into_iter() {
+                if let (Ok(key), Ok(value)) = (
+                    Reflect::get(&entry, &JsValue::from_f64(0f64)),
+                    Reflect::get(&entry, &JsValue::from_f64(1f64)),
+                ) {
+                    if let (Some(key_str), Some(typo_value)) =
+                        (key.as_string(), value.dyn_into::<Object>().ok())
+                    {
+                        let mut typo_vec = vec![];
+                        if typo_value.is_array() {
+                            if let Ok(typo_arr) = typo_value.dyn_into::<js_sys::Array>() {
+                                for i in 0..typo_arr.length() {
+                                    if let Ok(typo_obj) = typo_arr.get(i).dyn_into::<Object>() {
+                                        typo_vec.push(object_to_typography(typo_obj, i as u8)?);
+                                    }
+                                }
+                            }
+                        } else if typo_value.is_object() && !typo_value.is_null() {
+                            if let Ok(typo_obj) = typo_value.dyn_into::<Object>() {
+                                typo_vec.push(object_to_typography(typo_obj, 0)?);
+                            }
+                        }
+                        theme.typography.insert(key_str, typo_vec);
+                    }
+                }
+            }
+        }
     } else {
         return Err(JsValue::from_str(
             "Failed to convert the provided object to a hashmap",
@@ -161,6 +216,47 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 
 #[wasm_bindgen(js_name = "getCss")]
 pub fn get_css() -> Result<String, JsValue> {
-    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
     Ok(sheet.create_css())
+}
+
+#[wasm_bindgen(js_name = "getThemeInterface")]
+pub fn get_theme_interface(
+    package_name: &str,
+    color_interface_name: &str,
+    typography_interface_name: &str,
+) -> Result<String, JsValue> {
+    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    let mut color_keys = HashSet::new();
+    let mut typography_keys = HashSet::new();
+    for color_theme in sheet.theme.colors.themes.values() {
+        color_theme.keys().for_each(|key| {
+            color_keys.insert(key.clone());
+        });
+    }
+    sheet.theme.typography.keys().for_each(|key| {
+        typography_keys.insert(key.clone());
+    });
+
+    if color_keys.is_empty() && typography_keys.is_empty() {
+        Ok("".to_string())
+    } else {
+        Ok(format!(
+            "import \"{}\";declare module \"{}\"{{interface {} {{{}}}interface {} {{{}}}}}",
+            package_name,
+            package_name,
+            color_interface_name,
+            color_keys
+                .into_iter()
+                .map(|key| format!("${}:null;", key))
+                .collect::<Vec<String>>()
+                .join(""),
+            typography_interface_name,
+            typography_keys
+                .into_iter()
+                .map(|key| format!("{}:null;", key))
+                .collect::<Vec<String>>()
+                .join("")
+        ))
+    }
 }

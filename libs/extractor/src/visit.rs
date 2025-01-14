@@ -124,6 +124,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         {
                             continue;
                         }
+                        if name == "typography" {
+                            if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
+                                props_styles.push(ExtractStyleProp::Static(
+                                    ExtractStyleValue::Typography(ident.value.to_string()),
+                                ));
+                            }
+                            attrs.remove(i);
+                            continue;
+                        }
                         if name == "as" {
                             if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
                                 tag_name = ident.value.to_string();
@@ -180,10 +189,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         if let Some(specifiers) = &it.specifiers {
             for specifier in specifiers {
                 if let ImportSpecifier(import) = specifier {
-                    self.imports.insert(
-                        import.local.to_string(),
-                        ExportVariableKind::from(import.imported.to_string()),
-                    );
+                    if let Ok(kind) = ExportVariableKind::try_from(import.imported.to_string()) {
+                        self.imports.insert(import.local.to_string(), kind);
+                    }
                 }
             }
         }

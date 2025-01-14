@@ -9,14 +9,20 @@ export default function HomePage() {
 
   return (
     <div>
-      <p>Track & field champions:</p>
+      <p
+        style={{
+          backgroundColor: 'blue',
+        }}
+      >
+        Track & field champions:
+      </p>
       <Box
         _hover={{
-          bg: ['yellow', 'red'],
+          bg: 'yellow',
           cursor: 'cell',
         }}
-        as="span"
-        bg="blue"
+        as="section"
+        bg="$text"
         color={color}
         cursor="pointer"
         data-testid="box"
@@ -24,28 +30,17 @@ export default function HomePage() {
         position="relative"
         py="28px"
       >
-        <Box
-          _lastChild={{
-            color: 'purple',
-          }}
-        >
-          hello
-        </Box>
-        <Box
-          _lastChild={{
-            color: 'purple',
-          }}
-        >
-          hello
-        </Box>
+        <Box>hello</Box>
+        <Box>hello</Box>
       </Box>
       <Text
         className={css`
           background: red;
           color: blue;
         `}
+        typography="bold"
       >
-        text
+        text typo
       </Text>
       <Text color="$text">text</Text>
       <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">

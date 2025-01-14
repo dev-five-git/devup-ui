@@ -14,4 +14,3 @@ css = { path = "../css" }
 
 [dev-dependencies]
 insta = "1.42.0"
-cargo-insta = "1.42.0"
