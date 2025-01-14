@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.1
+
+### Patch Changes
+
+- 1f1340b: Fix resolve type
+
 ## 0.1.0
 
 ### Minor Changes
