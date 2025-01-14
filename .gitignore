@@ -3,3 +3,5 @@ build
 dist
 node_modules
 target
+*.*.timestamp-*
+coverage

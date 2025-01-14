@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/wasm",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "keywords": [
     "react",
     "css-in-js",
@@ -9,7 +9,10 @@
     "design-system"
   ],
   "files": [
-    "pkg"
+    "pkg/index.d.ts",
+    "pkg/index.js",
+    "pkg/index_bg.wasm",
+    "pkg/index_bg.wasm.d.ts"
   ],
   "type": "module",
   "exports": {

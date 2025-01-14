@@ -253,7 +253,7 @@ mod tests {
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
-        <Box padding={1} margin={2} wrong={} />
+        <Box padding={1} margin={2} wrong={} wrong2=<></> />
         ",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -266,6 +266,41 @@ mod tests {
             r"import {Box as C} from '@devup-ui/core'
                 <C padding={1} margin={2} />
                 ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Input} from '@devup-ui/core'
+        <Input padding={1} margin={2} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Button} from '@devup-ui/core'
+        <Button padding={1} margin={2} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Flex} from '@devup-ui/core'
+        <Flex padding={1} margin={2} />
+        ",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
                 css_file: None
@@ -780,5 +815,19 @@ mod tests {
             .to_string(),
             "Parser panicked"
         );
+    }
+
+    #[test]
+    fn import_wrong_component() {
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {W} from '@devup-ui/core'
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 }

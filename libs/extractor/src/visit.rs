@@ -101,7 +101,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
-            let mut tag_name = kind.to_tag();
+            let mut tag_name = kind.to_tag().ok().unwrap_or("div");
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
@@ -135,7 +135,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         if name == "as" {
                             if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
-                                tag_name = ident.value.to_string();
+                                tag_name = ident.value.as_str()
                             }
                             attrs.remove(i);
                             continue;

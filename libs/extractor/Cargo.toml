@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-oxc_parser = "0.45.0"
-oxc_syntax = "0.45.0"
-oxc_span = "0.45.0"
-oxc_allocator = "0.45.0"
-oxc_ast = "0.45.0"
-oxc_codegen = "0.45.0"
+oxc_parser = "0.46.0"
+oxc_syntax = "0.46.0"
+oxc_span = "0.46.0"
+oxc_allocator = "0.46.0"
+oxc_ast = "0.46.0"
+oxc_codegen = "0.46.0"
 css = { path = "../css" }
 
 [dev-dependencies]

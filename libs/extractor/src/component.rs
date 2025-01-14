@@ -2,7 +2,7 @@ use crate::ExtractStyleValue::Static;
 use crate::{ExtractStaticStyle, ExtractStyleValue};
 
 /// devup-ui export variable kind
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -16,18 +16,17 @@ pub enum ExportVariableKind {
 
 impl ExportVariableKind {
     /// Convert the kind to a tag
-    pub fn to_tag(&self) -> String {
+    pub fn to_tag(&self) -> Result<&str, &str> {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack
             | ExportVariableKind::Flex
-            | ExportVariableKind::Box => "div",
-            ExportVariableKind::Text => "span",
-            ExportVariableKind::Button => "button",
-            ExportVariableKind::Input => "input",
-            ExportVariableKind::Css => unreachable!(),
+            | ExportVariableKind::Box => Ok("div"),
+            ExportVariableKind::Text => Ok("span"),
+            ExportVariableKind::Button => Ok("button"),
+            ExportVariableKind::Input => Ok("input"),
+            ExportVariableKind::Css => Err("Css does not have a tag"),
         }
-        .to_string()
     }
 }
 
@@ -102,5 +101,117 @@ impl TryFrom<String> for ExportVariableKind {
             "css" => Ok(ExportVariableKind::Css),
             _ => Err(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kind_from_export_variable() {
+        assert_eq!(
+            ExportVariableKind::try_from("Box".to_string()),
+            Ok(ExportVariableKind::Box)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Text".to_string()),
+            Ok(ExportVariableKind::Text)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Button".to_string()),
+            Ok(ExportVariableKind::Button)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Input".to_string()),
+            Ok(ExportVariableKind::Input)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Flex".to_string()),
+            Ok(ExportVariableKind::Flex)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("VStack".to_string()),
+            Ok(ExportVariableKind::VStack)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Center".to_string()),
+            Ok(ExportVariableKind::Center)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("css".to_string()),
+            Ok(ExportVariableKind::Css)
+        );
+        assert!(ExportVariableKind::try_from("foo".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_to_tag() {
+        assert_eq!(ExportVariableKind::Box.to_tag(), Ok("div"));
+        assert_eq!(ExportVariableKind::Text.to_tag(), Ok("span"));
+        assert_eq!(ExportVariableKind::Button.to_tag(), Ok("button"));
+        assert_eq!(ExportVariableKind::Input.to_tag(), Ok("input"));
+        assert_eq!(ExportVariableKind::Flex.to_tag(), Ok("div"));
+        assert_eq!(ExportVariableKind::VStack.to_tag(), Ok("div"));
+        assert_eq!(ExportVariableKind::Center.to_tag(), Ok("div"));
+        assert!(ExportVariableKind::Css.to_tag().is_err());
+    }
+
+    #[test]
+    fn test_extract_style_from_kind() {
+        assert_eq!(ExportVariableKind::Box.extract(), vec![]);
+        assert_eq!(ExportVariableKind::Text.extract(), vec![]);
+        assert_eq!(ExportVariableKind::Button.extract(), vec![]);
+        assert_eq!(ExportVariableKind::Input.extract(), vec![]);
+        assert_eq!(
+            ExportVariableKind::Flex.extract(),
+            vec![Static(ExtractStaticStyle {
+                value: "flex".to_string(),
+                property: "display".to_string(),
+                level: 0,
+                selector: None,
+            })]
+        );
+        assert_eq!(
+            ExportVariableKind::VStack.extract(),
+            vec![
+                Static(ExtractStaticStyle {
+                    value: "flex".to_string(),
+                    property: "display".to_string(),
+                    level: 0,
+                    selector: None,
+                }),
+                Static(ExtractStaticStyle {
+                    value: "column".to_string(),
+                    property: "flexDirection".to_string(),
+                    level: 0,
+                    selector: None,
+                })
+            ]
+        );
+        assert_eq!(
+            ExportVariableKind::Center.extract(),
+            vec![
+                Static(ExtractStaticStyle {
+                    value: "flex".to_string(),
+                    property: "display".to_string(),
+                    level: 0,
+                    selector: None,
+                }),
+                Static(ExtractStaticStyle {
+                    value: "center".to_string(),
+                    property: "justifyContent".to_string(),
+                    level: 0,
+                    selector: None,
+                }),
+                Static(ExtractStaticStyle {
+                    value: "center".to_string(),
+                    property: "alignItems".to_string(),
+                    level: 0,
+                    selector: None,
+                })
+            ]
+        );
+        assert_eq!(ExportVariableKind::Css.extract(), vec![]);
     }
 }

@@ -17,8 +17,7 @@ pub fn modify_props<'a>(
     let mut style_prop = None;
 
     for idx in 0..props.len() {
-        let prop = &props[idx];
-        if let Attribute(attr) = prop {
+        if let Attribute(attr) = &props[idx] {
             if let Identifier(ident) = &attr.name {
                 if ident.name == "className" {
                     if let Attribute(attr) = props.remove(idx) {

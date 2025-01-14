@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hasher};
 use std::sync::Mutex;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PropertyType {
     Single(String),
     Multi(Vec<String>),
@@ -11,7 +11,7 @@ pub enum PropertyType {
 
 impl From<&str> for PropertyType {
     fn from(value: &str) -> Self {
-        PropertyType::Single(value.to_string())
+        value.to_string().into()
     }
 }
 
@@ -103,4 +103,242 @@ pub fn sheet_to_variable_name(property: &str, level: u8) -> String {
     let mut hasher = DefaultHasher::new();
     hasher.write(format!("{}-{}", property, level).as_bytes());
     format!("--d{}", hasher.finish())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sheet_to_variable_name() {
+        let mut hasher = DefaultHasher::new();
+        hasher.write(format!("{}-{}", "color", 0).as_bytes());
+        assert_eq!(
+            sheet_to_variable_name("color", 0),
+            format!("--d{}", hasher.finish())
+        );
+    }
+
+    #[test]
+    fn test_sheet_to_classname() {
+        let mut hasher = DefaultHasher::new();
+        hasher.write(format!("{}-{}-{}", "color", 0, "red").as_bytes());
+        assert_eq!(
+            sheet_to_classname("color", 0, Some("red")),
+            format!("d{}", hasher.finish())
+        );
+    }
+
+    #[test]
+    fn test_convert_property() {
+        assert_eq!(
+            convert_property("bg"),
+            PropertyType::Single("background".to_string())
+        );
+        assert_eq!(
+            convert_property("bgColor"),
+            PropertyType::Single("background-color".to_string())
+        );
+        assert_eq!(
+            convert_property("color"),
+            PropertyType::Single("color".to_string())
+        );
+        assert_eq!(
+            convert_property("m"),
+            PropertyType::Single("margin".to_string())
+        );
+        assert_eq!(
+            convert_property("mt"),
+            PropertyType::Single("margin-top".to_string())
+        );
+        assert_eq!(
+            convert_property("mr"),
+            PropertyType::Single("margin-right".to_string())
+        );
+        assert_eq!(
+            convert_property("mb"),
+            PropertyType::Single("margin-bottom".to_string())
+        );
+        assert_eq!(
+            convert_property("ml"),
+            PropertyType::Single("margin-left".to_string())
+        );
+        assert_eq!(
+            convert_property("p"),
+            PropertyType::Single("padding".to_string())
+        );
+        assert_eq!(
+            convert_property("pt"),
+            PropertyType::Single("padding-top".to_string())
+        );
+        assert_eq!(
+            convert_property("pr"),
+            PropertyType::Single("padding-right".to_string())
+        );
+        assert_eq!(
+            convert_property("pb"),
+            PropertyType::Single("padding-bottom".to_string())
+        );
+        assert_eq!(
+            convert_property("pl"),
+            PropertyType::Single("padding-left".to_string())
+        );
+        assert_eq!(
+            convert_property("w"),
+            PropertyType::Single("width".to_string())
+        );
+        assert_eq!(
+            convert_property("h"),
+            PropertyType::Single("height".to_string())
+        );
+        assert_eq!(
+            convert_property("minW"),
+            PropertyType::Single("min-width".to_string())
+        );
+        assert_eq!(
+            convert_property("minH"),
+            PropertyType::Single("min-height".to_string())
+        );
+        assert_eq!(
+            convert_property("maxW"),
+            PropertyType::Single("max-width".to_string())
+        );
+        assert_eq!(
+            convert_property("maxH"),
+            PropertyType::Single("max-height".to_string())
+        );
+        assert_eq!(
+            convert_property("mx"),
+            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
+        );
+        assert_eq!(
+            convert_property("my"),
+            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
+        );
+        assert_eq!(
+            convert_property("px"),
+            PropertyType::Multi(vec![
+                "padding-left".to_string(),
+                "padding-right".to_string()
+            ])
+        );
+        assert_eq!(
+            convert_property("py"),
+            PropertyType::Multi(vec![
+                "padding-top".to_string(),
+                "padding-bottom".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_property_type_from() {
+        assert_eq!(
+            PropertyType::from("background"),
+            PropertyType::Single("background".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("background-color"),
+            PropertyType::Single("background-color".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("color"),
+            PropertyType::Single("color".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("margin"),
+            PropertyType::Single("margin".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("margin-top"),
+            PropertyType::Single("margin-top".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("margin-right"),
+            PropertyType::Single("margin-right".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("margin-bottom"),
+            PropertyType::Single("margin-bottom".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("margin-left"),
+            PropertyType::Single("margin-left".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("padding"),
+            PropertyType::Single("padding".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("padding-top"),
+            PropertyType::Single("padding-top".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("padding-right"),
+            PropertyType::Single("padding-right".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("padding-bottom"),
+            PropertyType::Single("padding-bottom".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("padding-left"),
+            PropertyType::Single("padding-left".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("width"),
+            PropertyType::Single("width".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("height"),
+            PropertyType::Single("height".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("min-width"),
+            PropertyType::Single("min-width".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("min-height"),
+            PropertyType::Single("min-height".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("max-width"),
+            PropertyType::Single("max-width".to_string())
+        );
+        assert_eq!(
+            PropertyType::from("max-height"),
+            PropertyType::Single("max-height".to_string())
+        );
+        assert_eq!(
+            PropertyType::from(["margin-left", "margin-right"]),
+            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
+        );
+        assert_eq!(
+            PropertyType::from(["margin-top", "margin-bottom"]),
+            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_kebab_case() {
+        assert_eq!(to_kebab_case("backgroundColor"), "background-color");
+        assert_eq!(to_kebab_case("color"), "color");
+        assert_eq!(to_kebab_case("margin"), "margin");
+        assert_eq!(to_kebab_case("marginTop"), "margin-top");
+        assert_eq!(to_kebab_case("marginRight"), "margin-right");
+        assert_eq!(to_kebab_case("marginBottom"), "margin-bottom");
+        assert_eq!(to_kebab_case("marginLeft"), "margin-left");
+        assert_eq!(to_kebab_case("padding"), "padding");
+        assert_eq!(to_kebab_case("paddingTop"), "padding-top");
+        assert_eq!(to_kebab_case("paddingRight"), "padding-right");
+        assert_eq!(to_kebab_case("paddingBottom"), "padding-bottom");
+        assert_eq!(to_kebab_case("paddingLeft"), "padding-left");
+        assert_eq!(to_kebab_case("width"), "width");
+        assert_eq!(to_kebab_case("height"), "height");
+        assert_eq!(to_kebab_case("minWidth"), "min-width");
+        assert_eq!(to_kebab_case("minHeight"), "min-height");
+        assert_eq!(to_kebab_case("maxWidth"), "max-width");
+        assert_eq!(to_kebab_case("maxHeight"), "max-height");
+        assert_eq!(to_kebab_case("MaxHeight"), "max-height");
+    }
 }

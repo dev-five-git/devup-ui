@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/react",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "type": "module",
   "dependencies": {
     "react": "^19.0",

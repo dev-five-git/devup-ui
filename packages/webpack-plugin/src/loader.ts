@@ -3,18 +3,18 @@ import { writeFileSync } from 'node:fs'
 import { codeExtract } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-interface DevupUiLoaderOptions {
+export interface DevupUILoaderOptions {
   package: string
   cssFile: string
 }
 
-const devupUILoader: RawLoaderDefinitionFunction<DevupUiLoaderOptions> =
+const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
     const { package: libPackage, cssFile } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
     if (
-      id.includes('/node_modules/') ||
+      id.includes('node_modules/') ||
       id.includes('@devup-ui/react') ||
       !/\.[tj](s|sx)?$/.test(id)
     ) {

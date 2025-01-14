@@ -200,3 +200,42 @@ impl Theme {
         self.colors.get_theme(name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_css_from_theme() {
+        let mut theme = Theme::new();
+        let mut color_theme = ColorTheme::new();
+        color_theme.add_color("primary".to_string(), "#000".to_string());
+        theme.add_color_theme("default".to_string(), color_theme);
+        theme.add_typography(
+            "default".to_string(),
+            vec![
+                Typography::new(
+                    "Arial".to_string(),
+                    "16px".to_string(),
+                    "400".to_string(),
+                    "1.5".to_string(),
+                    "0.5".to_string(),
+                    0,
+                ),
+                Typography::new(
+                    "Arial".to_string(),
+                    "24px".to_string(),
+                    "400".to_string(),
+                    "1.5".to_string(),
+                    "0.5".to_string(),
+                    1,
+                ),
+            ],
+        );
+        let css = theme.to_css();
+        assert_eq!(
+            css,
+            ":root{--primary:#000;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
+        );
+    }
+}

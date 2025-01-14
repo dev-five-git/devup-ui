@@ -4,16 +4,16 @@
   "type": "module",
   "scripts": {
     "lint": "pnpm -r lint",
-    "test": "cargo tarpaulin && vitest test",
+    "test": "cargo tarpaulin && vitest test --coverage --run",
     "build": "pnpm -r build",
     "dev": "pnpm -r dev"
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.1",
     "eslint": "^9.18.0",
-    "nx": "^20.3.0",
     "vitest": "^2.1.8",
-    "@vitest/coverage-v8": "^2.1.8"
+    "@vitest/coverage-v8": "^2.1.8",
+    "@changesets/cli": "^2.27.11"
   },
   "author": "devfive",
   "packageManager": "pnpm@9.15.3"

@@ -1,9 +1,9 @@
 {
   "name": "@devup-ui/webpack-plugin",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "dependencies": {
-    "webpack": "^5.97.1",
+    "webpack": "^5.97",
     "@devup-ui/wasm": "workspace:*"
   },
   "exports": {

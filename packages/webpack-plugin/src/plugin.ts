@@ -5,11 +5,14 @@ import {
   stat,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { getCss, getThemeInterface, registerTheme } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
+
+const _filename = fileURLToPath(import.meta.url)
+const _dirname = dirname(_filename)
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -21,17 +24,17 @@ export interface DevupUIWebpackPluginOptions {
 export class DevupUIWebpackPlugin {
   options: DevupUIWebpackPluginOptions
 
-  constructor(options: Partial<DevupUIWebpackPluginOptions>) {
-    const inputOptions = options || {}
-    const libPackage = inputOptions.package || '@devup-ui/react'
-
+  constructor({
+    package: libPackage = '@devup-ui/react',
+    cssFile = join(_dirname, 'devup-ui.css'),
+    devupPath = 'devup.json',
+    interfacePath = '.df',
+  }: Partial<DevupUIWebpackPluginOptions>) {
     this.options = {
       package: libPackage,
-      cssFile:
-        inputOptions.cssFile ||
-        fileURLToPath(import.meta.resolve('./devup-ui.css')),
-      devupPath: inputOptions.devupPath ?? 'devup.json',
-      interfacePath: inputOptions.interfacePath ?? '.df',
+      cssFile,
+      devupPath,
+      interfacePath,
     }
   }
 
@@ -95,15 +98,15 @@ export class DevupUIWebpackPlugin {
       )
     }
     // Create an empty CSS file
-    if (!existsSync(this.options.cssFile))
+    if (!existsSync(this.options.cssFile)) {
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
-    compiler.options.experiments.asyncWebAssembly = true
+    }
     compiler.options.module.rules.push({
       test: /\.(tsx|ts|js|mjs|jsx)$/,
       exclude: /node_modules/,
       use: [
         {
-          loader: fileURLToPath(import.meta.resolve('./loader')),
+          loader: join(_dirname, 'loader.js'),
           options: {
             package: this.options.package,
             cssFile: this.options.cssFile,
