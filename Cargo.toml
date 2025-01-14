@@ -1,3 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["libs/extractor", "bindings/devup-ui-wasm", "libs/sheet", "libs/css"]
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

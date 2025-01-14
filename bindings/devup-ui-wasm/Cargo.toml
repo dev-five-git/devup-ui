@@ -2,7 +2,7 @@
 name = "devup-ui-wasm"
 version = "0.1.0"
 authors = ["owjs3901 <owjs3901@naver.com>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -26,6 +26,3 @@ js-sys = "0.3.76"
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
 
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
