@@ -21,5 +21,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={a === b ? \"d6186180367078841290\" : \"d1044305882111332400\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={a === b ? \"d14718123859853665643\" : \"d15680784530335274378\"} />;\n",
 }

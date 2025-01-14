@@ -91,6 +91,11 @@ impl ExtractStyleProperty for ExtractStaticStyle {
             self.property.as_str(),
             self.level,
             Some(convert_value(self.value.as_str()).as_str()),
+            if let Some(selector) = &self.selector {
+                Some(selector.as_str())
+            } else {
+                None
+            },
         ))
     }
 }
@@ -125,8 +130,25 @@ pub struct ExtractDynamicStyle {
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self) -> StyleProperty {
         StyleProperty::Variable {
-            class_name: sheet_to_classname(self.property.as_str(), self.level, None),
-            variable_name: sheet_to_variable_name(self.property.as_str(), self.level),
+            class_name: sheet_to_classname(
+                self.property.as_str(),
+                self.level,
+                None,
+                if let Some(selector) = &self.selector {
+                    Some(selector.as_str())
+                } else {
+                    None
+                },
+            ),
+            variable_name: sheet_to_variable_name(
+                self.property.as_str(),
+                self.level,
+                if let Some(selector) = &self.selector {
+                    Some(selector.as_str())
+                } else {
+                    None
+                },
+            ),
             identifier: self.identifier.clone(),
         }
     }

@@ -13,5 +13,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div ref={ref} data-test={1} role={2} children={[]} onClick={() => {}} aria-valuenow={24} key={2} className=\"d13564892828075531325\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div ref={ref} data-test={1} role={2} children={[]} onClick={() => {}} aria-valuenow={24} key={2} className=\"d14330397360050164060\" />;\n",
 }

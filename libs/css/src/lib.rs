@@ -93,15 +93,29 @@ pub fn convert_property(property: &str) -> PropertyType {
         .unwrap_or_else(|| to_kebab_case(property).into())
 }
 
-pub fn sheet_to_classname(property: &str, level: u8, value: Option<&str>) -> String {
+pub fn sheet_to_classname(
+    property: &str,
+    level: u8,
+    value: Option<&str>,
+    selector: Option<&str>,
+) -> String {
     let mut hasher = DefaultHasher::new();
-    hasher.write(format!("{}-{}-{}", property, level, value.unwrap_or("")).as_bytes());
+    hasher.write(
+        format!(
+            "{}-{}-{}-{}",
+            property,
+            level,
+            value.unwrap_or(""),
+            selector.unwrap_or("")
+        )
+        .as_bytes(),
+    );
     format!("d{}", hasher.finish())
 }
 
-pub fn sheet_to_variable_name(property: &str, level: u8) -> String {
+pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     let mut hasher = DefaultHasher::new();
-    hasher.write(format!("{}-{}", property, level).as_bytes());
+    hasher.write(format!("{}-{}-{}", property, level, selector.unwrap_or("")).as_bytes());
     format!("--d{}", hasher.finish())
 }
 
@@ -112,9 +126,9 @@ mod tests {
     #[test]
     fn test_sheet_to_variable_name() {
         let mut hasher = DefaultHasher::new();
-        hasher.write(format!("{}-{}", "color", 0).as_bytes());
+        hasher.write(format!("{}-{}-{}", "color", 0, "").as_bytes());
         assert_eq!(
-            sheet_to_variable_name("color", 0),
+            sheet_to_variable_name("color", 0, None),
             format!("--d{}", hasher.finish())
         );
     }
@@ -122,10 +136,15 @@ mod tests {
     #[test]
     fn test_sheet_to_classname() {
         let mut hasher = DefaultHasher::new();
-        hasher.write(format!("{}-{}-{}", "color", 0, "red").as_bytes());
+        hasher.write(format!("{}-{}-{}-{}", "color", 0, "red", "").as_bytes());
         assert_eq!(
-            sheet_to_classname("color", 0, Some("red")),
+            sheet_to_classname("color", 0, Some("red"), None),
             format!("d{}", hasher.finish())
+        );
+
+        assert_ne!(
+            sheet_to_classname("color", 0, Some("red"), None),
+            sheet_to_classname("color", 0, Some("red"), Some(":hover")),
         );
     }
 

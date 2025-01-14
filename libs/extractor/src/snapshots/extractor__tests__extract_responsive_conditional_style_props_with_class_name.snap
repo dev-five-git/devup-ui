@@ -29,5 +29,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={`exists ${a === b ? q > w ? \"d14510378607275106202\" : \"d10901344257048489196\" : \"d10070419513062272579\"}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={`exists ${a === b ? q > w ? \"d16099640469738164034\" : \"d5377394017476416093\" : \"d2237786094991016968\"}`} />;\n",
 }

@@ -21,5 +21,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box as C } from \"@devup-ui/core\";\n<div className=\"exists class name d13564892828075531325 d7164797882338261018\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box as C } from \"@devup-ui/core\";\n<div className=\"exists class name d14330397360050164060 d5274499629582391758\" />;\n",
 }

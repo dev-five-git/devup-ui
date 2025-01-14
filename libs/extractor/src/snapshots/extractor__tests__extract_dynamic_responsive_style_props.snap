@@ -29,5 +29,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d169756389412877303 d14370488508125317966 d13045603108234987884\" style={{\n\t\"--d13910714689067654253\": someStyleVar1,\n\t\"--d15617356007119957826\": someStyleVar,\n\t\"--d12438662493683969042\": someStyleVar2\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d950431837697362493 d3948398971488474326 d5985969837765369532\" style={{\n\t\"--d14370488508125317966\": someStyleVar1,\n\t\"--d169756389412877303\": someStyleVar,\n\t\"--d13045603108234987884\": someStyleVar2\n}} />;\n",
 }
