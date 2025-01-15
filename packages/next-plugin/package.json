@@ -7,7 +7,6 @@
     "next": "^15.1"
   },
   "scripts": {
-    "test:s": "vitest run -u",
     "lint": "eslint",
     "build": "tsc && vite build"
   },
