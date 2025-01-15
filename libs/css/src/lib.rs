@@ -138,8 +138,10 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_sheet_to_variable_name() {
         reset_class_map();
         assert_eq!(sheet_to_variable_name("background", 0, None), "--d0");
@@ -155,6 +157,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_sheet_to_classname() {
         reset_class_map();
         assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
