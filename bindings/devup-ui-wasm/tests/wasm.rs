@@ -3,8 +3,8 @@ use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
+#[allow(dead_code)]
 #[wasm_bindgen_test]
-#[warn(dead_code)]
 fn test_object_to_typography() {
     let obj = Object::new();
     Reflect::set(
