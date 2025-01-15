@@ -190,6 +190,14 @@ describe('devupUIPlugin', () => {
           rules: [],
         },
       },
+      hooks: {
+        afterCompile: {
+          tap: vi.fn(),
+        },
+        watchRun: {
+          tapAsync: vi.fn(),
+        },
+      },
     } as any)
 
     expect(writeFileSync).toHaveBeenCalledWith('css', '', {

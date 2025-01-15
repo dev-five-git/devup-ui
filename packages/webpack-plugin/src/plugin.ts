@@ -67,39 +67,38 @@ export class DevupUIWebpackPlugin {
 
   apply(compiler: Compiler) {
     // read devup.json
-    if (existsSync(this.options.devupPath)) {
+    const existsDevup = existsSync(this.options.devupPath)
+    if (existsDevup) {
       try {
         this.writeDataFiles()
       } catch (error) {
         console.error(error)
       }
 
-      let lastModifiedTime: number | null = null
-
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
         compilation.fileDependencies.add(this.options.devupPath)
-        this.watch = true
       })
-      compiler.hooks.watchRun.tapAsync(
-        'DevupUIWebpackPlugin',
-        (_, callback) => {
-          stat(this.options.devupPath, (err, stats) => {
-            if (err) {
-              console.error(`Error checking ${this.options.devupPath}:`, err)
-              return callback()
-            }
-
-            const modifiedTime = stats.mtimeMs
-            if (lastModifiedTime && lastModifiedTime !== modifiedTime) {
-              this.writeDataFiles()
-            }
-
-            lastModifiedTime = modifiedTime
-            callback()
-          })
-        },
-      )
     }
+
+    let lastModifiedTime: number | null = null
+    compiler.hooks.watchRun.tapAsync('DevupUIWebpackPlugin', (_, callback) => {
+      this.watch = true
+      if (existsDevup)
+        stat(this.options.devupPath, (err, stats) => {
+          if (err) {
+            console.error(`Error checking ${this.options.devupPath}:`, err)
+            return callback()
+          }
+
+          const modifiedTime = stats.mtimeMs
+          if (lastModifiedTime && lastModifiedTime !== modifiedTime) {
+            this.writeDataFiles()
+          }
+
+          lastModifiedTime = modifiedTime
+          callback()
+        })
+    })
     // Create an empty CSS file
     if (!existsSync(this.options.cssFile)) {
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
