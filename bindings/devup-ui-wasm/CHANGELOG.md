@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.2
+
+### Patch Changes
+
+- 6100644: Add Image component
+
 ## 0.1.1
 
 ### Patch Changes
