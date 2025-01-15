@@ -141,27 +141,32 @@ mod tests {
 
     #[test]
     fn test_sheet_to_variable_name() {
-        // let mut hasher = DefaultHasher::new();
-        // hasher.write(format!("{}-{}-{}", "color", 0, "").as_bytes());
-        // assert_eq!(
-        //     sheet_to_variable_name("color", 0, None),
-        //     format!("--d{}", hasher.finish())
-        // );
+        reset_class_map();
+        assert_eq!(sheet_to_variable_name("background", 0, None), "--d0");
+        assert_eq!(
+            sheet_to_variable_name("background", 0, Some("hover")),
+            "--d1"
+        );
+        assert_eq!(sheet_to_variable_name("background", 1, None), "--d2");
+        assert_eq!(
+            sheet_to_variable_name("background", 1, Some("hover")),
+            "--d3"
+        );
     }
 
     #[test]
     fn test_sheet_to_classname() {
-        // let mut hasher = DefaultHasher::new();
-        // hasher.write(format!("{}-{}-{}-{}", "color", 0, "red", "").as_bytes());
-        // assert_eq!(
-        //     sheet_to_classname("color", 0, Some("red"), None),
-        //     format!("d{}", hasher.finish())
-        // );
-        //
-        // assert_ne!(
-        //     sheet_to_classname("color", 0, Some("red"), None),
-        //     sheet_to_classname("color", 0, Some("red"), Some(":hover")),
-        // );
+        reset_class_map();
+        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("hover"), None),
+            "d1"
+        );
+        assert_eq!(sheet_to_classname("background", 1, None, None), "d2");
+        assert_eq!(
+            sheet_to_classname("background", 1, Some("hover"), None),
+            "d3"
+        );
     }
 
     #[test]
