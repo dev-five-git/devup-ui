@@ -1,0 +1,25 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import {Image} from '@devup-ui/core'\n        <Image\n          className={styles.logo}\n          src=\"/next.svg\"\n          alt=\"Next.js logo\"\n          width={180}\n          height={38}\n        />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "720px",
+                level: 0,
+                selector: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "152px",
+                level: 0,
+                selector: None,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<img src=\"/next.svg\" alt=\"Next.js logo\" className={`d0 d1 ${styles.logo}`} />;\n",
+}

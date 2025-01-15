@@ -124,7 +124,7 @@ pub fn modify_props<'a>(
     let mut class_name_prop = None;
     let mut style_prop = None;
 
-    for idx in 0..props.len() {
+    for idx in (0..props.len()).rev() {
         if let Attribute(attr) = &props[idx] {
             if let Identifier(ident) = &attr.name {
                 if ident.name == "className" {
