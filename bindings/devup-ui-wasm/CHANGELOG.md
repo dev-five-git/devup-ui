@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.3
+
+### Patch Changes
+
+- f7484c5: Support transpiled code
+
 ## 0.1.2
 
 ### Patch Changes
