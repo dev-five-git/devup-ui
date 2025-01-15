@@ -9,6 +9,7 @@ vi.mock('node:fs')
 
 beforeEach(() => {
   vi.resetAllMocks()
+  Date.now = vi.fn().mockReturnValue(0)
 })
 
 describe('devupUILoader', () => {
