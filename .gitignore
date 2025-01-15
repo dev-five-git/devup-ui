@@ -7,3 +7,4 @@ target
 coverage
 .df
 build_rs_cov.profraw
+tsconfig.tsbuildinfo

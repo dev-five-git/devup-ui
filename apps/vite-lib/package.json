@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "build": "vite build",
-    "lint": "tsc && vite lint"
+    "lint": "tsc && eslint"
   },
   "dependencies": {
     "react": "^19.0.0",

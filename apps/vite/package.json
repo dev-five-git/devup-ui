@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "start": "vite start",
-    "lint": "tsc && vite lint"
+    "lint": "tsc && eslint"
   },
   "dependencies": {
     "react": "^19.0.0",
