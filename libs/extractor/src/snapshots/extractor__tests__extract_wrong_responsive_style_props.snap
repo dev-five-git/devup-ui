@@ -4,5 +4,5 @@ expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\
 ---
 ExtractOutput {
     styles: [],
-    code: "import { Box } from \"@devup-ui/core\";\n<div padding={[\n\tNaN,\n\tundefined,\n\tnull\n]} margin={Infinity} />;\n",
+    code: "<div padding={[\n\tNaN,\n\tundefined,\n\tnull\n]} margin={Infinity} />;\n",
 }

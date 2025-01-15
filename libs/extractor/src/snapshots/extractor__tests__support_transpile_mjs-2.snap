@@ -1,0 +1,54 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nimport { Box as o, Text as t, Flex as i } from \"@devup-ui/react\";\nfunction c() {\n  return /* @__PURE__ */ r(\"div\", { children: [\n    /* @__PURE__ */ e(\n      o,\n      {\n        _hover: {\n          bg: \"blue\"\n        },\n        bg: \"$text\",\n        color: \"red\",\n        children: \"hello\"\n      }\n    ),\n    /* @__PURE__ */ e(t, { typography: \"header\", children: \"typo\" }),\n    /* @__PURE__ */ e(i, { as: \"section\", mt: 2, children: \"section\" })\n  ] });\n}\nexport {\n  c as Lib\n};\"#,\nExtractOption\n{ package: \"@devup-ui/react\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "bg",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    "hover",
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "bg",
+                value: "$text",
+                level: 0,
+                selector: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+            },
+        ),
+        Typography(
+            "header",
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mt",
+                value: "8px",
+                level: 0,
+                selector: None,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn /* @__PURE__ */ r(\"div\", { children: [\n\t\t/* @__PURE__ */ e(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"d0 d1 d2\"\n\t\t}),\n\t\t/* @__PURE__ */ e(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\t/* @__PURE__ */ e(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d3 d4\"\n\t\t})\n\t] });\n}\nexport { c as Lib };\n",
+}

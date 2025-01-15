@@ -13,5 +13,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d1419212369670126212\" style={{\n\t...styles,\n\t\"--d13763791968754421226\": a\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0\" style={{\n\t...styles,\n\t\"--d1\": a\n}} />;\n",
 }

@@ -8,5 +8,5 @@ ExtractOutput {
             "bold",
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Text } from \"@devup-ui/core\";\n<span className=\"typo-bold\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<span className=\"typo-bold\" />;\n",
 }

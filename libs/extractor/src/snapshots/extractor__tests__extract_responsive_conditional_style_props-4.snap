@@ -53,5 +53,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={a === b ? \"d1419212369670126212\" : `d1419212369670126212 d5985969837765369532 d1806729971406960556 ${x === y ? \"d5413557018108826155\" : \"d180773457934325170\"}`} style={{\n\t\"--d13045603108234987884\": e,\n\t\"--d13763791968754421226\": a === b ? c : d,\n\t\"--d4236033944996935783\": f\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"d0\" : `d0 d2 d4 ${x === y ? \"d6\" : \"d7\"}`} style={{\n\t\"--d1\": a === b ? c : d,\n\t\"--d3\": e,\n\t\"--d5\": f\n}} />;\n",
 }

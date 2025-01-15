@@ -1,7 +1,7 @@
 mod component;
 mod gen_class_name;
 mod gen_style;
-mod media_prop_extract_utils;
+mod object_prop_extract_utils;
 mod prop_extract_utils;
 mod prop_modify_utils;
 mod utils;
@@ -231,11 +231,13 @@ pub fn extract(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use css::reset_class_map;
     use insta::assert_debug_snapshot;
     use std::hash::{DefaultHasher, Hasher};
 
     #[test]
     fn extract_just_tsx() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             "const a = 1;",
@@ -246,6 +248,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             "<Box gap={1} />",
@@ -258,6 +261,7 @@ mod tests {
     }
     #[test]
     fn ignore_special_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
@@ -272,6 +276,7 @@ mod tests {
     }
     #[test]
     fn extract_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
@@ -283,6 +288,7 @@ mod tests {
             }
         )
         .unwrap());
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box as C} from '@devup-ui/core'
@@ -294,6 +300,7 @@ mod tests {
             }
         )
         .unwrap());
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Input} from '@devup-ui/core'
@@ -306,6 +313,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Button} from '@devup-ui/core'
@@ -318,6 +326,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Flex} from '@devup-ui/core'
@@ -333,6 +342,7 @@ mod tests {
 
     #[test]
     fn extract_style_props_with_class_name() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box as C} from '@devup-ui/core'
@@ -345,6 +355,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box as C} from '@devup-ui/core'
@@ -357,6 +368,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box as C} from '@devup-ui/core'
@@ -369,6 +381,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box as C} from '@devup-ui/core'
@@ -380,6 +393,7 @@ mod tests {
             }
         )
         .unwrap());
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box as C} from '@devup-ui/core'
@@ -395,6 +409,7 @@ mod tests {
 
     #[test]
     fn extract_class_name_from_component() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {VStack as C} from '@devup-ui/core'
@@ -409,6 +424,7 @@ mod tests {
     }
     #[test]
     fn extract_responsive_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -424,6 +440,7 @@ mod tests {
 
     #[test]
     fn extract_dynamic_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -439,6 +456,7 @@ mod tests {
 
     #[test]
     fn extract_dynamic_responsive_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -454,6 +472,7 @@ mod tests {
 
     #[test]
     fn extract_compound_responsive_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -469,6 +488,7 @@ mod tests {
 
     #[test]
     fn extract_wrong_responsive_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -484,6 +504,7 @@ mod tests {
 
     #[test]
     fn extract_variable_style_props_with_style() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -496,6 +517,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -511,6 +533,7 @@ mod tests {
 
     #[test]
     fn extract_conditional_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -523,6 +546,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -535,6 +559,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -550,6 +575,7 @@ mod tests {
 
     #[test]
     fn extract_responsive_conditional_style_props() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -562,6 +588,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -574,6 +601,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -586,6 +614,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -598,6 +627,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -610,6 +640,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -621,6 +652,7 @@ mod tests {
             }
         )
         .unwrap());
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -633,6 +665,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -648,6 +681,7 @@ mod tests {
 
     #[test]
     fn extract_logical_case() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -660,6 +694,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -672,6 +707,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -686,6 +722,7 @@ mod tests {
     }
     #[test]
     fn extract_responsive_conditional_style_props_with_class_name() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -698,6 +735,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
@@ -713,6 +751,7 @@ mod tests {
 
     #[test]
     fn extract_selector() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
@@ -730,6 +769,7 @@ mod tests {
 
     #[test]
     fn extract_selector_with_responsive() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
@@ -744,6 +784,7 @@ mod tests {
         )
         .unwrap());
 
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
@@ -765,6 +806,7 @@ mod tests {
     fn extract_static_css_class_name_props() {
         let mut hasher = DefaultHasher::new();
         hasher.write("background-color: red;".as_bytes());
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import { css } from "@devup-ui/core";
@@ -782,6 +824,7 @@ mod tests {
 
     #[test]
     fn extract_static_css_with_theme() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Box} from '@devup-ui/core'
@@ -797,6 +840,7 @@ mod tests {
 
     #[test]
     fn apply_typography() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {Text} from '@devup-ui/core'
@@ -812,6 +856,7 @@ mod tests {
 
     #[test]
     fn raise_error() {
+        reset_class_map();
         assert!(extract(
             "test.wrong",
             "const a = 1;",
@@ -824,6 +869,7 @@ mod tests {
         .to_string()
         .starts_with("Unknown file extension"));
 
+        reset_class_map();
         assert_eq!(
             extract(
                 "test.tsx",
@@ -841,12 +887,116 @@ mod tests {
 
     #[test]
     fn import_wrong_component() {
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",
             r#"import {W} from '@devup-ui/core'
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn support_transpile_mjs() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.mjs",
+            r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
+import { Box as o, Text as t, Flex as i } from "@devup-ui/react";
+function c() {
+  return /* @__PURE__ */ r("div", { children: [
+    /* @__PURE__ */ e(
+      o,
+      {
+        _hover: {
+          bg: "blue"
+        },
+        bg: "$text",
+        color: "red",
+        children: "hello"
+      }
+    ),
+    /* @__PURE__ */ e(t, { typography: "header", children: "typo" }),
+    /* @__PURE__ */ e(i, { as: "section", mt: 2, children: "section" })
+  ] });
+}
+export {
+  c as Lib
+};"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
+import { Box as o, Text as t, Flex as i } from "@devup-ui/react";
+function c() {
+  return /* @__PURE__ */ r("div", { children: [
+    /* @__PURE__ */ e(
+      o,
+      {
+        _hover: {
+          bg: "blue"
+        },
+        bg: "$text",
+        color: "red",
+        children: "hello"
+      }
+    ),
+    /* @__PURE__ */ e(t, { typography: "header", children: "typo" }),
+    /* @__PURE__ */ e(i, { as: "section", mt: 2, children: "section" })
+  ] });
+}
+export {
+  c as Lib
+};"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn support_transpile_cjs() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.cjs",
+            r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.cjs",
+            r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
                 css_file: None
             }
         )
