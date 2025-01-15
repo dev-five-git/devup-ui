@@ -8,3 +8,6 @@ coverage
 .df
 build_rs_cov.profraw
 tsconfig.tsbuildinfo
+codecov
+codecov.*
+codecov.*.*
