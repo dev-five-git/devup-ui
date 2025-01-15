@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.4
+
+### Patch Changes
+
+- 19def1c: Fix watch logic
+
 ## 0.1.3
 
 ### Patch Changes
