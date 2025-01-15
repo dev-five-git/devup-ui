@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.3
+
+### Patch Changes
+
+- 6100644: Fix hot reload issue
+- Updated dependencies [6100644]
+  - @devup-ui/wasm@0.1.2
+
 ## 0.1.2
 
 ### Patch Changes
