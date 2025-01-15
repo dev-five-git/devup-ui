@@ -37,6 +37,10 @@ jobs:
           pnpm build
           pnpm lint
           pnpm test
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: true
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
