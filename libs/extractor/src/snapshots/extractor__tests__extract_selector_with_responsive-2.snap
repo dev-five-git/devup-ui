@@ -25,5 +25,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className=\"d3690027075391628683 d17052209072689135970\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1\" />;\n",
 }

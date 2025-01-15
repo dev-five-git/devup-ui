@@ -1,0 +1,26 @@
+{
+  "name": "vite-example",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "vite start",
+    "lint": "tsc && eslint"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@devup-ui/react": "workspace:*"
+  },
+  "devDependencies": {
+    "@devup-ui/vite-plugin": "workspace:*",
+    "vite": "^6.0.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
+  }
+}

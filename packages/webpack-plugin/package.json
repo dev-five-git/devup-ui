@@ -2,8 +2,11 @@
   "name": "@devup-ui/webpack-plugin",
   "type": "module",
   "version": "0.1.4",
+  "scripts": {
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
   "dependencies": {
-    "webpack": "^5.97",
     "@devup-ui/wasm": "workspace:*"
   },
   "exports": {
@@ -20,18 +23,11 @@
     "dist"
   ],
   "types": "./dist/index.d.ts",
-  "scripts": {
-    "lint": "eslint",
-    "build": "tsc && vite build"
-  },
   "devDependencies": {
     "vite": "^6.0.7",
     "@types/webpack": "^5.28.5",
     "vite-plugin-dts": "^4.4.0",
     "vitest": "^2.1.8",
     "typescript": "^5.7.2"
-  },
-  "peerDependencies": {
-    "webpack": "*"
   }
 }

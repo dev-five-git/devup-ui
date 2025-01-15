@@ -87,7 +87,7 @@ export class DevupUIWebpackPlugin {
         stat(this.options.devupPath, (err, stats) => {
           if (err) {
             console.error(`Error checking ${this.options.devupPath}:`, err)
-            return callback()
+            return
           }
 
           const modifiedTime = stats.mtimeMs
@@ -96,8 +96,8 @@ export class DevupUIWebpackPlugin {
           }
 
           lastModifiedTime = modifiedTime
-          callback()
         })
+      callback()
     })
     // Create an empty CSS file
     if (!existsSync(this.options.cssFile)) {

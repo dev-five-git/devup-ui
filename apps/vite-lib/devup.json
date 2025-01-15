@@ -1,0 +1,40 @@
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "text": "purple"
+      },
+      "dark": {
+        "text": "#fff"
+      }
+    },
+    "typography": {
+      "bold": {
+        "fontFamily": "Freesentation",
+        "fontSize": "14px",
+        "fontWeight": "800",
+        "lineHeight": "120%",
+        "letterSpacing": "-0.28px"
+      },
+      "header": [
+        {
+          "fontFamily": "Freesentation",
+          "fontSize": "12px",
+          "fontWeight": "600",
+          "lineHeight": "120%",
+          "letterSpacing": "-0.24px"
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Freesentation",
+          "fontSize": "16px",
+          "fontWeight": "600",
+          "lineHeight": "120%",
+          "letterSpacing": "-0.32px"
+        }
+      ]
+    }
+  }
+}

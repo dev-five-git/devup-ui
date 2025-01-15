@@ -1,0 +1,29 @@
+{
+  "name": "@devup-ui/vite-plugin",
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@devup-ui/wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "vite-plugin-dts": "^4.5.0",
+    "typescript": "^5.7.2"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "peerDependencies": {
+    "vite": "*"
+  }
+}

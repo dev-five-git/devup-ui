@@ -13,5 +13,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Box } from \"@devup-ui/core\";\n<div className={a !== null && a !== undefined ? \"\" : \"d3428046182687620383\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a !== null && a !== undefined ? \"\" : \"d0\"} />;\n",
 }

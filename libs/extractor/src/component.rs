@@ -2,7 +2,7 @@ use crate::ExtractStyleValue::Static;
 use crate::{ExtractStaticStyle, ExtractStyleValue};
 
 /// devup-ui export variable kind
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -12,7 +12,6 @@ pub enum ExportVariableKind {
     VStack,
     Center,
     Image,
-    Css,
 }
 
 impl ExportVariableKind {
@@ -27,7 +26,6 @@ impl ExportVariableKind {
             ExportVariableKind::Image => Ok("img"),
             ExportVariableKind::Button => Ok("button"),
             ExportVariableKind::Input => Ok("input"),
-            ExportVariableKind::Css => Err("Css does not have a tag"),
         }
     }
 }
@@ -37,7 +35,6 @@ impl ExportVariableKind {
         match self {
             ExportVariableKind::Input
             | ExportVariableKind::Button
-            | ExportVariableKind::Css
             | ExportVariableKind::Text
             | ExportVariableKind::Image
             | ExportVariableKind::Box => vec![],
@@ -102,7 +99,6 @@ impl TryFrom<String> for ExportVariableKind {
             "Flex" => Ok(ExportVariableKind::Flex),
             "VStack" => Ok(ExportVariableKind::VStack),
             "Center" => Ok(ExportVariableKind::Center),
-            "css" => Ok(ExportVariableKind::Css),
             _ => Err(()),
         }
     }
@@ -146,10 +142,7 @@ mod tests {
             ExportVariableKind::try_from("Center".to_string()),
             Ok(ExportVariableKind::Center)
         );
-        assert_eq!(
-            ExportVariableKind::try_from("css".to_string()),
-            Ok(ExportVariableKind::Css)
-        );
+        assert!(ExportVariableKind::try_from("css".to_string()).is_err());
         assert!(ExportVariableKind::try_from("foo".to_string()).is_err());
     }
 
@@ -163,7 +156,6 @@ mod tests {
         assert_eq!(ExportVariableKind::Flex.to_tag(), Ok("div"));
         assert_eq!(ExportVariableKind::VStack.to_tag(), Ok("div"));
         assert_eq!(ExportVariableKind::Center.to_tag(), Ok("div"));
-        assert!(ExportVariableKind::Css.to_tag().is_err());
     }
 
     #[test]
@@ -222,6 +214,5 @@ mod tests {
                 })
             ]
         );
-        assert_eq!(ExportVariableKind::Css.extract(), vec![]);
     }
 }

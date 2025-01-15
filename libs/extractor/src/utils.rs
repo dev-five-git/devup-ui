@@ -8,6 +8,20 @@ pub fn convert_value(value: &str) -> String {
     value
 }
 
+pub fn is_special_property(name: &str) -> bool {
+    name == "style"
+        || name == "className"
+        || name.starts_with("on")
+        || name.starts_with("data-")
+        || name.starts_with("aria-")
+        || name == "role"
+        || name == "ref"
+        || name == "key"
+        || name == "alt"
+        || name == "src"
+        || name == "children"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

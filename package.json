@@ -18,5 +18,8 @@
     "@changesets/cli": "^2.27.11"
   },
   "author": "devfive",
-  "packageManager": "pnpm@9.15.3"
+  "packageManager": "pnpm@9.15.3",
+  "resolutions": {
+    "vite": "^6"
+  }
 }
