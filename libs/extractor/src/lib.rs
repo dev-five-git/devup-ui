@@ -233,9 +233,11 @@ mod tests {
     use super::*;
     use css::reset_class_map;
     use insta::assert_debug_snapshot;
+    use serial_test::serial;
     use std::hash::{DefaultHasher, Hasher};
 
     #[test]
+    #[serial]
     fn extract_just_tsx() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -260,6 +262,7 @@ mod tests {
         .unwrap());
     }
     #[test]
+    #[serial]
     fn ignore_special_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -275,6 +278,7 @@ mod tests {
         .unwrap());
     }
     #[test]
+    #[serial]
     fn extract_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -341,6 +345,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_style_props_with_class_name() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -408,6 +413,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_class_name_from_component() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -423,6 +429,7 @@ mod tests {
         .unwrap(),);
     }
     #[test]
+    #[serial]
     fn extract_responsive_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -439,6 +446,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_dynamic_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -455,6 +463,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_dynamic_responsive_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -471,6 +480,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_compound_responsive_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -487,6 +497,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_wrong_responsive_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -503,6 +514,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_variable_style_props_with_style() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -532,6 +544,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_conditional_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -574,6 +587,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_responsive_conditional_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -680,6 +694,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_logical_case() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -721,6 +736,7 @@ mod tests {
         .unwrap());
     }
     #[test]
+    #[serial]
     fn extract_responsive_conditional_style_props_with_class_name() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -750,6 +766,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_selector() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -768,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_selector_with_responsive() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -803,6 +821,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_static_css_class_name_props() {
         let mut hasher = DefaultHasher::new();
         hasher.write("background-color: red;".as_bytes());
@@ -823,6 +842,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn extract_static_css_with_theme() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -839,6 +859,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn apply_typography() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -855,6 +876,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn raise_error() {
         reset_class_map();
         assert!(extract(
@@ -886,6 +908,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn import_wrong_component() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -901,6 +924,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn support_transpile_mjs() {
         reset_class_map();
         assert_debug_snapshot!(extract(
@@ -968,6 +992,7 @@ export {
     }
 
     #[test]
+    #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
         assert_debug_snapshot!(extract(
