@@ -11,6 +11,7 @@ pub enum ExportVariableKind {
     Flex,
     VStack,
     Center,
+    Image,
     Css,
 }
 
@@ -23,6 +24,7 @@ impl ExportVariableKind {
             | ExportVariableKind::Flex
             | ExportVariableKind::Box => Ok("div"),
             ExportVariableKind::Text => Ok("span"),
+            ExportVariableKind::Image => Ok("img"),
             ExportVariableKind::Button => Ok("button"),
             ExportVariableKind::Input => Ok("input"),
             ExportVariableKind::Css => Err("Css does not have a tag"),
@@ -37,6 +39,7 @@ impl ExportVariableKind {
             | ExportVariableKind::Button
             | ExportVariableKind::Css
             | ExportVariableKind::Text
+            | ExportVariableKind::Image
             | ExportVariableKind::Box => vec![],
             ExportVariableKind::Flex => vec![Static(ExtractStaticStyle {
                 value: "flex".to_string(),
@@ -93,6 +96,7 @@ impl TryFrom<String> for ExportVariableKind {
         match value.as_str() {
             "Box" => Ok(ExportVariableKind::Box),
             "Text" => Ok(ExportVariableKind::Text),
+            "Image" => Ok(ExportVariableKind::Image),
             "Button" => Ok(ExportVariableKind::Button),
             "Input" => Ok(ExportVariableKind::Input),
             "Flex" => Ok(ExportVariableKind::Flex),
@@ -117,6 +121,10 @@ mod tests {
         assert_eq!(
             ExportVariableKind::try_from("Text".to_string()),
             Ok(ExportVariableKind::Text)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Image".to_string()),
+            Ok(ExportVariableKind::Image)
         );
         assert_eq!(
             ExportVariableKind::try_from("Button".to_string()),
@@ -149,6 +157,7 @@ mod tests {
     fn test_to_tag() {
         assert_eq!(ExportVariableKind::Box.to_tag(), Ok("div"));
         assert_eq!(ExportVariableKind::Text.to_tag(), Ok("span"));
+        assert_eq!(ExportVariableKind::Image.to_tag(), Ok("img"));
         assert_eq!(ExportVariableKind::Button.to_tag(), Ok("button"));
         assert_eq!(ExportVariableKind::Input.to_tag(), Ok("input"));
         assert_eq!(ExportVariableKind::Flex.to_tag(), Ok("div"));
@@ -161,6 +170,7 @@ mod tests {
     fn test_extract_style_from_kind() {
         assert_eq!(ExportVariableKind::Box.extract(), vec![]);
         assert_eq!(ExportVariableKind::Text.extract(), vec![]);
+        assert_eq!(ExportVariableKind::Image.extract(), vec![]);
         assert_eq!(ExportVariableKind::Button.extract(), vec![]);
         assert_eq!(ExportVariableKind::Input.extract(), vec![]);
         assert_eq!(

@@ -3,14 +3,16 @@ import { writeFileSync } from 'node:fs'
 import { codeExtract } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
+import { type DevupUIWebpackPlugin } from './plugin'
+
 export interface DevupUILoaderOptions {
-  package: string
-  cssFile: string
+  plugin: DevupUIWebpackPlugin
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
-    const { package: libPackage, cssFile } = this.getOptions()
+    const { plugin } = this.getOptions()
+    const { package: libPackage, cssFile } = plugin.options
     const callback = this.async()
     const id = this.resourcePath
     if (
@@ -26,7 +28,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         this.resourcePath,
         source.toString(),
         libPackage,
-        cssFile,
+        cssFile + (plugin.watch ? '?' + Date.now() : ''),
       )
       if (css) {
         // should be reset css

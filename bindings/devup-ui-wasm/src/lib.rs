@@ -106,7 +106,7 @@ pub fn code_extract(
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
 }
-fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValue> {
+pub fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValue> {
     Ok(Typography::new(
         Reflect::get(&obj, &JsValue::from_str("fontFamily"))?
             .as_string()

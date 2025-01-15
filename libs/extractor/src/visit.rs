@@ -120,6 +120,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             || name == "role"
                             || name == "ref"
                             || name == "key"
+                            || name == "alt"
+                            || name == "src"
                             || name == "children"
                         {
                             continue;

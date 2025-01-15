@@ -1,7 +1,7 @@
 import type { DevupProps } from '../types/props'
 import type { Merge } from '../types/utils'
 
-export function Input<T extends React.ElementType = 'input'>(
+export function Image<T extends React.ElementType = 'img'>(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   props: Merge<React.ComponentProps<T>, DevupProps>,
 ): React.ReactElement {

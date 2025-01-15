@@ -43,6 +43,7 @@ jobs:
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
       - name: Create Release Pull Request or Publish to npm
         id: changesets
