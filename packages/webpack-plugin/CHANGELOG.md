@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.5
+
+### Patch Changes
+
+- f7484c5: Fix watch mode issue
+- Updated dependencies [f7484c5]
+  - @devup-ui/wasm@0.1.3
+
 ## 0.1.4
 
 ### Patch Changes
