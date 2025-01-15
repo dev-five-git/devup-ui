@@ -9,6 +9,7 @@ describe('export', () => {
       Input: expect.any(Function),
       Text: expect.any(Function),
       VStack: expect.any(Function),
+      Image: expect.any(Function),
 
       css: expect.any(Function),
     })

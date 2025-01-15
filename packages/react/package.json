@@ -7,8 +7,6 @@
     "csstype": "^3.1"
   },
   "scripts": {
-    "test": "vitest run --coverage",
-    "test:s": "vitest run -u",
     "lint": "eslint",
     "build": "vite build"
   },

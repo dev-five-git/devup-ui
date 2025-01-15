@@ -24,6 +24,7 @@ export interface DevupUIWebpackPluginOptions {
 
 export class DevupUIWebpackPlugin {
   options: DevupUIWebpackPluginOptions
+  watch = false
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -77,6 +78,7 @@ export class DevupUIWebpackPlugin {
 
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
         compilation.fileDependencies.add(this.options.devupPath)
+        this.watch = true
       })
       compiler.hooks.watchRun.tapAsync(
         'DevupUIWebpackPlugin',
@@ -111,8 +113,7 @@ export class DevupUIWebpackPlugin {
             '@devup-ui/webpack-plugin/loader',
           ),
           options: {
-            package: this.options.package,
-            cssFile: this.options.cssFile,
+            plugin: this,
           },
         },
       ],
