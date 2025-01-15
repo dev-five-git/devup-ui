@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.4
+
+### Patch Changes
+
+- 2d7f28c: Change order to remove attr
+
 ## 0.1.3
 
 ### Patch Changes
