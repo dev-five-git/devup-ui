@@ -25,6 +25,6 @@
   "types": "./pkg/index.d.ts",
   "scripts": {
     "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index",
-    "test": "cargo test"
+    "test": "wasm-pack test --node"
   }
 }
