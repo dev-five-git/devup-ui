@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.5
+
+### Patch Changes
+
+- b9b94c5: Add grid, minify css
+- 242a6c2: Update package
+
 ## 0.1.4
 
 ### Patch Changes

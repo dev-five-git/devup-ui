@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.2
+
+### Patch Changes
+
+- 242a6c2: Update package
+
 ## 0.1.1
 
 ### Patch Changes
