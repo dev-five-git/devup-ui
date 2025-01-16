@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.12
+
+### Patch Changes
+
+- 0de6892: Fix collecting css
+- Updated dependencies [0de6892]
+  - @devup-ui/wasm@0.1.10
+
 ## 0.1.11
 
 ### Patch Changes
