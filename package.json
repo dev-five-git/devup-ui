@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "pnpm -r lint",
     "test": "cargo tarpaulin && vitest test --coverage --run && pnpm -r test",
-    "build": "pnpm -F @devup-ui/* build",
+    "build": "pnpm build",
     "dev": "pnpm -r dev",
     "benchmark": "node benchmark.js"
   },
