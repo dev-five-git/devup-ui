@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.4
+
+### Patch Changes
+
+- 7bde1f2: Add boxSizing prop
+
 ## 0.1.3
 
 ### Patch Changes
