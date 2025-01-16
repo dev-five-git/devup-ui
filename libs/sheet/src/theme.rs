@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub struct ColorTheme {
     data: HashMap<String, String>,
@@ -71,15 +71,15 @@ impl Color {
             .map(Some)
             .unwrap_or_else(|| self.themes.keys().next());
         if let Some(default_theme_key) = default_theme_key {
-            for (theme_name, theme_properties) in self.themes.iter() {
+            let mut entries: Vec<_> = self.themes.iter().collect();
+            entries.sort_by_key(|(k, _)| *k);
+            entries.reverse();
+            for (theme_name, theme_properties) in entries {
                 let theme_key = if *theme_name == *default_theme_key {
                     None
                 } else {
                     Some(theme_name)
                 };
-                if theme_properties.is_empty() {
-                    continue;
-                }
                 if let Some(theme_key) = theme_key {
                     theme_declaration
                         .push_str(format!(":root[data-theme={}]{{", theme_key).as_str());
@@ -127,7 +127,7 @@ impl Typography {
 pub struct Theme {
     pub colors: Color,
     pub break_points: Vec<u16>,
-    pub typography: HashMap<String, Vec<Typography>>,
+    pub typography: BTreeMap<String, Vec<Typography>>,
 }
 
 impl Default for Theme {
@@ -141,7 +141,7 @@ impl Theme {
         Self {
             colors: Color::new(),
             break_points: vec![0, 480, 768, 992, 1280],
-            typography: HashMap::new(),
+            typography: BTreeMap::new(),
         }
     }
 
@@ -166,6 +166,7 @@ impl Theme {
 
     pub fn to_css(&self) -> String {
         let mut css = self.colors.to_css();
+        let mut level_map = BTreeMap::<u8, Vec<String>>::new();
         for ty in self.typography.iter() {
             for t in ty.1.iter() {
                 let css_content = format!(
@@ -195,17 +196,24 @@ impl Theme {
                     continue;
                 }
                 let typo_css = format!(".typo-{}{{{}}}", ty.0, css_content);
-
-                if t.level == 0 {
-                    css.push_str(typo_css.as_str());
-                } else {
-                    let media = self
-                        .break_points
-                        .get(t.level as usize)
-                        .map(|v| format!("(min-width:{}px)", v));
-                    if let Some(media) = media {
-                        css.push_str(format!("\n@media {}{{{}}}", media, typo_css).as_str());
-                    }
+                level_map
+                    .get_mut(&t.level)
+                    .map(|v| v.push(typo_css.clone()))
+                    .unwrap_or_else(|| {
+                        level_map.insert(t.level, vec![typo_css.clone()]);
+                    });
+            }
+        }
+        for (level, css_vec) in level_map {
+            if level == 0 {
+                css.push_str(css_vec.join("").as_str());
+            } else {
+                let media = self
+                    .break_points
+                    .get(level as usize)
+                    .map(|v| format!("(min-width:{}px)", v));
+                if let Some(media) = media {
+                    css.push_str(format!("\n@media {}{{{}}}", media, css_vec.join("")).as_str());
                 }
             }
         }
@@ -227,6 +235,9 @@ mod tests {
         let mut color_theme = ColorTheme::new();
         color_theme.add_color("primary".to_string(), "#000".to_string());
         theme.add_color_theme("default".to_string(), color_theme);
+        let mut color_theme = ColorTheme::new();
+        color_theme.add_color("primary".to_string(), "#fff".to_string());
+        theme.add_color_theme("dark".to_string(), color_theme);
         theme.add_typography(
             "default".to_string(),
             vec![
@@ -248,10 +259,22 @@ mod tests {
                 ),
             ],
         );
+
+        theme.add_typography(
+            "default1".to_string(),
+            vec![Typography::new(
+                Some("Arial".to_string()),
+                Some("24px".to_string()),
+                Some("400".to_string()),
+                Some("1.5".to_string()),
+                Some("0.5".to_string()),
+                1,
+            )],
+        );
         let css = theme.to_css();
         assert_eq!(
             css,
-            ":root{--primary:#000;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
+            ":root{--primary:#000;}\n:root[data-theme=dark]{--primary:#fff;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
         );
     }
 }

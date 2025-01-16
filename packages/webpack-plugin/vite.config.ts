@@ -57,6 +57,7 @@ export default defineConfig({
       entry: {
         index: 'src/index.ts',
         loader: 'src/loader.ts',
+        ['css-loader']: 'src/css-loader.ts',
       },
     },
     outDir: 'dist',
