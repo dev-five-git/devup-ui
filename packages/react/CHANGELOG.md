@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.5
+
+### Patch Changes
+
+- e9d655f: Add shorthand
+
 ## 0.1.4
 
 ### Patch Changes
