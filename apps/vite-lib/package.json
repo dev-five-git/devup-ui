@@ -17,7 +17,7 @@
     "@devup-ui/vite-plugin": "workspace:*",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19"
   }
 }

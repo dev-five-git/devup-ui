@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -19,7 +19,7 @@
     "@devup-ui/next-plugin": "^0.1.7",
     "@devup-ui/wasm": "^0.1.5",
     "typescript": "^5",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19"
   }

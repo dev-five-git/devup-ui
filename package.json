@@ -20,7 +20,7 @@
     "@types/node": "^22.10.7"
   },
   "author": "devfive",
-  "packageManager": "pnpm@9.15.3",
+  "packageManager": "pnpm@9.15.4",
   "resolutions": {
     "vite": "^6"
   }
