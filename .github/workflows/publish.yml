@@ -7,10 +7,7 @@ on:
   pull_request:
     branches:
       - main
-permissions:
-  pages: write
-  id-token: write
-  contents: write
+permissions: write-all
 
 jobs:
   publish:
