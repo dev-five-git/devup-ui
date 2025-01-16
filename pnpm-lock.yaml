@@ -166,8 +166,8 @@ importers:
   benchmark/next-devup-ui:
     dependencies:
       '@devup-ui/react':
-        specifier: ^0.1.2
-        version: 0.1.2(csstype@3.1.3)(react@19.0.0)
+        specifier: workspace:*
+        version: link:../../packages/react
       next:
         specifier: ^15.1.4
         version: 15.1.4(@babel/core@7.26.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -179,8 +179,8 @@ importers:
         version: 19.0.0(react@19.0.0)
     devDependencies:
       '@devup-ui/next-plugin':
-        specifier: ^0.1.7
-        version: 0.1.7(next@15.1.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))
+        specifier: workspace:*
+        version: link:../../packages/next-plugin
       '@types/node':
         specifier: ^22
         version: 22.10.7
@@ -939,23 +939,6 @@ packages:
 
   '@changesets/write@0.3.2':
     resolution: {integrity: sha512-kDxDrPNpUgsjDbWBvUo27PzKX4gqeKOlhibaOXDJA6kuBisGqNHv/HwGJrAu8U/dSf8ZEFIeHIPtvSlZI1kULw==}
-
-  '@devup-ui/next-plugin@0.1.7':
-    resolution: {integrity: sha512-sx6xsljQSItOT96kvwMIgQqoFG9pyF8m6rCW33bKAsT8rKJqg+gxt+GVWf4ufOIK4LWqVVgxoQ1e/2SlorAbAw==}
-    peerDependencies:
-      next: '*'
-
-  '@devup-ui/react@0.1.2':
-    resolution: {integrity: sha512-UhV/rSXNFGUqdzdnogJ4UD7421HGp+BbiztuMuprlZzLpT3sfU4YEAMJOK8a7mYJhCDykPDxC9+pfGAAz5v7kg==}
-    peerDependencies:
-      csstype: '*'
-      react: '*'
-
-  '@devup-ui/wasm@0.1.5':
-    resolution: {integrity: sha512-0HaCPBw6rUW9RomCoTTQNuHj1LEqk4pPsJ67b1lQumK2vcWnxtLtbFNZF6GKmGZ3HCwD9hfM40YoHXAJUA81cQ==}
-
-  '@devup-ui/webpack-plugin@0.1.7':
-    resolution: {integrity: sha512-xhcZtt5nlmeY7N7Y0Yokw1NJxWKWBarMf0oefOA5aZkBmqCQG7gm/LTr1nAmwy3bVZ0MBShub3vzKsHt3okMuA==}
 
   '@emnapi/runtime@1.3.1':
     resolution: {integrity: sha512-kEBmG8KyqtxJZv+ygbEim+KCGtIq1fC22Ms3S4ziXmYKm8uyoLX0MHONVKwp+9opg390VaKRNt4a7A9NwmpNhw==}
@@ -5079,22 +5062,6 @@ snapshots:
       fs-extra: 7.0.1
       human-id: 1.0.2
       prettier: 2.8.8
-
-  '@devup-ui/next-plugin@0.1.7(next@15.1.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))':
-    dependencies:
-      '@devup-ui/webpack-plugin': 0.1.7
-      next: 15.1.4(@babel/core@7.26.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
-
-  '@devup-ui/react@0.1.2(csstype@3.1.3)(react@19.0.0)':
-    dependencies:
-      csstype: 3.1.3
-      react: 19.0.0
-
-  '@devup-ui/wasm@0.1.5': {}
-
-  '@devup-ui/webpack-plugin@0.1.7':
-    dependencies:
-      '@devup-ui/wasm': 0.1.5
 
   '@emnapi/runtime@1.3.1':
     dependencies:
