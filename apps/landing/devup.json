@@ -49,6 +49,7 @@
         "base": "#000000",
         "negativeBase": "#FFFFFF",
         "title": "#FAFAFA",
+        "caption": "#A9A8B4",
         "shadow": "#62626240",
         "codeBg": "#2E303C",
         "cardBg": "#28272B",

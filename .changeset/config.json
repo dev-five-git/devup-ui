@@ -9,6 +9,7 @@
   "updateInternalDependencies": "patch",
   "ignore": [
     "*-example",
-    "*-benchmark"
+    "*-benchmark",
+    "landing"
   ]
 }

@@ -130,7 +130,7 @@ impl StyleSheet {
             sorted_props.append(&mut select_props);
 
             let inner_css = sorted_props
-                .iter()
+                .into_iter()
                 .map(|prop| prop.extract())
                 .collect::<Vec<String>>()
                 .join("");

@@ -16,6 +16,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <base
+          href={process.env.NODE_ENV === 'production' ? '/devup-ui' : '/'}
+        />
+      </head>
       <body>
         {children}
         <Footer />

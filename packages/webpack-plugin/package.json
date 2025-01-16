@@ -21,6 +21,10 @@
     "./loader": {
       "import": "./dist/loader.js",
       "require": "./dist/loader.cjs"
+    },
+    "./css-loader": {
+      "import": "./dist/css-loader.js",
+      "require": "./dist/css-loader.cjs"
     }
   },
   "files": [
