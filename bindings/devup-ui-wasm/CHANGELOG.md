@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.6
+
+### Patch Changes
+
+- 278d7f9: Add script
+
 ## 0.1.5
 
 ### Patch Changes

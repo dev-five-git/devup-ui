@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.3
+
+### Patch Changes
+
+- 30443ae: Update readme
+
 ## 0.1.2
 
 ### Patch Changes
