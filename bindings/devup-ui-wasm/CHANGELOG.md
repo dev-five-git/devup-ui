@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.8
+
+### Patch Changes
+
+- e9d655f: Add shorthand
+
 ## 0.1.7
 
 ### Patch Changes
