@@ -347,16 +347,10 @@ importers:
       '@devup-ui/wasm':
         specifier: workspace:*
         version: link:../../bindings/devup-ui-wasm
-      webpack-sources:
-        specifier: ^3.2
-        version: 3.2.3
     devDependencies:
       '@types/webpack':
         specifier: ^5.28.5
         version: 5.28.5
-      '@types/webpack-sources':
-        specifier: ^3.2
-        version: 3.2.3
       typescript:
         specifier: ^5.7.3
         version: 5.7.3
@@ -1905,9 +1899,6 @@ packages:
   '@types/react@19.0.7':
     resolution: {integrity: sha512-MoFsEJKkAtZCrC1r6CM8U22GzhG7u2Wir8ons/aCKH6MBdD1ibV24zOSSkdZVUKqN5i396zG5VKLYZ3yaUZdLA==}
 
-  '@types/source-list-map@0.1.6':
-    resolution: {integrity: sha512-5JcVt1u5HDmlXkwOD2nslZVllBBc7HDuOICfiZah2Z0is8M8g+ddAEawbmd3VjedfDHBzxCaXLs07QEmb7y54g==}
-
   '@types/stylis@4.2.7':
     resolution: {integrity: sha512-VgDNokpBoKF+wrdvhAAfS55OMQpL6QRglwTwNC3kIgBrzZxA4WsFj+2eLfEA/uMUDzBcEhYmjSbwQakn/i3ajA==}
 
@@ -1916,9 +1907,6 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
-
-  '@types/webpack-sources@3.2.3':
-    resolution: {integrity: sha512-4nZOdMwSPHZ4pTEZzSp0AsTM4K7Qmu40UKW4tJDiOVs20UzYF9l+qUe4s0ftfN0pin06n+5cWWDJXH+sbhAiDw==}
 
   '@types/webpack@5.28.5':
     resolution: {integrity: sha512-wR87cgvxj3p6D0Crt1r5avwqffqPXUkNlnQ1mjU93G7gCuFjufZR4I6j8cz5g1F1tTYpfOOFvly+cmIQwL9wvw==}
@@ -6390,19 +6378,11 @@ snapshots:
     dependencies:
       csstype: 3.1.3
 
-  '@types/source-list-map@0.1.6': {}
-
   '@types/stylis@4.2.7': {}
 
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
-
-  '@types/webpack-sources@3.2.3':
-    dependencies:
-      '@types/node': 22.10.7
-      '@types/source-list-map': 0.1.6
-      source-map: 0.7.4
 
   '@types/webpack@5.28.5':
     dependencies:
