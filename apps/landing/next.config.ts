@@ -8,6 +8,7 @@ export default withMDX(
     {
       pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
       output: 'export',
+      assetPrefix: '/devup-ui',
     },
     {},
   ),
