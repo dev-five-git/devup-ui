@@ -5,6 +5,9 @@
     "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index",
     "test": "wasm-pack test --node"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "main": "./pkg/index.js",
   "module": "./pkg/index.js",
