@@ -11,14 +11,13 @@ use oxc_codegen::Codegen;
 
 use crate::utils::convert_value;
 use crate::visit::DevupVisitor;
-use css::{sheet_to_classname, sheet_to_variable_name};
+use css::{css_to_classname, sheet_to_classname, sheet_to_variable_name};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Expression;
 use oxc_ast::VisitMut;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
 use std::error::Error;
-use std::hash::{DefaultHasher, Hasher};
 
 /// result of extracting style properties from props
 #[derive(Debug)]
@@ -109,9 +108,7 @@ pub struct ExtractCss {
 impl ExtractStyleProperty for ExtractCss {
     /// hashing css code to class name
     fn extract(&self) -> StyleProperty {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(self.css.as_bytes());
-        StyleProperty::ClassName(format!("d{}", hasher.finish()))
+        StyleProperty::ClassName(css_to_classname(self.css.as_str()))
     }
 }
 
@@ -234,7 +231,6 @@ mod tests {
     use css::reset_class_map;
     use insta::assert_debug_snapshot;
     use serial_test::serial;
-    use std::hash::{DefaultHasher, Hasher};
 
     #[test]
     #[serial]
@@ -842,8 +838,6 @@ mod tests {
     #[test]
     #[serial]
     fn extract_static_css_class_name_props() {
-        let mut hasher = DefaultHasher::new();
-        hasher.write("background-color: red;".as_bytes());
         reset_class_map();
         assert_debug_snapshot!(extract(
             "test.tsx",

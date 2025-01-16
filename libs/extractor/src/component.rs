@@ -12,6 +12,7 @@ pub enum ExportVariableKind {
     VStack,
     Center,
     Image,
+    Grid,
 }
 
 impl ExportVariableKind {
@@ -20,6 +21,7 @@ impl ExportVariableKind {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack
+            | ExportVariableKind::Grid
             | ExportVariableKind::Flex
             | ExportVariableKind::Box => Ok("div"),
             ExportVariableKind::Text => Ok("span"),
@@ -82,6 +84,12 @@ impl ExportVariableKind {
                     }),
                 ]
             }
+            ExportVariableKind::Grid => vec![Static(ExtractStaticStyle {
+                value: "grid".to_string(),
+                property: "display".to_string(),
+                level: 0,
+                selector: None,
+            })],
         }
     }
 }
@@ -99,6 +107,7 @@ impl TryFrom<String> for ExportVariableKind {
             "Flex" => Ok(ExportVariableKind::Flex),
             "VStack" => Ok(ExportVariableKind::VStack),
             "Center" => Ok(ExportVariableKind::Center),
+            "Grid" => Ok(ExportVariableKind::Grid),
             _ => Err(()),
         }
     }
@@ -142,6 +151,10 @@ mod tests {
             ExportVariableKind::try_from("Center".to_string()),
             Ok(ExportVariableKind::Center)
         );
+        assert_eq!(
+            ExportVariableKind::try_from("Grid".to_string()),
+            Ok(ExportVariableKind::Grid)
+        );
         assert!(ExportVariableKind::try_from("css".to_string()).is_err());
         assert!(ExportVariableKind::try_from("foo".to_string()).is_err());
     }
@@ -156,6 +169,7 @@ mod tests {
         assert_eq!(ExportVariableKind::Flex.to_tag(), Ok("div"));
         assert_eq!(ExportVariableKind::VStack.to_tag(), Ok("div"));
         assert_eq!(ExportVariableKind::Center.to_tag(), Ok("div"));
+        assert_eq!(ExportVariableKind::Grid.to_tag(), Ok("div"));
     }
 
     #[test]
@@ -213,6 +227,15 @@ mod tests {
                     selector: None,
                 })
             ]
+        );
+        assert_eq!(
+            ExportVariableKind::Grid.extract(),
+            vec![Static(ExtractStaticStyle {
+                value: "grid".to_string(),
+                property: "display".to_string(),
+                level: 0,
+                selector: None,
+            })]
         );
     }
 }
