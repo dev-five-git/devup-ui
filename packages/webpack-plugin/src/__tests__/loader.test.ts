@@ -23,6 +23,7 @@ describe('devupUILoader', () => {
           },
         },
       }),
+      addDependency: vi.fn(),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'node_modules/package/index.ts',
     }
@@ -47,6 +48,7 @@ describe('devupUILoader', () => {
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'node_modules/package/index.css',
+      addDependency: vi.fn(),
     }
     devupUILoader.bind(t as any)(
       Buffer.from('code'),
@@ -69,6 +71,7 @@ describe('devupUILoader', () => {
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
     }
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
@@ -102,6 +105,7 @@ describe('devupUILoader', () => {
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
     }
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
@@ -135,6 +139,7 @@ describe('devupUILoader', () => {
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
     }
     vi.mocked(codeExtract).mockImplementation(() => {
       throw new Error('error')
@@ -158,6 +163,7 @@ describe('devupUILoader', () => {
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
     }
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',

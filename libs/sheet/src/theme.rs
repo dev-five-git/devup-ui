@@ -96,21 +96,21 @@ impl Color {
     }
 }
 pub struct Typography {
-    pub font_family: String,
-    pub font_size: String,
-    pub font_weight: String,
-    pub line_height: String,
-    pub letter_spacing: String,
+    pub font_family: Option<String>,
+    pub font_size: Option<String>,
+    pub font_weight: Option<String>,
+    pub line_height: Option<String>,
+    pub letter_spacing: Option<String>,
     pub level: u8,
 }
 
 impl Typography {
     pub fn new(
-        font_family: String,
-        font_size: String,
-        font_weight: String,
-        line_height: String,
-        letter_spacing: String,
+        font_family: Option<String>,
+        font_size: Option<String>,
+        font_weight: Option<String>,
+        line_height: Option<String>,
+        letter_spacing: Option<String>,
         level: u8,
     ) -> Self {
         Self {
@@ -168,27 +168,43 @@ impl Theme {
         let mut css = self.colors.to_css();
         for ty in self.typography.iter() {
             for t in ty.1.iter() {
+                let css_content = format!(
+                    "{}{}{}{}{}",
+                    t.font_family
+                        .clone()
+                        .map(|v| format!("font-family:{};", v))
+                        .unwrap_or("".to_string()),
+                    t.font_size
+                        .clone()
+                        .map(|v| format!("font-size:{};", v))
+                        .unwrap_or("".to_string()),
+                    t.font_weight
+                        .clone()
+                        .map(|v| format!("font-weight:{};", v))
+                        .unwrap_or("".to_string()),
+                    t.line_height
+                        .clone()
+                        .map(|v| format!("line-height:{};", v))
+                        .unwrap_or("".to_string()),
+                    t.letter_spacing
+                        .clone()
+                        .map(|v| format!("letter-spacing:{}", v))
+                        .unwrap_or("".to_string())
+                );
+                if css_content.is_empty() {
+                    continue;
+                }
+                let typo_css = format!(".typo-{}{{{}}}", ty.0, css_content);
+
                 if t.level == 0 {
-                    css.push_str(
-                        format!(
-                            ".typo-{}{{font-family:{};font-size:{};font-weight:{};line-height:{};letter-spacing:{}}}",
-                            ty.0, t.font_family, t.font_size, t.font_weight, t.line_height, t.letter_spacing
-                        )
-                            .as_str(),
-                    );
+                    css.push_str(typo_css.as_str());
                 } else {
                     let media = self
                         .break_points
                         .get(t.level as usize)
                         .map(|v| format!("(min-width:{}px)", v));
                     if let Some(media) = media {
-                        css.push_str(
-                            format!(
-                                "\n@media {}{{.typo-{}{{font-family:{};font-size:{};font-weight:{};line-height:{};letter-spacing:{}}}}}",
-                                media, ty.0, t.font_family, t.font_size, t.font_weight, t.line_height, t.letter_spacing
-                            )
-                                .as_str(),
-                        );
+                        css.push_str(format!("\n@media {}{{{}}}", media, typo_css).as_str());
                     }
                 }
             }
@@ -215,19 +231,19 @@ mod tests {
             "default".to_string(),
             vec![
                 Typography::new(
-                    "Arial".to_string(),
-                    "16px".to_string(),
-                    "400".to_string(),
-                    "1.5".to_string(),
-                    "0.5".to_string(),
+                    Some("Arial".to_string()),
+                    Some("16px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
                     0,
                 ),
                 Typography::new(
-                    "Arial".to_string(),
-                    "24px".to_string(),
-                    "400".to_string(),
-                    "1.5".to_string(),
-                    "0.5".to_string(),
+                    Some("Arial".to_string()),
+                    Some("24px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
                     1,
                 ),
             ],
