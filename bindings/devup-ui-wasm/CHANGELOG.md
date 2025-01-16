@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.7
+
+### Patch Changes
+
+- 7bde1f2: Add boxSizing prop
+
 ## 0.1.6
 
 ### Patch Changes
