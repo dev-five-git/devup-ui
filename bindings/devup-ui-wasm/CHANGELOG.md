@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.10
+
+### Patch Changes
+
+- 0de6892: Optimize media and Change sorting css var
+
 ## 0.1.9
 
 ### Patch Changes
