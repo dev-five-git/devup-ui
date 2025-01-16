@@ -9,8 +9,6 @@
 
 ---
 
-<iframe src="https://github.com/sponsors/dev-five-git/button" title="Sponsor dev-five-git" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
-
 <div>
 <img src='https://img.shields.io/npm/v/@devup-ui/react'>
 <img src='https://img.shields.io/bundlephobia/minzip/@devup-ui/react'>
