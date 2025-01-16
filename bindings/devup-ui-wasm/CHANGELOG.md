@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.9
+
+### Patch Changes
+
+- 1f2fb15: allow optional property of typography
+
 ## 0.1.8
 
 ### Patch Changes
