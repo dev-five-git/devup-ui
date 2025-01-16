@@ -108,21 +108,21 @@ pub fn code_extract(
 }
 pub fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValue> {
     Ok(Typography::new(
-        Reflect::get(&obj, &JsValue::from_str("fontFamily"))?
-            .as_string()
-            .unwrap(),
-        Reflect::get(&obj, &JsValue::from_str("fontSize"))?
-            .as_string()
-            .unwrap(),
-        Reflect::get(&obj, &JsValue::from_str("fontWeight"))?
-            .as_string()
-            .unwrap(),
-        Reflect::get(&obj, &JsValue::from_str("lineHeight"))?
-            .as_string()
-            .unwrap(),
-        Reflect::get(&obj, &JsValue::from_str("letterSpacing"))?
-            .as_string()
-            .unwrap(),
+        Reflect::get(&obj, &JsValue::from_str("fontFamily"))
+            .map(|v| v.as_string())
+            .unwrap_or(None),
+        Reflect::get(&obj, &JsValue::from_str("fontSize"))
+            .map(|v| v.as_string())
+            .unwrap_or(None),
+        Reflect::get(&obj, &JsValue::from_str("fontWeight"))
+            .map(|v| v.as_string())
+            .unwrap_or(None),
+        Reflect::get(&obj, &JsValue::from_str("lineHeight"))
+            .map(|v| v.as_string())
+            .unwrap_or(None),
+        Reflect::get(&obj, &JsValue::from_str("letterSpacing"))
+            .map(|v| v.as_string())
+            .unwrap_or(None),
         level,
     ))
 }

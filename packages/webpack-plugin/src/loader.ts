@@ -23,6 +23,8 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       callback(null, source)
       return
     }
+    this.addDependency(cssFile)
+
     try {
       const { code, css } = codeExtract(
         this.resourcePath,

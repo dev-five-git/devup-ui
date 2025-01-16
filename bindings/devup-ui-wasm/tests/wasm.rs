@@ -38,10 +38,10 @@ fn test_object_to_typography() {
     )
     .unwrap();
     let typography = object_to_typography(obj, 0).unwrap();
-    assert_eq!(typography.font_family, "Arial");
-    assert_eq!(typography.font_size, "12px");
-    assert_eq!(typography.font_weight, "bold");
-    assert_eq!(typography.line_height, "1.5");
-    assert_eq!(typography.letter_spacing, "1px");
+    assert_eq!(typography.font_family.unwrap(), "Arial");
+    assert_eq!(typography.font_size.unwrap(), "12px");
+    assert_eq!(typography.font_weight.unwrap(), "bold");
+    assert_eq!(typography.line_height.unwrap(), "1.5");
+    assert_eq!(typography.letter_spacing.unwrap(), "1px");
     assert_eq!(typography.level, 0);
 }

@@ -17,5 +17,6 @@ export interface DevupUiPositionProps {
   float?: ResponsiveValue<Property.Float>
   clear?: ResponsiveValue<Property.Clear>
   position?: ResponsiveValue<Property.Position>
+  pos?: ResponsiveValue<Property.Position>
   zIndex?: ResponsiveValue<Property.ZIndex>
 }
