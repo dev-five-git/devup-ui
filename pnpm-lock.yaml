@@ -181,9 +181,6 @@ importers:
       '@devup-ui/next-plugin':
         specifier: ^0.1.7
         version: 0.1.7(next@15.1.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0))
-      '@devup-ui/wasm':
-        specifier: ^0.1.5
-        version: 0.1.5
       '@types/node':
         specifier: ^22
         version: 22.10.7
