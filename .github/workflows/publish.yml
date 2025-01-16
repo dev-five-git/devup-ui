@@ -61,3 +61,5 @@ jobs:
         with:
           path: ./apps/landing/out
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: actions/deploy-pages@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
