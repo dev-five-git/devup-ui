@@ -6,9 +6,10 @@
     "lint": "eslint",
     "build": "tsc && vite build"
   },
-  "dependencies": {
-    "@devup-ui/wasm": "workspace:*"
-  },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -22,7 +23,9 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@devup-ui/wasm": "workspace:*"
+  },
   "devDependencies": {
     "vite": "^6.0.7",
     "@types/webpack": "^5.28.5",
