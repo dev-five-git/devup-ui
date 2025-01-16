@@ -123,6 +123,15 @@ pub fn sheet_to_classname(
     })
 }
 
+pub fn css_to_classname(css: &str) -> String {
+    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+    map.get(css).map(|v| format!("d{}", v)).unwrap_or_else(|| {
+        let len = map.len();
+        map.insert(css.to_string(), len as i32);
+        format!("d{}", map.len() - 1)
+    })
+}
+
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     let key = format!("{}-{}-{}", property, level, selector.unwrap_or(""));
     let mut map = GLOBAL_CLASS_MAP.lock().unwrap();

@@ -1,6 +1,13 @@
 {
   "name": "@devup-ui/wasm",
   "version": "0.1.4",
+  "scripts": {
+    "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index",
+    "test": "wasm-pack test --node"
+  },
+  "sideEffects": false,
+  "main": "./pkg/index.js",
+  "module": "./pkg/index.js",
   "keywords": [
     "react",
     "css-in-js",
@@ -22,9 +29,5 @@
       "types": "./pkg/index.d.ts"
     }
   },
-  "types": "./pkg/index.d.ts",
-  "scripts": {
-    "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index",
-    "test": "wasm-pack test --node"
-  }
+  "types": "./pkg/index.d.ts"
 }

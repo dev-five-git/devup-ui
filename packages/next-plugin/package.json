@@ -1,15 +1,14 @@
 {
   "name": "@devup-ui/next-plugin",
-  "version": "0.1.6",
   "type": "module",
-  "dependencies": {
-    "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.1"
-  },
+  "version": "0.1.6",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
   },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -20,6 +19,10 @@
     "dist"
   ],
   "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@devup-ui/webpack-plugin": "workspace:*",
+    "next": "^15.1"
+  },
   "devDependencies": {
     "vite": "^6.0.7",
     "vite-plugin-dts": "^4.4.0",
