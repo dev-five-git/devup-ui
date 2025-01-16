@@ -1,5 +1,7 @@
 import { Center, Flex, Image, Text, VStack } from '@devup-ui/react'
 
+import { IMAGE_PREFIX } from '../constants'
+
 export function Discord() {
   return (
     <Center
@@ -29,7 +31,7 @@ export function Discord() {
             <Text color="#FFF" typography="buttonLbold">
               Join our Discord
             </Text>
-            <Image boxSize="24px" src="/outlink.svg" />
+            <Image boxSize="24px" src={IMAGE_PREFIX + '/outlink.svg'} />
           </Flex>
         </Flex>
       </VStack>

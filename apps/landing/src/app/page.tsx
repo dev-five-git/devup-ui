@@ -4,6 +4,7 @@ import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
 import { Header } from '../components/Header'
+import { IMAGE_PREFIX } from '../constants'
 
 export default function HomePage() {
   return (
@@ -12,7 +13,7 @@ export default function HomePage() {
       <Box mt="150px">
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">
-            <Image h="50px" src="/icon.svg" w="52px" />
+            <Image h="50px" src={IMAGE_PREFIX + '/icon.svg'} w="52px" />
             <Text color="$title" textAlign="center" typography="h1">
               Lorem ipsum dolor sit amet,
               <br />
@@ -38,7 +39,7 @@ export default function HomePage() {
               <Text color="$base" typography="buttonL">
                 Get started
               </Text>
-              <Image boxSize="24px" src="/arrow.svg" />
+              <Image boxSize="24px" src={IMAGE_PREFIX + '/arrow.svg'} />
             </Flex>
           </Flex>
         </VStack>
@@ -66,7 +67,7 @@ export default function HomePage() {
                 p="24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src="/idea.svg" />
+                  <Image boxSize="32px" src={IMAGE_PREFIX + '/idea.svg'} />
                 </Flex>
                 <VStack flex="1 0 0" gap="10px">
                   <Text color="$title" typography="h6">
@@ -85,7 +86,7 @@ export default function HomePage() {
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src="/trophy.svg" />
+                  <Image boxSize="32px" src={IMAGE_PREFIX + '/trophy.svg'} />
                 </Flex>
                 <VStack flex="1 0 0" gap="10px">
                   <Text color="$title" typography="h6">
@@ -107,7 +108,7 @@ export default function HomePage() {
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src="/heart.svg" />
+                  <Image boxSize="32px" src={IMAGE_PREFIX + '/heart.svg'} />
                 </Flex>
                 <VStack flex="1 0 0" gap="10px">
                   <Text color="$title" typography="h6">
@@ -127,7 +128,7 @@ export default function HomePage() {
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src="/notice.svg" />
+                  <Image boxSize="32px" src={IMAGE_PREFIX + '/notice.svg'} />
                 </Flex>
                 <VStack flex="1 0 0" gap="10px">
                   <Text color="$title" typography="h6">

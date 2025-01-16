@@ -1,5 +1,7 @@
 import { Flex, Image, Text, VStack } from '@devup-ui/react'
 
+import { IMAGE_PREFIX } from '../constants'
+
 export function Footer() {
   return (
     <VStack bg="$footerBg" gap="80px" p="60px 320px">
@@ -57,7 +59,7 @@ export function Footer() {
       </Flex>
       <Flex alignItems="flex-end" justifyContent="space-between">
         <Flex alignItems="flex-end">
-          <Image alt="white-logo" src="/white-logo.svg" />
+          <Image alt="white-logo" src={IMAGE_PREFIX + '/white-logo.svg'} />
         </Flex>
         <VStack alignItems="flex-end" gap="10px">
           <Text color="$footerText" textAlign="right" typography="small">

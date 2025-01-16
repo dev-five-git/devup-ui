@@ -1,5 +1,6 @@
 import { Box, Flex, Image, Text } from '@devup-ui/react'
 
+import { IMAGE_PREFIX } from '../../constants'
 import { Container } from '../Container'
 
 export function Header() {
@@ -16,7 +17,7 @@ export function Header() {
           px="40px"
         >
           <Flex alignItems="center" gap="16px">
-            <Image h="42px" src="/logo.svg" />
+            <Image h="42px" src={IMAGE_PREFIX + '/logo.svg'} />
           </Flex>
           <Flex alignItems="center" gap="10px">
             <Flex alignItems="center" px="24px">
@@ -31,13 +32,13 @@ export function Header() {
             </Flex>
             <Flex alignItems="center">
               <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src="/github.svg" />
+                <Image boxSize="24px" src={IMAGE_PREFIX + '/github.svg'} />
               </Flex>
               <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src="/discord.svg" />
+                <Image boxSize="24px" src={IMAGE_PREFIX + '/discord.svg'} />
               </Flex>
               <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src="/light.svg" />
+                <Image boxSize="24px" src={IMAGE_PREFIX + '/light.svg'} />
               </Flex>
             </Flex>
           </Flex>
