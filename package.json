@@ -8,14 +8,16 @@
     "lint": "pnpm -r lint",
     "test": "cargo tarpaulin && vitest test --coverage --run && pnpm -r test",
     "build": "pnpm -r build",
-    "dev": "pnpm -r dev"
+    "dev": "pnpm -r dev",
+    "benchmark": "node benchmark.js"
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.1",
     "eslint": "^9.18.0",
     "vitest": "^2.1.8",
     "@vitest/coverage-v8": "^2.1.8",
-    "@changesets/cli": "^2.27.11"
+    "@changesets/cli": "^2.27.11",
+    "@types/node": "^22.10.7"
   },
   "author": "devfive",
   "packageManager": "pnpm@9.15.3",

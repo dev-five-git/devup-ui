@@ -8,8 +8,7 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "next-example",
-    "vite-example",
-    "vite-lib-example"
+    "*-example",
+    "*-benchmark"
   ]
 }

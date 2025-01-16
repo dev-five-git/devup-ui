@@ -2,3 +2,4 @@ packages:
   - 'packages/*'
   - 'apps/*'
   - 'bindings/*'
+  - 'benchmark/*'
