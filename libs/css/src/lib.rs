@@ -59,6 +59,7 @@ static GLOBAL_STYLE_PROPERTY: Lazy<Mutex<HashMap<&str, PropertyType>>> = Lazy::n
             ("my", ["margin-top", "margin-bottom"]),
             ("px", ["padding-left", "padding-right"]),
             ("py", ["padding-top", "padding-bottom"]),
+            ("boxSize", ["width", "height"]),
         ] {
             map.insert(key, value.into());
         }

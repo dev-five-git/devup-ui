@@ -24,4 +24,7 @@ export interface DevupUiBoxSizingProps {
   minH?: ResponsiveValue<Property.MinHeight>
   minW?: ResponsiveValue<Property.MinWidth>
   w?: ResponsiveValue<Property.Width>
+
+  // width and height
+  boxSize?: ResponsiveValue<Property.Width | Property.Height>
 }
