@@ -43,6 +43,16 @@ jobs:
           pnpm build
           pnpm lint
           pnpm test
+      - name: Build Landing
+        run: pnpm -F landing build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./apps/landing/out
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: actions/deploy-pages@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
@@ -56,13 +66,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Build Landing
-        run: pnpm -F landing build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./apps/landing/out
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - uses: actions/deploy-pages@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
