@@ -156,6 +156,7 @@ version = "0.1.0"
 dependencies = [
  "css",
  "insta",
+ "once_cell",
  "oxc_allocator",
  "oxc_ast",
  "oxc_codegen",

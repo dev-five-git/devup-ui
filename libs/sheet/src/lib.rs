@@ -93,17 +93,17 @@ impl StyleSheet {
 
     pub fn add_property(
         &mut self,
-        class_name: String,
-        property: String,
+        class_name: &str,
+        property: &str,
         level: u8,
-        value: String,
-        selector: Option<String>,
+        value: &str,
+        selector: Option<&str>,
     ) -> bool {
         let prop = StyleSheetProperty {
-            class_name,
-            property,
-            value,
-            selector,
+            class_name: class_name.to_string(),
+            property: property.to_string(),
+            value: value.to_string(),
+            selector: selector.map(|s| s.to_string()),
         };
         self.properties.entry(level).or_default().insert(prop)
     }

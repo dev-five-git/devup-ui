@@ -1,6 +1,6 @@
-use crate::utils::convert_value;
+use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
+use crate::ExtractStyleProp;
 use crate::ExtractStyleValue::{Dynamic, Static};
-use crate::{ExtractDynamicStyle, ExtractStaticStyle, ExtractStyleProp};
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{
     ArrayExpression, ConditionalExpression, Expression, JSXAttributeValue, JSXExpression,
@@ -18,14 +18,9 @@ pub fn extract_style_prop<'a>(
     value: &JSXAttributeValue<'a>,
 ) -> Option<ExtractStyleProp<'a>> {
     match value {
-        JSXAttributeValue::StringLiteral(str) => {
-            Some(ExtractStyleProp::Static(Static(ExtractStaticStyle {
-                value: convert_value(str.value.as_str()),
-                level: 0,
-                property: name,
-                selector: None,
-            })))
-        }
+        JSXAttributeValue::StringLiteral(str) => Some(ExtractStyleProp::Static(Static(
+            ExtractStaticStyle::new(name, str.value.to_string(), 0, None),
+        ))),
         JSXAttributeValue::ExpressionContainer(expression) => {
             if let JSXExpression::EmptyExpression(_) = expression.expression {
                 None
@@ -51,31 +46,31 @@ pub fn extract_style_prop_from_express<'a>(
 ) -> Option<ExtractStyleProp<'a>> {
     match &expression {
         Expression::NumericLiteral(num) => {
-            Some(ExtractStyleProp::Static(Static(ExtractStaticStyle {
-                value: convert_value(num.value.to_string().as_str()),
+            Some(ExtractStyleProp::Static(Static(ExtractStaticStyle::new(
+                name.to_string(),
+                num.value.to_string(),
                 level,
-                property: name.to_string(),
-                selector: selector.map(|s| s.to_string()),
-            })))
+                selector.map(|s| s.to_string()),
+            ))))
         }
         Expression::StringLiteral(str) => {
-            Some(ExtractStyleProp::Static(Static(ExtractStaticStyle {
-                value: convert_value(str.value.as_str()),
+            Some(ExtractStyleProp::Static(Static(ExtractStaticStyle::new(
+                name.to_string(),
+                str.value.to_string(),
                 level,
-                property: name.to_string(),
-                selector: selector.map(|s| s.to_string()),
-            })))
+                selector.map(|s| s.to_string()),
+            ))))
         }
         Expression::Identifier(identifier) => {
             if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                 None
             } else {
-                Some(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle {
+                Some(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
+                    name.to_string(),
                     level,
-                    property: name.to_string(),
-                    identifier: identifier.name.to_string(),
-                    selector: selector.map(|s| s.to_string()),
-                })))
+                    identifier.name.to_string(),
+                    selector.map(|s| s.to_string()),
+                ))))
             }
         }
         Expression::LogicalExpression(logical) => match logical.operator {

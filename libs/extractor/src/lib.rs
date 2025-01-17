@@ -1,4 +1,5 @@
 mod component;
+pub mod extract_style;
 mod gen_class_name;
 mod gen_style;
 mod object_prop_extract_utils;
@@ -9,9 +10,8 @@ mod visit;
 
 use oxc_codegen::Codegen;
 
-use crate::utils::convert_value;
+use crate::extract_style::ExtractStyleValue;
 use crate::visit::DevupVisitor;
-use css::{css_to_classname, sheet_to_classname, sheet_to_variable_name};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Expression;
 use oxc_ast::VisitMut;
@@ -66,110 +66,6 @@ pub enum StyleProperty {
         variable_name: String,
         identifier: String,
     },
-}
-pub trait ExtractStyleProperty {
-    /// extract style properties
-    fn extract(&self) -> StyleProperty;
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ExtractStaticStyle {
-    /// property
-    pub property: String,
-    /// fixed value
-    pub value: String,
-    /// responsive level
-    pub level: u8,
-    /// selector
-    pub selector: Option<String>,
-}
-
-impl ExtractStyleProperty for ExtractStaticStyle {
-    fn extract(&self) -> StyleProperty {
-        StyleProperty::ClassName(sheet_to_classname(
-            self.property.as_str(),
-            self.level,
-            Some(convert_value(self.value.as_str()).as_str()),
-            if let Some(selector) = &self.selector {
-                Some(selector.as_str())
-            } else {
-                None
-            },
-        ))
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ExtractCss {
-    /// css code
-    pub css: String,
-}
-
-impl ExtractStyleProperty for ExtractCss {
-    /// hashing css code to class name
-    fn extract(&self) -> StyleProperty {
-        StyleProperty::ClassName(css_to_classname(self.css.as_str()))
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ExtractDynamicStyle {
-    /// property
-    pub property: String,
-    /// responsive
-    pub level: u8,
-    identifier: String,
-
-    /// selector
-    pub selector: Option<String>,
-}
-
-impl ExtractStyleProperty for ExtractDynamicStyle {
-    fn extract(&self) -> StyleProperty {
-        StyleProperty::Variable {
-            class_name: sheet_to_classname(
-                self.property.as_str(),
-                self.level,
-                None,
-                if let Some(selector) = &self.selector {
-                    Some(selector.as_str())
-                } else {
-                    None
-                },
-            ),
-            variable_name: sheet_to_variable_name(
-                self.property.as_str(),
-                self.level,
-                if let Some(selector) = &self.selector {
-                    Some(selector.as_str())
-                } else {
-                    None
-                },
-            ),
-            identifier: self.identifier.clone(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ExtractStyleValue {
-    Static(ExtractStaticStyle),
-    Typography(String),
-    Dynamic(ExtractDynamicStyle),
-    Css(ExtractCss),
-}
-
-impl ExtractStyleValue {
-    pub fn extract(&self) -> StyleProperty {
-        match self {
-            ExtractStyleValue::Static(style) => style.extract(),
-            ExtractStyleValue::Dynamic(style) => style.extract(),
-            ExtractStyleValue::Css(css) => css.extract(),
-            ExtractStyleValue::Typography(typo) => {
-                StyleProperty::ClassName(format!("typo-{}", typo))
-            }
-        }
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1035,6 +931,23 @@ export {
             r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
             ExtractOption {
                 package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn maintain_value() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
                 css_file: None
             }
         )
