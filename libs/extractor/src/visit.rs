@@ -1,9 +1,10 @@
 use crate::component::ExportVariableKind;
+use crate::extract_style::ExtractCss;
 use crate::object_prop_extract_utils::{extract_from_style_value, extract_object_from_jsx_attr};
 use crate::prop_extract_utils::{extract_style_prop, extract_style_prop_from_express};
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::utils::is_special_property;
-use crate::{ExtractCss, ExtractStyleProp, ExtractStyleValue, StyleProperty};
+use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
 use oxc_ast::ast::JSXAttributeItem::Attribute;

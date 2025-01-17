@@ -1,5 +1,6 @@
-use crate::ExtractStyleValue::Static;
-use crate::{ExtractStaticStyle, ExtractStyleValue};
+use crate::extract_style::ExtractStaticStyle;
+use crate::extract_style::ExtractStyleValue::Static;
+use crate::ExtractStyleValue;
 
 /// devup-ui export variable kind
 #[derive(Debug, PartialEq, Clone)]
@@ -40,56 +41,56 @@ impl ExportVariableKind {
             | ExportVariableKind::Text
             | ExportVariableKind::Image
             | ExportVariableKind::Box => vec![],
-            ExportVariableKind::Flex => vec![Static(ExtractStaticStyle {
-                value: "flex".to_string(),
-                property: "display".to_string(),
-                level: 0,
-                selector: None,
-            })],
+            ExportVariableKind::Flex => vec![Static(ExtractStaticStyle::new(
+                "display".to_string(),
+                "flex".to_string(),
+                0,
+                None,
+            ))],
             ExportVariableKind::VStack => {
                 vec![
-                    Static(ExtractStaticStyle {
-                        value: "flex".to_string(),
-                        property: "display".to_string(),
-                        level: 0,
-                        selector: None,
-                    }),
-                    Static(ExtractStaticStyle {
-                        value: "column".to_string(),
-                        property: "flexDirection".to_string(),
-                        level: 0,
-                        selector: None,
-                    }),
+                    Static(ExtractStaticStyle::new(
+                        "display".to_string(),
+                        "flex".to_string(),
+                        0,
+                        None,
+                    )),
+                    Static(ExtractStaticStyle::new(
+                        "flexDirection".to_string(),
+                        "column".to_string(),
+                        0,
+                        None,
+                    )),
                 ]
             }
             ExportVariableKind::Center => {
                 vec![
-                    Static(ExtractStaticStyle {
-                        value: "flex".to_string(),
-                        property: "display".to_string(),
-                        level: 0,
-                        selector: None,
-                    }),
-                    Static(ExtractStaticStyle {
-                        value: "center".to_string(),
-                        property: "justifyContent".to_string(),
-                        level: 0,
-                        selector: None,
-                    }),
-                    Static(ExtractStaticStyle {
-                        value: "center".to_string(),
-                        property: "alignItems".to_string(),
-                        level: 0,
-                        selector: None,
-                    }),
+                    Static(ExtractStaticStyle::new(
+                        "display".to_string(),
+                        "flex".to_string(),
+                        0,
+                        None,
+                    )),
+                    Static(ExtractStaticStyle::new(
+                        "justifyContent".to_string(),
+                        "center".to_string(),
+                        0,
+                        None,
+                    )),
+                    Static(ExtractStaticStyle::new(
+                        "alignItems".to_string(),
+                        "center".to_string(),
+                        0,
+                        None,
+                    )),
                 ]
             }
-            ExportVariableKind::Grid => vec![Static(ExtractStaticStyle {
-                value: "grid".to_string(),
-                property: "display".to_string(),
-                level: 0,
-                selector: None,
-            })],
+            ExportVariableKind::Grid => vec![Static(ExtractStaticStyle::new(
+                "display".to_string(),
+                "grid".to_string(),
+                0,
+                None,
+            ))],
         }
     }
 }
@@ -181,61 +182,61 @@ mod tests {
         assert_eq!(ExportVariableKind::Input.extract(), vec![]);
         assert_eq!(
             ExportVariableKind::Flex.extract(),
-            vec![Static(ExtractStaticStyle {
-                value: "flex".to_string(),
-                property: "display".to_string(),
-                level: 0,
-                selector: None,
-            })]
+            vec![Static(ExtractStaticStyle::new(
+                "display".to_string(),
+                "flex".to_string(),
+                0,
+                None,
+            ))]
         );
         assert_eq!(
             ExportVariableKind::VStack.extract(),
             vec![
-                Static(ExtractStaticStyle {
-                    value: "flex".to_string(),
-                    property: "display".to_string(),
-                    level: 0,
-                    selector: None,
-                }),
-                Static(ExtractStaticStyle {
-                    value: "column".to_string(),
-                    property: "flexDirection".to_string(),
-                    level: 0,
-                    selector: None,
-                })
+                Static(ExtractStaticStyle::new(
+                    "display".to_string(),
+                    "flex".to_string(),
+                    0,
+                    None,
+                )),
+                Static(ExtractStaticStyle::new(
+                    "flexDirection".to_string(),
+                    "column".to_string(),
+                    0,
+                    None,
+                ))
             ]
         );
         assert_eq!(
             ExportVariableKind::Center.extract(),
             vec![
-                Static(ExtractStaticStyle {
-                    value: "flex".to_string(),
-                    property: "display".to_string(),
-                    level: 0,
-                    selector: None,
-                }),
-                Static(ExtractStaticStyle {
-                    value: "center".to_string(),
-                    property: "justifyContent".to_string(),
-                    level: 0,
-                    selector: None,
-                }),
-                Static(ExtractStaticStyle {
-                    value: "center".to_string(),
-                    property: "alignItems".to_string(),
-                    level: 0,
-                    selector: None,
-                })
+                Static(ExtractStaticStyle::new(
+                    "display".to_string(),
+                    "flex".to_string(),
+                    0,
+                    None,
+                )),
+                Static(ExtractStaticStyle::new(
+                    "justifyContent".to_string(),
+                    "center".to_string(),
+                    0,
+                    None,
+                )),
+                Static(ExtractStaticStyle::new(
+                    "alignItems".to_string(),
+                    "center".to_string(),
+                    0,
+                    None,
+                ))
             ]
         );
         assert_eq!(
             ExportVariableKind::Grid.extract(),
-            vec![Static(ExtractStaticStyle {
-                value: "grid".to_string(),
-                property: "display".to_string(),
-                level: 0,
-                selector: None,
-            })]
+            vec![Static(ExtractStaticStyle::new(
+                "display".to_string(),
+                "grid".to_string(),
+                0,
+                None,
+            ))]
         );
     }
 }

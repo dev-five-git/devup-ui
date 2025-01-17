@@ -1,4 +1,5 @@
-use extractor::{extract, ExtractOption, ExtractStyleValue, StyleProperty};
+use extractor::extract_style::ExtractStyleValue;
+use extractor::{extract, ExtractOption, StyleProperty};
 use js_sys::{Object, Reflect};
 use once_cell::sync::Lazy;
 use sheet::theme::{ColorTheme, Theme, Typography};
@@ -45,22 +46,22 @@ impl Output {
             match style {
                 ExtractStyleValue::Static(st) => {
                     if sheet.add_property(
-                        cls,
-                        st.property.clone(),
-                        st.level,
-                        st.value.clone(),
-                        st.selector.clone(),
+                        &cls,
+                        st.property(),
+                        st.level(),
+                        st.value(),
+                        st.selector(),
                     ) {
                         collected = true;
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
                     if sheet.add_property(
-                        cls,
-                        dy.property.clone(),
-                        dy.level,
-                        format!("var({})", variable.unwrap()),
-                        dy.selector.clone(),
+                        &cls,
+                        dy.property(),
+                        dy.level(),
+                        &format!("var({})", variable.unwrap()),
+                        dy.selector(),
                     ) {
                         collected = true;
                     }
