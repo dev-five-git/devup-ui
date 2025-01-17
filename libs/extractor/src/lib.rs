@@ -168,6 +168,19 @@ mod tests {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Input} from '@devup-ui/core'
+        <Input placeholder="a" maxLength="b" minLength="c" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
     #[test]
     #[serial]
