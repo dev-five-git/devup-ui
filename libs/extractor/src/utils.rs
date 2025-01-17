@@ -1,3 +1,6 @@
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
+
 /// Convert a value to a pixel value
 pub fn convert_value(value: &str) -> String {
     let value = value.to_string();
@@ -8,18 +11,31 @@ pub fn convert_value(value: &str) -> String {
     value
 }
 
+static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
+    let mut set = HashSet::<&str>::new();
+    for prop in [
+        "style",
+        "className",
+        "role",
+        "ref",
+        "key",
+        "alt",
+        "src",
+        "children",
+        "placeholder",
+        "maxLength",
+        "minLength",
+    ] {
+        set.insert(prop);
+    }
+    set
+});
+
 pub fn is_special_property(name: &str) -> bool {
-    name == "style"
-        || name == "className"
-        || name.starts_with("on")
+    name.starts_with("on")
         || name.starts_with("data-")
         || name.starts_with("aria-")
-        || name == "role"
-        || name == "ref"
-        || name == "key"
-        || name == "alt"
-        || name == "src"
-        || name == "children"
+        || SPECIAL_PROPERTIES.contains(name)
 }
 
 #[cfg(test)]
