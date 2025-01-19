@@ -1,5 +1,13 @@
 # @devup-ui/wasm
 
+## 0.1.11
+
+### Patch Changes
+
+- fd1f519: Add placeholder, maxLength, minLength to special properties
+- 236882c: Add maintain properies
+- b25c769: Fix ternary operator issue, css order issue, basic style issue
+
 ## 0.1.10
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.13
+
+### Patch Changes
+
+- b25c769: Fix css pile up issue
+- Updated dependencies [fd1f519]
+- Updated dependencies [236882c]
+- Updated dependencies [b25c769]
+  - @devup-ui/wasm@0.1.11
+
 ## 0.1.12
 
 ### Patch Changes
