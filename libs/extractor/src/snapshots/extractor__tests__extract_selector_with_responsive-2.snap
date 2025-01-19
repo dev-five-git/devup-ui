@@ -7,21 +7,23 @@ ExtractOutput {
         Static(
             ExtractStaticStyle {
                 property: "mx",
-                value: "80px",
-                level: 1,
-                selector: Some(
-                    "hover",
-                ),
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "mx",
                 value: "40px",
                 level: 0,
                 selector: Some(
                     "hover",
                 ),
+                basic: false,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mx",
+                value: "80px",
+                level: 1,
+                selector: Some(
+                    "hover",
+                ),
+                basic: false,
             },
         ),
     ],

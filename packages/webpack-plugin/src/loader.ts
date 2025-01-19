@@ -30,7 +30,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         this.resourcePath,
         source.toString(),
         libPackage,
-        cssFile + (plugin.watch ? '?' + Date.now() : ''),
+        cssFile,
       )
       if (css) {
         // should be reset css

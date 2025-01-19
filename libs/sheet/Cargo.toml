@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 css = { path = "../css" }
 
+[dev-dependencies]
+insta = "1.42.0"

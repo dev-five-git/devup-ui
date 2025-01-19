@@ -1,9 +1,9 @@
 use crate::component::ExportVariableKind;
 use crate::extract_style::ExtractCss;
-use crate::object_prop_extract_utils::{extract_from_style_value, extract_object_from_jsx_attr};
-use crate::prop_extract_utils::{extract_style_prop, extract_style_prop_from_express};
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
-use crate::utils::is_special_property;
+use crate::style_extractor::{
+    extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
+};
 use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
@@ -11,8 +11,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, JSXElementName, Program, Statement,
-    TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
+    ImportOrExportKind, JSXElement, JSXElementName, ObjectPropertyKind, Program, PropertyKey,
+    Statement, TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
     walk_call_expression, walk_import_declaration, walk_jsx_element, walk_program,
@@ -114,95 +114,66 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     None
                 };
                 if let Some(kind) = element_kind {
-                    let mut tag = kind.to_tag().unwrap_or("div");
                     if it.arguments.len() > 1 {
-                        if let Argument::ObjectExpression(ref mut object) = &mut it.arguments[1] {
-                            let mut collected_props_styles = vec![];
-                            for i in (0..object.properties.len()).rev() {
-                                if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(prop) =
-                                    &object.properties[i]
-                                {
-                                    if let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) =
-                                        &prop.key
-                                    {
+                        if let Expression::ObjectExpression(obj) =
+                            it.arguments[1].to_expression_mut()
+                        {
+                            let mut tag = kind.to_tag().unwrap_or("div").to_string();
+                            let mut props_styles = vec![];
+                            for idx in (0..obj.properties.len()).rev() {
+                                let mut prop = obj.properties.remove(idx);
+                                let mut rm = false;
+                                if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
+                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
                                         let name = ident.name.to_string();
-                                        // ignore special attributes
-                                        if is_special_property(&name) {
-                                            continue;
-                                        }
-                                        if name == "typography" {
-                                            if let Expression::StringLiteral(ident) = &prop.value {
-                                                collected_props_styles.push(
-                                                    ExtractStyleProp::Static(
-                                                        ExtractStyleValue::Typography(
-                                                            ident.value.to_string(),
-                                                        ),
-                                                    ),
-                                                );
+                                        rm = match extract_style_from_expression(
+                                            &self.ast,
+                                            Some(&name),
+                                            &mut prop.value,
+                                            0,
+                                            None,
+                                        ) {
+                                            ExtractResult::Maintain => false,
+                                            ExtractResult::Remove => true,
+                                            ExtractResult::ExtractStyle(mut styles) => {
+                                                styles.reverse();
+                                                props_styles.append(&mut styles);
+                                                true
                                             }
-                                            object.properties.remove(i);
-                                            continue;
-                                        }
-                                        if name == "as" {
-                                            if let Expression::StringLiteral(ident) = &prop.value {
-                                                tag = ident.value.as_str();
-                                            }
-                                            object.properties.remove(i);
-                                            continue;
-                                        }
-                                        if name.starts_with("_") {
-                                            let media = name.trim_start_matches('_');
-                                            if let Some(props_styles) = extract_from_style_value(
-                                                &self.ast,
-                                                &prop.value,
-                                                Some(media),
-                                            ) {
-                                                for style in props_styles.into_iter().rev() {
-                                                    collected_props_styles.push(style);
-                                                }
-                                                object.properties.remove(i);
-                                            }
-                                        } else {
-                                            let prop_styles = extract_style_prop_from_express(
-                                                &self.ast,
-                                                &name,
-                                                &prop.value,
-                                                0,
-                                                None,
-                                            );
-                                            if let Some(prop_styles) = prop_styles {
-                                                collected_props_styles.push(prop_styles);
-                                                object.properties.remove(i);
+                                            ExtractResult::ChangeTag(t) => {
+                                                tag = t;
+                                                true
                                             }
                                         }
                                     }
                                 }
-                            }
-                            for ex in kind.extract().into_iter().rev() {
-                                collected_props_styles.push(ExtractStyleProp::Static(ex));
-                            }
-                            for ex in collected_props_styles.iter().rev() {
-                                self.styles.append(&mut ex.extract());
+                                if !rm {
+                                    obj.properties.insert(idx, prop);
+                                }
                             }
 
-                            modify_prop_object(
-                                &self.ast,
-                                &mut object.properties,
-                                collected_props_styles,
-                            );
+                            for ex in kind.extract().into_iter().rev() {
+                                props_styles.push(ExtractStyleProp::Static(ex));
+                            }
+
+                            for style in props_styles.iter().rev() {
+                                self.styles.append(&mut style.extract());
+                            }
+
+                            modify_prop_object(&self.ast, &mut obj.properties, props_styles);
+                            it.arguments[0] =
+                                Argument::StringLiteral(self.ast.alloc_string_literal(
+                                    SPAN,
+                                    self.ast.atom(tag.as_str()),
+                                    None,
+                                ));
                         }
                     }
-
-                    it.arguments[0] = Argument::StringLiteral(self.ast.alloc_string_literal(
-                        SPAN,
-                        self.ast.atom(tag),
-                        None,
-                    ));
                 }
             }
-        }
 
-        walk_call_expression(self, it);
+            walk_call_expression(self, it);
+        }
     }
     fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
         if let Expression::Identifier(ident) = &it.tag {
@@ -247,57 +218,35 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
-            let mut tag_name = kind.to_tag().unwrap_or("div");
+            let mut tag_name = kind.to_tag().unwrap_or("div").to_string();
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
             for i in (0..attrs.len()).rev() {
-                let attr = &attrs[i];
-                if let Attribute(attr) = attr {
+                let mut attr = attrs.remove(i);
+                let mut rm = false;
+                if let Attribute(ref mut attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
                         let name = name.to_string();
-
-                        // ignore special attributes
-                        if is_special_property(&name) {
-                            continue;
-                        }
-                        if name == "typography" {
-                            if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
-                                props_styles.push(ExtractStyleProp::Static(
-                                    ExtractStyleValue::Typography(ident.value.to_string()),
-                                ));
-                            }
-                            attrs.remove(i);
-                            continue;
-                        }
-                        if name == "as" {
-                            if let Some(JSXAttributeValue::StringLiteral(ident)) = &attr.value {
-                                tag_name = ident.value.as_str()
-                            }
-                            attrs.remove(i);
-                            continue;
-                        }
-
-                        if let Some(value) = &attr.value {
-                            // media query
-                            if name.starts_with("_") {
-                                if let Some(prop_styles) = &mut extract_object_from_jsx_attr(
-                                    &self.ast,
-                                    value,
-                                    Some(name.trim_start_matches('_')),
-                                ) {
-                                    props_styles.append(prop_styles);
-                                    attrs.remove(i);
+                        if let Some(at) = &mut attr.value {
+                            rm = match extract_style_from_jsx_attr(&self.ast, &name, at, None) {
+                                ExtractResult::Maintain => false,
+                                ExtractResult::Remove => true,
+                                ExtractResult::ExtractStyle(mut styles) => {
+                                    styles.reverse();
+                                    props_styles.append(&mut styles);
+                                    true
                                 }
-                                continue;
-                            }
-                            let prop_styles = extract_style_prop(&self.ast, name, value);
-                            if let Some(prop_styles) = prop_styles {
-                                props_styles.push(prop_styles);
-                                attrs.remove(i);
+                                ExtractResult::ChangeTag(tag) => {
+                                    tag_name = tag;
+                                    true
+                                }
                             }
                         }
                     }
+                }
+                if !rm {
+                    attrs.insert(i, attr);
                 }
             }
 
@@ -330,9 +279,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 self.jsx_object = Some(ident.name.to_string());
                             } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
                                 for prop in &object.properties {
-                                    if let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) =
-                                        &prop.key
-                                    {
+                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
                                         if let Some(k) = prop
                                             .value
                                             .get_binding_identifier()
@@ -348,9 +295,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 self.import_object = Some(ident.name.to_string());
                             } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
                                 for prop in &object.properties {
-                                    if let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) =
-                                        &prop.key
-                                    {
+                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
                                         if let Ok(kind) = ExportVariableKind::try_from(
                                             prop.value
                                                 .get_binding_identifier()

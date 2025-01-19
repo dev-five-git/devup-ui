@@ -12,6 +12,7 @@ ExtractOutput {
                 selector: Some(
                     "hover",
                 ),
+                basic: false,
             },
         ),
         Static(
@@ -22,6 +23,7 @@ ExtractOutput {
                 selector: Some(
                     "hover",
                 ),
+                basic: false,
             },
         ),
     ],

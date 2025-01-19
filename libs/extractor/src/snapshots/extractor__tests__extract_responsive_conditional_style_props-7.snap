@@ -10,6 +10,7 @@ ExtractOutput {
                 value: "4px",
                 level: 1,
                 selector: None,
+                basic: false,
             },
         ),
     ],

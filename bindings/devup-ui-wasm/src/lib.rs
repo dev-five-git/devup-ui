@@ -51,6 +51,7 @@ impl Output {
                         st.level(),
                         st.value(),
                         st.selector(),
+                        st.basic(),
                     ) {
                         collected = true;
                     }
@@ -62,6 +63,7 @@ impl Output {
                         dy.level(),
                         &format!("var({})", variable.unwrap()),
                         dy.selector(),
+                        false,
                     ) {
                         collected = true;
                     }

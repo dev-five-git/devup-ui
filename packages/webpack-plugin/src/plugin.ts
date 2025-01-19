@@ -24,7 +24,6 @@ export interface DevupUIWebpackPluginOptions {
 
 export class DevupUIWebpackPlugin {
   options: DevupUIWebpackPluginOptions
-  watch = false
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -82,7 +81,6 @@ export class DevupUIWebpackPlugin {
 
     let lastModifiedTime: number | null = null
     compiler.hooks.watchRun.tapAsync('DevupUIWebpackPlugin', (_, callback) => {
-      this.watch = true
       if (existsDevup)
         stat(this.options.devupPath, (err, stats) => {
           if (err) {
