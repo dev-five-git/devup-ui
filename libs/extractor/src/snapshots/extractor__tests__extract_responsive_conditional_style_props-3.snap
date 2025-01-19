@@ -42,6 +42,7 @@ ExtractOutput {
                 value: "2px",
                 level: 3,
                 selector: None,
+                basic: false,
             },
         ),
     ],

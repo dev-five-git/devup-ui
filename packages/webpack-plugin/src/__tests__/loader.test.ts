@@ -177,7 +177,7 @@ describe('devupUILoader', () => {
       'index.tsx',
       'code',
       'package',
-      'cssFile?' + Date.now(),
+      'cssFile',
     )
   })
 })

@@ -12,6 +12,7 @@ ExtractOutput {
                 selector: Some(
                     "hover",
                 ),
+                basic: false,
             },
         ),
     ],

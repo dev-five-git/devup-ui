@@ -10,6 +10,7 @@ ExtractOutput {
                 value: "720px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -18,6 +19,7 @@ ExtractOutput {
                 value: "152px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
     ],

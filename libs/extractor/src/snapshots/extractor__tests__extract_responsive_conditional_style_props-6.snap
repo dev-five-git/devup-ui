@@ -34,6 +34,7 @@ ExtractOutput {
                 value: "4px",
                 level: 3,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -42,6 +43,7 @@ ExtractOutput {
                 value: "2px",
                 level: 3,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -50,6 +52,7 @@ ExtractOutput {
                 value: "1px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -58,6 +61,7 @@ ExtractOutput {
                 value: "2px",
                 level: 1,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -66,6 +70,7 @@ ExtractOutput {
                 value: "3px",
                 level: 2,
                 selector: None,
+                basic: false,
             },
         ),
     ],

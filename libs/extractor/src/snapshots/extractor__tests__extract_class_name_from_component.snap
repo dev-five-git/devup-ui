@@ -10,6 +10,7 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
+                basic: true,
             },
         ),
         Static(
@@ -18,6 +19,7 @@ ExtractOutput {
                 value: "column",
                 level: 0,
                 selector: None,
+                basic: true,
             },
         ),
         Static(
@@ -26,6 +28,7 @@ ExtractOutput {
                 value: "4px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -34,6 +37,7 @@ ExtractOutput {
                 value: "8px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
     ],

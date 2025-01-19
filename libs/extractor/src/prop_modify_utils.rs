@@ -20,7 +20,8 @@ pub fn modify_prop_object<'a>(
     let mut style_prop = None;
 
     for idx in (0..props.len()).rev() {
-        if let ObjectPropertyKind::ObjectProperty(attr) = props.remove(idx) {
+        let prop = props.remove(idx);
+        if let ObjectPropertyKind::ObjectProperty(attr) = prop {
             if let PropertyKey::StaticIdentifier(ident) = &attr.key {
                 if ident.name == "className" {
                     class_name_prop = Some(attr);
@@ -31,6 +32,8 @@ pub fn modify_prop_object<'a>(
                 }
             }
             props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
+        } else {
+            props.insert(idx, prop);
         }
     }
 
@@ -120,7 +123,8 @@ pub fn modify_props<'a>(
     let mut style_prop = None;
 
     for idx in (0..props.len()).rev() {
-        if let Attribute(attr) = props.remove(idx) {
+        let prop = props.remove(idx);
+        if let Attribute(attr) = prop {
             if let Identifier(ident) = &attr.name {
                 if ident.name == "className" {
                     class_name_prop = Some(attr);
@@ -131,6 +135,8 @@ pub fn modify_props<'a>(
                 }
             }
             props.insert(idx, Attribute(attr));
+        } else {
+            props.insert(idx, prop);
         }
     }
 

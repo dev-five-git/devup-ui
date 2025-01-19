@@ -20,4 +20,5 @@ export interface DevupMediaProps {
   _link?: DevupCommonProps
   _onlyChild?: DevupCommonProps
   _optional?: DevupCommonProps
+  _placeholder?: DevupCommonProps
 }

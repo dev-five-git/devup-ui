@@ -12,6 +12,7 @@ ExtractOutput {
                 selector: Some(
                     "hover",
                 ),
+                basic: false,
             },
         ),
         Static(
@@ -20,6 +21,7 @@ ExtractOutput {
                 value: "$text",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
         Static(
@@ -28,6 +30,7 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
         Typography(
@@ -39,6 +42,7 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
+                basic: true,
             },
         ),
         Static(
@@ -47,6 +51,7 @@ ExtractOutput {
                 value: "8px",
                 level: 0,
                 selector: None,
+                basic: false,
             },
         ),
     ],

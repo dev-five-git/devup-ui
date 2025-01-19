@@ -14,6 +14,8 @@ pub struct ExtractStaticStyle {
     level: u8,
     /// selector
     selector: Option<String>,
+    /// basic, if the value is true then css created by this style will be added to the first
+    basic: bool,
 }
 
 static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
@@ -27,16 +29,31 @@ static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
 
 impl ExtractStaticStyle {
     /// create a new ExtractStaticStyle
-    pub fn new(property: String, value: String, level: u8, selector: Option<String>) -> Self {
+    pub fn new(property: &str, value: &str, level: u8, selector: Option<&str>) -> Self {
         Self {
-            value: if MAINTAIN_VALUE_PROPERTIES.contains(&property) {
-                value
+            value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+                value.to_string()
             } else {
-                convert_value(&value)
+                convert_value(value)
             },
-            property,
+            property: property.to_string(),
             level,
-            selector,
+            selector: selector.map(|s| s.to_string()),
+            basic: false,
+        }
+    }
+
+    pub fn new_basic(property: &str, value: &str, level: u8, selector: Option<&str>) -> Self {
+        Self {
+            value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+                value.to_string()
+            } else {
+                convert_value(value)
+            },
+            property: property.to_string(),
+            level,
+            selector: selector.map(|s| s.to_string()),
+            basic: true,
         }
     }
 
@@ -54,6 +71,10 @@ impl ExtractStaticStyle {
 
     pub fn selector(&self) -> Option<&str> {
         self.selector.as_deref()
+    }
+
+    pub fn basic(&self) -> bool {
+        self.basic
     }
 }
 
@@ -103,12 +124,12 @@ pub struct ExtractDynamicStyle {
 
 impl ExtractDynamicStyle {
     /// create a new ExtractDynamicStyle
-    pub fn new(property: String, level: u8, identifier: String, selector: Option<String>) -> Self {
+    pub fn new(property: &str, level: u8, identifier: &str, selector: Option<&str>) -> Self {
         Self {
-            property,
+            property: property.to_string(),
             level,
-            identifier,
-            selector,
+            identifier: identifier.to_string(),
+            selector: selector.map(|s| s.to_string()),
         }
     }
 
