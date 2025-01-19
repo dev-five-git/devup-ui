@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.6
+
+### Patch Changes
+
+- b25c769: Add placehoder to selector
+
 ## 0.1.5
 
 ### Patch Changes
