@@ -174,7 +174,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         }
-        println!("{:?} {:?}", it, self.css_imports);
         if let Expression::Identifier(ident) = &it.callee {
             if self.css_imports.contains_key(ident.name.as_str()) && it.arguments.len() == 1 {
                 if let Argument::ObjectExpression(ref mut obj) = it.arguments[0] {
