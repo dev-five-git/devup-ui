@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.15
+
+### Patch Changes
+
+- 3e92da2: file dep path issue
+
 ## 0.1.14
 
 ### Patch Changes
