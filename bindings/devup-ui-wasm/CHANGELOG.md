@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.16
+
+### Patch Changes
+
+- 6f7c55d: Add group selector, Support conditional expression for typography
+
 ## 0.1.15
 
 ### Patch Changes
