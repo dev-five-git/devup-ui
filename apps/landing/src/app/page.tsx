@@ -5,7 +5,7 @@ import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
 import { Header } from '../components/Header'
-import { IMAGE_PREFIX } from '../constants'
+import { URL_PREFIX } from '../constants'
 
 export default function HomePage() {
   return (
@@ -14,7 +14,7 @@ export default function HomePage() {
       <Box mt="150px">
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">
-            <Image h="50px" src={IMAGE_PREFIX + '/icon.svg'} w="52px" />
+            <Image h="50px" src={URL_PREFIX + '/icon.svg'} w="52px" />
             <Text color="$title" textAlign="center" typography="h1">
               Lorem ipsum dolor sit amet,
               <br />
@@ -31,7 +31,7 @@ export default function HomePage() {
             className={css`
               text-decoration: none;
             `}
-            href="/docs/overview"
+            href={URL_PREFIX + '/docs/overview'}
           >
             <Flex
               alignItems="center"
@@ -45,7 +45,7 @@ export default function HomePage() {
                 <Text color="$base" typography="buttonL">
                   Get started
                 </Text>
-                <Image boxSize="24px" src={IMAGE_PREFIX + '/arrow.svg'} />
+                <Image boxSize="24px" src={URL_PREFIX + '/arrow.svg'} />
               </Flex>
             </Flex>
           </Link>
@@ -69,18 +69,18 @@ export default function HomePage() {
               <Flex
                 bg="$cardBg"
                 borderRadius="20px"
-                flex="1 0 0"
+                flex="1"
                 gap="10px"
                 p="24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src={IMAGE_PREFIX + '/idea.svg'} />
+                  <Image boxSize="32px" src={URL_PREFIX + '/idea.svg'} />
                 </Flex>
-                <VStack flex="1 0 0" gap="10px">
+                <VStack flex="1" gap="10px">
                   <Text color="$title" typography="h6">
                     Feature title
                   </Text>
-                  <Text flex="1 0 0" typography="body" w="484px">
+                  <Text flex="1" typography="body" w="484px">
                     Lorem ipsum dolor sit amet.
                   </Text>
                 </VStack>
@@ -88,18 +88,18 @@ export default function HomePage() {
               <Flex
                 bg="$cardBg"
                 borderRadius="20px"
-                flex="1 0 0"
+                flex="1"
                 gap="10px"
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src={IMAGE_PREFIX + '/trophy.svg'} />
+                  <Image boxSize="32px" src={URL_PREFIX + '/trophy.svg'} />
                 </Flex>
-                <VStack flex="1 0 0" gap="10px">
+                <VStack flex="1" gap="10px">
                   <Text color="$title" typography="h6">
                     Feature title
                   </Text>
-                  <Text flex="1 0 0" typography="body" w="484px">
+                  <Text flex="1" typography="body" w="484px">
                     Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
                     Proin nec ante a sem vestibulum sodales non ut ex.
                   </Text>
@@ -110,18 +110,18 @@ export default function HomePage() {
               <Flex
                 bg="$cardBg"
                 borderRadius="20px"
-                flex="1 0 0"
+                flex="1"
                 gap="10px"
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src={IMAGE_PREFIX + '/heart.svg'} />
+                  <Image boxSize="32px" src={URL_PREFIX + '/heart.svg'} />
                 </Flex>
-                <VStack flex="1 0 0" gap="10px">
+                <VStack flex="1" gap="10px">
                   <Text color="$title" typography="h6">
                     Feature title
                   </Text>
-                  <Text flex="1 0 0" typography="body" w="484px">
+                  <Text flex="1" typography="body" w="484px">
                     Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
                     Proin nec ante a sem vestibulum.
                   </Text>
@@ -130,18 +130,18 @@ export default function HomePage() {
               <Flex
                 bg="$cardBg"
                 borderRadius="20px"
-                flex="1 0 0"
+                flex="1"
                 gap="10px"
                 p="30px 24px"
               >
                 <Flex px="8px">
-                  <Image boxSize="32px" src={IMAGE_PREFIX + '/notice.svg'} />
+                  <Image boxSize="32px" src={URL_PREFIX + '/notice.svg'} />
                 </Flex>
-                <VStack flex="1 0 0" gap="10px">
+                <VStack flex="1" gap="10px">
                   <Text color="$title" typography="h6">
                     Feature title
                   </Text>
-                  <Text flex="1 0 0" typography="body" w="484px">
+                  <Text flex="1" typography="body" w="484px">
                     Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
                   </Text>
                 </VStack>

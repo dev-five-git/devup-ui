@@ -62,7 +62,7 @@ export function CodeBoard() {
           <Flex
             alignItems="center"
             borderRadius="1000px"
-            flex="1 0 0"
+            flex="1"
             p="12px 34px"
           >
             <Text typography="buttonM">code menu</Text>
@@ -70,7 +70,7 @@ export function CodeBoard() {
           <Flex
             alignItems="center"
             borderRadius="1000px"
-            flex="1 0 0"
+            flex="1"
             p="12px 34px"
           >
             <Text opacity="0.6" typography="buttonM">
@@ -80,7 +80,7 @@ export function CodeBoard() {
           <Flex
             alignItems="center"
             borderRadius="1000px"
-            flex="1 0 0"
+            flex="1"
             p="12px 34px"
           >
             <Text opacity="0.6" typography="buttonM">

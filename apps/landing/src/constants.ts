@@ -1,2 +1,2 @@
-export const IMAGE_PREFIX =
+export const URL_PREFIX =
   process.env.NODE_ENV === 'production' ? '/devup-ui' : ''
