@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.15
+
+### Patch Changes
+
+- 9fff520: Fix direct select issue
+
 ## 0.1.14
 
 ### Patch Changes
