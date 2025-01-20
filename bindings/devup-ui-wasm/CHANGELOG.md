@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.13
+
+### Patch Changes
+
+- 539e296: Fix walk issue, add flex props
+
 ## 0.1.12
 
 ### Patch Changes
