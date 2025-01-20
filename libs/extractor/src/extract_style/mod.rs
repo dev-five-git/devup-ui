@@ -21,6 +21,7 @@ pub struct ExtractStaticStyle {
 static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
     let mut set = HashSet::<String>::new();
     set.insert("opacity".to_string());
+    set.insert("flex".to_string());
     set.insert("zIndex".to_string());
     set.insert("fontWeight".to_string());
     set.insert("scale".to_string());

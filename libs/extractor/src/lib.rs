@@ -956,7 +956,7 @@ export {
         assert_debug_snapshot!(extract(
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} />
+        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1108,6 +1108,28 @@ export {
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5, ...any}["some"]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn test_component_in_func() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+PROCESS_DATA.map(({ id, title, content }, idx) => (
+          <MotionDiv key={idx}>
+            <Flex alignItems="center" gap={[3, null, 5, null, 10]}>
+            </Flex>
+          </MotionDiv>
+        ))
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

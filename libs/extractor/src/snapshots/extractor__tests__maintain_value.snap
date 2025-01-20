@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
 ---
 ExtractOutput {
     styles: [
@@ -49,6 +49,15 @@ ExtractOutput {
                 basic: false,
             },
         ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex",
+                value: "1",
+                level: 0,
+                selector: None,
+                basic: false,
+            },
+        ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3 d4\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3 d4 d5\" />;\n",
 }

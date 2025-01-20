@@ -171,9 +171,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-
-            walk_call_expression(self, it);
         }
+        walk_call_expression(self, it);
     }
     fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
         if let Expression::Identifier(ident) = &it.tag {
