@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.9
+
+### Patch Changes
+
+- 6f7c55d: Add group selector
+
 ## 0.1.8
 
 ### Patch Changes
