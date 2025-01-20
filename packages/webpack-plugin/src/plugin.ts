@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { getCss, getThemeInterface, registerTheme } from '@devup-ui/wasm'
@@ -75,7 +75,7 @@ export class DevupUIWebpackPlugin {
       }
 
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
-        compilation.fileDependencies.add(this.options.devupPath)
+        compilation.fileDependencies.add(resolve(this.options.devupPath))
       })
     }
 
