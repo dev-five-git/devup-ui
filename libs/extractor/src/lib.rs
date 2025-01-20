@@ -1128,10 +1128,28 @@ export {
             }
         )
         .unwrap());
+
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
         <Flex bg={[`$red`, `${variable}`][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Center} from '@devup-ui/core'
+<Center
+            bg={['$webBg', '$appBg', '$solutionBg'][categoryId - 1]}
+          >
+          </Center>
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

@@ -150,7 +150,7 @@ pub fn extract_style_from_expression<'a>(
                                 ExtractResult::Maintain
                             }
                         }
-                        Expression::Identifier(_) => {
+                        _ => {
                             if let Some(name) = name {
                                 return ExtractResult::ExtractStyle(vec![
                                     ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
@@ -163,7 +163,6 @@ pub fn extract_style_from_expression<'a>(
                             }
                             ExtractResult::Maintain
                         }
-                        _ => ExtractResult::Maintain,
                     }
                 }
                 Expression::ObjectExpression(obj) => match mem_expression {
