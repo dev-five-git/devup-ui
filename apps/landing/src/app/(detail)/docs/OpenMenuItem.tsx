@@ -3,6 +3,7 @@ import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 import { Fragment, useReducer } from 'react'
 
+import { URL_PREFIX } from '../../../constants'
 import { MenuItemProps } from './MenuItem'
 
 export function OpenMenuItem({
@@ -35,7 +36,7 @@ export function OpenMenuItem({
         {subMenu && (
           <Image
             boxSize="16px"
-            src="/menu-arrow.svg"
+            src={URL_PREFIX + '/menu-arrow.svg'}
             transform={open ? 'rotate(0deg)' : 'rotate(-90deg)'}
             transition="transform 0.2s"
           />

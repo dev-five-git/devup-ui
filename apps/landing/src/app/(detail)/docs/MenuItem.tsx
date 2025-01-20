@@ -1,7 +1,6 @@
-import { Box, css, Flex, Image, Text } from '@devup-ui/react'
+import { Box, css, Flex, Text } from '@devup-ui/react'
 import Link from 'next/link'
 
-import { URL_PREFIX } from '../../../constants'
 import { OpenMenuItem } from './OpenMenuItem'
 
 export interface MenuItemProps {
@@ -35,7 +34,6 @@ export function MenuItem(props: MenuItemProps) {
       >
         {children}
       </Text>
-      {subMenu && <Image boxSize="16px" src={URL_PREFIX + '/menu-arrow.svg'} />}
     </Flex>
   )
   return to ? (
