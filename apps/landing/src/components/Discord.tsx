@@ -7,7 +7,7 @@ export function Discord() {
   return (
     <Center
       bgColor="$joinBg"
-      bgImage="url(/discord-bg.svg)"
+      bgImage={`url(${URL_PREFIX}/discord-bg.svg)`}
       borderRadius="40px 40px 0px 40px"
       h="380px"
     >
