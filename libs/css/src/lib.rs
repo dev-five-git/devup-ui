@@ -1,6 +1,47 @@
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+
+pub enum SelectorSeparator {
+    Single,
+    Double,
+}
+
+impl SelectorSeparator {
+    pub fn separator(&self) -> &str {
+        match self {
+            SelectorSeparator::Single => ":",
+            SelectorSeparator::Double => "::",
+        }
+    }
+}
+
+static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
+    let mut set = HashSet::new();
+
+    for key in [
+        "placeholder",
+        "before",
+        "after",
+        "highlight",
+        "view-transition",
+        "view-transition-group",
+        "view-transition-image-pair",
+        "view-transition-new",
+        "view-transition-old",
+    ] {
+        set.insert(key);
+    }
+    set
+});
+
+pub fn get_selector_separator(key: &str) -> SelectorSeparator {
+    if DOUBLE_SEPARATOR.contains(key) {
+        SelectorSeparator::Double
+    } else {
+        SelectorSeparator::Single
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertyType {
@@ -26,56 +67,54 @@ impl From<[&str; 2]> for PropertyType {
     }
 }
 
-static GLOBAL_STYLE_PROPERTY: Lazy<Mutex<HashMap<&str, PropertyType>>> = Lazy::new(|| {
-    Mutex::new({
-        let mut map = HashMap::new();
+static GLOBAL_STYLE_PROPERTY: Lazy<HashMap<&str, PropertyType>> = Lazy::new(|| {
+    let mut map = HashMap::new();
 
-        for (key, value) in [
-            ("bg", "background"),
-            ("bgAttachment", "background-attachment"),
-            ("bgClip", "background-clip"),
-            ("bgColor", "background-color"),
-            ("bgImage", "background-image"),
-            ("bgOrigin", "background-origin"),
-            ("bgPosition", "background-position"),
-            ("bgPositionX", "background-position-x"),
-            ("bgPositionY", "background-position-y"),
-            ("bgRepeat", "background-repeat"),
-            ("bgSize", "background-size"),
-            ("animationDir", "animation-direction"),
-            ("flexDir", "flex-direction"),
-            ("pos", "position"),
-            ("m", "margin"),
-            ("mt", "margin-top"),
-            ("mr", "margin-right"),
-            ("mb", "margin-bottom"),
-            ("ml", "margin-left"),
-            ("p", "padding"),
-            ("pt", "padding-top"),
-            ("pr", "padding-right"),
-            ("pb", "padding-bottom"),
-            ("pl", "padding-left"),
-            ("w", "width"),
-            ("h", "height"),
-            ("minW", "min-width"),
-            ("minH", "min-height"),
-            ("maxW", "max-width"),
-            ("maxH", "max-height"),
-        ] {
-            map.insert(key, value.into());
-        }
+    for (key, value) in [
+        ("bg", "background"),
+        ("bgAttachment", "background-attachment"),
+        ("bgClip", "background-clip"),
+        ("bgColor", "background-color"),
+        ("bgImage", "background-image"),
+        ("bgOrigin", "background-origin"),
+        ("bgPosition", "background-position"),
+        ("bgPositionX", "background-position-x"),
+        ("bgPositionY", "background-position-y"),
+        ("bgRepeat", "background-repeat"),
+        ("bgSize", "background-size"),
+        ("animationDir", "animation-direction"),
+        ("flexDir", "flex-direction"),
+        ("pos", "position"),
+        ("m", "margin"),
+        ("mt", "margin-top"),
+        ("mr", "margin-right"),
+        ("mb", "margin-bottom"),
+        ("ml", "margin-left"),
+        ("p", "padding"),
+        ("pt", "padding-top"),
+        ("pr", "padding-right"),
+        ("pb", "padding-bottom"),
+        ("pl", "padding-left"),
+        ("w", "width"),
+        ("h", "height"),
+        ("minW", "min-width"),
+        ("minH", "min-height"),
+        ("maxW", "max-width"),
+        ("maxH", "max-height"),
+    ] {
+        map.insert(key, value.into());
+    }
 
-        for (key, value) in [
-            ("mx", ["margin-left", "margin-right"]),
-            ("my", ["margin-top", "margin-bottom"]),
-            ("px", ["padding-left", "padding-right"]),
-            ("py", ["padding-top", "padding-bottom"]),
-            ("boxSize", ["width", "height"]),
-        ] {
-            map.insert(key, value.into());
-        }
-        map
-    })
+    for (key, value) in [
+        ("mx", ["margin-left", "margin-right"]),
+        ("my", ["margin-top", "margin-bottom"]),
+        ("px", ["padding-left", "padding-right"]),
+        ("py", ["padding-top", "padding-bottom"]),
+        ("boxSize", ["width", "height"]),
+    ] {
+        map.insert(key, value.into());
+    }
+    map
 });
 
 static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
@@ -107,8 +146,6 @@ pub fn to_kebab_case(value: &str) -> String {
 
 pub fn convert_property(property: &str) -> PropertyType {
     GLOBAL_STYLE_PROPERTY
-        .lock()
-        .unwrap()
         .get(property)
         .cloned()
         .unwrap_or_else(|| to_kebab_case(property).into())

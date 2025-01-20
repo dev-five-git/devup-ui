@@ -1,14 +1,12 @@
-use crate::utils::is_special_property;
+use crate::utils::{expression_to_code, is_special_property};
 use crate::ExtractStyleProp;
 use oxc_allocator::CloneIn;
-use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey, Statement};
+use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey};
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle, ExtractStyleValue};
 use oxc_ast::AstBuilder;
-use oxc_codegen::Codegen;
-use oxc_parser::Parser;
-use oxc_span::{SourceType, SPAN};
+use oxc_span::SPAN;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
@@ -106,56 +104,111 @@ pub fn extract_style_from_expression<'a>(
             );
         }
     }
-    println!("expression: {:?}", expression);
     match expression {
-        Expression::ComputedMemberExpression(mem) => match &mem.object {
-            Expression::ArrayExpression(array) => {
-                match &mem.expression {
-                    Expression::NumericLiteral(v) => {
-                        if array.elements.len() < v.value as usize {
-                            // wrong indexing case
-                            ExtractResult::Remove
-                        } else {
-                            extract_style_from_expression(
-                                ast_builder,
-                                name,
-                                array.elements[v.value as usize]
-                                    .clone_in(ast_builder.allocator)
-                                    .to_expression_mut(),
-                                level,
-                                selector,
-                            )
+        Expression::ComputedMemberExpression(mem) => {
+            let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
+            match &mut mem.object {
+                Expression::ArrayExpression(array) => {
+                    for element in array.elements.iter_mut() {
+                        if let Expression::StringLiteral(str) = element.to_expression_mut() {
+                            if let Some(rest) = str.value.strip_prefix("$") {
+                                str.value = ast_builder.atom(&format!("var(--{})", rest));
+                            }
+                        } else if let Expression::TemplateLiteral(tmp) = element.to_expression_mut()
+                        {
+                            if tmp.quasis.len() == 1 {
+                                if let Some(rest) = tmp.quasis[0].value.raw.strip_prefix("$") {
+                                    tmp.quasis[0].value.raw =
+                                        ast_builder.atom(&format!("var(--{})", rest));
+                                }
+                            }
                         }
                     }
-                    // wrong indexing case
-                    Expression::UnaryExpression(unary) => {
-                        if let Expression::NumericLiteral(_) = &unary.argument {
-                            ExtractResult::Remove
-                        } else {
+
+                    match mem_expression {
+                        Expression::NumericLiteral(v) => {
+                            if array.elements.len() < v.value as usize {
+                                // wrong indexing case
+                                ExtractResult::Remove
+                            } else {
+                                extract_style_from_expression(
+                                    ast_builder,
+                                    name,
+                                    array.elements[v.value as usize]
+                                        .clone_in(ast_builder.allocator)
+                                        .to_expression_mut(),
+                                    level,
+                                    selector,
+                                )
+                            }
+                        }
+                        // wrong indexing case
+                        Expression::UnaryExpression(unary) => {
+                            if let Expression::NumericLiteral(_) = &unary.argument {
+                                ExtractResult::Remove
+                            } else {
+                                ExtractResult::Maintain
+                            }
+                        }
+                        Expression::Identifier(_) => {
+                            if let Some(name) = name {
+                                return ExtractResult::ExtractStyle(vec![
+                                    ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
+                                        name,
+                                        level,
+                                        expression_to_code(expression).as_str(),
+                                        selector,
+                                    ))),
+                                ]);
+                            }
                             ExtractResult::Maintain
                         }
+                        _ => ExtractResult::Maintain,
+                    }
+                }
+                Expression::ObjectExpression(obj) => match mem_expression {
+                    Expression::StringLiteral(str) => {
+                        let key = str.value.as_str();
+                        for p in obj.properties.iter() {
+                            match p {
+                                ObjectPropertyKind::ObjectProperty(o) => {
+                                    if let PropertyKey::StaticIdentifier(ident) = &o.key {
+                                        if ident.name == key {
+                                            return extract_style_from_expression(
+                                                ast_builder,
+                                                name,
+                                                &mut o.value.clone_in(ast_builder.allocator),
+                                                level,
+                                                selector,
+                                            );
+                                        }
+                                    }
+                                }
+                                ObjectPropertyKind::SpreadProperty(_) => {
+                                    if let Some(name) = name {
+                                        return ExtractResult::ExtractStyle(vec![
+                                            ExtractStyleProp::Static(Dynamic(
+                                                ExtractDynamicStyle::new(
+                                                    name,
+                                                    level,
+                                                    expression_to_code(expression).as_str(),
+                                                    selector,
+                                                ),
+                                            )),
+                                        ]);
+                                    }
+                                }
+                            }
+                        }
+                        ExtractResult::Remove
                     }
                     Expression::Identifier(_) => {
                         if let Some(name) = name {
-                            let source = "";
-                            let mut parsed =
-                                Parser::new(ast_builder.allocator, source, SourceType::d_ts())
-                                    .parse();
-                            parsed.program.body.insert(
-                                0,
-                                Statement::ExpressionStatement(
-                                    ast_builder.alloc_expression_statement(
-                                        SPAN,
-                                        expression.clone_in(ast_builder.allocator),
-                                    ),
-                                ),
-                            );
-                            let code = Codegen::new().build(&parsed.program).code;
                             return ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
                                 Dynamic(ExtractDynamicStyle::new(
                                     name,
                                     level,
-                                    code[0..code.len() - 2].to_string().as_str(),
+                                    expression_to_code(expression).as_str(),
                                     selector,
                                 )),
                             )]);
@@ -163,94 +216,40 @@ pub fn extract_style_from_expression<'a>(
                         ExtractResult::Maintain
                     }
                     _ => ExtractResult::Maintain,
-                }
-            }
-            Expression::ObjectExpression(obj) => match &mem.expression {
-                Expression::StringLiteral(str) => {
-                    let key = str.value.as_str();
-                    for p in obj.properties.iter() {
-                        match p {
-                            ObjectPropertyKind::ObjectProperty(o) => {
-                                if let PropertyKey::StaticIdentifier(ident) = &o.key {
-                                    if ident.name == key {
-                                        return extract_style_from_expression(
-                                            ast_builder,
-                                            name,
-                                            &mut o.value.clone_in(ast_builder.allocator),
-                                            level,
-                                            selector,
-                                        );
-                                    }
-                                }
-                            }
-                            ObjectPropertyKind::SpreadProperty(_) => {
-                                if let Some(name) = name {
-                                    let source = "";
-                                    let mut parsed = Parser::new(
-                                        ast_builder.allocator,
-                                        source,
-                                        SourceType::d_ts(),
-                                    )
-                                    .parse();
-                                    parsed.program.body.insert(
-                                        0,
-                                        Statement::ExpressionStatement(
-                                            ast_builder.alloc_expression_statement(
-                                                SPAN,
-                                                expression.clone_in(ast_builder.allocator),
-                                            ),
-                                        ),
-                                    );
-                                    let code = Codegen::new().build(&parsed.program).code;
-                                    return ExtractResult::ExtractStyle(vec![
-                                        ExtractStyleProp::Static(Dynamic(
-                                            ExtractDynamicStyle::new(
-                                                name,
-                                                level,
-                                                code[0..code.len() - 2].to_string().as_str(),
-                                                selector,
-                                            ),
-                                        )),
-                                    ]);
-                                }
-                            }
-                        }
-                    }
-                    ExtractResult::Remove
-                }
-                Expression::Identifier(_) => {
-                    if let Some(name) = name {
-                        let source = "";
-                        let mut parsed =
-                            Parser::new(ast_builder.allocator, source, SourceType::d_ts()).parse();
-                        parsed.program.body.insert(
-                            0,
-                            Statement::ExpressionStatement(ast_builder.alloc_expression_statement(
-                                SPAN,
-                                expression.clone_in(ast_builder.allocator),
-                            )),
-                        );
-                        let code = Codegen::new().build(&parsed.program).code;
-                        return ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
-                            Dynamic(ExtractDynamicStyle::new(
-                                name,
-                                level,
-                                code[0..code.len() - 2].to_string().as_str(),
-                                selector,
-                            )),
-                        )]);
-                    }
-                    ExtractResult::Maintain
-                }
+                },
                 _ => ExtractResult::Maintain,
-            },
-            _ => ExtractResult::Maintain,
-        },
+            }
+        }
         Expression::NumericLiteral(v) => {
             if let Some(name) = name {
                 ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
                     ExtractStaticStyle::new(name, &v.value.to_string(), level, selector),
                 ))])
+            } else {
+                ExtractResult::Maintain
+            }
+        }
+        Expression::TemplateLiteral(tmp) => {
+            if let Some(name) = name {
+                if tmp.quasis.len() == 1 {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
+                        ExtractStaticStyle::new(
+                            name,
+                            tmp.quasis[0].value.raw.as_str(),
+                            level,
+                            selector,
+                        ),
+                    ))])
+                } else {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                        ExtractDynamicStyle::new(
+                            name,
+                            level,
+                            expression_to_code(expression).as_str(),
+                            selector,
+                        ),
+                    ))])
+                }
             } else {
                 ExtractResult::Maintain
             }
