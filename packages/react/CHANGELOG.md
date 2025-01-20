@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.7
+
+### Patch Changes
+
+- 0040445: Fix selector type
+
 ## 0.1.6
 
 ### Patch Changes
