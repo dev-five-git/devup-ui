@@ -24,7 +24,7 @@ export function LeftMenu() {
         <Text flex="1 0 0" opacity="0.8" typography="buttonSmid">
           개념
         </Text>
-        <Image boxSize="16px" src="menu icon" />
+        <Image boxSize="16px" src="/menu-arrow.svg" />
       </Flex>
       <Flex gap="8px">
         <Box borderColor="$border" w="10px" />
@@ -50,13 +50,13 @@ export function LeftMenu() {
         <Text flex="1 0 0" opacity="0.8" typography="buttonSmid">
           구성 요소
         </Text>
-        <Image boxSize="16px" src="menu icon" />
+        <Image boxSize="16px" src="/menu-arrow.svg" />
       </Flex>
       <Flex alignItems="center" borderRadius="6px" gap="10px" p="6px 10px">
         <Text flex="1 0 0" opacity="0.8" typography="buttonSmid">
           API
         </Text>
-        <Image boxSize="16px" src="menu icon" />
+        <Image boxSize="16px" src="/menu-arrow.svg" />
       </Flex>
       <Flex gap="8px">
         <Box borderColor="$border" w="10px" />
@@ -77,7 +77,7 @@ export function LeftMenu() {
         <Text flex="1 0 0" opacity="0.8" typography="buttonSmid">
           테마
         </Text>
-        <Image boxSize="16px" src="menu icon" />
+        <Image boxSize="16px" src="/menu-arrow.svg" />
       </Flex>
       <Flex gap="8px">
         <Box borderColor="$border" w="10px" />

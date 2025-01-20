@@ -1,4 +1,5 @@
-import { Center, Flex, Image, Text, VStack } from '@devup-ui/react'
+import { Center, css, Flex, Image, Text, VStack } from '@devup-ui/react'
+import Link from 'next/link'
 
 import { IMAGE_PREFIX } from '../constants'
 
@@ -21,19 +22,27 @@ export function Discord() {
             egestas consequat nibh.
           </Text>
         </VStack>
-        <Flex
-          alignItems="center"
-          bg="$buttonBlue"
-          borderRadius="100px"
-          p="16px 40px"
+        <Link
+          className={css`
+            text-decoration: none;
+          `}
+          href="https://discord.gg/BtNffusw"
+          target="_blank"
         >
-          <Flex alignItems="center" gap="10px">
-            <Text color="#FFF" typography="buttonLbold">
-              Join our Discord
-            </Text>
-            <Image boxSize="24px" src={IMAGE_PREFIX + '/outlink.svg'} />
+          <Flex
+            alignItems="center"
+            bg="$buttonBlue"
+            borderRadius="100px"
+            p="16px 40px"
+          >
+            <Flex alignItems="center" gap="10px">
+              <Text color="#FFF" typography="buttonLbold">
+                Join our Discord
+              </Text>
+              <Image boxSize="24px" src={IMAGE_PREFIX + '/outlink.svg'} />
+            </Flex>
           </Flex>
-        </Flex>
+        </Link>
       </VStack>
     </Center>
   )
