@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.12
+
+### Patch Changes
+
+- 0040445: Optimize str argument
+
 ## 0.1.11
 
 ### Patch Changes
