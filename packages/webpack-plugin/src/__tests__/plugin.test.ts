@@ -143,7 +143,7 @@ describe('devupUIPlugin', () => {
         add,
       },
     })
-    expect(add).toHaveBeenCalledWith('custom-devup.json')
+    expect(add).toHaveBeenCalledWith(resolve('custom-devup.json'))
 
     // watchRun
     const callback = vi.fn()
