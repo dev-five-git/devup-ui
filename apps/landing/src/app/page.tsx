@@ -1,4 +1,5 @@
-import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
+import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
+import Link from 'next/link'
 
 import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
@@ -26,22 +27,28 @@ export default function HomePage() {
               elementum.
             </Text>
           </VStack>
-          <Flex
-            alignItems="center"
-            bg="$text"
-            borderRadius="100px"
-            gap="20px"
-            p="16px 40px"
-            w="247px"
+          <Link
+            className={css`
+              text-decoration: none;
+            `}
+            href="/docs/overview"
           >
-            <Box bg="$secondary" borderRadius="100%" boxSize="10px" />
-            <Flex alignItems="center" gap="10px">
-              <Text color="$base" typography="buttonL">
-                Get started
-              </Text>
-              <Image boxSize="24px" src={IMAGE_PREFIX + '/arrow.svg'} />
+            <Flex
+              alignItems="center"
+              bg="$text"
+              borderRadius="100px"
+              gap="20px"
+              p="16px 40px"
+            >
+              <Box bg="$secondary" borderRadius="100%" boxSize="10px" />
+              <Flex alignItems="center" gap="10px">
+                <Text color="$base" typography="buttonL">
+                  Get started
+                </Text>
+                <Image boxSize="24px" src={IMAGE_PREFIX + '/arrow.svg'} />
+              </Flex>
             </Flex>
-          </Flex>
+          </Link>
         </VStack>
         <Box maxW="1200px" mx="auto" pb="100px" pt="80px">
           <CodeBoard />

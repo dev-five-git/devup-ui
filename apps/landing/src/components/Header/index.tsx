@@ -1,49 +1,75 @@
-import { Box, Flex, Image, Text } from '@devup-ui/react'
+import { css, Flex, Image, Text } from '@devup-ui/react'
+import Link from 'next/link'
 
 import { IMAGE_PREFIX } from '../../constants'
-import { Container } from '../Container'
+import { HeaderWrap } from './HeaderWrap'
 
 export function Header() {
   return (
-    <Box position="fixed" top={5} w="100%">
-      <Container>
-        <Flex
-          alignItems="center"
-          bg="$containerBackground"
-          borderRadius="16px"
-          boxShadow="0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))"
-          h="70px"
-          justifyContent="space-between"
-          px="40px"
+    <HeaderWrap>
+      <Flex alignItems="center" gap="16px">
+        <Link
+          className={css`
+            text-decoration: none;
+          `}
+          href="/"
         >
-          <Flex alignItems="center" gap="16px">
-            <Image h="42px" src={IMAGE_PREFIX + '/logo.svg'} />
+          <Image h="42px" src={IMAGE_PREFIX + '/logo.svg'} />
+        </Link>
+      </Flex>
+      <Flex alignItems="center" gap="10px">
+        <Flex alignItems="center" px="24px">
+          <Link
+            className={css`
+              text-decoration: none;
+            `}
+            href="/docs/overview"
+          >
+            <Text color="$title" opacity="0.6" typography="buttonLsemiB">
+              Docs
+            </Text>
+          </Link>
+        </Flex>
+        <Flex alignItems="center" px="24px">
+          <Link
+            className={css`
+              text-decoration: none;
+            `}
+            href="/team"
+          >
+            <Text color="$title" opacity="0.6" typography="buttonLsemiB">
+              Team
+            </Text>
+          </Link>
+        </Flex>
+        <Flex alignItems="center">
+          <Flex alignItems="center" px="10px">
+            <Link
+              className={css`
+                text-decoration: none;
+              `}
+              href="https://github.com/dev-five-git/devup-ui"
+              target="_blank"
+            >
+              <Image boxSize="24px" src={IMAGE_PREFIX + '/github.svg'} />
+            </Link>
           </Flex>
-          <Flex alignItems="center" gap="10px">
-            <Flex alignItems="center" px="24px">
-              <Text color="$title" opacity="0.6" typography="buttonLsemiB">
-                Docs
-              </Text>
-            </Flex>
-            <Flex alignItems="center" px="24px">
-              <Text color="$title" opacity="0.6" typography="buttonLsemiB">
-                Team
-              </Text>
-            </Flex>
-            <Flex alignItems="center">
-              <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src={IMAGE_PREFIX + '/github.svg'} />
-              </Flex>
-              <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src={IMAGE_PREFIX + '/discord.svg'} />
-              </Flex>
-              <Flex alignItems="center" px="10px">
-                <Image boxSize="24px" src={IMAGE_PREFIX + '/light.svg'} />
-              </Flex>
-            </Flex>
+          <Flex alignItems="center" px="10px">
+            <Link
+              className={css`
+                text-decoration: none;
+              `}
+              href="https://discord.gg/BtNffusw"
+              target="_blank"
+            >
+              <Image boxSize="24px" src={IMAGE_PREFIX + '/discord.svg'} />
+            </Link>
+          </Flex>
+          <Flex alignItems="center" px="10px">
+            <Image boxSize="24px" src={IMAGE_PREFIX + '/light.svg'} />
           </Flex>
         </Flex>
-      </Container>
-    </Box>
+      </Flex>
+    </HeaderWrap>
   )
 }

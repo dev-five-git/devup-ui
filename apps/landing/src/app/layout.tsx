@@ -3,6 +3,7 @@ import 'sanitize.css'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
+import { Header } from '../components/Header'
 
 export const metadata: Metadata = {
   title: 'Devup UI',
@@ -22,6 +23,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <Header />
         {children}
         <Footer />
       </body>
