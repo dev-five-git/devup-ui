@@ -1,7 +1,7 @@
 import { css, Flex, Image, Text } from '@devup-ui/react'
 import Link from 'next/link'
 
-import { IMAGE_PREFIX } from '../../constants'
+import { URL_PREFIX } from '../../constants'
 import { HeaderWrap } from './HeaderWrap'
 
 export function Header() {
@@ -12,9 +12,9 @@ export function Header() {
           className={css`
             text-decoration: none;
           `}
-          href="/"
+          href={URL_PREFIX + '/'}
         >
-          <Image h="42px" src={IMAGE_PREFIX + '/logo.svg'} />
+          <Image h="42px" src={URL_PREFIX + '/logo.svg'} />
         </Link>
       </Flex>
       <Flex alignItems="center" gap="10px">
@@ -23,7 +23,7 @@ export function Header() {
             className={css`
               text-decoration: none;
             `}
-            href="/docs/overview"
+            href={URL_PREFIX + '/docs/overview'}
           >
             <Text color="$title" opacity="0.6" typography="buttonLsemiB">
               Docs
@@ -35,7 +35,7 @@ export function Header() {
             className={css`
               text-decoration: none;
             `}
-            href="/team"
+            href={URL_PREFIX + '/team'}
           >
             <Text color="$title" opacity="0.6" typography="buttonLsemiB">
               Team
@@ -51,7 +51,7 @@ export function Header() {
               href="https://github.com/dev-five-git/devup-ui"
               target="_blank"
             >
-              <Image boxSize="24px" src={IMAGE_PREFIX + '/github.svg'} />
+              <Image boxSize="24px" src={URL_PREFIX + '/github.svg'} />
             </Link>
           </Flex>
           <Flex alignItems="center" px="10px">
@@ -62,11 +62,11 @@ export function Header() {
               href="https://discord.gg/BtNffusw"
               target="_blank"
             >
-              <Image boxSize="24px" src={IMAGE_PREFIX + '/discord.svg'} />
+              <Image boxSize="24px" src={URL_PREFIX + '/discord.svg'} />
             </Link>
           </Flex>
           <Flex alignItems="center" px="10px">
-            <Image boxSize="24px" src={IMAGE_PREFIX + '/light.svg'} />
+            <Image boxSize="24px" src={URL_PREFIX + '/light.svg'} />
           </Flex>
         </Flex>
       </Flex>

@@ -1,12 +1,12 @@
 import { Flex, Image, Text, VStack } from '@devup-ui/react'
 
-import { IMAGE_PREFIX } from '../constants'
+import { URL_PREFIX } from '../constants'
 
 export function Footer() {
   return (
     <VStack bg="$footerBg" gap="80px" p="60px 320px">
       <Flex justifyContent="space-between">
-        <VStack flex="1 0 0" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px" minWidth="240px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 1
           </Text>
@@ -28,7 +28,7 @@ export function Footer() {
             </Text>
           </VStack>
         </VStack>
-        <VStack flex="1 0 0" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px" minWidth="240px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 2
           </Text>
@@ -39,7 +39,7 @@ export function Footer() {
             상세 메뉴 2
           </Text>
         </VStack>
-        <VStack flex="1 0 0" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px" minWidth="240px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 3
           </Text>
@@ -59,7 +59,7 @@ export function Footer() {
       </Flex>
       <Flex alignItems="flex-end" justifyContent="space-between">
         <Flex alignItems="flex-end">
-          <Image alt="white-logo" src={IMAGE_PREFIX + '/white-logo.svg'} />
+          <Image alt="white-logo" src={URL_PREFIX + '/white-logo.svg'} />
         </Flex>
         <VStack alignItems="flex-end" gap="10px">
           <Text color="$footerText" textAlign="right" typography="small">

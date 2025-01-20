@@ -1,13 +1,13 @@
 import { Center, css, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 
-import { IMAGE_PREFIX } from '../constants'
+import { URL_PREFIX } from '../constants'
 
 export function Discord() {
   return (
     <Center
       bgColor="$joinBg"
-      bgImage="url(/discord-bg.svg)"
+      bgImage={`url(${URL_PREFIX}/discord-bg.svg)`}
       borderRadius="40px 40px 0px 40px"
       h="380px"
     >
@@ -39,7 +39,7 @@ export function Discord() {
               <Text color="#FFF" typography="buttonLbold">
                 Join our Discord
               </Text>
-              <Image boxSize="24px" src={IMAGE_PREFIX + '/outlink.svg'} />
+              <Image boxSize="24px" src={URL_PREFIX + '/outlink.svg'} />
             </Flex>
           </Flex>
         </Link>
