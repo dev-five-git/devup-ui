@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.8
+
+### Patch Changes
+
+- 8943bad: Add double selector
+
 ## 0.1.7
 
 ### Patch Changes
