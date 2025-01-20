@@ -12,7 +12,7 @@ export function Header() {
           className={css({
             textDecoration: 'none',
           })}
-          href={URL_PREFIX + '/'}
+          href={URL_PREFIX}
         >
           <Image h="42px" src={URL_PREFIX + '/logo.svg'} />
         </Link>
