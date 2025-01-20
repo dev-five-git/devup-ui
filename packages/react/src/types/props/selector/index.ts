@@ -20,5 +20,16 @@ export interface DevupSelectorProps {
   _link?: DevupCommonProps
   _onlyChild?: DevupCommonProps
   _optional?: DevupCommonProps
+  _readOnly?: DevupCommonProps
+
+  // double separator
   _placeholder?: DevupCommonProps
+  _before?: DevupCommonProps
+  _after?: DevupCommonProps
+  _highlight?: DevupCommonProps
+  _viewTransition?: DevupCommonProps
+  _viewTransitionGroup?: DevupCommonProps
+  _viewTransitionImagePair?: DevupCommonProps
+  _viewTransitionNew?: DevupCommonProps
+  _viewTransitionOld?: DevupCommonProps
 }

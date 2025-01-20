@@ -1,4 +1,9 @@
 use once_cell::sync::Lazy;
+use oxc_allocator::{Allocator, CloneIn};
+use oxc_ast::ast::{Expression, Statement};
+use oxc_codegen::Codegen;
+use oxc_parser::Parser;
+use oxc_span::{SourceType, SPAN};
 use std::collections::HashSet;
 
 /// Convert a value to a pixel value
@@ -9,6 +14,21 @@ pub fn convert_value(value: &str) -> String {
         return format!("{}px", num);
     }
     value
+}
+
+pub fn expression_to_code(expression: &Expression) -> String {
+    let source = "";
+    let allocator = Allocator::default();
+    let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+    let mut parsed = Parser::new(&allocator, source, SourceType::d_ts()).parse();
+    parsed.program.body.insert(
+        0,
+        Statement::ExpressionStatement(
+            ast_builder.alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
+        ),
+    );
+    let code = Codegen::new().build(&parsed.program).code;
+    code[0..code.len() - 2].to_string()
 }
 
 static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {

@@ -1,7 +1,7 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{convert_property, to_kebab_case, PropertyType};
+use css::{convert_property, get_selector_separator, to_kebab_case, PropertyType};
 use std::cmp::Ordering::{Greater, Less};
 use std::collections::{BTreeMap, HashSet};
 
@@ -21,7 +21,12 @@ pub struct StyleSheetProperty {
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
         let selector = if let Some(selector) = &self.selector {
-            format!(":{}", to_kebab_case(selector))
+            let selector = to_kebab_case(selector);
+            format!(
+                "{}{}",
+                get_selector_separator(&selector).separator(),
+                selector
+            )
         } else {
             String::new()
         };

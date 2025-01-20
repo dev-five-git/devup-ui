@@ -1115,6 +1115,30 @@ export {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex bg={["$red", "$blue"][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex bg={[`$red`, `${variable}`][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1130,6 +1154,36 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
             </Flex>
           </MotionDiv>
         ))
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn backtick_prop() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+            <Box bg={`black`} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+            <Box bg={`${variable}`} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
