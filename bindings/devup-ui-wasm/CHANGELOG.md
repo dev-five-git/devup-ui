@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.14
+
+### Patch Changes
+
+- 8943bad: Support double separator, Support backtick case
+
 ## 0.1.13
 
 ### Patch Changes

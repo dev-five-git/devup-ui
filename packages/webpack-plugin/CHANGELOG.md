@@ -1,5 +1,12 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.17
+
+### Patch Changes
+
+- Updated dependencies [8943bad]
+  - @devup-ui/wasm@0.1.14
+
 ## 0.1.16
 
 ### Patch Changes
