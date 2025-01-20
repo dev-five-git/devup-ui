@@ -23,9 +23,9 @@ export function Discord() {
           </Text>
         </VStack>
         <Link
-          className={css`
-            text-decoration: none;
-          `}
+          className={css({
+            textDecoration: 'none',
+          })}
           href="https://discord.gg/BtNffusw"
           target="_blank"
         >

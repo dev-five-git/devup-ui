@@ -1,0 +1,14 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import { css as c } from \"@devup-ui/core\";\n<Box className={c`\n  background-color: red;\n`}/>;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Css(
+            ExtractCss {
+                css: "background-color: red;",
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { css as c } from \"@devup-ui/core\";\n<Box className={c`d0`} />;\n",
+}

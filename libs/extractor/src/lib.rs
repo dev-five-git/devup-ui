@@ -507,6 +507,19 @@ mod tests {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? null : undefined} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -760,6 +773,52 @@ mod tests {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { css as c } from "@devup-ui/core";
+<Box className={c`
+  background-color: red;
+`}/>;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { css } from "@devup-ui/core";
+<Box className={css({
+  bg:"red",
+  color:"blue"
+})}/>;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { css as c } from "@devup-ui/core";
+<Box className={c({
+  bg:"red"
+})}/>;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -787,6 +846,32 @@ mod tests {
             "test.tsx",
             r#"import {Text} from '@devup-ui/core'
         <Text typography="bold" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography={`bold`} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography={a ? "bold" : "bold2"} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1202,6 +1287,23 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
             "test.js",
             r#"import {Box} from '@devup-ui/core'
             <Box bg={`${variable}`} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn group_selector_props() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+            <Box _groupHover={{ bg: "red" }} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

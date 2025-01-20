@@ -9,9 +9,9 @@ export function Header() {
     <HeaderWrap>
       <Flex alignItems="center" gap="16px">
         <Link
-          className={css`
-            text-decoration: none;
-          `}
+          className={css({
+            textDecoration: 'none',
+          })}
           href={URL_PREFIX + '/'}
         >
           <Image h="42px" src={URL_PREFIX + '/logo.svg'} />
@@ -20,9 +20,9 @@ export function Header() {
       <Flex alignItems="center" gap="10px">
         <Flex alignItems="center" px="24px">
           <Link
-            className={css`
-              text-decoration: none;
-            `}
+            className={css({
+              textDecoration: 'none',
+            })}
             href={URL_PREFIX + '/docs/overview'}
           >
             <Text color="$title" opacity="0.6" typography="buttonLsemiB">
@@ -32,9 +32,9 @@ export function Header() {
         </Flex>
         <Flex alignItems="center" px="24px">
           <Link
-            className={css`
-              text-decoration: none;
-            `}
+            className={css({
+              textDecoration: 'none',
+            })}
             href={URL_PREFIX + '/team'}
           >
             <Text color="$title" opacity="0.6" typography="buttonLsemiB">
@@ -45,9 +45,9 @@ export function Header() {
         <Flex alignItems="center">
           <Flex alignItems="center" px="10px">
             <Link
-              className={css`
-                text-decoration: none;
-              `}
+              className={css({
+                textDecoration: 'none',
+              })}
               href="https://github.com/dev-five-git/devup-ui"
               target="_blank"
             >
@@ -56,9 +56,9 @@ export function Header() {
           </Flex>
           <Flex alignItems="center" px="10px">
             <Link
-              className={css`
-                text-decoration: none;
-              `}
+              className={css({
+                textDecoration: 'none',
+              })}
               href="https://discord.gg/BtNffusw"
               target="_blank"
             >

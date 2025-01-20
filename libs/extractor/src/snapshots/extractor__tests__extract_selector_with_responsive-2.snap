@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "40px",
                 level: 0,
                 selector: Some(
-                    "hover",
+                    Postfix(
+                        "hover",
+                    ),
                 ),
                 basic: false,
             },
@@ -21,7 +23,9 @@ ExtractOutput {
                 value: "80px",
                 level: 1,
                 selector: Some(
-                    "hover",
+                    Postfix(
+                        "hover",
+                    ),
                 ),
                 basic: false,
             },

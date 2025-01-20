@@ -28,9 +28,9 @@ export default function HomePage() {
             </Text>
           </VStack>
           <Link
-            className={css`
-              text-decoration: none;
-            `}
+            className={css({
+              textDecoration: 'none',
+            })}
             href={URL_PREFIX + '/docs/overview'}
           >
             <Flex

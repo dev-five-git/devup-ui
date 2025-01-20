@@ -3,8 +3,8 @@ use crate::ExtractStyleProp;
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey};
 
-use crate::extract_style::ExtractStyleValue::{Dynamic, Static};
-use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle, ExtractStyleValue};
+use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
+use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
@@ -74,17 +74,10 @@ pub fn extract_style_from_expression<'a>(
     level: u8,
     selector: Option<&str>,
 ) -> ExtractResult<'a> {
+    let mut typo = false;
     if let Some(name) = name {
         if is_special_property(name) {
             return ExtractResult::Maintain;
-        }
-        if name == "typography" {
-            if let Expression::StringLiteral(ident) = &expression {
-                return ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
-                    ExtractStyleValue::Typography(ident.value.to_string()),
-                )]);
-            }
-            return ExtractResult::Remove;
         }
 
         if name == "as" {
@@ -102,6 +95,9 @@ pub fn extract_style_from_expression<'a>(
                 level,
                 Some(selector),
             );
+        }
+        if name == "typography" {
+            typo = true;
         }
     }
     match expression {
@@ -157,7 +153,7 @@ pub fn extract_style_from_expression<'a>(
                                         name,
                                         level,
                                         expression_to_code(expression).as_str(),
-                                        selector,
+                                        selector.map(|s| s.into()),
                                     ))),
                                 ]);
                             }
@@ -191,7 +187,7 @@ pub fn extract_style_from_expression<'a>(
                                                     name,
                                                     level,
                                                     expression_to_code(expression).as_str(),
-                                                    selector,
+                                                    selector.map(|s| s.into()),
                                                 ),
                                             )),
                                         ]);
@@ -208,7 +204,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     expression_to_code(expression).as_str(),
-                                    selector,
+                                    selector.map(|s| s.into()),
                                 )),
                             )]);
                         }
@@ -222,7 +218,12 @@ pub fn extract_style_from_expression<'a>(
         Expression::NumericLiteral(v) => {
             if let Some(name) = name {
                 ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
-                    ExtractStaticStyle::new(name, &v.value.to_string(), level, selector),
+                    ExtractStaticStyle::new(
+                        name,
+                        &v.value.to_string(),
+                        level,
+                        selector.map(|s| s.into()),
+                    ),
                 ))])
             } else {
                 ExtractResult::Maintain
@@ -231,21 +232,23 @@ pub fn extract_style_from_expression<'a>(
         Expression::TemplateLiteral(tmp) => {
             if let Some(name) = name {
                 if tmp.quasis.len() == 1 {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
-                        ExtractStaticStyle::new(
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
+                        Typography(tmp.quasis[0].value.raw.as_str().to_string())
+                    } else {
+                        Static(ExtractStaticStyle::new(
                             name,
                             tmp.quasis[0].value.raw.as_str(),
                             level,
-                            selector,
-                        ),
-                    ))])
+                            selector.map(|s| s.into()),
+                        ))
+                    })])
                 } else {
                     ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
                         ExtractDynamicStyle::new(
                             name,
                             level,
                             expression_to_code(expression).as_str(),
-                            selector,
+                            selector.map(|s| s.into()),
                         ),
                     ))])
                 }
@@ -255,9 +258,16 @@ pub fn extract_style_from_expression<'a>(
         }
         Expression::StringLiteral(v) => {
             if let Some(name) = name {
-                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
-                    ExtractStaticStyle::new(name, v.value.as_str(), level, selector),
-                ))])
+                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
+                    Typography(v.value.as_str().to_string())
+                } else {
+                    Static(ExtractStaticStyle::new(
+                        name,
+                        v.value.as_str(),
+                        level,
+                        selector.map(|s| s.into()),
+                    ))
+                })])
             } else {
                 ExtractResult::Maintain
             }
@@ -267,7 +277,12 @@ pub fn extract_style_from_expression<'a>(
                 ExtractResult::Maintain
             } else if let Some(name) = name {
                 ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                    ExtractDynamicStyle::new(name, level, identifier.name.as_str(), selector),
+                    ExtractDynamicStyle::new(
+                        name,
+                        level,
+                        identifier.name.as_str(),
+                        selector.map(|s| s.into()),
+                    ),
                 ))])
             } else {
                 ExtractResult::Maintain

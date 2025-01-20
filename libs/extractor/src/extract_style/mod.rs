@@ -1,6 +1,6 @@
 use crate::utils::convert_value;
 use crate::StyleProperty;
-use css::{css_to_classname, sheet_to_classname, sheet_to_variable_name};
+use css::{css_to_classname, sheet_to_classname, sheet_to_variable_name, StyleSelector};
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 
@@ -13,7 +13,7 @@ pub struct ExtractStaticStyle {
     /// responsive level
     level: u8,
     /// selector
-    selector: Option<String>,
+    selector: Option<StyleSelector>,
     /// basic, if the value is true then css created by this style will be added to the first
     basic: bool,
 }
@@ -30,7 +30,7 @@ static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
 
 impl ExtractStaticStyle {
     /// create a new ExtractStaticStyle
-    pub fn new(property: &str, value: &str, level: u8, selector: Option<&str>) -> Self {
+    pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
             value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
                 value.to_string()
@@ -39,12 +39,17 @@ impl ExtractStaticStyle {
             },
             property: property.to_string(),
             level,
-            selector: selector.map(|s| s.to_string()),
+            selector,
             basic: false,
         }
     }
 
-    pub fn new_basic(property: &str, value: &str, level: u8, selector: Option<&str>) -> Self {
+    pub fn new_basic(
+        property: &str,
+        value: &str,
+        level: u8,
+        selector: Option<StyleSelector>,
+    ) -> Self {
         Self {
             value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
                 value.to_string()
@@ -53,7 +58,7 @@ impl ExtractStaticStyle {
             },
             property: property.to_string(),
             level,
-            selector: selector.map(|s| s.to_string()),
+            selector,
             basic: true,
         }
     }
@@ -70,8 +75,8 @@ impl ExtractStaticStyle {
         self.level
     }
 
-    pub fn selector(&self) -> Option<&str> {
-        self.selector.as_deref()
+    pub fn selector(&self) -> Option<&StyleSelector> {
+        self.selector.as_ref()
     }
 
     pub fn basic(&self) -> bool {
@@ -86,15 +91,12 @@ pub trait ExtractStyleProperty {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self) -> StyleProperty {
+        let s = self.selector.clone().map(|s| s.to_string());
         StyleProperty::ClassName(sheet_to_classname(
             self.property.as_str(),
             self.level,
             Some(convert_value(self.value.as_str()).as_str()),
-            if let Some(selector) = &self.selector {
-                Some(selector.as_str())
-            } else {
-                None
-            },
+            s.as_deref(),
         ))
     }
 }
@@ -120,17 +122,22 @@ pub struct ExtractDynamicStyle {
     identifier: String,
 
     /// selector
-    selector: Option<String>,
+    selector: Option<StyleSelector>,
 }
 
 impl ExtractDynamicStyle {
     /// create a new ExtractDynamicStyle
-    pub fn new(property: &str, level: u8, identifier: &str, selector: Option<&str>) -> Self {
+    pub fn new(
+        property: &str,
+        level: u8,
+        identifier: &str,
+        selector: Option<StyleSelector>,
+    ) -> Self {
         Self {
             property: property.to_string(),
             level,
             identifier: identifier.to_string(),
-            selector: selector.map(|s| s.to_string()),
+            selector,
         }
     }
 
@@ -142,8 +149,8 @@ impl ExtractDynamicStyle {
         self.level
     }
 
-    pub fn selector(&self) -> Option<&str> {
-        self.selector.as_deref()
+    pub fn selector(&self) -> Option<&StyleSelector> {
+        self.selector.as_ref()
     }
 
     pub fn identifier(&self) -> &str {
@@ -153,25 +160,18 @@ impl ExtractDynamicStyle {
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self) -> StyleProperty {
+        let selector = self.selector.clone().map(|s| s.to_string());
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),
                 self.level,
                 None,
-                if let Some(selector) = &self.selector {
-                    Some(selector.as_str())
-                } else {
-                    None
-                },
+                selector.as_deref(),
             ),
             variable_name: sheet_to_variable_name(
                 self.property.as_str(),
                 self.level,
-                if let Some(selector) = &self.selector {
-                    Some(selector.as_str())
-                } else {
-                    None
-                },
+                selector.as_deref(),
             ),
             identifier: self.identifier.clone(),
         }
@@ -195,5 +195,39 @@ impl ExtractStyleValue {
                 StyleProperty::ClassName(format!("typo-{}", typo))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_static_style() {
+        let style = ExtractStaticStyle::new("color", "red", 0, None);
+        assert_eq!(style.property(), "color");
+        assert_eq!(style.value(), "red");
+        assert_eq!(style.level(), 0);
+        assert_eq!(style.selector(), None);
+        assert_eq!(style.basic(), false);
+    }
+
+    #[test]
+    fn test_extract_dynamic_style() {
+        let style = ExtractDynamicStyle::new("color", 0, "primary", None);
+        assert_eq!(style.property(), "color");
+        assert_eq!(style.level(), 0);
+        assert_eq!(style.selector(), None);
+        assert_eq!(style.identifier(), "primary");
+    }
+
+    #[test]
+    fn test_extract_basic_static_style() {
+        let style = ExtractStaticStyle::new_basic("color", "red", 0, None);
+        assert_eq!(style.property(), "color");
+        assert_eq!(style.value(), "red");
+        assert_eq!(style.level(), 0);
+        assert_eq!(style.selector(), None);
+        assert_eq!(style.basic(), true);
     }
 }

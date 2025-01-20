@@ -1,32 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 
+#[derive(Default)]
 pub struct ColorTheme {
     data: HashMap<String, String>,
 }
 
-impl Default for ColorTheme {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ColorTheme {
-    pub fn new() -> Self {
-        Self {
-            data: HashMap::new(),
-        }
-    }
-
     pub fn add_color(&mut self, name: &str, value: &str) {
         self.data.insert(name.to_string(), value.to_string());
-    }
-
-    pub fn get_color(&self, name: &str) -> Option<&String> {
-        self.data.get(name)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
@@ -37,29 +18,14 @@ impl ColorTheme {
     }
 }
 
+#[derive(Default)]
 pub struct Color {
     pub themes: HashMap<String, ColorTheme>,
 }
 
-impl Default for Color {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Color {
-    pub fn new() -> Self {
-        Self {
-            themes: HashMap::new(),
-        }
-    }
-
     pub fn add_theme(&mut self, name: &str, theme: ColorTheme) {
         self.themes.insert(name.to_string(), theme);
-    }
-
-    pub fn get_theme(&self, name: &str) -> Option<&ColorTheme> {
-        self.themes.get(name)
     }
 
     pub fn to_css(&self) -> String {
@@ -132,19 +98,15 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Theme {
-    pub fn new() -> Self {
         Self {
-            colors: Color::new(),
+            colors: Color::default(),
             break_points: vec![0, 480, 768, 992, 1280],
             typography: BTreeMap::new(),
         }
     }
+}
 
+impl Theme {
     pub fn update_break_points(&mut self, break_points: Vec<u16>) {
         for (idx, value) in break_points.iter().enumerate() {
             let prev = self.break_points.get_mut(idx);
@@ -219,10 +181,6 @@ impl Theme {
         }
         css
     }
-
-    pub fn get_color_theme(&self, name: &str) -> Option<&ColorTheme> {
-        self.colors.get_theme(name)
-    }
 }
 
 #[cfg(test)]
@@ -231,11 +189,14 @@ mod tests {
 
     #[test]
     fn to_css_from_theme() {
-        let mut theme = Theme::new();
-        let mut color_theme = ColorTheme::new();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
+
+        assert_eq!(color_theme.keys().count(), 1);
+
         theme.add_color_theme("default", color_theme);
-        let mut color_theme = ColorTheme::new();
+        let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#fff");
         theme.add_color_theme("dark", color_theme);
         theme.add_typography(
@@ -276,5 +237,13 @@ mod tests {
             css,
             ":root{--primary:#000;}\n:root[data-theme=dark]{--primary:#fff;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
         );
+
+        assert_eq!(Theme::default().to_css(), "");
+        let mut theme = Theme::default();
+        theme.add_typography(
+            "default",
+            vec![Typography::new(None, None, None, None, None, 0)],
+        );
+        assert_eq!(theme.to_css(), "");
     }
 }

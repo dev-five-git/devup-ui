@@ -1,5 +1,5 @@
 use crate::component::ExportVariableKind;
-use crate::extract_style::ExtractCss;
+use crate::extract_style::{ExtractCss, ExtractStyleProperty};
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
     extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
@@ -27,6 +27,7 @@ pub struct DevupVisitor<'a> {
     imports: HashMap<String, ExportVariableKind>,
     import_object: Option<String>,
     jsx_imports: HashMap<String, String>,
+    css_imports: HashMap<String, String>,
     jsx_object: Option<String>,
     package: String,
     css_file: String,
@@ -44,6 +45,7 @@ impl<'a> DevupVisitor<'a> {
             styles: vec![],
             import_object: None,
             jsx_object: None,
+            css_imports: HashMap::new(),
         }
     }
 }
@@ -172,11 +174,72 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         }
+        println!("{:?} {:?}", it, self.css_imports);
+        if let Expression::Identifier(ident) = &it.callee {
+            if self.css_imports.contains_key(ident.name.as_str()) && it.arguments.len() == 1 {
+                if let Argument::ObjectExpression(ref mut obj) = it.arguments[0] {
+                    let mut props_styles = vec![];
+                    for idx in (0..obj.properties.len()).rev() {
+                        let mut prop = obj.properties.remove(idx);
+                        let mut rm = false;
+                        if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
+                            if let PropertyKey::StaticIdentifier(ident) = &prop.key {
+                                let name = ident.name.to_string();
+                                rm = match extract_style_from_expression(
+                                    &self.ast,
+                                    Some(&name),
+                                    &mut prop.value,
+                                    0,
+                                    None,
+                                ) {
+                                    ExtractResult::Maintain => false,
+                                    ExtractResult::Remove => true,
+                                    ExtractResult::ExtractStyle(mut styles) => {
+                                        styles.reverse();
+                                        props_styles.append(&mut styles);
+                                        true
+                                    }
+                                    ExtractResult::ChangeTag(_) => true,
+                                }
+                            }
+                        }
+                        if !rm {
+                            obj.properties.insert(idx, prop);
+                        }
+                    }
+                    let mut styles = props_styles
+                        .into_iter()
+                        .flat_map(|ex| ex.extract())
+                        .collect::<Vec<_>>();
+                    let class_name = styles
+                        .iter()
+                        .filter_map(|ex| match ex {
+                            ExtractStyleValue::Static(css) => {
+                                if let StyleProperty::ClassName(cls) = css.extract() {
+                                    Some(cls.to_string())
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    self.styles.append(&mut styles);
+                    it.arguments[0] = Argument::StringLiteral(self.ast.alloc_string_literal(
+                        SPAN,
+                        self.ast.atom(&class_name),
+                        None,
+                    ));
+                }
+            }
+        }
         walk_call_expression(self, it);
     }
     fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
         if let Expression::Identifier(ident) = &it.tag {
-            if ident.name != "css" {
+            if !self.css_imports.contains_key(ident.name.as_str()) {
                 walk_tagged_template_expression(self, it);
                 return;
             }
@@ -336,6 +399,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                         // remove specifier
                         specifiers.remove(i);
+                    } else if import.imported.to_string() == "css" {
+                        self.css_imports
+                            .insert(import.local.to_string(), it.source.value.to_string());
                     }
                 }
             }

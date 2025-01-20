@@ -8,7 +8,8 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
-static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> = Lazy::new(|| Mutex::new(StyleSheet::new()));
+static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
+    Lazy::new(|| Mutex::new(StyleSheet::default()));
 
 #[wasm_bindgen]
 pub struct Output {
@@ -131,7 +132,7 @@ pub fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValu
 }
 
 fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
-    let mut theme = Theme::new();
+    let mut theme = Theme::default();
 
     if let Ok(obj) = js_value.dyn_into::<Object>() {
         // get colors
@@ -147,7 +148,7 @@ fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
                     if let (Some(key_str), Some(theme_value)) =
                         (key.as_string(), value.dyn_into::<Object>().ok())
                     {
-                        let mut color_theme = ColorTheme::new();
+                        let mut color_theme = ColorTheme::default();
                         for var_entry in Object::entries(&theme_value).into_iter() {
                             if let (Ok(var_key), Ok(var_value)) = (
                                 Reflect::get(&var_entry, &JsValue::from_f64(0f64)),
