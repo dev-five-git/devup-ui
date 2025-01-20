@@ -69,7 +69,7 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Css(cs) => {
-                    if sheet.add_css(cls, cs.css.clone()) {
+                    if sheet.add_css(&cls, &cs.css) {
                         collected = true;
                     }
                 }
@@ -156,7 +156,7 @@ fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
                                 if let (Some(var_key_str), Some(var_value_str)) =
                                     (var_key.as_string(), var_value.as_string())
                                 {
-                                    color_theme.add_color(var_key_str, var_value_str);
+                                    color_theme.add_color(&var_key_str, &var_value_str);
                                 } else {
                                     return Err(JsValue::from_str(
                                         "Failed to get key and value from the theme object",
@@ -164,7 +164,7 @@ fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
                                 }
                             }
                         }
-                        theme.colors.add_theme(key_str, color_theme);
+                        theme.colors.add_theme(&key_str, color_theme);
                     }
                 }
             }

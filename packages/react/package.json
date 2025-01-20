@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint",
-    "build": "vite build"
+    "build": "tsc && vite build"
   },
   "publishConfig": {
     "access": "public"
