@@ -17,8 +17,8 @@ impl ColorTheme {
         }
     }
 
-    pub fn add_color(&mut self, name: String, value: String) {
-        self.data.insert(name, value);
+    pub fn add_color(&mut self, name: &str, value: &str) {
+        self.data.insert(name.to_string(), value.to_string());
     }
 
     pub fn get_color(&self, name: &str) -> Option<&String> {
@@ -54,8 +54,8 @@ impl Color {
         }
     }
 
-    pub fn add_theme(&mut self, name: String, theme: ColorTheme) {
-        self.themes.insert(name, theme);
+    pub fn add_theme(&mut self, name: &str, theme: ColorTheme) {
+        self.themes.insert(name.to_string(), theme);
     }
 
     pub fn get_theme(&self, name: &str) -> Option<&ColorTheme> {
@@ -156,12 +156,12 @@ impl Theme {
         }
     }
 
-    pub fn add_color_theme(&mut self, name: String, theme: ColorTheme) {
+    pub fn add_color_theme(&mut self, name: &str, theme: ColorTheme) {
         self.colors.add_theme(name, theme);
     }
 
-    pub fn add_typography(&mut self, name: String, typography: Vec<Typography>) {
-        self.typography.insert(name, typography);
+    pub fn add_typography(&mut self, name: &str, typography: Vec<Typography>) {
+        self.typography.insert(name.to_string(), typography);
     }
 
     pub fn to_css(&self) -> String {
@@ -233,13 +233,13 @@ mod tests {
     fn to_css_from_theme() {
         let mut theme = Theme::new();
         let mut color_theme = ColorTheme::new();
-        color_theme.add_color("primary".to_string(), "#000".to_string());
-        theme.add_color_theme("default".to_string(), color_theme);
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::new();
-        color_theme.add_color("primary".to_string(), "#fff".to_string());
-        theme.add_color_theme("dark".to_string(), color_theme);
+        color_theme.add_color("primary", "#fff");
+        theme.add_color_theme("dark", color_theme);
         theme.add_typography(
-            "default".to_string(),
+            "default",
             vec![
                 Typography::new(
                     Some("Arial".to_string()),
@@ -261,7 +261,7 @@ mod tests {
         );
 
         theme.add_typography(
-            "default1".to_string(),
+            "default1",
             vec![Typography::new(
                 Some("Arial".to_string()),
                 Some("24px".to_string()),

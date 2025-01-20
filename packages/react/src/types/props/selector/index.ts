@@ -1,6 +1,6 @@
 import type { DevupCommonProps } from '../index'
 
-export interface DevupMediaProps {
+export interface DevupSelectorProps {
   _active?: DevupCommonProps
   _checked?: DevupCommonProps
   _default?: DevupCommonProps

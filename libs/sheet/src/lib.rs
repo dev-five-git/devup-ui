@@ -112,8 +112,11 @@ impl StyleSheet {
         self.properties.entry(level).or_default().insert(prop)
     }
 
-    pub fn add_css(&mut self, class_name: String, css: String) -> bool {
-        let prop = StyleSheetCss { class_name, css };
+    pub fn add_css(&mut self, class_name: &str, css: &str) -> bool {
+        let prop = StyleSheetCss {
+            class_name: class_name.to_string(),
+            css: css.to_string(),
+        };
         self.css.insert(prop)
     }
 
@@ -264,7 +267,7 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::new();
-        sheet.add_css("test".to_string(), "display:flex;".to_string());
+        sheet.add_css("test", "display:flex;");
         sheet.set_theme(Theme::new());
         assert_debug_snapshot!(sheet.create_css());
     }
