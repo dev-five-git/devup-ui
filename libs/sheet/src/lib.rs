@@ -1,7 +1,7 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{convert_property, get_selector_separator, to_kebab_case, PropertyType};
+use css::{convert_property, merge_selector, PropertyType, StyleSelector};
 use std::cmp::Ordering::{Greater, Less};
 use std::collections::{BTreeMap, HashSet};
 
@@ -14,36 +14,24 @@ pub struct StyleSheetProperty {
     pub class_name: String,
     pub property: String,
     pub value: String,
-    pub selector: Option<String>,
+    pub selector: Option<StyleSelector>,
     pub basic: bool,
 }
 
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
-        let selector = if let Some(selector) = &self.selector {
-            let selector = to_kebab_case(selector);
-            format!(
-                "{}{}",
-                get_selector_separator(&selector).separator(),
-                selector
-            )
-        } else {
-            String::new()
-        };
         match convert_property(self.property.as_str()) {
             PropertyType::Single(prop) => {
                 format!(
-                    ".{}{}{{{}:{}}}",
-                    self.class_name,
-                    selector,
+                    "{}{{{}:{}}}",
+                    merge_selector(&self.class_name, self.selector.as_ref()),
                     prop,
                     convert_theme_variable_value(&self.value)
                 )
             }
             PropertyType::Multi(multi) => format!(
-                ".{}{}{{{}}}",
-                self.class_name,
-                selector,
+                "{}{{{}}}",
+                merge_selector(&self.class_name, self.selector.as_ref()),
                 multi
                     .into_iter()
                     .map(|prop| format!("{}:{};", prop, convert_theme_variable_value(&self.value)))
@@ -74,6 +62,7 @@ impl ExtractStyle for StyleSheetCss {
     }
 }
 
+#[derive(Default)]
 pub struct StyleSheet {
     /// level -> properties
     pub properties: BTreeMap<u8, HashSet<StyleSheetProperty>>,
@@ -82,36 +71,21 @@ pub struct StyleSheet {
     theme_declaration: String,
 }
 
-impl Default for StyleSheet {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl StyleSheet {
-    pub fn new() -> Self {
-        Self {
-            properties: BTreeMap::new(),
-            css: HashSet::new(),
-            theme_declaration: String::new(),
-            theme: Theme::new(),
-        }
-    }
-
     pub fn add_property(
         &mut self,
         class_name: &str,
         property: &str,
         level: u8,
         value: &str,
-        selector: Option<&str>,
+        selector: Option<&StyleSelector>,
         basic: bool,
     ) -> bool {
         let prop = StyleSheetProperty {
             class_name: class_name.to_string(),
             property: property.to_string(),
             value: value.to_string(),
-            selector: selector.map(|s| s.to_string()),
+            selector: selector.cloned(),
             basic,
         };
         self.properties.entry(level).or_default().insert(prop)
@@ -152,7 +126,7 @@ impl StyleSheet {
 
             let inner_css = sorted_props
                 .into_iter()
-                .map(|prop| prop.extract())
+                .map(ExtractStyle::extract)
                 .collect::<Vec<String>>()
                 .join("");
             if *level == 0 {
@@ -216,72 +190,102 @@ mod tests {
     }
     #[test]
     fn test_create_css_with_selector_sort_test() {
-        let mut sheet = StyleSheet::new();
-        sheet.add_property("test", "background-color", 1, "red", Some("hover"), false);
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "red",
+            Some(&StyleSelector::Postfix("hover".to_string())),
+            false,
+        );
         sheet.add_property("test", "background-color", 1, "some", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, false);
-        sheet.add_property("test", "background-color", 1, "some", Some("hover"), false);
-        sheet.set_theme(Theme::new());
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "some",
+            Some(&StyleSelector::Postfix("hover".to_string())),
+            false,
+        );
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, false);
         sheet.add_property("test", "background", 1, "some", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
     #[test]
     fn test_create_css_with_basic_sort_test() {
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, true);
         sheet.add_property("test", "background", 1, "some", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "border", 0, "1px solid", None, false);
         sheet.add_property("test", "border-color", 0, "red", None, true);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "display", 0, "flex", None, true);
         sheet.add_property("test", "display", 0, "block", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
     fn test_create_css_with_selector_and_basic_sort_test() {
-        let mut sheet = StyleSheet::new();
-        sheet.add_property("test", "background-color", 1, "red", Some("hover"), false);
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "red",
+            Some(&StyleSelector::Postfix("hover".to_string())),
+            false,
+        );
         sheet.add_property("test", "background-color", 1, "some", None, true);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
     fn test_create_css() {
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 1, "40px", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_css("test", "display:flex;");
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
     fn wrong_breakpoint() {
-        let mut sheet = StyleSheet::new();
+        let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 10, "40px", None, false);
-        sheet.set_theme(Theme::new());
+        sheet.set_theme(Theme::default());
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_selector_with_prefix() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 1, "40px", Some(&"groupHover".into()), false);
+        sheet.add_property("test", "mx", 2, "50px", Some(&"groupHover".into()), false);
+        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 }

@@ -1,6 +1,58 @@
+use crate::StyleSelector::{Dual, Postfix, Prefix};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
+
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+pub enum StyleSelector {
+    Postfix(String),
+    Prefix(String),
+    Dual(String, String),
+}
+
+impl From<&str> for StyleSelector {
+    fn from(value: &str) -> Self {
+        if let Some(s) = value.strip_prefix("group") {
+            Dual("*[role=group]".to_string(), to_kebab_case(s))
+        } else {
+            Postfix(value.to_string())
+        }
+    }
+}
+
+impl Display for StyleSelector {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Postfix(value) => format!("-{}", value),
+                Prefix(value) => format!("-{}-", value),
+                Dual(prefix, postfix) => format!("-{}-{}", prefix, postfix),
+            }
+        )
+    }
+}
+
+pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
+    if let Some(selector) = selector {
+        match selector {
+            Postfix(postfix) => match get_selector_separator(postfix) {
+                SelectorSeparator::Single => format!(".{}:{}", class_name, postfix),
+                SelectorSeparator::Double => format!(".{}::{}", class_name, postfix),
+            },
+            Prefix(prefix) => format!("{} {}", prefix, class_name),
+            Dual(prefix, postfix) => match get_selector_separator(postfix) {
+                SelectorSeparator::Single => format!("{}:{} .{}", prefix, postfix, class_name),
+                SelectorSeparator::Double => format!("{}::{} .{}", prefix, postfix, class_name),
+            },
+        }
+    } else {
+        format!(".{}", class_name)
+    }
+}
 
 pub enum SelectorSeparator {
     Single,
@@ -441,5 +493,22 @@ mod tests {
         assert_eq!(to_kebab_case("maxWidth"), "max-width");
         assert_eq!(to_kebab_case("maxHeight"), "max-height");
         assert_eq!(to_kebab_case("MaxHeight"), "max-height");
+        assert_eq!(to_kebab_case("Hover"), "hover");
+    }
+
+    #[test]
+    fn test_style_selector() {
+        assert_eq!(StyleSelector::from("hover"), Postfix("hover".to_string()));
+        assert_eq!(
+            StyleSelector::from("groupHover"),
+            Dual("*[role=group]".to_string(), "hover".to_string())
+        );
+        assert_eq!(
+            StyleSelector::from("group1"),
+            Dual("*[role=group]".to_string(), "1".to_string())
+        );
+
+        assert_eq!(Prefix(".cls".to_string()).to_string(), "-.cls-");
+        assert_eq!(Postfix(".cls".to_string()).to_string(), "-.cls");
     }
 }

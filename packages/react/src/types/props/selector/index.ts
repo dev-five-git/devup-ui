@@ -22,6 +22,27 @@ export interface DevupSelectorProps {
   _optional?: DevupCommonProps
   _readOnly?: DevupCommonProps
 
+  _groupActive?: DevupCommonProps
+  _groupChecked?: DevupCommonProps
+  _groupDefault?: DevupCommonProps
+  _groupDisabled?: DevupCommonProps
+  _groupEmpty?: DevupCommonProps
+  _groupEnabled?: DevupCommonProps
+  _groupFirst?: DevupCommonProps
+  _groupFirstChild?: DevupCommonProps
+  _groupFirstOfType?: DevupCommonProps
+  _groupFocus?: DevupCommonProps
+  _groupFocusVisible?: DevupCommonProps
+  _groupFocusWithin?: DevupCommonProps
+  _groupHover?: DevupCommonProps
+  _groupInvalid?: DevupCommonProps
+  _groupLastChild?: DevupCommonProps
+  _groupLastOfType?: DevupCommonProps
+  _groupLink?: DevupCommonProps
+  _groupOnlyChild?: DevupCommonProps
+  _groupOptional?: DevupCommonProps
+  _groupReadOnly?: DevupCommonProps
+
   // double separator
   _placeholder?: DevupCommonProps
   _before?: DevupCommonProps

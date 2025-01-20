@@ -5,33 +5,23 @@ import { usePathname } from 'next/navigation'
 
 export function HeaderWrap({ children }: { children: React.ReactNode }) {
   const path = usePathname()
-  if (path !== '/') {
-    return (
-      <Box pos="sticky" top={0} transition="all, 0.2s" w="100%" zIndex={1}>
-        <Flex
-          alignItems="center"
-          bg="$containerBackground"
-          boxShadow="0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))"
-          h="70px"
-          justifyContent="space-between"
-          mx="auto"
-          px="40px"
-        >
-          {children}
-        </Flex>
-      </Box>
-    )
-  }
+  const isRoot = path === '/'
   return (
-    <Box position="fixed" top={5} transition="all, 0.2s" w="100%">
+    <Box
+      pos={isRoot ? 'fixed' : 'sticky'}
+      top={isRoot ? 5 : 0}
+      transition="all, 0.2s"
+      w="100%"
+      zIndex={1}
+    >
       <Flex
         alignItems="center"
         bg="$containerBackground"
-        borderRadius="16px"
+        borderRadius={isRoot ? '16px' : undefined}
         boxShadow="0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))"
         h="70px"
         justifyContent="space-between"
-        maxW="1440px"
+        maxW={isRoot ? '1440px' : '100%'}
         mx="auto"
         px="40px"
       >

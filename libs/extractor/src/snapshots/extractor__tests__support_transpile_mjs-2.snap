@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "blue",
                 level: 0,
                 selector: Some(
-                    "hover",
+                    Postfix(
+                        "hover",
+                    ),
                 ),
                 basic: false,
             },
