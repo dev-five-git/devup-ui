@@ -33,7 +33,7 @@ ExtractOutput {
         ),
         Dynamic(
             ExtractDynamicStyle {
-                property: "bg",
+                property: "background",
                 level: 0,
                 identifier: "[\n\t\"var(--webBg)\",\n\t\"var(--appBg)\",\n\t\"var(--solutionBg)\"\n][categoryId - 1]",
                 selector: None,

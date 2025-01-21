@@ -15,7 +15,7 @@ ExtractOutput {
         ),
         Dynamic(
             ExtractDynamicStyle {
-                property: "bg",
+                property: "background",
                 level: 0,
                 identifier: "[\"var(--red)\", \"var(--blue)\"][idx]",
                 selector: None,

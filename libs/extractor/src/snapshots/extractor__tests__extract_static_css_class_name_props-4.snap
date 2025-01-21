@@ -6,7 +6,7 @@ ExtractOutput {
     styles: [
         Static(
             ExtractStaticStyle {
-                property: "bg",
+                property: "background",
                 value: "red",
                 level: 0,
                 selector: None,
