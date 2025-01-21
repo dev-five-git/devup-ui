@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.10
+
+### Patch Changes
+
+- 0da9456: Add content to style props
+
 ## 0.1.9
 
 ### Patch Changes

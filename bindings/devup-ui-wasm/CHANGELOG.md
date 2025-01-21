@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.17
+
+### Patch Changes
+
+- aba4b7e: Add type to special prop
+- 873f596: Fix duplicate props issue
+
 ## 0.1.16
 
 ### Patch Changes
