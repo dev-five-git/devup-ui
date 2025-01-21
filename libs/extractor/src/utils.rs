@@ -40,6 +40,7 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "ref",
         "key",
         "alt",
+        "type",
         "src",
         "children",
         "placeholder",
