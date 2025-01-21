@@ -296,7 +296,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Attribute(ref mut attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
                         let name = sort_to_long(name.name.as_str());
-                        println!("name: {} {:?}", name, duplicate_set);
                         if duplicate_set.contains(&name) {
                             continue;
                         }
