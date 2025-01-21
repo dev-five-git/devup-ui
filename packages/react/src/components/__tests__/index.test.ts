@@ -2,6 +2,7 @@ import { Box } from '../Box'
 import { Button } from '../Button'
 import { Center } from '../Center'
 import { Flex } from '../Flex'
+import { Grid } from '../Grid'
 import { Image } from '../Image'
 import { Input } from '../Input'
 import { Text } from '../Text'
@@ -17,5 +18,6 @@ describe('Component', () => {
     expect(() => Text({})).toThrowError('Cannot run on the runtime')
     expect(() => VStack({})).toThrowError('Cannot run on the runtime')
     expect(() => Image({})).toThrowError('Cannot run on the runtime')
+    expect(() => Grid({})).toThrowError('Cannot run on the runtime')
   })
 })
