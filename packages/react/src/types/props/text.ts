@@ -32,4 +32,6 @@ export interface DevupUiTextProps {
   textTransform?: ResponsiveValue<Property.TextTransform>
   whiteSpace?: ResponsiveValue<Property.WhiteSpace>
   wordSpacing?: ResponsiveValue<Property.WordSpacing>
+
+  content?: ResponsiveValue<Property.Content>
 }
