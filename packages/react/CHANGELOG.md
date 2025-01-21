@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.12
+
+### Patch Changes
+
+- b84cbc1: Update css.ts
+
 ## 0.1.11
 
 ### Patch Changes
