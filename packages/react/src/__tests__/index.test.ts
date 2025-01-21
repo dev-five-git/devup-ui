@@ -10,6 +10,7 @@ describe('export', () => {
       Text: expect.any(Function),
       VStack: expect.any(Function),
       Image: expect.any(Function),
+      Grid: expect.any(Function),
 
       css: expect.any(Function),
     })
