@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.11
+
+### Patch Changes
+
+- 76e8fa1: Add grid, Support for selector in css
+
 ## 0.1.10
 
 ### Patch Changes
