@@ -196,11 +196,35 @@ pub fn to_kebab_case(value: &str) -> String {
         .collect()
 }
 
+pub fn to_camel_case(value: &str) -> String {
+    value
+        .split('-')
+        .enumerate()
+        .map(|(i, s)| {
+            if i == 0 {
+                s.to_string()
+            } else {
+                format!("{}{}", s[0..1].to_uppercase(), &s[1..])
+            }
+        })
+        .collect()
+}
+
 pub fn convert_property(property: &str) -> PropertyType {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .cloned()
         .unwrap_or_else(|| to_kebab_case(property).into())
+}
+
+pub fn sort_to_long(property: &str) -> String {
+    GLOBAL_STYLE_PROPERTY
+        .get(property)
+        .map(|v| match v {
+            PropertyType::Single(value) => to_camel_case(value),
+            PropertyType::Multi(_) => property.to_string(),
+        })
+        .unwrap_or_else(|| property.to_string())
 }
 
 pub fn sheet_to_classname(

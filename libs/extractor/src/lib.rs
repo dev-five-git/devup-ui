@@ -1312,4 +1312,21 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         )
         .unwrap());
     }
+
+    #[test]
+    #[serial]
+    fn test_duplicate_style_props() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+            <Box bg="red" background="red" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 }

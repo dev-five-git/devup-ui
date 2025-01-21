@@ -6,7 +6,7 @@ ExtractOutput {
     styles: [
         Dynamic(
             ExtractDynamicStyle {
-                property: "bg",
+                property: "background",
                 level: 0,
                 identifier: "`${variable}`",
                 selector: None,

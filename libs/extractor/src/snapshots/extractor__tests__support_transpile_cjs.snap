@@ -6,7 +6,7 @@ ExtractOutput {
     styles: [
         Static(
             ExtractStaticStyle {
-                property: "bg",
+                property: "background",
                 value: "blue",
                 level: 0,
                 selector: Some(
@@ -19,7 +19,7 @@ ExtractOutput {
         ),
         Static(
             ExtractStaticStyle {
-                property: "bg",
+                property: "background",
                 value: "$text",
                 level: 0,
                 selector: None,
@@ -49,7 +49,7 @@ ExtractOutput {
         ),
         Static(
             ExtractStaticStyle {
-                property: "mt",
+                property: "marginTop",
                 value: "8px",
                 level: 0,
                 selector: None,

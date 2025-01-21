@@ -5,6 +5,7 @@ use crate::style_extractor::{
     extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
 };
 use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
+use css::sort_to_long;
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
@@ -20,7 +21,7 @@ use oxc_ast::visit::walk_mut::{
 };
 use oxc_ast::{AstBuilder, VisitMut};
 use oxc_span::SPAN;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
@@ -120,6 +121,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if let Expression::ObjectExpression(obj) =
                             it.arguments[1].to_expression_mut()
                         {
+                            let mut duplicate_set = HashSet::new();
                             let mut tag = kind.to_tag().unwrap_or("div").to_string();
                             let mut props_styles = vec![];
                             for idx in (0..obj.properties.len()).rev() {
@@ -127,7 +129,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 let mut rm = false;
                                 if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
                                     if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                        let name = ident.name.to_string();
+                                        let name = sort_to_long(&ident.name);
+                                        if duplicate_set.contains(name.as_str()) {
+                                            continue;
+                                        }
+                                        duplicate_set.insert(name.clone());
                                         rm = match extract_style_from_expression(
                                             &self.ast,
                                             Some(&name),
@@ -283,12 +289,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
+            let mut duplicate_set = HashSet::new();
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
                 let mut rm = false;
                 if let Attribute(ref mut attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
-                        let name = name.to_string();
+                        let name = sort_to_long(name.name.as_str());
+                        println!("name: {} {:?}", name, duplicate_set);
+                        if duplicate_set.contains(&name) {
+                            continue;
+                        }
+                        duplicate_set.insert(name.clone());
                         if let Some(at) = &mut attr.value {
                             rm = match extract_style_from_jsx_attr(&self.ast, &name, at, None) {
                                 ExtractResult::Maintain => false,
