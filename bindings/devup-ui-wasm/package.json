@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/wasm",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "scripts": {
     "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index && node script.js",
     "test": "wasm-pack test --node"

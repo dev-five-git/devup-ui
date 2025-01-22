@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.18
+
+### Patch Changes
+
+- 5b53b1a: Fix transforming component from other package
+
 ## 0.1.17
 
 ### Patch Changes
