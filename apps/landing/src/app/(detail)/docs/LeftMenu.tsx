@@ -24,7 +24,7 @@ export function LeftMenu() {
             children: 'Input',
           },
           {
-            to: URL_PREFIX + '/docs/api/input',
+            to: URL_PREFIX + '/docs/api/text',
             children: 'Text',
           },
           {
@@ -42,6 +42,10 @@ export function LeftMenu() {
           {
             to: URL_PREFIX + '/docs/api/center',
             children: 'Center',
+          },
+          {
+            to: URL_PREFIX + '/docs/api/grid',
+            children: 'Grid',
           },
           {
             to: URL_PREFIX + '/docs/api/css',
@@ -80,6 +84,10 @@ export function LeftMenu() {
           {
             to: URL_PREFIX + '/docs/devup/breakpoints',
             children: 'Breakpoints',
+          },
+          {
+            to: URL_PREFIX + '/docs/devup/figma-plugin',
+            children: 'Figma Plugin',
           },
         ]}
       >

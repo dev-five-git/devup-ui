@@ -1,18 +1,22 @@
 'use client'
 import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Fragment, useReducer } from 'react'
 
 import { URL_PREFIX } from '../../../constants'
 import { MenuItemProps } from './MenuItem'
 
 export function OpenMenuItem({
-  selected,
   children,
   subMenu,
 }: Omit<MenuItemProps, 'subMenu' | 'to'> &
   Required<Pick<MenuItemProps, 'subMenu'>>) {
-  const [open, handleOpen] = useReducer((state) => !state, false)
+  const path = usePathname()
+  const selected = subMenu.some((item) =>
+    item.to ? path.startsWith(item.to) : false,
+  )
+  const [open, handleOpen] = useReducer((state) => !state, selected)
   return (
     <>
       <Flex
@@ -47,16 +51,24 @@ export function OpenMenuItem({
           <Box borderRight="1px solid var(--border, #E0E0E0)" w="10px" />
           <VStack flex="1" gap="4px">
             {subMenu.map(({ children, to }, idx) => {
+              const selected = to ? path.startsWith(to) : false
               const inner = (
                 <Flex
                   alignItems="center"
-                  bg="$menuActive"
+                  bg={selected ? '$menuActive' : undefined}
                   borderRadius="6px"
                   gap="10px"
                   p="10px"
                 >
-                  <Box bg="$primary" borderRadius="100%" boxSize="8px" />
-                  <Text color="$text" flex="1" typography="buttonS">
+                  {selected && (
+                    <Box bg="$primary" borderRadius="100%" boxSize="8px" />
+                  )}
+                  <Text
+                    color={selected ? '$title' : '$text'}
+                    flex="1"
+                    opacity={selected ? '1' : '0.8'}
+                    typography={selected ? 'buttonS' : 'buttonSmid'}
+                  >
                     {children}
                   </Text>
                 </Flex>

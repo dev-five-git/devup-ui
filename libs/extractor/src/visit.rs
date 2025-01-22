@@ -283,6 +283,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         let opening_element = &mut elem.opening_element;
         let component_name = &opening_element.name.to_string();
+        println!("component_name: {} {:?}", component_name, self.imports);
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
             let mut tag_name = kind.to_tag().unwrap_or("div").to_string();
@@ -296,7 +297,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Attribute(ref mut attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
                         let name = sort_to_long(name.name.as_str());
-                        println!("name: {} {:?}", name, duplicate_set);
                         if duplicate_set.contains(&name) {
                             continue;
                         }
@@ -402,17 +402,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             return;
         }
-        if let Some(specifiers) = &mut it.specifiers {
-            for i in (0..specifiers.len()).rev() {
-                if let ImportSpecifier(import) = &specifiers[i] {
-                    if let Ok(kind) = ExportVariableKind::try_from(import.imported.to_string()) {
-                        self.imports.insert(import.local.to_string(), kind);
 
-                        // remove specifier
-                        specifiers.remove(i);
-                    } else if import.imported.to_string() == "css" {
-                        self.css_imports
-                            .insert(import.local.to_string(), it.source.value.to_string());
+        if it.source.value == self.package {
+            if let Some(specifiers) = &mut it.specifiers {
+                for i in (0..specifiers.len()).rev() {
+                    if let ImportSpecifier(import) = &specifiers[i] {
+                        if let Ok(kind) = ExportVariableKind::try_from(import.imported.to_string())
+                        {
+                            self.imports.insert(import.local.to_string(), kind);
+
+                            // remove specifier
+                            specifiers.remove(i);
+                        } else if import.imported.to_string() == "css" {
+                            self.css_imports
+                                .insert(import.local.to_string(), it.source.value.to_string());
+                        }
                     }
                 }
             }

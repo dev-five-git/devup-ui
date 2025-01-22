@@ -1,21 +1,26 @@
+'use client'
 import { Box, css, Flex, Text } from '@devup-ui/react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 import { OpenMenuItem } from './OpenMenuItem'
 
 export interface MenuItemProps {
-  selected?: boolean
   children?: React.ReactNode
   to?: string
   subMenu?: {
-    selected?: boolean
     children?: React.ReactNode
     to?: string
   }[]
 }
 
 export function MenuItem(props: MenuItemProps) {
-  const { selected, children, to, subMenu } = props
+  const { children, to, subMenu } = props
+  const path = usePathname()
+  const selected = to
+    ? path.startsWith(to)
+    : !!subMenu?.some((item) => (item.to ? path.startsWith(item.to) : false))
+
   if (subMenu) return <OpenMenuItem {...props} subMenu={subMenu} />
   const inner = (
     <Flex
