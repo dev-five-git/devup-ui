@@ -16,7 +16,6 @@ pub fn gen_class_names<'a>(
         style_props
             .iter()
             .filter_map(|st| gen_class_name(ast_builder, st))
-            .rev()
             .collect(),
     )
 }

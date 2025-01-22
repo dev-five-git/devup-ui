@@ -1,10 +1,13 @@
 use crate::utils::{expression_to_code, is_special_property};
-use crate::ExtractStyleProp;
+use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey};
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
-use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
+use crate::extract_style::{
+    ExtractDynamicStyle, ExtractStaticStyle, ExtractStyleProperty, ExtractStyleValue,
+};
+use crate::prop_modify_utils::modify_prop_object;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
@@ -28,6 +31,8 @@ pub enum ExtractResult<'a> {
     ExtractStyle(Vec<ExtractStyleProp<'a>>),
     // attribute will be removed and the tag will be changed
     ChangeTag(String),
+
+    ExtractStyleWithChangeTag(Vec<ExtractStyleProp<'a>>, String),
 }
 
 impl<'a> From<ExtractResult<'a>> for Vec<ExtractResult<'a>> {
@@ -75,6 +80,65 @@ pub fn extract_style_from_expression<'a>(
     selector: Option<&str>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
+
+    if name.is_none() && selector.is_none() {
+        return match expression {
+            Expression::ObjectExpression(ref mut obj) => {
+                let mut props_styles = vec![];
+                let mut tag = None;
+                for idx in (0..obj.properties.len()).rev() {
+                    let mut prop = obj.properties.remove(idx);
+                    let mut rm = false;
+                    if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
+                        if let PropertyKey::StaticIdentifier(ident) = &prop.key {
+                            let name = ident.name.to_string();
+                            rm = match extract_style_from_expression(
+                                ast_builder,
+                                Some(&name),
+                                &mut prop.value,
+                                0,
+                                None,
+                            ) {
+                                ExtractResult::Maintain => false,
+                                ExtractResult::Remove => true,
+                                ExtractResult::ExtractStyle(mut styles) => {
+                                    styles.reverse();
+                                    props_styles.append(&mut styles);
+                                    true
+                                }
+                                ExtractResult::ChangeTag(t) => {
+                                    tag = Some(t);
+                                    true
+                                }
+                                ExtractResult::ExtractStyleWithChangeTag(mut styles, t) => {
+                                    styles.reverse();
+                                    props_styles.append(&mut styles);
+                                    tag = Some(t);
+                                    true
+                                }
+                            }
+                        }
+                    }
+                    if !rm {
+                        obj.properties.insert(idx, prop);
+                    }
+                }
+                if props_styles.is_empty() {
+                    ExtractResult::Maintain
+                } else {
+                    modify_prop_object(ast_builder, &mut obj.properties, &props_styles);
+                    let ret = if let Some(tag) = tag {
+                        ExtractResult::ExtractStyleWithChangeTag(props_styles, tag)
+                    } else {
+                        ExtractResult::ExtractStyle(props_styles)
+                    };
+                    ret
+                }
+            }
+            _ => ExtractResult::Maintain,
+        };
+    }
+
     if let Some(name) = name {
         if is_special_property(name) {
             return ExtractResult::Maintain;

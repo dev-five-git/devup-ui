@@ -837,6 +837,19 @@ mod tests {
             }
         )
         .unwrap());
+        //
+        //         reset_class_map();
+        //         assert_debug_snapshot!(extract(
+        //             "test.tsx",
+        //             r#"import { css } from "@devup-ui/core";
+        // <div className={css(a?{bg:"red"}:{bg:"blue"})}/>;
+        // "#,
+        //             ExtractOption {
+        //                 package: "@devup-ui/core".to_string(),
+        //                 css_file: None
+        //             }
+        //         )
+        //         .unwrap());
     }
 
     #[test]
@@ -1347,7 +1360,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         )
         .unwrap());
     }
-    
+
     #[test]
     #[serial]
     fn avoid_same_name_component() {
@@ -1366,4 +1379,24 @@ import {Button} from '@devup/ui'
         )
         .unwrap());
     }
+
+    //     #[test]
+    //     #[serial]
+    //     fn css_props_destructuring_assignment() {
+    //         reset_class_map();
+    //         assert_debug_snapshot!(extract(
+    //             "test.js",
+    //             r#"import {css} from '@devup-ui/core'
+    // <div className={css({
+    //    ...(a ? { bg: 'red' } : { bg: 'blue' }),
+    //    ...({ p: 1 }),
+    //  })} />
+    //         "#,
+    //             ExtractOption {
+    //                 package: "@devup-ui/core".to_string(),
+    //                 css_file: None
+    //             }
+    //         )
+    //         .unwrap());
+    //     }
 }
