@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
 ---
 ExtractOutput {
     styles: [
@@ -14,5 +14,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div ref={ref} data-test={1} role={2} children={[]} onClick={() => {}} aria-valuenow={24} key={2} className=\"d0\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div ref={ref} data-test={1} role={2} children={[]} onClick={() => {}} aria-valuenow={24} key={2} tabIndex={1} className=\"d0\" />;\n",
 }

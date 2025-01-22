@@ -159,7 +159,7 @@ mod tests {
         assert_debug_snapshot!(extract(
             "test.tsx",
             r"import {Box} from '@devup-ui/core'
-        <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} />
+        <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} />
         ",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1339,6 +1339,25 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
             "test.js",
             r#"import {Box} from '@devup-ui/core'
             <Box bg="red" background="red" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+    
+    #[test]
+    #[serial]
+    fn avoid_same_name_component() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+import {Button} from '@devup/ui'
+            ;<Box bg="red" background="red" />
+            ;<Button bg="red" background="red" />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

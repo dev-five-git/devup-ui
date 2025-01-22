@@ -44,6 +44,7 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "src",
         "children",
         "placeholder",
+        "tabIndex",
         "maxLength",
         "minLength",
     ] {
