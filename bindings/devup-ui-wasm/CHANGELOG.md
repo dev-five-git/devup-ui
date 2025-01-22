@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.19
+
+### Patch Changes
+
+- 00b14ca: Support destructing, Support to direct selection of object with theme, Support for template literal on as prop
+
 ## 0.1.18
 
 ### Patch Changes
