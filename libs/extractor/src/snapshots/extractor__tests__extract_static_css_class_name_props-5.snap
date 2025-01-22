@@ -6,8 +6,8 @@ ExtractOutput {
     styles: [
         Static(
             ExtractStaticStyle {
-                property: "color",
-                value: "blue",
+                property: "background",
+                value: "red",
                 level: 0,
                 selector: Some(
                     Postfix(
@@ -19,8 +19,8 @@ ExtractOutput {
         ),
         Static(
             ExtractStaticStyle {
-                property: "background",
-                value: "red",
+                property: "color",
+                value: "blue",
                 level: 0,
                 selector: Some(
                     Postfix(

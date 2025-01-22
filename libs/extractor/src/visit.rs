@@ -1,5 +1,6 @@
 use crate::component::ExportVariableKind;
-use crate::extract_style::{ExtractCss, ExtractStyleProperty};
+use crate::extract_style::ExtractCss;
+use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
     extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
@@ -12,8 +13,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXElement, JSXElementName, ObjectPropertyKind, Program, PropertyKey,
-    Statement, TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
+    ImportOrExportKind, JSXElement, JSXElementName, Program, PropertyKey, Statement,
+    TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
     walk_call_expression, walk_import_declaration, walk_jsx_element, walk_program,
@@ -118,125 +119,76 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 if let Some(kind) = element_kind {
                     if it.arguments.len() > 1 {
+                        let mut tag = Expression::StringLiteral(self.ast.alloc_string_literal(
+                            SPAN,
+                            kind.to_tag().unwrap_or("div"),
+                            None,
+                        ));
+                        let mut props_styles = vec![];
+                        match extract_style_from_expression(
+                            &self.ast,
+                            None,
+                            it.arguments[1].to_expression_mut(),
+                            0,
+                            None,
+                        ) {
+                            ExtractResult::ExtractStyle(mut styles) => {
+                                props_styles.append(&mut styles);
+                            }
+                            ExtractResult::ExtractStyleWithChangeTag(mut styles, t) => {
+                                tag = t;
+                                props_styles.append(&mut styles);
+                            }
+                            ExtractResult::Maintain => {}
+                            ExtractResult::Remove => {}
+                            ExtractResult::ChangeTag(t) => {
+                                tag = t;
+                            }
+                        }
+
+                        for ex in kind.extract().into_iter().rev() {
+                            props_styles.push(ExtractStyleProp::Static(ex));
+                        }
+
+                        for style in props_styles.iter().rev() {
+                            self.styles.append(&mut style.extract());
+                        }
                         if let Expression::ObjectExpression(obj) =
                             it.arguments[1].to_expression_mut()
                         {
-                            let mut duplicate_set = HashSet::new();
-                            let mut tag = kind.to_tag().unwrap_or("div").to_string();
-                            let mut props_styles = vec![];
-                            for idx in (0..obj.properties.len()).rev() {
-                                let mut prop = obj.properties.remove(idx);
-                                let mut rm = false;
-                                if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
-                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                        let name = sort_to_long(&ident.name);
-                                        if duplicate_set.contains(name.as_str()) {
-                                            continue;
-                                        }
-                                        duplicate_set.insert(name.clone());
-                                        rm = match extract_style_from_expression(
-                                            &self.ast,
-                                            Some(&name),
-                                            &mut prop.value,
-                                            0,
-                                            None,
-                                        ) {
-                                            ExtractResult::Maintain => false,
-                                            ExtractResult::Remove => true,
-                                            ExtractResult::ExtractStyle(mut styles) => {
-                                                styles.reverse();
-                                                props_styles.append(&mut styles);
-                                                true
-                                            }
-                                            ExtractResult::ChangeTag(t) => {
-                                                tag = t;
-                                                true
-                                            }
-                                        }
-                                    }
-                                }
-                                if !rm {
-                                    obj.properties.insert(idx, prop);
-                                }
-                            }
-
-                            for ex in kind.extract().into_iter().rev() {
-                                props_styles.push(ExtractStyleProp::Static(ex));
-                            }
-
-                            for style in props_styles.iter().rev() {
-                                self.styles.append(&mut style.extract());
-                            }
-
-                            modify_prop_object(&self.ast, &mut obj.properties, props_styles);
-                            it.arguments[0] =
-                                Argument::StringLiteral(self.ast.alloc_string_literal(
-                                    SPAN,
-                                    self.ast.atom(tag.as_str()),
-                                    None,
-                                ));
+                            modify_prop_object(&self.ast, &mut obj.properties, &props_styles);
                         }
+
+                        it.arguments[0] = Argument::from(tag);
                     }
                 }
             }
         }
         if let Expression::Identifier(ident) = &it.callee {
             if self.css_imports.contains_key(ident.name.as_str()) && it.arguments.len() == 1 {
-                if let Argument::ObjectExpression(ref mut obj) = it.arguments[0] {
-                    let mut props_styles = vec![];
-                    for idx in (0..obj.properties.len()).rev() {
-                        let mut prop = obj.properties.remove(idx);
-                        let mut rm = false;
-                        if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
-                            if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                let name = ident.name.to_string();
-                                rm = match extract_style_from_expression(
-                                    &self.ast,
-                                    Some(&name),
-                                    &mut prop.value,
-                                    0,
-                                    None,
-                                ) {
-                                    ExtractResult::Maintain => false,
-                                    ExtractResult::Remove => true,
-                                    ExtractResult::ExtractStyle(mut styles) => {
-                                        styles.reverse();
-                                        props_styles.append(&mut styles);
-                                        true
-                                    }
-                                    ExtractResult::ChangeTag(_) => true,
-                                }
-                            }
-                        }
-                        if !rm {
-                            obj.properties.insert(idx, prop);
+                match extract_style_from_expression(
+                    &self.ast,
+                    None,
+                    it.arguments[0].to_expression_mut(),
+                    0,
+                    None,
+                ) {
+                    ExtractResult::ExtractStyle(styles)
+                    | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
+                        let class_name = gen_class_names(&self.ast, &styles);
+                        let mut styles = styles
+                            .into_iter()
+                            .flat_map(|ex| ex.extract())
+                            .collect::<Vec<_>>();
+
+                        self.styles.append(&mut styles);
+                        if let Some(cls) = class_name {
+                            it.arguments[0] = Argument::from(cls);
+                        } else {
+                            it.arguments.pop();
                         }
                     }
-                    let mut styles = props_styles
-                        .into_iter()
-                        .flat_map(|ex| ex.extract())
-                        .collect::<Vec<_>>();
-                    let class_name = styles
-                        .iter()
-                        .filter_map(|ex| match ex {
-                            ExtractStyleValue::Static(css) => {
-                                if let StyleProperty::ClassName(cls) = css.extract() {
-                                    Some(cls.to_string())
-                                } else {
-                                    None
-                                }
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-
-                    self.styles.append(&mut styles);
-                    it.arguments[0] = Argument::StringLiteral(self.ast.alloc_string_literal(
-                        SPAN,
-                        self.ast.atom(&class_name),
-                        None,
-                    ));
+                    _ => {}
                 }
             }
         }
@@ -283,10 +235,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         let opening_element = &mut elem.opening_element;
         let component_name = &opening_element.name.to_string();
-        println!("component_name: {} {:?}", component_name, self.imports);
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
-            let mut tag_name = kind.to_tag().unwrap_or("div").to_string();
+            let mut tag_name = Expression::StringLiteral(self.ast.alloc_string_literal(
+                SPAN,
+                kind.to_tag().unwrap_or("div"),
+                None,
+            ));
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
@@ -314,6 +269,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     tag_name = tag;
                                     true
                                 }
+                                ExtractResult::ExtractStyleWithChangeTag(mut styles, tag) => {
+                                    styles.reverse();
+                                    props_styles.append(&mut styles);
+                                    tag_name = tag;
+                                    true
+                                }
                             }
                         }
                     }
@@ -330,13 +291,31 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.styles.append(&mut style.extract());
             }
             // modify!!
-            modify_props(&self.ast, attrs, props_styles);
+            modify_props(&self.ast, attrs, &props_styles);
 
-            // change tag name
-            let ident = JSXElementName::Identifier(self.ast.alloc_jsx_identifier(SPAN, tag_name));
-            opening_element.name = ident.clone_in(self.ast.allocator);
-            if let Some(el) = &mut elem.closing_element {
-                el.name = ident;
+            match tag_name {
+                Expression::StringLiteral(str) => {
+                    // change tag name
+                    let ident = JSXElementName::Identifier(
+                        self.ast.alloc_jsx_identifier(SPAN, str.value.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+                Expression::TemplateLiteral(literal) => {
+                    let ident = JSXElementName::Identifier(
+                        self.ast
+                            .alloc_jsx_identifier(SPAN, literal.quasis[0].value.raw.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+
+                _ => {}
             }
         }
     }
