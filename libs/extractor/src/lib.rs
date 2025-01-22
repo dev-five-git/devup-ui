@@ -181,6 +181,92 @@ mod tests {
         )
         .unwrap());
     }
+
+    #[test]
+    #[serial]
+    fn convert_tag() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box as="secton" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box as={"secton"} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box as={`secton`} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        // assert_debug_snapshot!(extract(
+        //     "test.tsx",
+        //     r#"import {Box} from '@devup-ui/core'
+        // <Box as={b ? "div":"secton"} />
+        // "#,
+        //     ExtractOption {
+        //         package: "@devup-ui/core".to_string(),
+        //         css_file: None
+        //     }
+        // )
+        // .unwrap());
+        // assert_debug_snapshot!(extract(
+        //     "test.tsx",
+        //     r#"import {Box} from '@devup-ui/core'
+        // <Box as={b ? undefined:"secton"} />
+        // "#,
+        //     ExtractOption {
+        //         package: "@devup-ui/core".to_string(),
+        //         css_file: None
+        //     }
+        // )
+        // .unwrap());
+        //
+        // assert_debug_snapshot!(extract(
+        //     "test.tsx",
+        //     r#"import {Box} from '@devup-ui/core'
+        // <Box as={b ? null:"secton"} />
+        // "#,
+        //     ExtractOption {
+        //         package: "@devup-ui/core".to_string(),
+        //         css_file: None
+        //     }
+        // )
+        // .unwrap());
+        // assert_debug_snapshot!(extract(
+        //     "test.tsx",
+        //     r#"import {Box} from '@devup-ui/core'
+        // <Box as={b ? null:undefined} />
+        // "#,
+        //     ExtractOption {
+        //         package: "@devup-ui/core".to_string(),
+        //         css_file: None
+        //     }
+        // )
+        // .unwrap());
+    }
     #[test]
     #[serial]
     fn extract_style_props() {
@@ -837,19 +923,19 @@ mod tests {
             }
         )
         .unwrap());
-        //
-        //         reset_class_map();
-        //         assert_debug_snapshot!(extract(
-        //             "test.tsx",
-        //             r#"import { css } from "@devup-ui/core";
-        // <div className={css(a?{bg:"red"}:{bg:"blue"})}/>;
-        // "#,
-        //             ExtractOption {
-        //                 package: "@devup-ui/core".to_string(),
-        //                 css_file: None
-        //             }
-        //         )
-        //         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { css } from "@devup-ui/core";
+        <div className={css(a?{bg:"red"}:{bg:"blue"})}/>;
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -860,6 +946,32 @@ mod tests {
             "test.tsx",
             r#"import {Box} from '@devup-ui/core'
         <Box color="$nice" />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box color={`$nice`} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+        <Box color={("$nice")} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1273,6 +1385,33 @@ export {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Center} from '@devup-ui/core'
+<Center bg={SOME_VAR[idx]}>
+          </Center>
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex bg={{a:"$red", b:"$blue"}[idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1380,23 +1519,23 @@ import {Button} from '@devup/ui'
         .unwrap());
     }
 
-    //     #[test]
-    //     #[serial]
-    //     fn css_props_destructuring_assignment() {
-    //         reset_class_map();
-    //         assert_debug_snapshot!(extract(
-    //             "test.js",
-    //             r#"import {css} from '@devup-ui/core'
-    // <div className={css({
-    //    ...(a ? { bg: 'red' } : { bg: 'blue' }),
-    //    ...({ p: 1 }),
-    //  })} />
-    //         "#,
-    //             ExtractOption {
-    //                 package: "@devup-ui/core".to_string(),
-    //                 css_file: None
-    //             }
-    //         )
-    //         .unwrap());
-    //     }
+    #[test]
+    #[serial]
+    fn css_props_destructuring_assignment() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {css} from '@devup-ui/core'
+    <div className={css({
+       ...(a ? { bg: 'red' } : { bg: 'blue' }),
+       ...({ p: 1 }),
+     })} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 }

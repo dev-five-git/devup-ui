@@ -117,7 +117,7 @@ pub fn modify_prop_object<'a>(
 pub fn modify_props<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<JSXAttributeItem<'a>>,
-    styles: &Vec<ExtractStyleProp<'a>>,
+    styles: &[ExtractStyleProp<'a>],
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;

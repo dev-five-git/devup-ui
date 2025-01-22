@@ -1,5 +1,6 @@
 use crate::component::ExportVariableKind;
-use crate::extract_style::{ExtractCss, ExtractStyleProperty};
+use crate::extract_style::ExtractCss;
+use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
     extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
@@ -12,8 +13,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXElement, JSXElementName, ObjectPropertyKind, Program, PropertyKey,
-    Statement, TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
+    ImportOrExportKind, JSXElement, JSXElementName, Program, PropertyKey, Statement,
+    TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
     walk_call_expression, walk_import_declaration, walk_jsx_element, walk_program,
@@ -118,8 +119,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 };
                 if let Some(kind) = element_kind {
                     if it.arguments.len() > 1 {
-                        let mut tag = kind.to_tag().unwrap_or("div").to_string();
-                        println!("tag {}", tag);
+                        let mut tag = Expression::StringLiteral(self.ast.alloc_string_literal(
+                            SPAN,
+                            kind.to_tag().unwrap_or("div"),
+                            None,
+                        ));
                         let mut props_styles = vec![];
                         match extract_style_from_expression(
                             &self.ast,
@@ -133,19 +137,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                             ExtractResult::ExtractStyleWithChangeTag(mut styles, t) => {
                                 tag = t;
-
                                 props_styles.append(&mut styles);
                             }
-
-                            ExtractResult::Maintain => {
-                                println!("maintain");
-                            }
-                            ExtractResult::Remove => {
-                                println!("remove");
-                            }
+                            ExtractResult::Maintain => {}
+                            ExtractResult::Remove => {}
                             ExtractResult::ChangeTag(t) => {
                                 tag = t;
-                                println!("tag {}", tag);
                             }
                         }
 
@@ -156,12 +153,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         for style in props_styles.iter().rev() {
                             self.styles.append(&mut style.extract());
                         }
+                        if let Expression::ObjectExpression(obj) =
+                            it.arguments[1].to_expression_mut()
+                        {
+                            modify_prop_object(&self.ast, &mut obj.properties, &props_styles);
+                        }
 
-                        it.arguments[0] = Argument::StringLiteral(self.ast.alloc_string_literal(
-                            SPAN,
-                            self.ast.atom(tag.as_str()),
-                            None,
-                        ));
+                        it.arguments[0] = Argument::from(tag);
                     }
                 }
             }
@@ -175,33 +173,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     0,
                     None,
                 ) {
-                    ExtractResult::ExtractStyle(mut styles)
-                    | ExtractResult::ExtractStyleWithChangeTag(mut styles, _) => {
+                    ExtractResult::ExtractStyle(styles)
+                    | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
+                        let class_name = gen_class_names(&self.ast, &styles);
                         let mut styles = styles
                             .into_iter()
                             .flat_map(|ex| ex.extract())
                             .collect::<Vec<_>>();
-                        let class_name = styles
-                            .iter()
-                            .filter_map(|ex| match ex {
-                                ExtractStyleValue::Static(css) => {
-                                    if let StyleProperty::ClassName(cls) = css.extract() {
-                                        Some(cls.to_string())
-                                    } else {
-                                        None
-                                    }
-                                }
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join(" ");
 
                         self.styles.append(&mut styles);
-                        it.arguments[0] = Argument::StringLiteral(self.ast.alloc_string_literal(
-                            SPAN,
-                            self.ast.atom(&class_name),
-                            None,
-                        ));
+                        if let Some(cls) = class_name {
+                            it.arguments[0] = Argument::from(cls);
+                        } else {
+                            it.arguments.pop();
+                        }
                     }
                     _ => {}
                 }
@@ -252,7 +237,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
-            let mut tag_name = kind.to_tag().unwrap_or("div").to_string();
+            let mut tag_name = Expression::StringLiteral(self.ast.alloc_string_literal(
+                SPAN,
+                kind.to_tag().unwrap_or("div"),
+                None,
+            ));
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
@@ -304,11 +293,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             // modify!!
             modify_props(&self.ast, attrs, &props_styles);
 
-            // change tag name
-            let ident = JSXElementName::Identifier(self.ast.alloc_jsx_identifier(SPAN, tag_name));
-            opening_element.name = ident.clone_in(self.ast.allocator);
-            if let Some(el) = &mut elem.closing_element {
-                el.name = ident;
+            match tag_name {
+                Expression::StringLiteral(str) => {
+                    // change tag name
+                    let ident = JSXElementName::Identifier(
+                        self.ast.alloc_jsx_identifier(SPAN, str.value.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+                Expression::TemplateLiteral(literal) => {
+                    let ident = JSXElementName::Identifier(
+                        self.ast
+                            .alloc_jsx_identifier(SPAN, literal.quasis[0].value.raw.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+
+                _ => {}
             }
         }
     }
