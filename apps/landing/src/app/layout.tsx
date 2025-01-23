@@ -1,6 +1,6 @@
 import 'sanitize.css'
 
-import { ThemeHead } from '@devup-ui/react'
+import { ThemeScript } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -19,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <ThemeHead auto />
+        <ThemeScript auto />
         <base
           href={process.env.NODE_ENV === 'production' ? '/devup-ui' : '/'}
         />
