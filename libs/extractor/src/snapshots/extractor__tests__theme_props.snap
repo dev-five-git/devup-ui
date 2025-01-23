@@ -1,0 +1,35 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box _themeDark={{ display:\"none\" }} _themeLight={{ display: \"flex\" }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "none",
+                level: 0,
+                selector: Some(
+                    Prefix(
+                        ":root[data-theme=dark]",
+                    ),
+                ),
+                basic: false,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: Some(
+                    Prefix(
+                        ":root[data-theme=light]",
+                    ),
+                ),
+                basic: false,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1\" />;\n",
+}

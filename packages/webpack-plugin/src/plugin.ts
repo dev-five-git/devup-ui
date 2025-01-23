@@ -47,6 +47,7 @@ export class DevupUIWebpackPlugin {
       this.options.package,
       'DevupThemeColors',
       'DevupThemeTypography',
+      'DevupTheme',
     )
     if (interfaceCode) {
       if (!existsSync(this.options.interfacePath))

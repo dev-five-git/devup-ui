@@ -4,13 +4,11 @@ import Link from 'next/link'
 import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
-import { Header } from '../components/Header'
 import { URL_PREFIX } from '../constants'
 
 export default function HomePage() {
   return (
     <>
-      <Header />
       <Box mt="150px">
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">

@@ -3,6 +3,7 @@ import Link from 'next/link'
 
 import { URL_PREFIX } from '../../constants'
 import { HeaderWrap } from './HeaderWrap'
+import { ThemeSwitch } from './ThemeSwitch'
 
 export function Header() {
   return (
@@ -66,7 +67,7 @@ export function Header() {
             </Link>
           </Flex>
           <Flex alignItems="center" px="10px">
-            <Image boxSize="24px" src={URL_PREFIX + '/light.svg'} />
+            <ThemeSwitch />
           </Flex>
         </Flex>
       </Flex>

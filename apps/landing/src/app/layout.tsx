@@ -1,5 +1,6 @@
 import 'sanitize.css'
 
+import { ThemeHead } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -16,8 +17,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <ThemeHead auto />
         <base
           href={process.env.NODE_ENV === 'production' ? '/devup-ui' : '/'}
         />

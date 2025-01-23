@@ -25,4 +25,4 @@ js-sys = "0.3.76"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
-
+serial_test = "3.2.0"

@@ -45,6 +45,7 @@ describe('devupUIPlugin', () => {
       libPackage,
       'DevupThemeColors',
       'DevupThemeTypography',
+      'DevupTheme',
     )
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
@@ -135,6 +136,7 @@ describe('devupUIPlugin', () => {
       libPackage,
       'DevupThemeColors',
       'DevupThemeTypography',
+      'DevupTheme',
     )
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
@@ -172,6 +174,7 @@ describe('devupUIPlugin', () => {
       libPackage,
       'DevupThemeColors',
       'DevupThemeTypography',
+      'DevupTheme',
     )
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)

@@ -1,4 +1,14 @@
+import type { DevupTheme } from '../../theme'
 import type { DevupCommonProps } from '../index'
+
+type toPascalCase<S extends string> = S extends `${infer T}${infer U}`
+  ? `${Uppercase<T>}${U}`
+  : S
+
+export type DevupThemeSelectorProps = {
+  [K in keyof DevupTheme as `_theme${toPascalCase<K>}`]?: DevupCommonProps &
+    DevupSelectorProps
+}
 
 export interface DevupSelectorProps {
   _active?: DevupCommonProps

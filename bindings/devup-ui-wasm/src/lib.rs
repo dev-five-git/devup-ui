@@ -113,22 +113,32 @@ pub fn code_extract(
 pub fn object_to_typography(obj: Object, level: u8) -> Result<Typography, JsValue> {
     Ok(Typography::new(
         Reflect::get(&obj, &JsValue::from_str("fontFamily"))
-            .map(|v| v.as_string())
+            .as_ref()
+            .map(js_value_to_string)
             .unwrap_or(None),
         Reflect::get(&obj, &JsValue::from_str("fontSize"))
-            .map(|v| v.as_string())
+            .as_ref()
+            .map(js_value_to_string)
             .unwrap_or(None),
         Reflect::get(&obj, &JsValue::from_str("fontWeight"))
-            .map(|v| v.as_string())
+            .as_ref()
+            .map(js_value_to_string)
             .unwrap_or(None),
         Reflect::get(&obj, &JsValue::from_str("lineHeight"))
-            .map(|v| v.as_string())
+            .as_ref()
+            .map(js_value_to_string)
             .unwrap_or(None),
         Reflect::get(&obj, &JsValue::from_str("letterSpacing"))
-            .map(|v| v.as_string())
+            .as_ref()
+            .map(js_value_to_string)
             .unwrap_or(None),
         level,
     ))
+}
+pub fn js_value_to_string(js_value: &JsValue) -> Option<String> {
+    js_value
+        .as_string()
+        .or_else(|| js_value.as_f64().map(|v| v.to_string()))
 }
 
 fn theme_object_to_hashmap(js_value: JsValue) -> Result<Theme, JsValue> {
@@ -229,10 +239,12 @@ pub fn get_theme_interface(
     package_name: &str,
     color_interface_name: &str,
     typography_interface_name: &str,
-) -> Result<String, JsValue> {
+    theme_interface_name: &str,
+) -> String {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
     let mut color_keys = HashSet::new();
     let mut typography_keys = HashSet::new();
+    let mut theme_keys = HashSet::new();
     for color_theme in sheet.theme.colors.themes.values() {
         color_theme.keys().for_each(|key| {
             color_keys.insert(key.clone());
@@ -242,11 +254,15 @@ pub fn get_theme_interface(
         typography_keys.insert(key.clone());
     });
 
+    sheet.theme.colors.themes.keys().for_each(|key| {
+        theme_keys.insert(key.clone());
+    });
+
     if color_keys.is_empty() && typography_keys.is_empty() {
-        Ok("".to_string())
+        String::new()
     } else {
-        Ok(format!(
-            "import \"{}\";declare module \"{}\"{{interface {} {{{}}}interface {} {{{}}}}}",
+        format!(
+            "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
             package_name,
             package_name,
             color_interface_name,
@@ -260,7 +276,83 @@ pub fn get_theme_interface(
                 .into_iter()
                 .map(|key| format!("{}:null;", key))
                 .collect::<Vec<String>>()
+                .join(""),
+            theme_interface_name,
+            theme_keys
+                .into_iter()
+                // key to pascal
+                .map(|key| format!("{}:null;", key))
+                .collect::<Vec<String>>()
                 .join("")
-        ))
+        )
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_code_extract() {
+        {
+            let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+            *sheet = StyleSheet::default();
+        }
+        assert_eq!(get_css().unwrap(), "");
+
+        {
+            let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+            let mut theme = Theme::default();
+            let mut color_theme = ColorTheme::default();
+            color_theme.add_color("primary", "#000");
+            theme.colors.add_theme("dark", color_theme);
+
+            let mut color_theme = ColorTheme::default();
+            color_theme.add_color("primary", "#FFF");
+            theme.colors.add_theme("default", color_theme);
+            sheet.set_theme(theme);
+        }
+
+        assert_eq!(
+            get_css().unwrap(),
+            ":root{--primary:#FFF;}\n:root[data-theme=dark]{--primary:#000;}\n"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_theme_interface() {
+        {
+            let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+            *sheet = StyleSheet::default();
+        }
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            ""
+        );
+
+        {
+            let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+            let mut theme = Theme::default();
+            let mut color_theme = ColorTheme::default();
+            color_theme.add_color("primary", "#000");
+            theme.colors.add_theme("dark", color_theme);
+            sheet.set_theme(theme);
+        }
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
+        );
     }
 }

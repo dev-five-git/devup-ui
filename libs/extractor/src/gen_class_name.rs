@@ -37,7 +37,7 @@ fn gen_class_name<'a>(
                 None,
             ),
         )),
-        ExtractStyleProp::Responsive(res) => merge_expression_for_class_name(
+        ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
             res.iter()
                 .filter_map(|st| gen_class_name(ast_builder, st))
@@ -49,31 +49,31 @@ fn gen_class_name<'a>(
             alternate,
             ..
         } => {
-            let consequent = if let Some(con) = consequent {
-                gen_class_name(ast_builder, con).unwrap_or(Expression::StringLiteral(
-                    ast_builder.alloc_string_literal(SPAN, "", None),
-                ))
-            } else {
-                Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
-            };
-            let alternate = if let Some(alt) = alternate {
-                gen_class_name(ast_builder, alt).unwrap_or(Expression::StringLiteral(
-                    ast_builder.alloc_string_literal(SPAN, "", None),
-                ))
-            } else {
-                Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
-            };
+            let consequent = consequent
+                .as_ref()
+                .and_then(|con| gen_class_name(ast_builder, con))
+                .unwrap_or_else(|| {
+                    Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
+                });
+
+            let alternate = alternate
+                .as_ref()
+                .and_then(|alt| gen_class_name(ast_builder, alt))
+                .unwrap_or_else(|| {
+                    Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
+                });
             if is_same_expression(&consequent, &alternate) {
-                return Some(consequent);
+                Some(consequent)
+            } else {
+                Some(Expression::ConditionalExpression(
+                    ast_builder.alloc_conditional_expression(
+                        SPAN,
+                        condition.clone_in(ast_builder.allocator),
+                        consequent,
+                        alternate,
+                    ),
+                ))
             }
-            Some(Expression::ConditionalExpression(
-                ast_builder.alloc_conditional_expression(
-                    SPAN,
-                    condition.clone_in(ast_builder.allocator),
-                    consequent,
-                    alternate,
-                ),
-            ))
         }
     }
 }
