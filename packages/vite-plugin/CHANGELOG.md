@@ -1,5 +1,13 @@
 # @devup-ui/vite-plugin
 
+## 0.1.17
+
+### Patch Changes
+
+- 7f19bd5: Update
+- Updated dependencies [7f19bd5]
+  - @devup-ui/wasm@0.1.20
+
 ## 0.1.16
 
 ### Patch Changes

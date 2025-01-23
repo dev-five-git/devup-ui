@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.20
+
+### Patch Changes
+
+- 7f19bd5: Fix desctructing issue, Support for number in typo, Implement theme selector
+
 ## 0.1.19
 
 ### Patch Changes
