@@ -5,7 +5,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq, Ord, PartialOrd)]
 pub enum StyleSelector {
     Postfix(String),
     Prefix(String),
@@ -16,6 +16,13 @@ impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
         if let Some(s) = value.strip_prefix("group") {
             Dual("*[role=group]".to_string(), to_kebab_case(s))
+        } else if let Some(s) = value.strip_prefix("theme") {
+            // first character should lower case
+            Prefix(format!(
+                ":root[data-theme={}{}]",
+                s.chars().next().unwrap().to_ascii_lowercase(),
+                &s[1..]
+            ))
         } else {
             Postfix(value.to_string())
         }
@@ -43,7 +50,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
                 SelectorSeparator::Single => format!(".{}:{}", class_name, postfix),
                 SelectorSeparator::Double => format!(".{}::{}", class_name, postfix),
             },
-            Prefix(prefix) => format!("{} {}", prefix, class_name),
+            Prefix(prefix) => format!("{} .{}", prefix, class_name),
             Dual(prefix, postfix) => match get_selector_separator(postfix) {
                 SelectorSeparator::Single => format!("{}:{} .{}", prefix, postfix, class_name),
                 SelectorSeparator::Double => format!("{}::{} .{}", prefix, postfix, class_name),
@@ -57,15 +64,6 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
 pub enum SelectorSeparator {
     Single,
     Double,
-}
-
-impl SelectorSeparator {
-    pub fn separator(&self) -> &str {
-        match self {
-            SelectorSeparator::Single => ":",
-            SelectorSeparator::Double => "::",
-        }
-    }
 }
 
 static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
@@ -534,5 +532,43 @@ mod tests {
 
         assert_eq!(Prefix(".cls".to_string()).to_string(), "-.cls-");
         assert_eq!(Postfix(".cls".to_string()).to_string(), "-.cls");
+
+        assert_eq!(
+            StyleSelector::from("themeLight"),
+            Prefix(":root[data-theme=light]".to_string())
+        );
+    }
+
+    #[test]
+    fn test_merge_selector() {
+        assert_eq!(merge_selector("cls", Some(&"hover".into())), ".cls:hover");
+        assert_eq!(
+            merge_selector("cls", Some(&"placeholder".into())),
+            ".cls::placeholder"
+        );
+        assert_eq!(
+            merge_selector("cls", Some(&"themeDark".into())),
+            ":root[data-theme=dark] .cls"
+        );
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&Dual(
+                    ":root[data-theme=dark]".to_string(),
+                    "hover".to_string()
+                )),
+            ),
+            ":root[data-theme=dark]:hover .cls"
+        );
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&Dual(
+                    ":root[data-theme=dark]".to_string(),
+                    "placeholder".to_string()
+                )),
+            ),
+            ":root[data-theme=dark]::placeholder .cls"
+        );
     }
 }

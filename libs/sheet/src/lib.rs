@@ -112,13 +112,28 @@ impl StyleSheet {
             let mut sorted_props = props.iter().collect::<Vec<_>>();
             sorted_props.sort_by(|a, b| {
                 if a.basic == b.basic {
-                    if a.selector.is_some() && b.selector.is_none() {
-                        return Greater;
+                    match (a.selector.is_some(), b.selector.is_some()) {
+                        (true, false) => Greater,
+                        (false, true) => Less,
+                        (true, true) => {
+                            if a.selector == b.selector {
+                                if a.property == b.property {
+                                    a.value.cmp(&b.value)
+                                } else {
+                                    a.property.cmp(&b.property)
+                                }
+                            } else {
+                                a.selector.cmp(&b.selector)
+                            }
+                        }
+                        (false, false) => {
+                            if a.property == b.property {
+                                a.value.cmp(&b.value)
+                            } else {
+                                a.property.cmp(&b.property)
+                            }
+                        }
                     }
-                    if a.selector.is_none() && b.selector.is_some() {
-                        return Less;
-                    }
-                    a.property.cmp(&b.property)
                 } else {
                     b.basic.cmp(&a.basic)
                 }
@@ -179,13 +194,11 @@ mod tests {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, false);
         sheet.add_property("test", "background", 1, "some", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "border", 0, "1px solid", None, false);
         sheet.add_property("test", "border-color", 0, "red", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
     #[test]
@@ -200,7 +213,6 @@ mod tests {
             false,
         );
         sheet.add_property("test", "background-color", 1, "some", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
@@ -213,13 +225,11 @@ mod tests {
             Some(&StyleSelector::Postfix("hover".to_string())),
             false,
         );
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, false);
         sheet.add_property("test", "background", 1, "some", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
     #[test]
@@ -227,19 +237,16 @@ mod tests {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "background-color", 1, "red", None, true);
         sheet.add_property("test", "background", 1, "some", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "border", 0, "1px solid", None, false);
         sheet.add_property("test", "border-color", 0, "red", None, true);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "display", 0, "flex", None, true);
         sheet.add_property("test", "display", 0, "block", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 
@@ -255,7 +262,12 @@ mod tests {
             false,
         );
         sheet.add_property("test", "background-color", 1, "some", None, true);
-        sheet.set_theme(Theme::default());
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "display", 0, "flex", None, true);
+        sheet.add_property("test", "display", 0, "none", None, false);
+        sheet.add_property("test", "display", 2, "flex", None, false);
         assert_debug_snapshot!(sheet.create_css());
     }
 
@@ -263,12 +275,15 @@ mod tests {
     fn test_create_css() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 1, "40px", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
         sheet.add_css("test", "display:flex;");
-        sheet.set_theme(Theme::default());
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 2, "40px", None, false);
+        sheet.add_property("test", "my", 2, "40px", None, false);
         assert_debug_snapshot!(sheet.create_css());
     }
 
@@ -276,7 +291,6 @@ mod tests {
     fn wrong_breakpoint() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 10, "40px", None, false);
-        sheet.set_theme(Theme::default());
         assert_debug_snapshot!(sheet.create_css());
     }
 
@@ -285,7 +299,22 @@ mod tests {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 1, "40px", Some(&"groupHover".into()), false);
         sheet.add_property("test", "mx", 2, "50px", Some(&"groupHover".into()), false);
-        sheet.set_theme(Theme::default());
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_theme_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 0, "40px", Some(&"themeDark".into()), false);
+        sheet.add_property("test", "my", 0, "40px", Some(&"themeDark".into()), false);
+        sheet.add_property("test", "mx", 0, "50px", Some(&"themeLight".into()), false);
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 0, "50px", Some(&"themeLight".into()), false);
+        sheet.add_property("test", "mx", 0, "41px", None, false);
+        sheet.add_property("test", "mx", 0, "51px", Some(&"themeLight".into()), false);
+        sheet.add_property("test", "mx", 0, "42px", None, false);
         assert_debug_snapshot!(sheet.create_css());
     }
 }

@@ -22,7 +22,7 @@ use std::error::Error;
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
-    Responsive(Vec<ExtractStyleProp<'a>>),
+    StaticArray(Vec<ExtractStyleProp<'a>>),
     /// static + static ex) margin={test?"4px":"8px"} --> className={test?"margin-4px-0":"margin-8px-0"}
     /// static + dynamic ex) margin={test?a:"8px"} --> className={test?"margin-0":"margin-8px-0"} style={{ "--margin-0": a }}
     /// dynamic + dynamic ex) margin={test?a:b} --> className="margin-0" style={{ "--margin-0": test?a:b }}
@@ -51,7 +51,7 @@ impl ExtractStyleProp<'_> {
                 }
                 styles
             }
-            ExtractStyleProp::Responsive(ref array) => {
+            ExtractStyleProp::StaticArray(ref array) => {
                 array.iter().flat_map(|s| s.extract()).collect()
             }
         }
@@ -445,6 +445,17 @@ mod tests {
             "test.tsx",
             r#"import { Box } from "@devup-ui/core";
 <Box padding={[null,1]} margin={[2,null,4]} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Flex } from "@devup-ui/core";
+<Flex display={['none', null, "flex"]}/>;
 "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1222,6 +1233,19 @@ export {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex _hover={a ? { bg: "red",color:"blue" } : { fontWeight:"bold", color:"red" }} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1530,6 +1554,39 @@ import {Button} from '@devup/ui'
        ...(a ? { bg: 'red' } : { bg: 'blue' }),
        ...({ p: 1 }),
      })} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {css} from '@devup-ui/core'
+    <div className={css({
+       ...(a ? { bg: 'red', border: "solid 1px red" } : { bg: 'blue' }),
+       ...({ p: 1,m: 1 }),
+     })} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn theme_props() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box _themeDark={{ display:"none" }} _themeLight={{ display: "flex" }} />
             "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

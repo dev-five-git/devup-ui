@@ -6,7 +6,6 @@ use oxc_ast::ast::{
 };
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
-
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
@@ -60,7 +59,7 @@ fn gen_style<'a>(
                 ));
             }
         },
-        ExtractStyleProp::Responsive(res) => {
+        ExtractStyleProp::StaticArray(res) => {
             properties.append(
                 &mut res
                     .iter()

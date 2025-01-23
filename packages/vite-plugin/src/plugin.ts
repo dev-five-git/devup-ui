@@ -27,6 +27,7 @@ function writeDataFiles(options: Omit<DevupUIPluginOptions, 'extractCss'>) {
     options.package,
     'DevupThemeColors',
     'DevupThemeTypography',
+    'DevupTheme',
   )
   if (interfaceCode) {
     if (!existsSync(options.interfacePath)) mkdirSync(options.interfacePath)

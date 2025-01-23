@@ -246,4 +246,15 @@ mod tests {
         );
         assert_eq!(theme.to_css(), "");
     }
+
+    #[test]
+    fn update_break_points() {
+        let mut theme = Theme::default();
+        theme.update_break_points(vec![0, 480, 768, 992, 1280]);
+        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280]);
+        theme.update_break_points(vec![0, 480, 768, 992, 1280, 1600]);
+        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280, 1600]);
+        theme.update_break_points(vec![0, 480, 768, 992, 1280, 1600, 1920]);
+        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280, 1600, 1920]);
+    }
 }

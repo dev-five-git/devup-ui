@@ -66,6 +66,7 @@ describe('devupUIPlugin', () => {
       '@devup-ui/react',
       'DevupThemeColors',
       'DevupThemeTypography',
+      'DevupTheme',
     )
     expect(mkdirSync).toHaveBeenCalledWith('.df')
     expect(writeFileSync).toHaveBeenCalledWith(

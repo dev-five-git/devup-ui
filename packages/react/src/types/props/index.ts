@@ -21,7 +21,7 @@ import type { DevupUiOverflowProps } from './overflow'
 import type { DevupUiOverflowBehaviorProps } from './overflow-behavior'
 import type { DevupUiPositionProps } from './position'
 import type { DevupUiScrollbarProps } from './scrollbar'
-import type { DevupSelectorProps } from './selector'
+import type { DevupSelectorProps, DevupThemeSelectorProps } from './selector'
 import type { DevupUiShapeProps } from './shape'
 import type { DevupUiTableProps } from './table'
 import type { DevupUiTextProps } from './text'
@@ -61,7 +61,10 @@ export interface DevupCommonProps
     DevupUiUiProps,
     DevupUiViewTransitionProps {}
 
-export interface DevupProps extends DevupCommonProps, DevupSelectorProps {
+export interface DevupProps
+  extends DevupCommonProps,
+    DevupSelectorProps,
+    DevupThemeSelectorProps {
   as?: React.ElementType
 }
 

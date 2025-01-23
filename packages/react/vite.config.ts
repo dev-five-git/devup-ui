@@ -1,3 +1,4 @@
+import preserveDirectives from 'rollup-plugin-preserve-directives'
 import dts from 'vite-plugin-dts'
 import { defineConfig } from 'vitest/config'
 
@@ -37,6 +38,7 @@ export default defineConfig({
           return
         }
       },
+      plugins: [preserveDirectives()],
       external: (source) => {
         return !(source.includes('src') || source.startsWith('.'))
       },
