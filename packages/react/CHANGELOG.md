@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.14
+
+### Patch Changes
+
+- 7f19bd5: Implement ThemeScript, useTheme, getTheme, setTheme
+
 ## 0.1.13
 
 ### Patch Changes
