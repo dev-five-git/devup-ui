@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.15
+
+### Patch Changes
+
+- b40d274: Add typograhpy to props
+
 ## 0.1.14
 
 ### Patch Changes
