@@ -42,12 +42,13 @@ export default function HomePage() {
               borderRadius="100px"
               gap="20px"
               p="16px 40px"
+              role="group"
             >
               <Box
-                _active={{
+                _groupActive={{
                   bg: '$third',
                 }}
-                _hover={{
+                _groupHover={{
                   bg: '$primary',
                 }}
                 bg="$secondary"
