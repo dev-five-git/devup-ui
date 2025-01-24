@@ -31,13 +31,29 @@ export default function HomePage() {
             href={URL_PREFIX + '/docs/overview'}
           >
             <Flex
+              _active={{
+                bg: '$negativeBase',
+              }}
+              _hover={{
+                bg: '$title',
+              }}
               alignItems="center"
               bg="$text"
               borderRadius="100px"
               gap="20px"
               p="16px 40px"
             >
-              <Box bg="$secondary" borderRadius="100%" boxSize="10px" />
+              <Box
+                _active={{
+                  bg: '$third',
+                }}
+                _hover={{
+                  bg: '$primary',
+                }}
+                bg="$secondary"
+                borderRadius="100%"
+                boxSize="10px"
+              />
               <Flex alignItems="center" gap="10px">
                 <Text color="$base" typography="buttonL">
                   Get started

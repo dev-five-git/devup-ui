@@ -5,11 +5,54 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq, Ord, PartialOrd)]
+static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    map.insert("disabled".to_string(), 5);
+    map.insert("selected".to_string(), 4);
+    map.insert("active".to_string(), 3);
+    map.insert("focus".to_string(), 2);
+    map.insert("hover".to_string(), 1);
+    map
+});
+
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub enum StyleSelector {
     Postfix(String),
     Prefix(String),
     Dual(String, String),
+}
+
+impl PartialOrd for StyleSelector {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StyleSelector {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Postfix(a), Postfix(b)) => SELECTOR_ORDER_MAP
+                .get(a)
+                .unwrap_or(&0)
+                .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0)),
+            (Prefix(a), Prefix(b)) => a.cmp(b),
+            (Dual(p1, a), Dual(p2, b)) => {
+                if p1 == p2 {
+                    SELECTOR_ORDER_MAP
+                        .get(a)
+                        .unwrap_or(&0)
+                        .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0))
+                } else {
+                    p1.cmp(p2)
+                }
+            }
+            (Postfix(_), _) => std::cmp::Ordering::Less,
+            (Prefix(_), Postfix(_)) => std::cmp::Ordering::Greater,
+            (Prefix(_), _) => std::cmp::Ordering::Less,
+            (Dual(_, _), Postfix(_)) => std::cmp::Ordering::Greater,
+            (Dual(_, _), Prefix(_)) => std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 impl From<&str> for StyleSelector {
