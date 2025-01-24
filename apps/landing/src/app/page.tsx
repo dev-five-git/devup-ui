@@ -1,28 +1,27 @@
-import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
+import { Box, css, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 
 import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
 import { URL_PREFIX } from '../constants'
+import { FeatureCard } from './FeatureCard'
 
 export default function HomePage() {
   return (
     <>
-      <Box mt="150px">
+      <Box pt={['100px', '150px']}>
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">
             <Image h="50px" src={URL_PREFIX + '/icon.svg'} w="52px" />
             <Text color="$title" textAlign="center" typography="h1">
-              Lorem ipsum dolor sit amet,
-              <br />
-              consectetur adipiscing elit.
+              Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
             </Text>
-            <Text textAlign="center" typography="h6Reg">
-              Etiam sit amet feugiat turpis. Proin nec ante a sem vestibulum
-              sodales non ut ex. Morbi diam turpis, fringilla vitae enim et,
-              egestas consequat nibh. Etiam auctor cursus urna sit amet
-              elementum.
+            <Text color="$text" textAlign="center" typography="h6Reg">
+              Building the Future of CSS-in-JS
+              <br />
+              Analyze all possible scenarios at the fastest speed and style with
+              optimal performance.
             </Text>
           </VStack>
           <Link
@@ -32,123 +31,87 @@ export default function HomePage() {
             href={URL_PREFIX + '/docs/overview'}
           >
             <Flex
+              _active={{
+                bg: '$negativeBase',
+              }}
+              _hover={{
+                bg: '$title',
+              }}
               alignItems="center"
               bg="$text"
               borderRadius="100px"
               gap="20px"
               p="16px 40px"
             >
-              <Box bg="$secondary" borderRadius="100%" boxSize="10px" />
+              <Box
+                _active={{
+                  bg: '$third',
+                }}
+                _hover={{
+                  bg: '$primary',
+                }}
+                bg="$secondary"
+                borderRadius="100%"
+                boxSize="10px"
+              />
               <Flex alignItems="center" gap="10px">
                 <Text color="$base" typography="buttonL">
                   Get started
                 </Text>
-                <Image boxSize="24px" src={URL_PREFIX + '/arrow.svg'} />
+                <Image
+                  bg="$base"
+                  boxSize="24px"
+                  maskImage={`url(${URL_PREFIX + '/arrow.svg'})`}
+                />
               </Flex>
             </Flex>
           </Link>
         </VStack>
-        <Box maxW="1200px" mx="auto" pb="100px" pt="80px">
+        <Box maxW="1224px" mx="auto" pb="100px" pt="80px" px={3}>
           <CodeBoard />
         </Box>
-        <VStack gap="40px" maxW="1200px" mx="auto" pb="120px" pt="40px">
-          <VStack gap="16px" w="805px">
-            <Text color="$title" typography="h4">
-              Lorem ipsum dolor sit amet.
-            </Text>
-            <Text typography="textL">
-              Etiam sit amet feugiat turpis. Proin nec ante a sem vestibulum
-              sodales non ut ex. Morbi diam turpis, fringilla vitae enim et,
-              egestas consequat nibh.
-            </Text>
-          </VStack>
+        <VStack
+          gap="40px"
+          maxW="1232px"
+          mx="auto"
+          pb={[4, 10, '120px']}
+          pt={[4, null, '40px']}
+          px={4}
+        >
           <VStack gap="16px">
-            <Flex alignItems="center" gap="16px">
-              <Flex
-                bg="$cardBg"
-                borderRadius="20px"
-                flex="1"
-                gap="10px"
-                p="24px"
-              >
-                <Flex px="8px">
-                  <Image boxSize="32px" src={URL_PREFIX + '/idea.svg'} />
-                </Flex>
-                <VStack flex="1" gap="10px">
-                  <Text color="$title" typography="h6">
-                    Feature title
-                  </Text>
-                  <Text flex="1" typography="body" w="484px">
-                    Lorem ipsum dolor sit amet.
-                  </Text>
-                </VStack>
-              </Flex>
-              <Flex
-                bg="$cardBg"
-                borderRadius="20px"
-                flex="1"
-                gap="10px"
-                p="30px 24px"
-              >
-                <Flex px="8px">
-                  <Image boxSize="32px" src={URL_PREFIX + '/trophy.svg'} />
-                </Flex>
-                <VStack flex="1" gap="10px">
-                  <Text color="$title" typography="h6">
-                    Feature title
-                  </Text>
-                  <Text flex="1" typography="body" w="484px">
-                    Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
-                    Proin nec ante a sem vestibulum sodales non ut ex.
-                  </Text>
-                </VStack>
-              </Flex>
-            </Flex>
-            <Flex alignItems="center" gap="16px">
-              <Flex
-                bg="$cardBg"
-                borderRadius="20px"
-                flex="1"
-                gap="10px"
-                p="30px 24px"
-              >
-                <Flex px="8px">
-                  <Image boxSize="32px" src={URL_PREFIX + '/heart.svg'} />
-                </Flex>
-                <VStack flex="1" gap="10px">
-                  <Text color="$title" typography="h6">
-                    Feature title
-                  </Text>
-                  <Text flex="1" typography="body" w="484px">
-                    Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
-                    Proin nec ante a sem vestibulum.
-                  </Text>
-                </VStack>
-              </Flex>
-              <Flex
-                bg="$cardBg"
-                borderRadius="20px"
-                flex="1"
-                gap="10px"
-                p="30px 24px"
-              >
-                <Flex px="8px">
-                  <Image boxSize="32px" src={URL_PREFIX + '/notice.svg'} />
-                </Flex>
-                <VStack flex="1" gap="10px">
-                  <Text color="$title" typography="h6">
-                    Feature title
-                  </Text>
-                  <Text flex="1" typography="body" w="484px">
-                    Lorem ipsum dolor sit amet. Etiam sit amet feugiat turpis.
-                  </Text>
-                </VStack>
-              </Flex>
-            </Flex>
+            <Text color="$title" typography="h4">
+              Features
+            </Text>
+            <Text color="$text" typography="textL">
+              Devup UI offers a performance-optimized CSS-in-JS system, theme
+              typing, and amazing features for faster and safer development.
+            </Text>
           </VStack>
+          <Grid gap="16px" gridTemplateColumns={['1fr', null, '1fr 1fr']}>
+            <FeatureCard
+              description="A futuristic design that eliminates the root causes of performance degradation."
+              icon="/idea.svg"
+              title="Zero Runtime"
+            />
+            <FeatureCard
+              description="The fastest build speed and the smallest bundle size among CSS-in-JS solutions."
+              icon="/trophy.svg"
+              title="Top Performance"
+            />
+            <FeatureCard
+              description="Enhanced DX with typing-based support."
+              icon="/heart.svg"
+              title="Type Safety"
+            />
+            <FeatureCard
+              description="A Figma plugin enabling safer and faster development."
+              icon="/notice.svg"
+              title="Figma Plugin"
+            />
+          </Grid>
         </VStack>
         <Container>
-          <Box py="40px">
+          <Box px={4} py="40px">
             <Discord />
           </Box>
         </Container>

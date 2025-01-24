@@ -1,6 +1,7 @@
 import type { Property } from 'csstype'
 
 import type { ResponsiveValue } from '../responsive-value'
+import type { DevupThemeTypography } from '../typography'
 
 export interface DevupUiTextProps {
   hangingPunctuation?: ResponsiveValue<Property.HangingPunctuation>
@@ -34,4 +35,6 @@ export interface DevupUiTextProps {
   wordSpacing?: ResponsiveValue<Property.WordSpacing>
 
   content?: ResponsiveValue<Property.Content>
+
+  typography?: keyof DevupThemeTypography
 }

@@ -5,16 +5,11 @@ import { Box, getTheme, setTheme } from '@devup-ui/react'
 export function ThemeSwitch() {
   return (
     <Box
-      _themeDark={{
-        color: 'white',
-      }}
-      _themeDefault={{
-        color: 'black',
-      }}
       boxSize="24px"
+      color="$text"
       cursor="pointer"
       onClick={() => {
-        setTheme(getTheme() === 'dark' ? 'default' : 'dark')
+        setTheme(getTheme() === 'dark' ? 'light' : 'dark')
       }}
     >
       <svg

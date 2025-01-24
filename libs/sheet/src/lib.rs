@@ -285,6 +285,11 @@ mod tests {
         sheet.add_property("test", "mx", 2, "40px", None, false);
         sheet.add_property("test", "my", 2, "40px", None, false);
         assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "bg", 0, "red", Some(&"hover".into()), false);
+        sheet.add_property("test", "bg", 0, "blue", Some(&"active".into()), false);
+        assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]

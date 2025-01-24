@@ -4,9 +4,9 @@ import { URL_PREFIX } from '../constants'
 
 export function Footer() {
   return (
-    <VStack bg="$footerBg" gap="80px" p="60px 320px">
+    <VStack bg="$footerBg" gap="80px">
       <Flex justifyContent="space-between">
-        <VStack flex="1" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 1
           </Text>
@@ -28,7 +28,7 @@ export function Footer() {
             </Text>
           </VStack>
         </VStack>
-        <VStack flex="1" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 2
           </Text>
@@ -39,7 +39,7 @@ export function Footer() {
             상세 메뉴 2
           </Text>
         </VStack>
-        <VStack flex="1" gap="20px" minWidth="240px">
+        <VStack flex="1" gap="20px">
           <Text color="$footerTitle" typography="buttonS">
             메뉴 타이틀 3
           </Text>
