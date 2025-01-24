@@ -1,6 +1,6 @@
 import 'sanitize.css'
 
-import { ThemeScript } from '@devup-ui/react'
+import { css, ThemeScript } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -20,11 +20,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <ThemeScript auto />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
         <base
           href={process.env.NODE_ENV === 'production' ? '/devup-ui' : '/'}
         />
       </head>
-      <body>
+      <body
+        className={css({
+          bg: '$containerBackground',
+        })}
+      >
         <Header />
         {children}
         <Footer />

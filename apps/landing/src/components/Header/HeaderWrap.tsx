@@ -10,7 +10,7 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
     <Box
       pos={isRoot ? 'fixed' : 'sticky'}
       pt={isRoot ? [null, null, 5] : undefined}
-      px={[null, null, 4]}
+      px={isRoot ? [null, null, 4] : undefined}
       top="0"
       transition="all, 0.2s"
       w="100%"
@@ -25,7 +25,8 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
         justifyContent="space-between"
         maxW={isRoot ? '1440px' : '100%'}
         mx="auto"
-        px={[4, 5, '40px']}
+        pl={[4, 5, '40px']}
+        pr={[null, 5, '40px']}
       >
         {children}
       </Flex>

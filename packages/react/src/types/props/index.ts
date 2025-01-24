@@ -1,4 +1,3 @@
-import type { DevupThemeTypography } from '../typography'
 import type { DevupUiAnimationProps } from './animation'
 import type { DevupUiBackgroundProps } from './background'
 import type { DevupUiBlendingProps } from './blending'
@@ -66,8 +65,4 @@ export interface DevupProps
     DevupSelectorProps,
     DevupThemeSelectorProps {
   as?: React.ElementType
-}
-
-export interface DevupTypographyProps extends DevupProps {
-  typography?: keyof DevupThemeTypography
 }
