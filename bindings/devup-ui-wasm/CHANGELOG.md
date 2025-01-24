@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.21
+
+### Patch Changes
+
+- 9d8e298: Add selector order
+
 ## 0.1.20
 
 ### Patch Changes
