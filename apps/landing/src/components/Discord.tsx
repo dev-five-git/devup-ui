@@ -32,11 +32,18 @@ export function Discord() {
         <Link
           className={css({
             textDecoration: 'none',
+            borderRadius: '100px',
           })}
           href="https://discord.gg/BtNffusw"
           target="_blank"
         >
           <Flex
+            _active={{
+              bg: '$buttonBlueActive',
+            }}
+            _hover={{
+              bg: '$buttonBlueHover',
+            }}
             alignItems="center"
             bg="$buttonBlue"
             borderRadius="100px"
