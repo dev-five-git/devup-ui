@@ -35,6 +35,7 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "role",
         "ref",
         "key",
+        "id",
         "alt",
         "type",
         "src",
