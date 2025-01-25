@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.22
+
+### Patch Changes
+
+- 41aa78b: Add id to special prop
+
 ## 0.1.21
 
 ### Patch Changes
