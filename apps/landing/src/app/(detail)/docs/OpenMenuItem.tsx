@@ -56,7 +56,9 @@ export function OpenMenuItem({
           <Box borderRight="1px solid var(--border, #E0E0E0)" w="10px" />
           <VStack flex="1" gap="4px">
             {subMenu.map(({ children, to }, idx) => {
-              const selected = to ? path.startsWith(to) : false
+              const selected = to
+                ? path.startsWith(to) || path.startsWith(URL_PREFIX + to)
+                : false
               const inner = (
                 <Flex
                   _hover={{
