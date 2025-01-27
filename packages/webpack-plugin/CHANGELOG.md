@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.27
+
+### Patch Changes
+
+- 3aa26e6: Fix convert issue
+- Updated dependencies [3aa26e6]
+  - @devup-ui/wasm@0.1.24
+
 ## 0.1.26
 
 ### Patch Changes
