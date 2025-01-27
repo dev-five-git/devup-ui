@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.17
+
+### Patch Changes
+
+- ea622ed: Add svg props
+
 ## 0.1.16
 
 ### Patch Changes
