@@ -22,6 +22,7 @@ import type { DevupUiPositionProps } from './position'
 import type { DevupUiScrollbarProps } from './scrollbar'
 import type { DevupSelectorProps, DevupThemeSelectorProps } from './selector'
 import type { DevupUiShapeProps } from './shape'
+import type { DevupUiSvgProps } from './svg'
 import type { DevupUiTableProps } from './table'
 import type { DevupUiTextProps } from './text'
 import type { DevupUiTransformProps } from './transform'
@@ -58,7 +59,8 @@ export interface DevupCommonProps
     DevupUiTransformProps,
     DevupUiTransitionProps,
     DevupUiUiProps,
-    DevupUiViewTransitionProps {}
+    DevupUiViewTransitionProps,
+    DevupUiSvgProps {}
 
 export interface DevupProps
   extends DevupCommonProps,
