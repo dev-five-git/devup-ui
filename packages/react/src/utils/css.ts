@@ -6,11 +6,8 @@ export function css(strings: TemplateStringsArray): string
 export function css(): string
 
 export function css(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   strings?: TemplateStringsArray | (DevupCommonProps & DevupSelectorProps),
 ): string {
-  if (typeof strings === 'undefined') return ''
-  if (Array.isArray(strings)) {
-    return strings.join('')
-  }
-  return strings as string
+  throw new Error('Cannot run on the runtime')
 }
