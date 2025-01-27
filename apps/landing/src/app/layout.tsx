@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
 import { Header } from '../components/Header'
+import { URL_PREFIX } from '../constants'
 
 export const metadata: Metadata = {
   title: 'Devup UI',
@@ -22,9 +23,7 @@ export default function RootLayout({
       <head>
         <ThemeScript auto />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        <base
-          href={process.env.NODE_ENV === 'production' ? '/devup-ui' : '/'}
-        />
+        <base href={URL_PREFIX} />
       </head>
       <body
         className={css({
