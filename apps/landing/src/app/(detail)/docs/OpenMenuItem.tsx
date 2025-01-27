@@ -14,7 +14,9 @@ export function OpenMenuItem({
   Required<Pick<MenuItemProps, 'subMenu'>>) {
   const path = usePathname()
   const selected = subMenu.some((item) =>
-    item.to ? path.startsWith(item.to) : false,
+    item.to
+      ? path.startsWith(URL_PREFIX + item.to) || path.startsWith(item.to)
+      : false,
   )
   const [open, handleOpen] = useReducer((state) => !state, selected)
   return (
