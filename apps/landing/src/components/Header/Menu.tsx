@@ -2,6 +2,8 @@
 import { Text } from '@devup-ui/react'
 import { usePathname } from 'next/navigation'
 
+import { URL_PREFIX } from '../../constants'
+
 interface MenuProps {
   children?: React.ReactNode
   keyword: string
@@ -9,7 +11,9 @@ interface MenuProps {
 
 export function Menu({ children, keyword }: MenuProps) {
   const path = usePathname()
-  const selected = path.startsWith(`/${keyword}`)
+  const selected =
+    path.startsWith(`${URL_PREFIX}/${keyword}`) ||
+    path.startsWith(`/${keyword}`)
   return (
     <Text
       color={selected ? '$primary' : '$title'}
