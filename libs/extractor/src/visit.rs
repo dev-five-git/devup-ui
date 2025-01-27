@@ -14,12 +14,13 @@ use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
     ImportOrExportKind, JSXElement, JSXElementName, Program, PropertyKey, Statement,
-    TaggedTemplateExpression, TemplateElementValue, VariableDeclarator, WithClause,
+    VariableDeclarator, WithClause,
 };
 use oxc_ast::visit::walk_mut::{
-    walk_call_expression, walk_import_declaration, walk_jsx_element, walk_program,
-    walk_tagged_template_expression, walk_variable_declarator,
+    walk_call_expression, walk_expression, walk_import_declaration, walk_jsx_element, walk_program,
+    walk_variable_declarator,
 };
+
 use oxc_ast::{AstBuilder, VisitMut};
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -77,6 +78,65 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if decl.source.value == self.package && decl.specifiers.iter().all(|s| s.is_empty())
                 {
                     it.body.remove(i);
+                }
+            }
+        }
+    }
+    fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        walk_expression(self, it);
+        if let Expression::CallExpression(call) = it {
+            if let Expression::Identifier(ident) = &call.callee {
+                if self.css_imports.contains_key(ident.name.as_str()) && call.arguments.len() == 1 {
+                    match extract_style_from_expression(
+                        &self.ast,
+                        None,
+                        call.arguments[0].to_expression_mut(),
+                        0,
+                        None,
+                    ) {
+                        ExtractResult::ExtractStyle(styles)
+                        | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
+                            let class_name = gen_class_names(&self.ast, &styles);
+                            let mut styles = styles
+                                .into_iter()
+                                .flat_map(|ex| ex.extract())
+                                .collect::<Vec<_>>();
+
+                            self.styles.append(&mut styles);
+                            if let Some(cls) = class_name {
+                                *it = cls;
+                            } else {
+                                *it = Expression::StringLiteral(self.ast.alloc_string_literal(
+                                    SPAN,
+                                    "".to_string(),
+                                    None,
+                                ));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else if let Expression::TaggedTemplateExpression(tag) = it {
+            if let Expression::Identifier(ident) = &tag.tag {
+                if self.css_imports.contains_key(ident.name.as_str()) {
+                    let css_str = tag
+                        .quasi
+                        .quasis
+                        .iter()
+                        .map(|quasi| quasi.value.raw.as_str())
+                        .collect::<Vec<&str>>()
+                        .join("");
+                    let css = ExtractStyleValue::Css(ExtractCss {
+                        css: css_str.trim().to_string(),
+                    });
+
+                    if let StyleProperty::ClassName(cls) = css.extract() {
+                        *it = Expression::StringLiteral(
+                            self.ast.alloc_string_literal(SPAN, cls, None),
+                        );
+                    }
+                    self.styles.push(css);
                 }
             }
         }
@@ -164,70 +224,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         }
-        if let Expression::Identifier(ident) = &it.callee {
-            if self.css_imports.contains_key(ident.name.as_str()) && it.arguments.len() == 1 {
-                match extract_style_from_expression(
-                    &self.ast,
-                    None,
-                    it.arguments[0].to_expression_mut(),
-                    0,
-                    None,
-                ) {
-                    ExtractResult::ExtractStyle(styles)
-                    | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
-                        let class_name = gen_class_names(&self.ast, &styles);
-                        let mut styles = styles
-                            .into_iter()
-                            .flat_map(|ex| ex.extract())
-                            .collect::<Vec<_>>();
-
-                        self.styles.append(&mut styles);
-                        if let Some(cls) = class_name {
-                            it.arguments[0] = Argument::from(cls);
-                        } else {
-                            it.arguments.pop();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
         walk_call_expression(self, it);
-    }
-    fn visit_tagged_template_expression(&mut self, it: &mut TaggedTemplateExpression<'a>) {
-        if let Expression::Identifier(ident) = &it.tag {
-            if !self.css_imports.contains_key(ident.name.as_str()) {
-                walk_tagged_template_expression(self, it);
-                return;
-            }
-
-            let css_str = it
-                .quasi
-                .quasis
-                .iter()
-                .map(|quasi| quasi.value.raw.as_str())
-                .collect::<Vec<&str>>()
-                .join("");
-            let css = ExtractStyleValue::Css(ExtractCss {
-                css: css_str.trim().to_string(),
-            });
-
-            if let StyleProperty::ClassName(cls) = css.extract() {
-                let mut ve = oxc_allocator::Vec::new_in(self.ast.allocator);
-                ve.push(self.ast.template_element(
-                    SPAN,
-                    false,
-                    TemplateElementValue {
-                        cooked: None,
-                        raw: self.ast.atom(cls.as_str()),
-                    },
-                ));
-                it.quasi.quasis = ve;
-            }
-            self.styles.push(css);
-            return;
-        }
-        walk_tagged_template_expression(self, it);
     }
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
@@ -395,6 +392,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         } else if import.imported.to_string() == "css" {
                             self.css_imports
                                 .insert(import.local.to_string(), it.source.value.to_string());
+                            specifiers.remove(i);
                         }
                     }
                 }

@@ -31,5 +31,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { css } from \"@devup-ui/core\";\n<Box className={css(\"d0 d1\")} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<Box className={\"d0 d1\"} />;\n",
 }

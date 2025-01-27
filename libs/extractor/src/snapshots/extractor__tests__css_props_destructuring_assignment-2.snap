@@ -50,5 +50,5 @@ ExtractOutput {
             },
         ),
     ],
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { css } from \"@devup-ui/core\";\n<div className={css(`d3 d4 ${a ? \"d0 d1\" : \"d2\"}`)} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d3 d4 ${a ? \"d0 d1\" : \"d2\"}`} />;\n",
 }
