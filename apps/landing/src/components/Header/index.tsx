@@ -32,7 +32,19 @@ export function Header() {
   return (
     <HeaderWrap>
       <Flex alignItems="center" gap="16px">
-        <Suspense>
+        <Suspense
+          fallback={
+            <Link
+              className={css({
+                textDecoration: 'none',
+                ml: 4,
+              })}
+              href={URL_PREFIX + '/'}
+            >
+              <Logo />
+            </Link>
+          }
+        >
           <MobMenuWrapper openChildren={top}>
             <Link
               className={css({
