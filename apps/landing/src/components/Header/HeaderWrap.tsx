@@ -27,6 +27,7 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
 function HeaderWrapInner({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const isRoot = path === '/'
+  console.info('isRoot', isRoot, path)
   const menu = useSearchParams().get('menu') === '1'
   return (
     <Flex
