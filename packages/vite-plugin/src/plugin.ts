@@ -61,7 +61,7 @@ export function DevupUI({
   }
   return {
     name: 'devup-ui',
-    config: () => {
+    config() {
       return {
         server: {
           watch: {
@@ -98,6 +98,17 @@ export function DevupUI({
         writeFileSync(cssFile, css, {
           encoding: 'utf-8',
         })
+        return {
+          code: `${retCode}
+            const exists = !!document.getElementById('devup-ui');
+            const style = document.getElementById('devup-ui') || document.createElement('style');
+            style.id = 'devup-ui';
+            style.textContent = \`
+            ${css}
+            \`;
+            if (!exists) document.head.appendChild(style);
+          `,
+        }
       }
       return {
         code: retCode,
