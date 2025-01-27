@@ -53,6 +53,9 @@ importers:
       '@types/mdx':
         specifier: ^2.0.13
         version: 2.0.13
+      body-scroll-lock:
+        specifier: 3.1.5
+        version: 3.1.5
       next:
         specifier: ^15.1.6
         version: 15.1.6(@babel/core@7.26.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -72,6 +75,9 @@ importers:
       '@devup-ui/next-plugin':
         specifier: workspace:*
         version: link:../../packages/next-plugin
+      '@types/body-scroll-lock':
+        specifier: ^3.1.2
+        version: 3.1.2
       '@types/node':
         specifier: ^22
         version: 22.10.10
@@ -322,25 +328,6 @@ importers:
       rollup-plugin-preserve-directives:
         specifier: ^0.4.0
         version: 0.4.0(rollup@4.31.0)
-      typescript:
-        specifier: ^5.7.3
-        version: 5.7.3
-      vite:
-        specifier: ^6
-        version: 6.0.11(@types/node@22.10.10)(terser@5.37.0)
-      vite-plugin-dts:
-        specifier: ^4.5.0
-        version: 4.5.0(@types/node@22.10.10)(rollup@4.31.0)(typescript@5.7.3)(vite@6.0.11(@types/node@22.10.10)(terser@5.37.0))
-      vitest:
-        specifier: ^3.0.4
-        version: 3.0.4(@types/debug@4.1.12)(@types/node@22.10.10)(happy-dom@16.7.2)(terser@5.37.0)
-
-  packages/sheet:
-    dependencies:
-      '@devup-ui/wasm':
-        specifier: workspace:*
-        version: link:../../bindings/devup-ui-wasm
-    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.7.3
@@ -1897,6 +1884,9 @@ packages:
   '@types/babel__traverse@7.20.6':
     resolution: {integrity: sha512-r1bzfrm0tomOI8g1SzvCaQHo6Lcv6zu0EA+W2kHrt8dyrHQxGzBBL4kdkzIS+jBMV+EYcMAEAqXqYaLJq5rOZg==}
 
+  '@types/body-scroll-lock@3.1.2':
+    resolution: {integrity: sha512-ELhtuphE/YbhEcpBf/rIV9Tl3/O0A0gpCVD+oYFSS8bWstHFJUgA4nNw1ZakVlRC38XaQEIsBogUZKWIPBvpfQ==}
+
   '@types/debug@4.1.12':
     resolution: {integrity: sha512-vIChWdVG3LG1SMxEvI/AK+FWJthlrqlTu7fbrlywTkkaONwk/UAGaULXRlf8vkzFBLVm0zkMdCquhL5aOjhXPQ==}
 
@@ -2512,6 +2502,9 @@ packages:
   better-path-resolve@1.0.0:
     resolution: {integrity: sha512-pbnl5XzGBdrFU/wT4jqmJVPn2B6UHPBOhzMQkY/SPUPB6QtUXtmBHBIwCbXJol93mOpGMnQyP/+BB19q04xj7g==}
     engines: {node: '>=4'}
+
+  body-scroll-lock@3.1.5:
+    resolution: {integrity: sha512-Yi1Xaml0EvNA0OYWxXiYNqY24AfWkbA6w5vxE7GWxtKfzIbZM+Qw+aSmkgsbWzbHiy/RCSkUZBplVxTA+E4jJg==}
 
   brace-expansion@1.1.11:
     resolution: {integrity: sha512-iCuPHDFgrHX7H2vEI/5xpz07zSHB00TpugqhmYtVmMO6518mCuRMoOYFldEBl0g187ufozdaHgWKcYFb61qGiA==}
@@ -6433,6 +6426,8 @@ snapshots:
     dependencies:
       '@babel/types': 7.26.5
 
+  '@types/body-scroll-lock@3.1.2': {}
+
   '@types/debug@4.1.12':
     dependencies:
       '@types/ms': 2.1.0
@@ -7430,6 +7425,8 @@ snapshots:
   better-path-resolve@1.0.0:
     dependencies:
       is-windows: 1.0.2
+
+  body-scroll-lock@3.1.5: {}
 
   brace-expansion@1.1.11:
     dependencies:

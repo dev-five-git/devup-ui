@@ -10,6 +10,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "body-scroll-lock": "3.1.5",
     "@devup-ui/react": "workspace:*",
     "@mdx-js/loader": "^3.1.0",
     "@mdx-js/react": "^3.1.0",
@@ -22,6 +23,7 @@
     "sanitize.css": "^13.0.0"
   },
   "devDependencies": {
+    "@types/body-scroll-lock": "^3.1.2",
     "@devup-ui/next-plugin": "workspace:*",
     "@types/node": "^22",
     "@types/react": "^19",

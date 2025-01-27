@@ -20,6 +20,9 @@ export function OpenMenuItem({
   return (
     <>
       <Flex
+        _hover={{
+          bg: '$menuHover',
+        }}
         alignItems="center"
         bg={selected ? '$menuActive' : undefined}
         borderRadius="6px"
@@ -54,6 +57,9 @@ export function OpenMenuItem({
               const selected = to ? path.startsWith(to) : false
               const inner = (
                 <Flex
+                  _hover={{
+                    bg: '$menuHover',
+                  }}
                   alignItems="center"
                   bg={selected ? '$menuActive' : undefined}
                   borderRadius="6px"

@@ -1,6 +1,69 @@
 # Installation
 
 
+## Install @devup-ui/react
+
+Install the package in your project directory with npm.
+
 ```bash
 npm install @deuvp-ui/react
 ```
+
+### Using Devup UI with Next.js
+
+If you are using Next.js, you can install the Next.js plugin.
+
+```bash
+npm install @devup-ui/next-plugin
+```
+
+After installing the plugin, you can use the plugin in your Next.js project.
+
+```js
+// next.config.js
+
+import { DevupUI } from '@devup-ui/next-plugin'
+
+export default DevupUI({})
+````
+
+### Using Devup UI with Vite
+
+If you are using Vite, you can install the Vite plugin.
+
+```bash
+npm install @devup-ui/vite-plugin
+```
+
+After installing the plugin, you can use the plugin in your Vite project.
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [react(), DevupUI()],
+})
+```
+
+If you have developed a UI library using Devup UI, you can use the library mode.
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [react(), DevupUI({
+    // no extract css
+    extractCss: false,
+})],
+})
+```
+
+## Project Examples
+
+- [Next.js Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/next)
+- [Vite Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/vite)
+- [Library with Vite Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/vite-lib)

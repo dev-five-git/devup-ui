@@ -10,7 +10,7 @@ export function HeaderInput() {
       borderRadius="8px"
       gap="10px"
       p="8px 8px 6px"
-      w="240px"
+      w="100%"
     >
       <Image boxSize="24px" src={URL_PREFIX + '/search.svg'} />
       <Input

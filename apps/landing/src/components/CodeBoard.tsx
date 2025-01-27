@@ -1,6 +1,6 @@
 import { Flex, Text, VStack } from '@devup-ui/react'
 import SyntaxHighlighter from 'react-syntax-highlighter'
-import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs'
+import Light from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-dark-reasonable'
 
 const CODE = `import { css, Flex, Center } from "@devup-ui/react";
 function App() {
@@ -35,7 +35,7 @@ export function CodeBoard() {
                 width: '100%',
               }}
               language="javascript"
-              style={docco}
+              style={Light}
             >
               {CODE}
             </SyntaxHighlighter>

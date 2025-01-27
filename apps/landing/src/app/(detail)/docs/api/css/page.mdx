@@ -1,1 +1,36 @@
 # css
+
+css function is a function that returns a string.
+
+## Usage
+
+### CSS Literal
+You can use the css function to create a css string.
+```jsx
+<any css={css`
+    color: red;
+`}/>
+
+<any className={"d0"}/>
+```
+
+### CSS Object
+You can use the css function to create a css object.
+```jsx
+<any className={css({
+    color: "red"
+})}/>
+
+<any className={"d0"}/>
+```
+
+Also, css function can be used in the style prop. (responsive, pseudo-class, etc.)
+```jsx
+// It works like this
+<any style={css({
+    color: ["red", "blue"],
+    _hover: {
+        color: "green"
+    }
+})}/>
+```

@@ -11,7 +11,9 @@ export default function DetailLayout({
   return (
     <>
       <Flex maxW="1440px" mx="auto">
-        <LeftMenu />
+        <Box p="20px 16px" w="220px">
+          <LeftMenu />
+        </Box>
         <Box flex={1} px="60px" py="40px">
           {children}
         </Box>

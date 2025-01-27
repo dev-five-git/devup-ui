@@ -5,7 +5,7 @@ import { MenuItem } from './MenuItem'
 
 export function LeftMenu() {
   return (
-    <VStack gap="6px" h="1008px" p="20px 16px" w="220px">
+    <VStack gap="6px">
       <MenuItem to={URL_PREFIX + '/docs/overview'}>Overview</MenuItem>
       <MenuItem to={URL_PREFIX + '/docs/installation'}>Installation</MenuItem>
       <MenuItem to={URL_PREFIX + '/docs/features'}>Features</MenuItem>

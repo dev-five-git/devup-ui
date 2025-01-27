@@ -1,0 +1,44 @@
+import { Box, css, Flex, Text } from '@devup-ui/react'
+import Link from 'next/link'
+
+import { LeftMenu } from '../../app/(detail)/docs/LeftMenu'
+import { URL_PREFIX } from '../../constants'
+import { HeaderInput } from './HeaderInput'
+import { MobMenuWrap } from './MobMenuWrap'
+
+export function MobMenu() {
+  return (
+    <MobMenuWrap>
+      <Box px={4} py={2.5}>
+        <HeaderInput />
+      </Box>
+      <Box overflowY="auto" px={4}>
+        <Link
+          className={css({
+            textDecoration: 'none',
+          })}
+          href={URL_PREFIX + '/docs/overview'}
+        >
+          <Flex alignItems="center" gap="10px" py="4px">
+            <Text color="$title" textAlign="right" typography="buttonM">
+              Docs
+            </Text>
+          </Flex>
+        </Link>
+        <LeftMenu />
+        <Link
+          className={css({
+            textDecoration: 'none',
+          })}
+          href={URL_PREFIX + '/team'}
+        >
+          <Flex alignItems="center" gap="10px" py="4px">
+            <Text color="$title" textAlign="right" typography="buttonM">
+              Docs
+            </Text>
+          </Flex>
+        </Link>
+      </Box>
+    </MobMenuWrap>
+  )
+}
