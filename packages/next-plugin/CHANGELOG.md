@@ -1,5 +1,12 @@
 # @devup-ui/next-plugin
 
+## 0.1.27
+
+### Patch Changes
+
+- Updated dependencies [3aa26e6]
+  - @devup-ui/webpack-plugin@0.1.27
+
 ## 0.1.26
 
 ### Patch Changes
