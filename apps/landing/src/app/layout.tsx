@@ -1,3 +1,4 @@
+import './markdown.css'
 import 'sanitize.css'
 
 import { css, ThemeScript } from '@devup-ui/react'
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body
         className={css({
           bg: '$containerBackground',
+          color: '$text',
         })}
       >
         <Header />

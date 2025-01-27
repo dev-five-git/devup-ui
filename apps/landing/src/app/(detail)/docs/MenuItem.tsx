@@ -24,6 +24,13 @@ export function MenuItem(props: MenuItemProps) {
   if (subMenu) return <OpenMenuItem {...props} subMenu={subMenu} />
   const inner = (
     <Flex
+      _hover={
+        selected
+          ? undefined
+          : {
+              bg: '$menuHover',
+            }
+      }
       alignItems="center"
       bg={selected ? '$menuActive' : undefined}
       borderRadius="6px"
