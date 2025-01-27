@@ -1,8 +1,7 @@
 'use client'
 
 import { Box, Flex } from '@devup-ui/react'
-import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { usePathname } from 'next/navigation'
 
 import { isRoot } from '../../utils/is-root'
 
@@ -19,9 +18,7 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
       w="100%"
       zIndex={1}
     >
-      <Suspense>
-        <HeaderWrapInner>{children}</HeaderWrapInner>
-      </Suspense>
+      <HeaderWrapInner>{children}</HeaderWrapInner>
     </Box>
   )
 }
@@ -29,7 +26,6 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
 function HeaderWrapInner({ children }: { children: React.ReactNode }) {
   const path = usePathname()
   const root = isRoot(path)
-  const menu = useSearchParams().get('menu') === '1'
   return (
     <Flex
       alignItems="center"
@@ -40,7 +36,7 @@ function HeaderWrapInner({ children }: { children: React.ReactNode }) {
       justifyContent="space-between"
       maxW={root ? '1440px' : '100%'}
       mx="auto"
-      pl={[menu ? null : 4, 5, '40px']}
+      pl={[null, 5, '40px']}
       pr={[null, 5, '40px']}
     >
       {children}

@@ -37,6 +37,7 @@ export function Header() {
             <Link
               className={css({
                 textDecoration: 'none',
+                ml: 4,
               })}
               href={URL_PREFIX + '/'}
             >
