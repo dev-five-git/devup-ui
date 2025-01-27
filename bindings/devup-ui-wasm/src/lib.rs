@@ -20,6 +20,8 @@ pub struct Output {
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &JsValue);
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn log_str(s: &str);
 }
 
 #[wasm_bindgen]
@@ -100,11 +102,7 @@ pub fn code_extract(
         },
     ) {
         Ok(output) => Ok(Output {
-            code: if output.styles.is_empty() {
-                code.to_string()
-            } else {
-                output.code
-            },
+            code: output.code,
             styles: output.styles,
         }),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),

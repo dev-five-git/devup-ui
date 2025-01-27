@@ -27,7 +27,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
 
     try {
       const { code, css } = codeExtract(
-        this.resourcePath,
+        id,
         source.toString(),
         libPackage,
         cssFile,
