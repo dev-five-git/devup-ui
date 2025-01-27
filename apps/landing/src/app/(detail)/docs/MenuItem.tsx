@@ -58,7 +58,7 @@ export function MenuItem(props: MenuItemProps) {
       className={css({
         textDecoration: 'none',
       })}
-      href={to}
+      href={URL_PREFIX + to}
     >
       {inner}
     </Link>
