@@ -1,5 +1,6 @@
 import { css, Flex } from '@devup-ui/react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { URL_PREFIX } from '../../constants'
 import { Logo } from '../Logo'
@@ -31,16 +32,18 @@ export function Header() {
   return (
     <HeaderWrap>
       <Flex alignItems="center" gap="16px">
-        <MobMenuWrapper openChildren={top}>
-          <Link
-            className={css({
-              textDecoration: 'none',
-            })}
-            href={URL_PREFIX + '/'}
-          >
-            <Logo />
-          </Link>
-        </MobMenuWrapper>
+        <Suspense>
+          <MobMenuWrapper openChildren={top}>
+            <Link
+              className={css({
+                textDecoration: 'none',
+              })}
+              href={URL_PREFIX + '/'}
+            >
+              <Logo />
+            </Link>
+          </MobMenuWrapper>
+        </Suspense>
       </Flex>
       <Flex alignItems="center" display={['none', null, 'flex']} gap="10px">
         <Flex alignItems="center" px="24px">
@@ -75,9 +78,11 @@ export function Header() {
         gap="10px"
         p="10px"
       >
-        <MobMenuButton>
-          <MobMenu />
-        </MobMenuButton>
+        <Suspense fallback={<MobMenu />}>
+          <MobMenuButton>
+            <MobMenu />
+          </MobMenuButton>
+        </Suspense>
       </Flex>
     </HeaderWrap>
   )
