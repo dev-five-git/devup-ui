@@ -30,7 +30,7 @@ export class DevupUIWebpackPlugin {
     cssFile = join(_dirname, 'devup-ui.css'),
     devupPath = 'devup.json',
     interfacePath = '.df',
-  }: Partial<DevupUIWebpackPluginOptions>) {
+  }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
       cssFile,
