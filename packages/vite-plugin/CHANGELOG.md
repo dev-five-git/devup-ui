@@ -1,5 +1,13 @@
 # @devup-ui/vite-plugin
 
+## 0.1.21
+
+### Patch Changes
+
+- e3d29ed: Fix hmr issue
+- Updated dependencies [3aa26e6]
+  - @devup-ui/wasm@0.1.24
+
 ## 0.1.20
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.24
+
+### Patch Changes
+
+- 3aa26e6: Fix convert issue
+
 ## 0.1.23
 
 ### Patch Changes
