@@ -1,5 +1,7 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 
+import { URL_PREFIX } from '../../../constants'
+
 export function RightIndex() {
   return (
     <VStack gap="16px" p="20px 16px" w="200px">
@@ -54,7 +56,7 @@ export function RightIndex() {
         <Image
           bg="$caption"
           boxSize="16px"
-          maskImage="url(/outlink.svg)"
+          maskImage={`url(${URL_PREFIX}/outlink.svg)`}
           maskSize="100%"
         />
       </Flex>
