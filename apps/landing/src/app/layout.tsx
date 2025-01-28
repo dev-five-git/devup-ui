@@ -23,7 +23,7 @@ export default function RootLayout({
       <head>
         <ThemeScript auto />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        <base href={URL_PREFIX} />
+        {URL_PREFIX && <base href={URL_PREFIX} />}
         <link href={URL_PREFIX + '/favicon.ico'} rel="shortcut icon" />
       </head>
       <body

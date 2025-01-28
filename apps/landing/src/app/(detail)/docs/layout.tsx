@@ -14,7 +14,7 @@ export default function DetailLayout({
         <Box p="20px 16px" w="220px">
           <LeftMenu />
         </Box>
-        <Box flex={1} px="60px" py="40px">
+        <Box className="markdown-body" flex={1} px="60px" py="40px">
           {children}
         </Box>
         <RightIndex />
