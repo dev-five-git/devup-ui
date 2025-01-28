@@ -83,16 +83,32 @@ export function RightIndex() {
       </VStack>
       <Box bg="$border" h="1px" />
       <Link
-        className={css({ textDecoration: 'none' })}
+        className={css({
+          textDecoration: 'none',
+          _hover: {
+            textDecoration: 'underline',
+            textDecorationColor: '$text',
+          },
+        })}
         href={editUrl}
+        role="group"
         target="_blank"
       >
         <Flex gap="4px">
-          <Text color="$caption" flex="1" textAlign="right" typography="small">
+          <Text
+            _groupHover={{ color: '$text' }}
+            color="$caption"
+            flex="1"
+            textAlign="right"
+            typography="small"
+          >
             Edit this page
           </Text>
           <svg
-            className={css({ color: '$caption' })}
+            className={css({
+              color: '$caption',
+              _groupHover: { color: '$text' },
+            })}
             fill="none"
             height="16"
             viewBox="0 0 16 16"
