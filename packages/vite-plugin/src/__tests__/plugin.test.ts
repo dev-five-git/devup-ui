@@ -39,6 +39,7 @@ describe('devupUIPlugin', () => {
       watchChange: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
+      apply: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -107,6 +108,14 @@ describe('devupUIPlugin', () => {
     } as any)
     ;(plugin as any).transform('code', 'correct.ts')
     expect(writeFileSync).toBeCalledTimes(0)
+    ;(plugin as any).apply({}, { command: 'serve' })
+    vi.clearAllMocks()
+    vi.mocked(codeExtract).mockReturnValueOnce({
+      css: 'css code',
+      code: 'code',
+    } as any)
+    ;(plugin as any).transform('code', 'correct.ts')
+    expect(writeFileSync).toBeCalledTimes(1)
   })
   it('should not extract code', () => {
     const devupPath = 'devup.json'
@@ -130,6 +139,7 @@ describe('devupUIPlugin', () => {
       watchChange: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
+      apply: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -168,6 +178,7 @@ describe('devupUIPlugin', () => {
       watchChange: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
+      apply: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -178,5 +189,40 @@ describe('devupUIPlugin', () => {
     )
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
+  })
+
+  it('should return true on apply', () => {
+    const devupPath = 'devup.json'
+    const interfacePath = '.df'
+    const cssFile = join(_dirname, 'devup-ui.css')
+    const libPackage = '@devup-ui/react'
+    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(getThemeInterface).mockReturnValue('interface code')
+    vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
+    const options = {
+      package: libPackage,
+      cssFile,
+      devupPath,
+      interfacePath,
+    }
+    const plugin = DevupUI(options)
+    expect(plugin).toEqual({
+      name: 'devup-ui',
+      config: expect.any(Function),
+      watchChange: expect.any(Function),
+      enforce: 'pre',
+      transform: expect.any(Function),
+      apply: expect.any(Function),
+    })
+    expect(existsSync).toHaveBeenCalledWith(devupPath)
+    expect(getThemeInterface).toHaveBeenCalledWith(
+      libPackage,
+      'DevupThemeColors',
+      'DevupThemeTypography',
+      'DevupTheme',
+    )
+    expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
+    expect(existsSync).toHaveBeenCalledWith(interfacePath)
+    expect((plugin as any).apply({}, { command: 'build' })).toBe(true)
   })
 })

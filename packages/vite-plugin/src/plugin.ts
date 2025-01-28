@@ -59,6 +59,7 @@ export function DevupUI({
       console.error(error)
     }
   }
+  let command: null | 'build' | 'serve' = null
   return {
     name: 'devup-ui',
     config() {
@@ -69,6 +70,10 @@ export function DevupUI({
           },
         },
       }
+    },
+    apply(_, env) {
+      command = env.command
+      return true
     },
     watchChange(id) {
       if (resolve(id) !== resolve(devupPath)) return
@@ -98,8 +103,9 @@ export function DevupUI({
         writeFileSync(cssFile, css, {
           encoding: 'utf-8',
         })
-        return {
-          code: `${retCode}
+        if (command === 'serve')
+          return {
+            code: `${retCode}
             const exists = !!document.getElementById('devup-ui');
             const style = document.getElementById('devup-ui') || document.createElement('style');
             style.id = 'devup-ui';
@@ -108,7 +114,7 @@ export function DevupUI({
             \`;
             if (!exists) document.head.appendChild(style);
           `,
-        }
+          }
       }
       return {
         code: retCode,
