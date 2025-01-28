@@ -19,7 +19,15 @@ export function Header() {
   const top = (
     <Flex alignItems="center">
       <Flex alignItems="center" px="10px">
-        <Github />
+        <Link
+          className={css({
+            textDecoration: 'none',
+          })}
+          href="https://github.com/dev-five-git/devup-ui"
+          target="_blank"
+        >
+          <Github />
+        </Link>
       </Flex>
       <Flex alignItems="center" px="10px">
         <Discord />
