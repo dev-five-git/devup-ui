@@ -68,7 +68,7 @@ export function RightIndex() {
   }, [pathname])
 
   return (
-    <VStack gap="16px" h="1008px" p="20px 16px" w="200px">
+    <VStack gap="16px" p="20px 16px" w="200px">
       <VStack>
         <Flex alignItems="center" gap="10px" py="6px">
           <Text color="$text" flex="1" typography="captionBold">
