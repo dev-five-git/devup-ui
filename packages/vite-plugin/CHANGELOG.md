@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.22
+
+### Patch Changes
+
+- 04a1091: Fix vite plugin hmr issue
+
 ## 0.1.21
 
 ### Patch Changes
