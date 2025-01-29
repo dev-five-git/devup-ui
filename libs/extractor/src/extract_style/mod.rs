@@ -27,6 +27,7 @@ static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
     set.insert("zIndex".to_string());
     set.insert("fontWeight".to_string());
     set.insert("scale".to_string());
+    set.insert("aspectRatio".to_string());
     set
 });
 
