@@ -1,16 +1,19 @@
-import { getCss } from '@devup-ui/wasm'
+import { resolve } from 'node:path'
 
 import devupUICssLoader from '../css-loader'
 
-vi.mock('@devup-ui/wasm')
+vi.mock('node:path')
 
 describe('devupUICssLoader', () => {
   it('should invoke callback', () => {
-    vi.mocked(getCss).mockReturnValue('css')
     const callback = vi.fn()
+    const addContextDependency = vi.fn()
+    vi.mocked(resolve).mockReturnValue('resolved')
     devupUICssLoader.bind({
       callback,
-    } as any)(Buffer.from(''), '')
-    expect(callback).toBeCalledWith(null, 'css')
+      addContextDependency,
+    } as any)(Buffer.from('data'), '')
+    expect(callback).toBeCalledWith(null, Buffer.from('data'))
+    expect(addContextDependency).toBeCalledWith('resolved')
   })
 })
