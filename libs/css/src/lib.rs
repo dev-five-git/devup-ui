@@ -67,7 +67,7 @@ impl From<&str> for StyleSelector {
                 &s[1..]
             ))
         } else {
-            Postfix(value.to_string())
+            Postfix(to_kebab_case(value))
         }
     }
 }
@@ -565,8 +565,16 @@ mod tests {
     fn test_style_selector() {
         assert_eq!(StyleSelector::from("hover"), Postfix("hover".to_string()));
         assert_eq!(
+            StyleSelector::from("focusVisible"),
+            Postfix("focus-visible".to_string())
+        );
+        assert_eq!(
             StyleSelector::from("groupHover"),
             Dual("*[role=group]".to_string(), "hover".to_string())
+        );
+        assert_eq!(
+            StyleSelector::from("groupFocusVisible"),
+            Dual("*[role=group]".to_string(), "focus-visible".to_string())
         );
         assert_eq!(
             StyleSelector::from("group1"),

@@ -231,6 +231,11 @@ mod tests {
         sheet.add_property("test", "background-color", 1, "red", None, false);
         sheet.add_property("test", "background", 1, "some", None, false);
         assert_debug_snapshot!(sheet.create_css());
+        //
+        // let mut sheet = StyleSheet::default();
+        // sheet.add_property("test", "background-color", 1, "red", Some(&StyleSelector::Postfix("hover".to_string())), false);
+        // sheet.add_property("test", "background", 1, "some", Some(&StyleSelector::Postfix("focus".to_string())), false);
+        // assert_debug_snapshot!(sheet.create_css());
     }
     #[test]
     fn test_create_css_with_basic_sort_test() {
