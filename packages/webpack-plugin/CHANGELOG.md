@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.29
+
+### Patch Changes
+
+- dc125a6: Upgrade webpack hmr
+
 ## 0.1.28
 
 ### Patch Changes
