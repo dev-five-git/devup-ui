@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.25
+
+### Patch Changes
+
+- 570fa4c: Postfix convert to kebab
+
 ## 0.1.24
 
 ### Patch Changes
