@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.26
+
+### Patch Changes
+
+- eaf2737: Add aspectRatio to maintain value
+
 ## 0.1.25
 
 ### Patch Changes
