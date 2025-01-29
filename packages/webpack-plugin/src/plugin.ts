@@ -103,30 +103,34 @@ export class DevupUIWebpackPlugin {
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
     }
 
-    compiler.options.module.rules.push({
-      test: this.options.cssFile,
-      use: [
-        {
-          loader: createRequire(import.meta.url).resolve(
-            '@devup-ui/webpack-plugin/css-loader',
-          ),
-        },
-      ],
-    })
-
-    compiler.options.module.rules.push({
-      test: /\.(tsx|ts|js|mjs|jsx)$/,
-      exclude: /node_modules/,
-      use: [
-        {
-          loader: createRequire(import.meta.url).resolve(
-            '@devup-ui/webpack-plugin/loader',
-          ),
-          options: {
-            plugin: this,
+    compiler.options.module.rules.push(
+      {
+        test: /\.(tsx|ts|js|mjs|jsx)$/,
+        exclude: /node_modules/,
+        enforce: 'pre',
+        use: [
+          {
+            loader: createRequire(import.meta.url).resolve(
+              '@devup-ui/webpack-plugin/loader',
+            ),
+            options: {
+              plugin: this,
+            },
           },
-        },
-      ],
-    })
+        ],
+      },
+      {
+        test: this.options.cssFile,
+        enforce: 'post',
+
+        use: [
+          {
+            loader: createRequire(import.meta.url).resolve(
+              '@devup-ui/webpack-plugin/css-loader',
+            ),
+          },
+        ],
+      },
+    )
   }
 }

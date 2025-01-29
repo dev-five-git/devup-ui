@@ -1,7 +1,9 @@
-import { getCss } from '@devup-ui/wasm'
+import { resolve } from 'node:path'
+
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-const devupUICssLoader: RawLoaderDefinitionFunction = function () {
-  this.callback(null, getCss())
+const devupUICssLoader: RawLoaderDefinitionFunction = function (a) {
+  this.addContextDependency(resolve(this.rootContext, 'src'))
+  this.callback(null, a)
 }
 export default devupUICssLoader
