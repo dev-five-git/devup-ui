@@ -62,9 +62,9 @@ export interface DevupCommonProps
     DevupUiViewTransitionProps,
     DevupUiSvgProps {}
 
-export interface DevupProps
+export interface DevupProps<T extends React.ElementType>
   extends DevupCommonProps,
     DevupSelectorProps,
     DevupThemeSelectorProps {
-  as?: React.ElementType
+  as?: T
 }
