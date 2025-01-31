@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 0.1.31
+
+### Patch Changes
+
+- 67b53ac: Fix hmr issue
+- Updated dependencies [67b53ac]
+  - @devup-ui/webpack-plugin@0.1.31
+
 ## 0.1.30
 
 ### Patch Changes

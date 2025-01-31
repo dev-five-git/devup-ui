@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.27
+
+### Patch Changes
+
+- 67b53ac: Fix hmr issue
+
 ## 0.1.26
 
 ### Patch Changes
