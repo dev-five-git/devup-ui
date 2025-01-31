@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.18
+
+### Patch Changes
+
+- 77afb9e: Support generic to as prop
+
 ## 0.1.17
 
 ### Patch Changes
