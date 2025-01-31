@@ -1,0 +1,50 @@
+---
+source: bindings/devup-ui-wasm/src/lib.rs
+expression: theme
+---
+Theme {
+    colors: {
+        "dark": ColorTheme(
+            {
+                "primary": "#fff",
+            },
+        ),
+        "default": ColorTheme(
+            {
+                "primary": "#000",
+            },
+        ),
+    },
+    break_points: [
+        0,
+        480,
+        768,
+        992,
+        1280,
+    ],
+    typography: {
+        "default": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Arial",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.5",
+                        ),
+                        letter_spacing: Some(
+                            "0.5em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+    },
+}

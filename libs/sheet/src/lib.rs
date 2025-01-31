@@ -2,6 +2,8 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{convert_property, merge_selector, PropertyType, StyleSelector};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering::{Greater, Less};
 use std::collections::{BTreeMap, HashSet};
 
@@ -9,7 +11,7 @@ trait ExtractStyle {
     fn extract(&self) -> String;
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub struct StyleSheetProperty {
     pub class_name: String,
     pub property: String,
@@ -50,7 +52,7 @@ fn convert_theme_variable_value(value: &String) -> String {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
 pub struct StyleSheetCss {
     pub class_name: String,
     pub css: String,
@@ -62,13 +64,30 @@ impl ExtractStyle for StyleSheetCss {
     }
 }
 
-#[derive(Default)]
+fn deserialize_btree_map_u8<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<u8, HashSet<StyleSheetProperty>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: BTreeMap<String, HashSet<StyleSheetProperty>> =
+        Deserialize::deserialize(deserializer)?;
+    let mut result = BTreeMap::new();
+
+    for (key, value) in map {
+        let key: u8 = key.parse().map_err(Error::custom)?;
+        result.insert(key, value);
+    }
+
+    Ok(result)
+}
+#[derive(Default, Deserialize, Serialize, Debug)]
 pub struct StyleSheet {
-    /// level -> properties
+    #[serde(deserialize_with = "deserialize_btree_map_u8")]
     pub properties: BTreeMap<u8, HashSet<StyleSheetProperty>>,
     pub css: HashSet<StyleSheetCss>,
+    #[serde(skip)]
     pub theme: Theme,
-    theme_declaration: String,
 }
 
 impl StyleSheet {
@@ -81,33 +100,31 @@ impl StyleSheet {
         selector: Option<&StyleSelector>,
         basic: bool,
     ) -> bool {
-        let prop = StyleSheetProperty {
-            class_name: class_name.to_string(),
-            property: property.to_string(),
-            value: value.to_string(),
-            selector: selector.cloned(),
-            basic,
-        };
-        self.properties.entry(level).or_default().insert(prop)
+        self.properties
+            .entry(level)
+            .or_default()
+            .insert(StyleSheetProperty {
+                class_name: class_name.to_string(),
+                property: property.to_string(),
+                value: value.to_string(),
+                selector: selector.cloned(),
+                basic,
+            })
     }
 
     pub fn add_css(&mut self, class_name: &str, css: &str) -> bool {
-        let prop = StyleSheetCss {
+        self.css.insert(StyleSheetCss {
             class_name: class_name.to_string(),
             css: css.to_string(),
-        };
-        self.css.insert(prop)
+        })
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        let mut theme_declaration = String::new();
-        theme_declaration.push_str(theme.to_css().as_str());
         self.theme = theme;
-        self.theme_declaration = theme_declaration;
     }
 
     pub fn create_css(&self) -> String {
-        let mut css = self.theme_declaration.clone();
+        let mut css = self.theme.to_css();
         for (level, props) in self.properties.iter() {
             let mut sorted_props = props.iter().collect::<Vec<_>>();
             sorted_props.sort_by(|a, b| {
@@ -231,11 +248,6 @@ mod tests {
         sheet.add_property("test", "background-color", 1, "red", None, false);
         sheet.add_property("test", "background", 1, "some", None, false);
         assert_debug_snapshot!(sheet.create_css());
-        //
-        // let mut sheet = StyleSheet::default();
-        // sheet.add_property("test", "background-color", 1, "red", Some(&StyleSelector::Postfix("hover".to_string())), false);
-        // sheet.add_property("test", "background", 1, "some", Some(&StyleSelector::Postfix("focus".to_string())), false);
-        // assert_debug_snapshot!(sheet.create_css());
     }
     #[test]
     fn test_create_css_with_basic_sort_test() {
@@ -326,5 +338,75 @@ mod tests {
         sheet.add_property("test", "mx", 0, "51px", Some(&"themeLight".into()), false);
         sheet.add_property("test", "mx", 0, "42px", None, false);
         assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_deserialize() {
+        {
+            let sheet: StyleSheet = serde_json::from_str(
+                r##"{
+            "properties": {
+                "0": [
+                    {
+                        "class_name": "test",
+                        "property": "mx",
+                        "value": "40px",
+                        "selector": null,
+                        "basic": false
+                    }
+                ]
+            },
+            "css": [],
+            "theme": {
+                "breakPoints": [
+                    640,
+                    768,
+                    1024,
+                    1280
+                ],
+                "colors": {
+                    "black": "#000",
+                    "white": "#fff"
+                },
+                "typography": {}
+            }
+        }"##,
+            )
+            .unwrap();
+            assert_debug_snapshot!(sheet);
+        }
+
+        {
+            let sheet: Result<StyleSheet, _> = serde_json::from_str(
+                r##"{
+            "properties": {
+                "wrong": [
+                    {
+                        "class_name": "test",
+                        "property": "mx",
+                        "value": "40px",
+                        "selector": null,
+                        "basic": false
+                    }
+                ]
+            },
+            "css": [],
+            "theme": {
+                "breakPoints": [
+                    640,
+                    768,
+                    1024,
+                    1280
+                ],
+                "colors": {
+                    "black": "#000",
+                    "white": "#fff"
+                },
+                "typography": {}
+            }
+        }"##,
+            );
+            assert!(sheet.is_err());
+        }
     }
 }

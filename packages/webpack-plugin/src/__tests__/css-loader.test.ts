@@ -1,19 +1,62 @@
 import { resolve } from 'node:path'
 
+import { getCss } from '@devup-ui/wasm'
+
 import devupUICssLoader from '../css-loader'
 
 vi.mock('node:path')
+vi.mock('@devup-ui/wasm')
+
+beforeEach(() => {
+  vi.resetAllMocks()
+})
 
 describe('devupUICssLoader', () => {
-  it('should invoke callback', () => {
+  it('should return css on no watch', () => {
     const callback = vi.fn()
     const addContextDependency = vi.fn()
     vi.mocked(resolve).mockReturnValue('resolved')
+    vi.mocked(getCss).mockReturnValue('get css')
     devupUICssLoader.bind({
       callback,
       addContextDependency,
+      getOptions: () => ({ watch: false }),
     } as any)(Buffer.from('data'), '')
-    expect(callback).toBeCalledWith(null, Buffer.from('data'))
-    expect(addContextDependency).toBeCalledWith('resolved')
+    expect(callback).toBeCalledWith(null, 'get css')
+  })
+
+  it('should return _compiler hit css on watch', () => {
+    const callback = vi.fn()
+    const addContextDependency = vi.fn()
+    vi.mocked(resolve).mockReturnValue('resolved')
+    vi.mocked(getCss).mockReturnValue('get css')
+    devupUICssLoader.bind({
+      callback,
+      addContextDependency,
+      getOptions: () => ({ watch: true }),
+    } as any)(Buffer.from('data'), '')
+    expect(callback).toBeCalledWith(null, 'get css')
+    expect(getCss).toBeCalledTimes(1)
+    vi.mocked(getCss).mockReset()
+    devupUICssLoader.bind({
+      callback,
+      addContextDependency,
+      getOptions: () => ({ watch: true }),
+    } as any)(Buffer.from('data'), '')
+
+    expect(getCss).toBeCalledTimes(0)
+
+    vi.mocked(getCss).mockReset()
+
+    devupUICssLoader.bind({
+      callback,
+      addContextDependency,
+      _compiler: {
+        __DEVUP_CACHE: 'data',
+      },
+      getOptions: () => ({ watch: true }),
+    } as any)(Buffer.from(''), '')
+
+    expect(getCss).toBeCalledTimes(0)
   })
 })
