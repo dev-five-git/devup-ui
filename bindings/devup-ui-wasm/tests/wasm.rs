@@ -1,5 +1,5 @@
-use devup_ui_wasm::object_to_typography;
 use js_sys::{Object, Reflect};
+use sheet::theme::Typography;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
@@ -37,11 +37,10 @@ fn test_object_to_typography() {
         &JsValue::from_str("1px"),
     )
     .unwrap();
-    let typography = object_to_typography(obj, 0).unwrap();
+    let typography: Typography = serde_wasm_bindgen::from_value(JsValue::from(obj)).unwrap();
     assert_eq!(typography.font_family.unwrap(), "Arial");
     assert_eq!(typography.font_size.unwrap(), "12px");
     assert_eq!(typography.font_weight.unwrap(), "bold");
     assert_eq!(typography.line_height.unwrap(), "1.5");
     assert_eq!(typography.letter_spacing.unwrap(), "1px");
-    assert_eq!(typography.level, 0);
 }

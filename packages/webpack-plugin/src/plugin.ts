@@ -6,20 +6,22 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, resolve } from 'node:path'
 
-import { getCss, getThemeInterface, registerTheme } from '@devup-ui/wasm'
+import {
+  getThemeInterface,
+  importClassMap,
+  importSheet,
+  registerTheme,
+} from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
-
-const _filename = fileURLToPath(import.meta.url)
-const _dirname = dirname(_filename)
 
 export interface DevupUIWebpackPluginOptions {
   package: string
   cssFile: string
   devupPath: string
   interfacePath: string
+  watch: boolean
 }
 
 export class DevupUIWebpackPlugin {
@@ -27,15 +29,17 @@ export class DevupUIWebpackPlugin {
 
   constructor({
     package: libPackage = '@devup-ui/react',
-    cssFile = join(_dirname, 'devup-ui.css'),
     devupPath = 'devup.json',
     interfacePath = '.df',
+    cssFile = resolve(interfacePath, 'devup-ui.css'),
+    watch = false,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
       cssFile,
       devupPath,
       interfacePath,
+      watch,
     }
   }
 
@@ -60,48 +64,63 @@ export class DevupUIWebpackPlugin {
         },
       )
     }
-    writeFileSync(this.options.cssFile, getCss(), {
-      encoding: 'utf-8',
-    })
+    if (this.options.watch) {
+      writeFileSync(this.options.cssFile, `/* ${Date.now()} */`, {
+        encoding: 'utf-8',
+      })
+    }
   }
 
   apply(compiler: Compiler) {
     // read devup.json
     const existsDevup = existsSync(this.options.devupPath)
+
+    const sheetFile = join(this.options.interfacePath, 'sheet.json')
+    const classMapFile = join(this.options.interfacePath, 'classMap.json')
+    if (this.options.watch) {
+      try {
+        // load sheet
+        if (existsSync(sheetFile))
+          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
+        if (existsSync(classMapFile))
+          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
+      } catch (error) {
+        console.error(error)
+      }
+      let lastModifiedTime: number | null = null
+      compiler.hooks.watchRun.tapAsync(
+        'DevupUIWebpackPlugin',
+        (_, callback) => {
+          if (existsDevup)
+            stat(this.options.devupPath, (err, stats) => {
+              if (err) {
+                console.error(`Error checking ${this.options.devupPath}:`, err)
+                return
+              }
+
+              const modifiedTime = stats.mtimeMs
+              if (lastModifiedTime && lastModifiedTime !== modifiedTime)
+                this.writeDataFiles()
+
+              lastModifiedTime = modifiedTime
+            })
+          callback()
+        },
+      )
+    }
     if (existsDevup) {
       try {
         this.writeDataFiles()
       } catch (error) {
         console.error(error)
       }
-
       compiler.hooks.afterCompile.tap('DevupUIWebpackPlugin', (compilation) => {
         compilation.fileDependencies.add(resolve(this.options.devupPath))
       })
     }
-
-    let lastModifiedTime: number | null = null
-    compiler.hooks.watchRun.tapAsync('DevupUIWebpackPlugin', (_, callback) => {
-      if (existsDevup)
-        stat(this.options.devupPath, (err, stats) => {
-          if (err) {
-            console.error(`Error checking ${this.options.devupPath}:`, err)
-            return
-          }
-
-          const modifiedTime = stats.mtimeMs
-          if (lastModifiedTime && lastModifiedTime !== modifiedTime) {
-            this.writeDataFiles()
-          }
-
-          lastModifiedTime = modifiedTime
-        })
-      callback()
-    })
     // Create an empty CSS file
-    if (!existsSync(this.options.cssFile)) {
+    if (!existsSync(this.options.cssFile))
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
-    }
 
     compiler.options.module.rules.push(
       {
@@ -114,20 +133,26 @@ export class DevupUIWebpackPlugin {
               '@devup-ui/webpack-plugin/loader',
             ),
             options: {
-              plugin: this,
+              package: this.options.package,
+              cssFile: this.options.cssFile,
+              sheetFile,
+              classMapFile,
+              watch: this.options.watch,
             },
           },
         ],
       },
       {
         test: this.options.cssFile,
-        enforce: 'post',
-
+        enforce: 'pre',
         use: [
           {
             loader: createRequire(import.meta.url).resolve(
               '@devup-ui/webpack-plugin/css-loader',
             ),
+            options: {
+              watch: this.options.watch,
+            },
           },
         ],
       },

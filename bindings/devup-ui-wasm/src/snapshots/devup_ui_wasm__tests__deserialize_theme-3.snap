@@ -1,0 +1,759 @@
+---
+source: bindings/devup-ui-wasm/src/lib.rs
+expression: theme
+---
+Theme {
+    colors: {},
+    break_points: [
+        0,
+        480,
+        768,
+        992,
+        1280,
+    ],
+    typography: {
+        "body": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "20px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "button": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "500",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "500",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "caption": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "12px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "14px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "h1": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "28px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "36px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "h2": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "20px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "28px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "h3": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "24px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "notice": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "13px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "noticeBold": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "14px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "noticeButton": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "500",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "noticeText": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "14px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.5",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.5",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "noticeTitle": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "15px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "result": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "24px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "32px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.02em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "resultList": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "500",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "20px",
+                        ),
+                        font_weight: Some(
+                            "500",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "resultPoint": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "24px",
+                        ),
+                        font_weight: Some(
+                            "800",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "28px",
+                        ),
+                        font_weight: Some(
+                            "800",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "resultText": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "18px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "22px",
+                        ),
+                        font_weight: Some(
+                            "600",
+                        ),
+                        line_height: Some(
+                            "1.4",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "text": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "15px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "400",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+        "title": Typographies(
+            [
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "16px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+                None,
+                None,
+                None,
+                Some(
+                    Typography {
+                        font_family: Some(
+                            "Pretendard",
+                        ),
+                        font_size: Some(
+                            "20px",
+                        ),
+                        font_weight: Some(
+                            "700",
+                        ),
+                        line_height: Some(
+                            "1.2",
+                        ),
+                        letter_spacing: Some(
+                            "-0.01em",
+                        ),
+                    },
+                ),
+            ],
+        ),
+    },
+}

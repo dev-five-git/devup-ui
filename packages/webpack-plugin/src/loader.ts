@@ -1,18 +1,26 @@
-import { writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { dirname, relative } from 'node:path'
 
-import { codeExtract } from '@devup-ui/wasm'
+import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-import { type DevupUIWebpackPlugin } from './plugin'
-
 export interface DevupUILoaderOptions {
-  plugin: DevupUIWebpackPlugin
+  package: string
+  cssFile: string
+  sheetFile: string
+  classMapFile: string
+  watch: boolean
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
-    const { plugin } = this.getOptions()
-    const { package: libPackage, cssFile } = plugin.options
+    const {
+      watch,
+      package: libPackage,
+      cssFile,
+      sheetFile,
+      classMapFile,
+    } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
     if (
@@ -29,15 +37,21 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         id,
         source.toString(),
         libPackage,
-        cssFile,
+        relative(dirname(this.resourcePath), cssFile).replaceAll('\\', '/'),
       )
-      if (css) {
+      if (css && watch) {
+        const content = `${this.resourcePath} ${Date.now()}`
+        if (this._compiler) (this._compiler as any).__DEVUP_CACHE = content
         // should be reset css
-        writeFileSync(cssFile, css, {
-          encoding: 'utf-8',
-        })
+        Promise.all([
+          writeFile(cssFile, `/* ${content} */`),
+          writeFile(sheetFile, exportSheet()),
+          writeFile(classMapFile, exportClassMap()),
+        ])
+          .catch(console.error)
+          .finally(() => callback(null, code))
+        return
       }
-
       callback(null, code)
     } catch (error) {
       callback(error as Error)

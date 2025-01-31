@@ -1,5 +1,6 @@
 use crate::StyleSelector::{Dual, Postfix, Prefix};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -15,7 +16,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     map
 });
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
     Postfix(String),
     Prefix(String),
@@ -217,6 +218,15 @@ static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
 pub fn reset_class_map() {
     let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
     map.clear();
+}
+
+pub fn set_class_map(map: HashMap<String, i32>) {
+    let mut global_map = GLOBAL_CLASS_MAP.lock().unwrap();
+    *global_map = map;
+}
+
+pub fn get_class_map() -> HashMap<String, i32> {
+    GLOBAL_CLASS_MAP.lock().unwrap().clone()
 }
 
 pub fn to_kebab_case(value: &str) -> String {

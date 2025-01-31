@@ -1,11 +1,11 @@
-import { writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 
-import { codeExtract } from '@devup-ui/wasm'
+import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
 
 import devupUILoader from '../loader'
 
 vi.mock('@devup-ui/wasm')
-vi.mock('node:fs')
+vi.mock('node:fs/promises')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -16,12 +16,9 @@ describe('devupUILoader', () => {
   it('should ignore lib files', () => {
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        watch: false,
       }),
       addDependency: vi.fn(),
       async: vi.fn().mockReturnValue(vi.fn()),
@@ -39,12 +36,9 @@ describe('devupUILoader', () => {
   it('should ignore wrong files', () => {
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        watch: false,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'node_modules/package/index.css',
@@ -59,20 +53,26 @@ describe('devupUILoader', () => {
     expect(t.async()).toHaveBeenCalledWith(null, Buffer.from('code'))
   })
 
-  it('should extract code with css', () => {
+  it('should extract code with css', async () => {
+    const _compiler = {
+      __DEVUP_CACHE: '',
+    }
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        watch: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
       addDependency: vi.fn(),
+      _compiler,
     }
+    vi.mocked(exportSheet).mockReturnValue('sheet')
+    vi.mocked(exportClassMap).mockReturnValue('classMap')
+
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
@@ -87,21 +87,22 @@ describe('devupUILoader', () => {
       'package',
       'cssFile',
     )
-    expect(t.async()).toHaveBeenCalledWith(null, 'code')
-    expect(writeFileSync).toHaveBeenCalledWith('cssFile', 'css', {
-      encoding: 'utf-8',
+    await vi.waitFor(() => {
+      expect(t.async()).toHaveBeenCalledWith(null, 'code')
     })
+    expect(writeFile).toHaveBeenCalledWith('cssFile', '/* index.tsx 0 */')
+    expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
+    expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
+
+    expect(t._compiler.__DEVUP_CACHE).toBe('index.tsx 0')
   })
 
   it('should extract code without css', () => {
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        watch: false,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -122,7 +123,7 @@ describe('devupUILoader', () => {
       'cssFile',
     )
     expect(t.async()).toHaveBeenCalledWith(null, 'code')
-    expect(writeFileSync).not.toHaveBeenCalledWith('cssFile', 'css', {
+    expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })
   })
@@ -130,12 +131,9 @@ describe('devupUILoader', () => {
   it('should handle error', () => {
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        watch: false,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -153,13 +151,9 @@ describe('devupUILoader', () => {
   it('should load with date now on watch', () => {
     const t = {
       getOptions: () => ({
-        plugin: {
-          options: {
-            package: 'package',
-            cssFile: 'cssFile',
-          },
-          watch: true,
-        },
+        package: 'package',
+        cssFile: 'cssFile',
+        watch: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
