@@ -2,14 +2,16 @@ use crate::utils::{expression_to_code, is_special_property};
 use crate::ExtractStyleProp;
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{
-    Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey, TemplateElementValue,
+    ArrayExpressionElement, ComputedMemberExpression, Expression, JSXAttributeValue,
+    ObjectPropertyKind, PropertyKey, TemplateElementValue,
 };
+use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
-use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
@@ -251,152 +253,7 @@ pub fn extract_style_from_expression<'a>(
     }
     match expression {
         Expression::ComputedMemberExpression(mem) => {
-            let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
-            match &mut mem.object {
-                Expression::ArrayExpression(array) => {
-                    for element in array.elements.iter_mut() {
-                        if let Expression::StringLiteral(str) = element.to_expression_mut() {
-                            if let Some(rest) = str.value.strip_prefix("$") {
-                                str.value = ast_builder.atom(&format!("var(--{})", rest));
-                            }
-                        } else if let Expression::TemplateLiteral(tmp) = element.to_expression_mut()
-                        {
-                            if tmp.quasis.len() == 1 {
-                                if let Some(rest) = tmp.quasis[0].value.raw.strip_prefix("$") {
-                                    tmp.quasis[0].value.raw =
-                                        ast_builder.atom(&format!("var(--{})", rest));
-                                }
-                            }
-                        }
-                    }
-
-                    match mem_expression {
-                        Expression::NumericLiteral(v) => {
-                            if array.elements.len() < v.value as usize {
-                                // wrong indexing case
-                                ExtractResult::Remove
-                            } else {
-                                extract_style_from_expression(
-                                    ast_builder,
-                                    name,
-                                    array.elements[v.value as usize]
-                                        .clone_in(ast_builder.allocator)
-                                        .to_expression_mut(),
-                                    level,
-                                    selector,
-                                )
-                            }
-                        }
-                        // wrong indexing case
-                        Expression::UnaryExpression(unary) => {
-                            if let Expression::NumericLiteral(_) = &unary.argument {
-                                ExtractResult::Remove
-                            } else {
-                                ExtractResult::Maintain
-                            }
-                        }
-                        _ => name
-                            .map(|name| {
-                                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
-                                    Dynamic(ExtractDynamicStyle::new(
-                                        name,
-                                        level,
-                                        expression_to_code(expression).as_str(),
-                                        selector.map(|s| s.into()),
-                                    )),
-                                )])
-                            })
-                            .unwrap_or_else(|| ExtractResult::Maintain),
-                    }
-                }
-                Expression::ObjectExpression(obj) => {
-                    for p in obj.properties.iter_mut() {
-                        if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
-                            if let PropertyKey::StaticIdentifier(_) = o.key {
-                                if let Expression::StringLiteral(str) = &mut o.value {
-                                    if let Some(rest) = str.value.strip_prefix("$") {
-                                        str.value = ast_builder.atom(&format!("var(--{})", rest));
-                                    }
-                                } else if let Expression::TemplateLiteral(tmp) = &mut o.value {
-                                    if tmp.quasis.len() == 1 {
-                                        if let Some(rest) =
-                                            tmp.quasis[0].value.raw.strip_prefix("$")
-                                        {
-                                            tmp.quasis[0].value.raw =
-                                                ast_builder.atom(&format!("var(--{})", rest));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    match mem_expression {
-                        Expression::StringLiteral(str) => {
-                            let key = str.value.as_str();
-                            for p in obj.properties.iter() {
-                                match p {
-                                    ObjectPropertyKind::ObjectProperty(o) => {
-                                        if let PropertyKey::StaticIdentifier(ident) = &o.key {
-                                            if ident.name == key {
-                                                return extract_style_from_expression(
-                                                    ast_builder,
-                                                    name,
-                                                    &mut o.value.clone_in(ast_builder.allocator),
-                                                    level,
-                                                    selector,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    ObjectPropertyKind::SpreadProperty(_) => {
-                                        if let Some(name) = name {
-                                            return ExtractResult::ExtractStyle(vec![
-                                                ExtractStyleProp::Static(Dynamic(
-                                                    ExtractDynamicStyle::new(
-                                                        name,
-                                                        level,
-                                                        expression_to_code(expression).as_str(),
-                                                        selector.map(|s| s.into()),
-                                                    ),
-                                                )),
-                                            ]);
-                                        }
-                                    }
-                                }
-                            }
-                            ExtractResult::Remove
-                        }
-                        Expression::Identifier(_) => {
-                            if let Some(name) = name {
-                                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
-                                    Dynamic(ExtractDynamicStyle::new(
-                                        name,
-                                        level,
-                                        expression_to_code(expression).as_str(),
-                                        selector.map(|s| s.into()),
-                                    )),
-                                )])
-                            } else {
-                                ExtractResult::Maintain
-                            }
-                        }
-                        _ => ExtractResult::Maintain,
-                    }
-                }
-                Expression::Identifier(_) => name
-                    .map(|name| {
-                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                            ExtractDynamicStyle::new(
-                                name,
-                                level,
-                                expression_to_code(expression).as_str(),
-                                selector.map(|s| s.into()),
-                            ),
-                        ))])
-                    })
-                    .unwrap_or(ExtractResult::Maintain),
-                _ => ExtractResult::Maintain,
-            }
+            extract_style_from_member_expression(ast_builder, name, mem, level, selector)
         }
         Expression::NumericLiteral(v) => name
             .map(|name| {
@@ -423,44 +280,42 @@ pub fn extract_style_from_expression<'a>(
                             selector.map(|s| s.into()),
                         ))
                     })])
+                } else if typo {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                        expression: ast_builder.expression_template_literal(
+                            SPAN,
+                            ast_builder.vec_from_array([
+                                ast_builder.template_element(
+                                    SPAN,
+                                    false,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom("typo-"),
+                                        cooked: None,
+                                    },
+                                ),
+                                ast_builder.template_element(
+                                    SPAN,
+                                    true,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom(""),
+                                        cooked: None,
+                                    },
+                                ),
+                            ]),
+                            ast_builder
+                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                        ),
+                        styles: vec![],
+                    }])
                 } else {
-                    if typo {
-                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
-                            expression: ast_builder.expression_template_literal(
-                                SPAN,
-                                ast_builder.vec_from_array([
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        false,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom("typo-"),
-                                            cooked: None,
-                                        },
-                                    ),
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        true,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom(""),
-                                            cooked: None,
-                                        },
-                                    ),
-                                ]),
-                                ast_builder
-                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
-                            ),
-                            styles: vec![],
-                        }])
-                    } else {
-                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                            ExtractDynamicStyle::new(
-                                name,
-                                level,
-                                expression_to_code(expression).as_str(),
-                                selector.map(|s| s.into()),
-                            ),
-                        ))])
-                    }
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                        ExtractDynamicStyle::new(
+                            name,
+                            level,
+                            expression_to_code(expression).as_str(),
+                            selector.map(|s| s.into()),
+                        ),
+                    ))])
                 }
             } else {
                 ExtractResult::Maintain
@@ -662,5 +517,236 @@ pub fn extract_style_from_expression<'a>(
             }
         }
         _ => ExtractResult::Maintain,
+    }
+}
+
+fn extract_style_from_member_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    name: Option<&str>,
+    mem: &mut ComputedMemberExpression<'a>,
+    level: u8,
+    selector: Option<&str>,
+) -> ExtractResult<'a> {
+    let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
+    let mut ret: Vec<ExtractStyleProp> = vec![];
+
+    match &mut mem.object {
+        Expression::ArrayExpression(array) => {
+            if array.elements.is_empty() {
+                return ExtractResult::Remove;
+            }
+
+            if let Some(num) = get_number_by_literal_expression(mem_expression) {
+                if num < 0f64 {
+                    return ExtractResult::Remove;
+                }
+                let mut etc = None;
+                for (idx, p) in array.elements.iter_mut().enumerate() {
+                    if let ArrayExpressionElement::SpreadElement(sp) = p {
+                        etc = Some(sp.argument.clone_in(ast_builder.allocator));
+                        continue;
+                    }
+                    if idx as f64 == num {
+                        if let ExtractResult::ExtractStyle(styles) = extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            p.to_expression_mut(),
+                            level,
+                            selector,
+                        ) {
+                            return ExtractResult::ExtractStyle(styles);
+                        }
+                    }
+                }
+                return match etc {
+                    None => ExtractResult::Remove,
+                    Some(etc) => ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(
+                        Dynamic(ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            expression_to_code(&Expression::ComputedMemberExpression(
+                                ast_builder.alloc_computed_member_expression(
+                                    SPAN,
+                                    etc,
+                                    mem_expression.clone_in(ast_builder.allocator),
+                                    false,
+                                ),
+                            ))
+                            .as_str(),
+                            selector.map(|s| s.into()),
+                        )),
+                    )]),
+                };
+            }
+
+            let mut map = BTreeMap::new();
+            for (idx, p) in array.elements.iter_mut().enumerate() {
+                if let ArrayExpressionElement::SpreadElement(ref sp) = p {
+                    map.insert(
+                        idx.to_string(),
+                        Box::new(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            expression_to_code(&Expression::ComputedMemberExpression(
+                                ast_builder.alloc_computed_member_expression(
+                                    SPAN,
+                                    sp.argument.clone_in(ast_builder.allocator),
+                                    mem_expression.clone_in(ast_builder.allocator),
+                                    false,
+                                ),
+                            ))
+                            .as_str(),
+                            selector.map(|s| s.into()),
+                        )))),
+                    );
+                } else if let ExtractResult::ExtractStyle(styles) = extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    p.to_expression_mut(),
+                    level,
+                    selector,
+                ) {
+                    map.insert(
+                        idx.to_string(),
+                        Box::new(ExtractStyleProp::StaticArray(styles)),
+                    );
+                }
+            }
+
+            ret.push(ExtractStyleProp::MemberExpression {
+                expression: mem_expression.clone_in(ast_builder.allocator),
+                map,
+            });
+        }
+        Expression::ObjectExpression(obj) => {
+            if obj.properties.is_empty() {
+                return ExtractResult::Remove;
+            }
+
+            let mut map = BTreeMap::new();
+            if let Some(k) = get_string_by_literal_expression(mem_expression) {
+                let mut etc = None;
+                for p in obj.properties.iter_mut() {
+                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                        if let PropertyKey::StaticIdentifier(ref pk) = o.key {
+                            if pk.name == k {
+                                if let ExtractResult::ExtractStyle(styles) =
+                                    extract_style_from_expression(
+                                        ast_builder,
+                                        name,
+                                        &mut o.value,
+                                        level,
+                                        selector,
+                                    )
+                                {
+                                    return ExtractResult::ExtractStyle(styles);
+                                }
+                            }
+                        }
+                    } else if let ObjectPropertyKind::SpreadProperty(ref sp) = p {
+                        etc = Some(sp.argument.clone_in(ast_builder.allocator));
+                    }
+                }
+                match etc {
+                    None => return ExtractResult::Remove,
+                    Some(etc) => {
+                        ret.push(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            expression_to_code(&Expression::ComputedMemberExpression(
+                                ast_builder.alloc_computed_member_expression(
+                                    SPAN,
+                                    etc,
+                                    mem_expression.clone_in(ast_builder.allocator),
+                                    false,
+                                ),
+                            ))
+                            .as_str(),
+                            selector.map(|s| s.into()),
+                        ))))
+                    }
+                }
+            }
+
+            for p in obj.properties.iter_mut() {
+                if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                    if let PropertyKey::StaticIdentifier(_)
+                    | PropertyKey::NumericLiteral(_)
+                    | PropertyKey::StringLiteral(_) = o.key
+                    {
+                        if let ExtractResult::ExtractStyle(styles) = extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            &mut o.value,
+                            level,
+                            selector,
+                        ) {
+                            map.insert(
+                                o.key.name().unwrap().to_string(),
+                                Box::new(ExtractStyleProp::StaticArray(styles)),
+                            );
+                        }
+                    }
+                }
+            }
+            ret.push(ExtractStyleProp::MemberExpression {
+                expression: mem_expression.clone_in(ast_builder.allocator),
+                map,
+            });
+        }
+        Expression::Identifier(_) => {
+            if let Some(name) = name {
+                ret.push(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
+                    name,
+                    level,
+                    expression_to_code(&Expression::ComputedMemberExpression(
+                        ast_builder.alloc_computed_member_expression(
+                            SPAN,
+                            mem.object.clone_in(ast_builder.allocator),
+                            mem_expression.clone_in(ast_builder.allocator),
+                            false,
+                        ),
+                    ))
+                    .as_str(),
+                    selector.map(|s| s.into()),
+                ))))
+            }
+        }
+        _ => {}
+    };
+
+    ExtractResult::ExtractStyle(ret)
+}
+
+fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
+    match expr {
+        Expression::NumericLiteral(num) => Some(num.value),
+        Expression::UnaryExpression(unary) => {
+            if let Expression::NumericLiteral(ref num) = unary.argument {
+                match unary.operator {
+                    UnaryOperator::UnaryNegation => Some(-num.value),
+                    UnaryOperator::UnaryPlus => Some(num.value),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
+    match expr {
+        Expression::StringLiteral(str) => Some(str.value.as_str().to_string()),
+        Expression::TemplateLiteral(tmp) => {
+            if tmp.quasis.len() == 1 {
+                Some(tmp.quasis[0].value.raw.as_str().to_string())
+            } else {
+                None
+            }
+        }
+        Expression::NumericLiteral(num) => Some(num.value.to_string()),
+        _ => None,
     }
 }

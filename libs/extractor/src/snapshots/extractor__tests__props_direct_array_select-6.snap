@@ -1,0 +1,26 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={[1, 0.5, ...some][100]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                basic: true,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "opacity",
+                level: 0,
+                identifier: "some[100]",
+                selector: None,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1\" style={{ \"--d2\": some[100] }} />;\n",
+}
