@@ -1,7 +1,9 @@
 use crate::utils::{expression_to_code, is_special_property};
 use crate::ExtractStyleProp;
 use oxc_allocator::CloneIn;
-use oxc_ast::ast::{Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey};
+use oxc_ast::ast::{
+    Expression, JSXAttributeValue, ObjectPropertyKind, PropertyKey, TemplateElementValue,
+};
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
@@ -422,14 +424,43 @@ pub fn extract_style_from_expression<'a>(
                         ))
                     })])
                 } else {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                        ExtractDynamicStyle::new(
-                            name,
-                            level,
-                            expression_to_code(expression).as_str(),
-                            selector.map(|s| s.into()),
-                        ),
-                    ))])
+                    if typo {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                            expression: ast_builder.expression_template_literal(
+                                SPAN,
+                                ast_builder.vec_from_array([
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        false,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom("typo-"),
+                                            cooked: None,
+                                        },
+                                    ),
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        true,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom(""),
+                                            cooked: None,
+                                        },
+                                    ),
+                                ]),
+                                ast_builder
+                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                            ),
+                            styles: vec![],
+                        }])
+                    } else {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                expression_to_code(expression).as_str(),
+                                selector.map(|s| s.into()),
+                            ),
+                        ))])
+                    }
                 }
             } else {
                 ExtractResult::Maintain
@@ -453,14 +484,43 @@ pub fn extract_style_from_expression<'a>(
             if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                 ExtractResult::Maintain
             } else if let Some(name) = name {
-                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                    ExtractDynamicStyle::new(
-                        name,
-                        level,
-                        identifier.name.as_str(),
-                        selector.map(|s| s.into()),
-                    ),
-                ))])
+                if typo {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                        expression: ast_builder.expression_template_literal(
+                            SPAN,
+                            ast_builder.vec_from_array([
+                                ast_builder.template_element(
+                                    SPAN,
+                                    false,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom("typo-"),
+                                        cooked: None,
+                                    },
+                                ),
+                                ast_builder.template_element(
+                                    SPAN,
+                                    true,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom(""),
+                                        cooked: None,
+                                    },
+                                ),
+                            ]),
+                            ast_builder
+                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                        ),
+                        styles: vec![],
+                    }])
+                } else {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                        ExtractDynamicStyle::new(
+                            name,
+                            level,
+                            identifier.name.as_str(),
+                            selector.map(|s| s.into()),
+                        ),
+                    ))])
+                }
             } else {
                 ExtractResult::Maintain
             }

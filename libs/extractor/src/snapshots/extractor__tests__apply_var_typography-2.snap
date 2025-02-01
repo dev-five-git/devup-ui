@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.tsx\",\nr#\"import {Text} from '@devup-ui/core'\n        <Text typography={bo ? a : b} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [],
+    code: "<span className={bo ? `typo-${a}` : `typo-${b}`} />;\n",
+}

@@ -168,6 +168,36 @@ fn gen_style<'a>(
                 }
             }
         },
+        ExtractStyleProp::Expression { styles, .. } => {
+            for style in styles {
+                match style.extract() {
+                    StyleProperty::ClassName(_) => {}
+                    StyleProperty::Variable {
+                        variable_name,
+                        identifier,
+                        ..
+                    } => {
+                        properties.push(ObjectPropertyKind::ObjectProperty(
+                            ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                                    SPAN,
+                                    variable_name,
+                                    None,
+                                )),
+                                Expression::Identifier(
+                                    ast_builder.alloc_identifier_reference(SPAN, identifier),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
     }
     properties.sort_by_key(|p| {
         if let ObjectPropertyKind::ObjectProperty(p) = p {

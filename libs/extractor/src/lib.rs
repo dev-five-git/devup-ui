@@ -32,6 +32,10 @@ pub enum ExtractStyleProp<'a> {
         consequent: Option<Box<ExtractStyleProp<'a>>>,
         alternate: Option<Box<ExtractStyleProp<'a>>>,
     },
+    Expression {
+        styles: Vec<ExtractStyleValue>,
+        expression: Expression<'a>,
+    },
 }
 impl ExtractStyleProp<'_> {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
@@ -54,6 +58,7 @@ impl ExtractStyleProp<'_> {
             ExtractStyleProp::StaticArray(ref array) => {
                 array.iter().flat_map(|s| s.extract()).collect()
             }
+            ExtractStyleProp::Expression { styles, .. } => styles.to_vec(),
         }
     }
 }
@@ -1026,6 +1031,48 @@ mod tests {
             "test.tsx",
             r#"import {Text} from '@devup-ui/core'
         <Text typography={a ? "bold" : "bold2"} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+    #[test]
+    #[serial]
+    fn apply_var_typography() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography={variable} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography={bo ? a : b} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import {Text} from '@devup-ui/core'
+        <Text typography={`${bo ? a : b}`} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

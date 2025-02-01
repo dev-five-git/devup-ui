@@ -75,6 +75,9 @@ fn gen_class_name<'a>(
                 ))
             }
         }
+        ExtractStyleProp::Expression { expression, .. } => {
+            Some(expression.clone_in(ast_builder.allocator))
+        }
     }
 }
 fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
