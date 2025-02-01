@@ -8,7 +8,7 @@ mod utils;
 mod visit;
 
 use oxc_codegen::Codegen;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -18,7 +18,6 @@ use oxc_ast::VisitMut;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
 use std::error::Error;
-use std::iter::Map;
 
 /// result of extracting style properties from props
 #[derive(Debug)]
@@ -65,7 +64,7 @@ impl ExtractStyleProp<'_> {
                 array.iter().flat_map(|s| s.extract()).collect()
             }
             ExtractStyleProp::Expression { styles, .. } => styles.to_vec(),
-            &ExtractStyleProp::MemberExpression { ref map, .. } => {
+            ExtractStyleProp::MemberExpression { ref map, .. } => {
                 map.values().flat_map(|s| s.extract()).collect()
             }
         }

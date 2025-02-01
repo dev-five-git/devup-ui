@@ -8,7 +8,7 @@ use oxc_ast::ast::{
 use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
-use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle, ExtractStyleValue};
+use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
@@ -280,44 +280,42 @@ pub fn extract_style_from_expression<'a>(
                             selector.map(|s| s.into()),
                         ))
                     })])
+                } else if typo {
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                        expression: ast_builder.expression_template_literal(
+                            SPAN,
+                            ast_builder.vec_from_array([
+                                ast_builder.template_element(
+                                    SPAN,
+                                    false,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom("typo-"),
+                                        cooked: None,
+                                    },
+                                ),
+                                ast_builder.template_element(
+                                    SPAN,
+                                    true,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom(""),
+                                        cooked: None,
+                                    },
+                                ),
+                            ]),
+                            ast_builder
+                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                        ),
+                        styles: vec![],
+                    }])
                 } else {
-                    if typo {
-                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
-                            expression: ast_builder.expression_template_literal(
-                                SPAN,
-                                ast_builder.vec_from_array([
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        false,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom("typo-"),
-                                            cooked: None,
-                                        },
-                                    ),
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        true,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom(""),
-                                            cooked: None,
-                                        },
-                                    ),
-                                ]),
-                                ast_builder
-                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
-                            ),
-                            styles: vec![],
-                        }])
-                    } else {
-                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                            ExtractDynamicStyle::new(
-                                name,
-                                level,
-                                expression_to_code(expression).as_str(),
-                                selector.map(|s| s.into()),
-                            ),
-                        ))])
-                    }
+                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                        ExtractDynamicStyle::new(
+                            name,
+                            level,
+                            expression_to_code(expression).as_str(),
+                            selector.map(|s| s.into()),
+                        ),
+                    ))])
                 }
             } else {
                 ExtractResult::Maintain
