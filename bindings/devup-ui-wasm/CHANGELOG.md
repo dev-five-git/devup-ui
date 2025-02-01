@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.28
+
+### Patch Changes
+
+- 525cd1e: Support variable for typography
+
 ## 0.1.27
 
 ### Patch Changes
