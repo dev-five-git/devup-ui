@@ -53,9 +53,8 @@ export class DevupUIWebpackPlugin {
       'DevupThemeTypography',
       'DevupTheme',
     )
+
     if (interfaceCode) {
-      if (!existsSync(this.options.interfacePath))
-        mkdirSync(this.options.interfacePath)
       writeFileSync(
         join(this.options.interfacePath, 'theme.d.ts'),
         interfaceCode,
@@ -74,6 +73,9 @@ export class DevupUIWebpackPlugin {
   apply(compiler: Compiler) {
     // read devup.json
     const existsDevup = existsSync(this.options.devupPath)
+
+    if (!existsSync(this.options.interfacePath))
+      mkdirSync(this.options.interfacePath)
 
     const sheetFile = join(this.options.interfacePath, 'sheet.json')
     const classMapFile = join(this.options.interfacePath, 'classMap.json')

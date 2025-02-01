@@ -74,7 +74,6 @@ describe('devupUIPlugin', () => {
         'DevupThemeTypography',
         'DevupTheme',
       )
-      expect(mkdirSync).toHaveBeenCalledWith('.df')
       expect(writeFileSync).toHaveBeenCalledWith(
         join('.df', 'theme.d.ts'),
         'interfaceCode',
