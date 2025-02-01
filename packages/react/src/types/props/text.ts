@@ -40,4 +40,4 @@ export interface DevupUiTextProps {
 }
 
 // for skip type checking without .df
-type TypographyKey<T> = keyof T extends string ? keyof T : string
+type TypographyKey<T> = keyof T extends undefined ? string : keyof T
