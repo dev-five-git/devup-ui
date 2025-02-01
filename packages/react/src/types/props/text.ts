@@ -36,5 +36,8 @@ export interface DevupUiTextProps {
 
   content?: ResponsiveValue<Property.Content>
 
-  typography?: keyof DevupThemeTypography
+  typography?: TypographyKey<DevupThemeTypography>
 }
+
+// for skip type checking without .df
+type TypographyKey<T> = keyof T extends string ? keyof T : string
