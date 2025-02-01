@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.33
+
+### Patch Changes
+
+- e6fdddc: Fix mkdir issue
+- Updated dependencies [c0d6030]
+  - @devup-ui/wasm@0.1.29
+
 ## 0.1.32
 
 ### Patch Changes
