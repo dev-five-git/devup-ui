@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.29
+
+### Patch Changes
+
+- c0d6030: Extract nested styles
+
 ## 0.1.28
 
 ### Patch Changes
