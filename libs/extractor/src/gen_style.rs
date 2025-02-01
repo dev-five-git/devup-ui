@@ -6,6 +6,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
+use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
@@ -196,6 +197,90 @@ fn gen_style<'a>(
                         ));
                     }
                 }
+            }
+        }
+        ExtractStyleProp::MemberExpression { map, expression } => {
+            let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
+            for (key, value) in map.iter() {
+                for style in value.extract() {
+                    match style.extract() {
+                        StyleProperty::ClassName(_) => {}
+                        StyleProperty::Variable {
+                            variable_name,
+                            identifier,
+                            ..
+                        } => {
+                            tmp_map
+                                .entry(variable_name)
+                                .or_default()
+                                .push((key.to_string(), identifier));
+                        }
+                    }
+                }
+            }
+
+            for (key, value) in tmp_map {
+                properties.push(ObjectPropertyKind::ObjectProperty(
+                    ast_builder.alloc_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        PropertyKey::StringLiteral(
+                            ast_builder.alloc_string_literal(SPAN, key, None),
+                        ),
+                        if value.len() == 1 {
+                            // do not create object expression when property is single
+                            Expression::Identifier(
+                                ast_builder.alloc_identifier_reference(SPAN, &value[0].1),
+                            )
+                        } else {
+                            Expression::ComputedMemberExpression(
+                                ast_builder.alloc_computed_member_expression(
+                                    SPAN,
+                                    Expression::ObjectExpression(
+                                        ast_builder.alloc_object_expression(
+                                            SPAN,
+                                            oxc_allocator::Vec::from_iter_in(
+                                                value
+                                                    .into_iter()
+                                                    .map(|(k, v)| {
+                                                        ObjectPropertyKind::ObjectProperty(
+                                                            ast_builder.alloc_object_property(
+                                                                SPAN,
+                                                                PropertyKind::Init,
+                                                                PropertyKey::StaticIdentifier(
+                                                                    ast_builder
+                                                                        .alloc_identifier_name(
+                                                                            SPAN, k,
+                                                                        ),
+                                                                ),
+                                                                Expression::Identifier(
+                                                                    ast_builder
+                                                                        .alloc_identifier_reference(
+                                                                            SPAN, v,
+                                                                        ),
+                                                                ),
+                                                                false,
+                                                                false,
+                                                                false,
+                                                            ),
+                                                        )
+                                                    })
+                                                    .collect::<Vec<_>>(),
+                                                ast_builder.allocator,
+                                            ),
+                                            None,
+                                        ),
+                                    ),
+                                    expression.clone_in(ast_builder.allocator),
+                                    false,
+                                ),
+                            )
+                        },
+                        false,
+                        false,
+                        false,
+                    ),
+                ));
             }
         }
     }

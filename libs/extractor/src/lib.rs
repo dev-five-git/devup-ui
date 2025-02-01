@@ -8,6 +8,7 @@ mod utils;
 mod visit;
 
 use oxc_codegen::Codegen;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::extract_style::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -17,6 +18,7 @@ use oxc_ast::VisitMut;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
 use std::error::Error;
+use std::iter::Map;
 
 /// result of extracting style properties from props
 #[derive(Debug)]
@@ -34,6 +36,10 @@ pub enum ExtractStyleProp<'a> {
     },
     Expression {
         styles: Vec<ExtractStyleValue>,
+        expression: Expression<'a>,
+    },
+    MemberExpression {
+        map: BTreeMap<String, Box<ExtractStyleProp<'a>>>,
         expression: Expression<'a>,
     },
 }
@@ -59,6 +65,9 @@ impl ExtractStyleProp<'_> {
                 array.iter().flat_map(|s| s.extract()).collect()
             }
             ExtractStyleProp::Expression { styles, .. } => styles.to_vec(),
+            &ExtractStyleProp::MemberExpression { ref map, .. } => {
+                map.values().flat_map(|s| s.extract()).collect()
+            }
         }
     }
 }
@@ -1314,7 +1323,20 @@ export {
 
     #[test]
     #[serial]
-    fn props_direct_select() {
+    fn props_wrong_direct_array_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[][0]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
         reset_class_map();
         assert_debug_snapshot!(extract(
             "test.js",
@@ -1327,6 +1349,21 @@ export {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5][+10]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
         assert_debug_snapshot!(extract(
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
@@ -1338,36 +1375,16 @@ export {
             }
         )
         .unwrap());
-        assert_debug_snapshot!(extract(
-            "test.js",
-            r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={[1, 0.5][0]} />
-        "#,
-            ExtractOption {
-                package: "@devup-ui/core".to_string(),
-                css_file: None
-            }
-        )
-        .unwrap());
+    }
 
+    #[test]
+    #[serial]
+    fn props_wrong_direct_object_select() {
         reset_class_map();
         assert_debug_snapshot!(extract(
             "test.js",
-            r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={[1, 0.5][a]} />
-        "#,
-            ExtractOption {
-                package: "@devup-ui/core".to_string(),
-                css_file: None
-            }
-        )
-        .unwrap());
-
-        reset_class_map();
-        assert_debug_snapshot!(extract(
-            "test.js",
-            r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={{a:1, b:0.5}["a"]} />
+            r#"import {Box} from '@devup-ui/core'
+        <Box opacity={{}[1]} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1393,7 +1410,7 @@ export {
         assert_debug_snapshot!(extract(
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={{a:1, b:0.5}[a]} />
+        <Flex opacity={{a:1, b:0.5}[`wrong`]} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1406,7 +1423,37 @@ export {
         assert_debug_snapshot!(extract(
             "test.js",
             r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={{a:1, b:0.5, ...any}["some"]} />
+        <Flex opacity={{a:1, b:0.5}[1]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn props_direct_array_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5][0]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5][a]} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1460,9 +1507,64 @@ export {
         reset_class_map();
         assert_debug_snapshot!(extract(
             "test.js",
-            r#"import {Center} from '@devup-ui/core'
-<Center bg={SOME_VAR[idx]}>
-          </Center>
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5, ...some][100]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5, ...some][a]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn props_direct_object_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={{a:1, b:0.5}["a"]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={{a:1, b:0.5, ...any}["b"]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={{a:1, b:0.5, ...any}["some"]} />
         "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1485,6 +1587,143 @@ export {
         .unwrap());
     }
 
+    #[test]
+    #[serial]
+    fn props_direct_variable_object_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={{a:1, b:0.5}[a]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+<Box bg={SOME_VAR[idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn props_direct_object_responsive_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={{ 0: [1, 2, 3], 1: [4, 5, 6] }[idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={{ "a": [1, 2, 3], "b": [4, 5, 6] }[idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+    #[test]
+    #[serial]
+    fn props_direct_variable_object_responsive_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={{ 0: [a, b, c], "1": [d, e, f] }[idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn props_direct_array_responsive_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={[[1, 2, 3], [4, 5, 6]][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={[[1, 2, 3],[4, 5, 6]][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+    #[test]
+    #[serial]
+    fn props_direct_variable_array_responsive_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={[[a, b, c], [d, e, f]][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn props_direct_hybrid_responsive_select() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
     #[test]
     #[serial]
     fn test_component_in_func() {

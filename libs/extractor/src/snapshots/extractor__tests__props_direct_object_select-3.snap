@@ -1,0 +1,44 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={{a:1, b:0.5, ...any}[\"some\"]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                basic: true,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "opacity",
+                level: 0,
+                identifier: "any[\"some\"]",
+                selector: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: "1",
+                level: 0,
+                selector: None,
+                basic: false,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: "0.5",
+                level: 0,
+                selector: None,
+                basic: false,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 d1 ${{\n\t\"a\": \"d3\",\n\t\"b\": \"d4\"\n}[\"some\"]}`} style={{ \"--d2\": any[\"some\"] }} />;\n",
+}

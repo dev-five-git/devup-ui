@@ -1,8 +1,8 @@
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{
-    Expression, JSXAttribute, JSXAttributeValue, JSXExpression, TemplateElement,
-    TemplateElementValue,
+    Expression, JSXAttribute, JSXAttributeValue, JSXExpression, ObjectPropertyKind, PropertyKey,
+    PropertyKind, TemplateElement, TemplateElementValue,
 };
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
@@ -78,6 +78,34 @@ fn gen_class_name<'a>(
         ExtractStyleProp::Expression { expression, .. } => {
             Some(expression.clone_in(ast_builder.allocator))
         }
+        ExtractStyleProp::MemberExpression { map, expression } => Some(
+            Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
+                SPAN,
+                Expression::ObjectExpression(ast_builder.alloc_object_expression(
+                    SPAN,
+                    ast_builder.vec_from_iter(map.iter().filter_map(|(key, value)| {
+                        gen_class_name(ast_builder, value).map(|expr| {
+                            ObjectPropertyKind::ObjectProperty(ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                                    SPAN,
+                                    key.as_str(),
+                                    None,
+                                )),
+                                expr,
+                                false,
+                                false,
+                                false,
+                            ))
+                        })
+                    })),
+                    None,
+                )),
+                expression.clone_in(ast_builder.allocator),
+                false,
+            )),
+        ),
     }
 }
 fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
