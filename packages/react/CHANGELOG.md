@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.19
+
+### Patch Changes
+
+- 7e54c1f: Fix type checking issue
+
 ## 0.1.18
 
 ### Patch Changes
