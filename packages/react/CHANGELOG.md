@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.20
+
+### Patch Changes
+
+- 064476f: Fix TypographyKey type definition for better type checking
+
 ## 0.1.19
 
 ### Patch Changes
