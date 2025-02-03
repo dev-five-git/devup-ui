@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.31
+
+### Patch Changes
+
+- 0b434cd: Fix order issue
+
 ## 0.1.30
 
 ### Patch Changes
