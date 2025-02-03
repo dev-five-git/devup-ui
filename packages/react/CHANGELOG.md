@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.22
+
+### Patch Changes
+
+- e1d8d8b: Fix typing issue
+
 ## 0.1.21
 
 ### Patch Changes
