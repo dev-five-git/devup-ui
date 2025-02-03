@@ -28,6 +28,7 @@ static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
     set.insert("fontWeight".to_string());
     set.insert("scale".to_string());
     set.insert("aspectRatio".to_string());
+    set.insert("flexGrow".to_string());
     set
 });
 
@@ -98,7 +99,14 @@ impl ExtractStyleProperty for ExtractStaticStyle {
         StyleProperty::ClassName(sheet_to_classname(
             self.property.as_str(),
             self.level,
-            Some(convert_value(self.value.as_str()).as_str()),
+            Some(
+                if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
+                    self.value.to_string()
+                } else {
+                    convert_value(self.value.as_str())
+                }
+                .as_str(),
+            ),
             s.as_deref(),
         ))
     }

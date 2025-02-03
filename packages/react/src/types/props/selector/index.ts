@@ -5,10 +5,12 @@ type toPascalCase<S extends string> = S extends `${infer T}${infer U}`
   ? `${Uppercase<T>}${U}`
   : S
 
-export type DevupThemeSelectorProps = {
-  [K in keyof DevupTheme as `_theme${toPascalCase<K>}`]?: DevupCommonProps &
-    DevupSelectorProps
-}
+export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
+  ? Record<`_theme${string}`, DevupCommonProps & DevupSelectorProps>
+  : {
+      [K in keyof DevupTheme as `_theme${toPascalCase<K>}`]?: DevupCommonProps &
+        DevupSelectorProps
+    }
 
 export interface DevupSelectorProps {
   _active?: DevupCommonProps
