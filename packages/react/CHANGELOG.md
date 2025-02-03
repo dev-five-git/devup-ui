@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.21
+
+### Patch Changes
+
+- 96cd069: Fix theme typing issue
+
 ## 0.1.20
 
 ### Patch Changes
