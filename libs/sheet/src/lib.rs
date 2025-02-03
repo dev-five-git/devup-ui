@@ -4,7 +4,7 @@ use crate::theme::Theme;
 use css::{convert_property, merge_selector, PropertyType, StyleSelector};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::cmp::Ordering::{Greater, Less};
+use std::cmp::Ordering::{Equal, Greater, Less};
 use std::collections::{BTreeMap, HashSet};
 
 trait ExtractStyle {
@@ -12,6 +12,7 @@ trait ExtractStyle {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StyleSheetProperty {
     pub class_name: String,
     pub property: String,
@@ -132,24 +133,20 @@ impl StyleSheet {
                     match (a.selector.is_some(), b.selector.is_some()) {
                         (true, false) => Greater,
                         (false, true) => Less,
-                        (true, true) => {
-                            if a.selector == b.selector {
-                                if a.property == b.property {
-                                    a.value.cmp(&b.value)
-                                } else {
-                                    a.property.cmp(&b.property)
-                                }
-                            } else {
-                                a.selector.cmp(&b.selector)
-                            }
-                        }
-                        (false, false) => {
-                            if a.property == b.property {
-                                a.value.cmp(&b.value)
-                            } else {
-                                a.property.cmp(&b.property)
-                            }
-                        }
+                        (true, true) => match a.selector.cmp(&b.selector) {
+                            Equal => match a.value.cmp(&b.value) {
+                                Equal => a.class_name.cmp(&b.class_name),
+                                val => val,
+                            },
+                            val => val,
+                        },
+                        (false, false) => match a.property.cmp(&b.property) {
+                            Equal => match a.value.cmp(&b.value) {
+                                Equal => a.class_name.cmp(&b.class_name),
+                                val => val,
+                            },
+                            prop => prop,
+                        },
                     }
                 } else {
                     b.basic.cmp(&a.basic)
@@ -348,7 +345,7 @@ mod tests {
             "properties": {
                 "0": [
                     {
-                        "class_name": "test",
+                        "className": "test",
                         "property": "mx",
                         "value": "40px",
                         "selector": null,
@@ -382,7 +379,7 @@ mod tests {
             "properties": {
                 "wrong": [
                     {
-                        "class_name": "test",
+                        "className": "test",
                         "property": "mx",
                         "value": "40px",
                         "selector": null,
