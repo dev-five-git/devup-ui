@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.30
+
+### Patch Changes
+
+- 96cd069: Add flexGrow to Maintain prop
+
 ## 0.1.29
 
 ### Patch Changes
