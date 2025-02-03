@@ -134,17 +134,14 @@ impl StyleSheet {
                         (true, false) => Greater,
                         (false, true) => Less,
                         (true, true) => match a.selector.cmp(&b.selector) {
-                            Equal => match a.value.cmp(&b.value) {
-                                Equal => a.class_name.cmp(&b.class_name),
+                            Equal => match a.property.cmp(&b.property) {
+                                Equal => a.value.cmp(&b.value),
                                 val => val,
                             },
                             val => val,
                         },
                         (false, false) => match a.property.cmp(&b.property) {
-                            Equal => match a.value.cmp(&b.value) {
-                                Equal => a.class_name.cmp(&b.class_name),
-                                val => val,
-                            },
+                            Equal => a.value.cmp(&b.value),
                             prop => prop,
                         },
                     }
