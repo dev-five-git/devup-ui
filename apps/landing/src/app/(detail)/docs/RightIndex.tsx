@@ -30,7 +30,7 @@ function IndexMenu({
         color={selected ? '$primary' : '$text'}
         flex="1"
         opacity={selected ? '0.8' : '0.6'}
-        typography="captionBold"
+        typography="caption"
       >
         {children}
       </Text>

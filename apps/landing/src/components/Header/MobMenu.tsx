@@ -19,7 +19,7 @@ export function MobMenu() {
           })}
           href={URL_PREFIX + '/docs/overview'}
         >
-          <Flex alignItems="center" gap="10px" py="4px">
+          <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
               Docs
             </Text>
@@ -32,9 +32,9 @@ export function MobMenu() {
           })}
           href={URL_PREFIX + '/team'}
         >
-          <Flex alignItems="center" gap="10px" py="4px">
+          <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
-              Docs
+              Team
             </Text>
           </Flex>
         </Link>
