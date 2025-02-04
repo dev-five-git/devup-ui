@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.23
+
+### Patch Changes
+
+- 2102fd7: Support theme typing to css
+
 ## 0.1.22
 
 ### Patch Changes

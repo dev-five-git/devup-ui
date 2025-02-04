@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.32
+
+### Patch Changes
+
+- 2102fd7: Fix empty css call issue
+
 ## 0.1.31
 
 ### Patch Changes
