@@ -7,7 +7,7 @@ use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering::{Equal, Greater, Less};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 trait ExtractStyle {
     fn extract(&self) -> String;
