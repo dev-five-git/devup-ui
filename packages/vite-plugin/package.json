@@ -1,7 +1,7 @@
 {
   "name": "@devup-ui/vite-plugin",
   "type": "module",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
