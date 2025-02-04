@@ -2,10 +2,12 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{convert_property, merge_selector, PropertyType, StyleSelector};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering::{Equal, Greater, Less};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 trait ExtractStyle {
     fn extract(&self) -> String;
@@ -45,12 +47,14 @@ impl ExtractStyle for StyleSheetProperty {
     }
 }
 
-fn convert_theme_variable_value(value: &String) -> String {
-    if let Some(value) = value.strip_prefix("$") {
-        format!("var(--{})", value)
-    } else {
-        value.to_string()
-    }
+static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
+
+fn convert_theme_variable_value(value: &str) -> String {
+    VAR_RE
+        .replace_all(value, |caps: &regex::Captures| {
+            format!("var(--{})", &caps[0][1..])
+        })
+        .to_string()
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -197,6 +201,16 @@ mod tests {
         assert_eq!(
             convert_theme_variable_value(&"$var".to_string()),
             "var(--var)"
+        );
+
+        assert_eq!(
+            convert_theme_variable_value(&"$var $var".to_string()),
+            "var(--var) var(--var)"
+        );
+
+        assert_eq!(
+            convert_theme_variable_value(&"1px solid $red".to_string()),
+            "1px solid var(--red)"
         );
     }
 
