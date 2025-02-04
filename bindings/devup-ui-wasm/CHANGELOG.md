@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.33
+
+### Patch Changes
+
+- 6f8e794: Support $ var with anywhere
+
 ## 0.1.32
 
 ### Patch Changes
