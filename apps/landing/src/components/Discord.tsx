@@ -9,8 +9,9 @@ export function Discord() {
       alignItems="center"
       bgColor="$joinBg"
       bgImage={`url(${URL_PREFIX}/discord-bg.svg)`}
-      bgPositionY={['bottom', null, 'initial']}
-      bgSize={['contain', null, 'initial']}
+      bgPositionX={['-20vw', null, '-30%']}
+      bgPositionY="bottom"
+      bgSize={['contain', null, '70%']}
       borderRadius="40px 40px 0px 40px"
       h="380px"
       justifyContent={[null, null, 'center']}
@@ -22,7 +23,7 @@ export function Discord() {
         ml={[null, null, 'auto']}
         pr={[null, null, '100px']}
       >
-        <VStack gap="16px" textAlign={['center', null, 'left']}>
+        <VStack gap="16px" px={5} textAlign={['center', null, 'left']}>
           <Text color="$title" typography="h4">
             Join our community
           </Text>

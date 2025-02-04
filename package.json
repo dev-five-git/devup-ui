@@ -13,16 +13,16 @@
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.1",
-    "eslint": "^9.18.0",
-    "vitest": "^3.0.4",
-    "@vitest/coverage-v8": "^3.0.4",
-    "@changesets/cli": "^2.27.11",
-    "@types/node": "^22.10.10",
-    "happy-dom": "^16.7.2",
+    "eslint": "^9.19.0",
+    "vitest": "^3.0.5",
+    "@vitest/coverage-v8": "^3.0.5",
+    "@changesets/cli": "^2.27.12",
+    "@types/node": "^22.13.1",
+    "happy-dom": "^16.8.1",
     "@testing-library/react": "^16.2.0"
   },
   "author": "devfive",
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@10.2.0",
   "resolutions": {
     "vite": "^6"
   }
