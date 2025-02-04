@@ -1,5 +1,6 @@
 use crate::StyleSelector::{Dual, Postfix, Prefix};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -278,6 +279,7 @@ pub fn sort_to_long(property: &str) -> String {
         .unwrap_or_else(|| property.to_string())
 }
 
+static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
 pub fn sheet_to_classname(
     property: &str,
     level: u8,
@@ -286,10 +288,10 @@ pub fn sheet_to_classname(
 ) -> String {
     let key = format!(
         "{}-{}-{}-{}",
-        property,
+        property.trim(),
         level,
-        value.unwrap_or(""),
-        selector.unwrap_or("")
+        F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
+        selector.unwrap_or("").trim()
     );
     let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
     map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
@@ -355,6 +357,30 @@ mod tests {
             sheet_to_classname("background", 1, Some("hover"), None),
             "d3"
         );
+
+        reset_class_map();
+        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
+        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
+        assert_eq!(
+            sheet_to_classname("  background  ", 0, Some("  red  "), None),
+            "d1"
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None),
+            "d2"
+        );
+
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)-"), Some(&2));
+        }
     }
 
     #[test]
