@@ -10,6 +10,59 @@ import { FeatureCard } from './FeatureCard'
 export default function HomePage() {
   return (
     <>
+      <Box
+        h="80dvh"
+        pointerEvents="none"
+        pos="absolute"
+        top="0"
+        w="100%"
+        zIndex="-1"
+      >
+        <svg
+          className={css({
+            w: '100%',
+          })}
+          fill="none"
+          viewBox="0 0 1921 928"
+          width="1921"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M0 0H1921V852L962.5 928L0 852V0Z"
+            fill="url(#paint0_linear_52_3823)"
+          />
+          <defs>
+            <linearGradient
+              gradientUnits="userSpaceOnUse"
+              id="paint0_linear_52_3823"
+              x1="960.5"
+              x2="960.5"
+              y1="0"
+              y2="928"
+            >
+              <stop
+                className={css({
+                  color: '#E1E5F5',
+                  _themeDark: {
+                    color: '#29304F',
+                  },
+                })}
+                stopColor="currentColor"
+              />
+              <stop
+                className={css({
+                  color: '#FEF4FF',
+                  _themeDark: {
+                    color: '#1B141C',
+                  },
+                })}
+                offset="1"
+                stopColor="currentColor"
+              />
+            </linearGradient>
+          </defs>
+        </svg>
+      </Box>
       <Box pt={['100px', '150px']}>
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">

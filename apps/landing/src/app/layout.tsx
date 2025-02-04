@@ -28,7 +28,7 @@ export default function RootLayout({
       </head>
       <body
         className={css({
-          bg: '$containerBackground',
+          bg: '$background',
           color: '$text',
         })}
       >

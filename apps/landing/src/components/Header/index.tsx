@@ -1,4 +1,4 @@
-import { css, Flex } from '@devup-ui/react'
+import { Box, css, Flex } from '@devup-ui/react'
 import Link from 'next/link'
 import { Suspense } from 'react'
 
@@ -40,31 +40,44 @@ export function Header() {
   return (
     <HeaderWrap>
       <Flex alignItems="center" gap="16px">
-        <Suspense
-          fallback={
-            <Link
-              className={css({
-                textDecoration: 'none',
-                ml: 4,
-              })}
-              href={URL_PREFIX + '/'}
-            >
-              <Logo />
-            </Link>
-          }
-        >
-          <MobMenuWrapper openChildren={top}>
-            <Link
-              className={css({
-                textDecoration: 'none',
-                ml: 4,
-              })}
-              href={URL_PREFIX + '/'}
-            >
-              <Logo />
-            </Link>
-          </MobMenuWrapper>
-        </Suspense>
+        <Box display={['none', null, 'contents']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+              ml: 4,
+            })}
+            href={URL_PREFIX + '/'}
+          >
+            <Logo />
+          </Link>
+        </Box>
+        <Box display={['contents', null, 'none']}>
+          <Suspense
+            fallback={
+              <Link
+                className={css({
+                  textDecoration: 'none',
+                  ml: 4,
+                })}
+                href={URL_PREFIX + '/'}
+              >
+                <Logo />
+              </Link>
+            }
+          >
+            <MobMenuWrapper openChildren={top}>
+              <Link
+                className={css({
+                  textDecoration: 'none',
+                  ml: 4,
+                })}
+                href={URL_PREFIX + '/'}
+              >
+                <Logo />
+              </Link>
+            </MobMenuWrapper>
+          </Suspense>
+        </Box>
       </Flex>
       <Flex alignItems="center" display={['none', null, 'flex']} gap="10px">
         <Flex alignItems="center" px="24px">

@@ -16,8 +16,15 @@ export function Menu({ children, keyword }: MenuProps) {
     path.startsWith(`/${keyword}`)
   return (
     <Text
+      _active={{
+        opacity: '1',
+        color: '$primary',
+      }}
+      _hover={{
+        opacity: '1',
+      }}
       color={selected ? '$primary' : '$title'}
-      opacity={selected ? 1 : '0.6'}
+      opacity={selected ? undefined : '0.6'}
       typography="buttonLsemiB"
     >
       {children}

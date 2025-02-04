@@ -10,9 +10,11 @@ export default function DetailLayout({
 }>) {
   return (
     <>
-      <Flex maxW="1440px" mx="auto">
+      <Flex maxW="1440px" minH="calc(100vh - 500px)" mx="auto">
         <Box p="20px 16px" w="220px">
-          <LeftMenu />
+          <Box pos="sticky" top={['70px', null, '90px']}>
+            <LeftMenu />
+          </Box>
         </Box>
         <Box className="markdown-body" flex={1} px="60px" py="40px">
           {children}

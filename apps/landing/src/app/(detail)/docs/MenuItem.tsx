@@ -40,7 +40,7 @@ export function MenuItem(props: MenuItemProps) {
       bg={selected ? '$menuActive' : undefined}
       borderRadius="6px"
       gap="10px"
-      p="6px 10px"
+      p={['10px', null, '6px 10px']}
     >
       {selected && <Box bg="$primary" borderRadius="100%" boxSize="8px" />}
       <Text

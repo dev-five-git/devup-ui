@@ -9,6 +9,8 @@ export function Discord() {
       alignItems="center"
       bgColor="$joinBg"
       bgImage={`url(${URL_PREFIX}/discord-bg.svg)`}
+      bgPositionY={['bottom', null, 'initial']}
+      bgSize={['contain', null, 'initial']}
       borderRadius="40px 40px 0px 40px"
       h="380px"
       justifyContent={[null, null, 'center']}
