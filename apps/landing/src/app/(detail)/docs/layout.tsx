@@ -19,7 +19,11 @@ export default function DetailLayout({
         <Box className="markdown-body" flex={1} px="60px" py="40px">
           {children}
         </Box>
-        <RightIndex />
+        <Box>
+          <Box pos="sticky" top={['50px', null, '70px']}>
+            <RightIndex />
+          </Box>
+        </Box>
       </Flex>
     </>
   )
