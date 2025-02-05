@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.34
+
+### Patch Changes
+
+- b379bc6: Optimize to convert theme var
+
 ## 0.1.33
 
 ### Patch Changes
