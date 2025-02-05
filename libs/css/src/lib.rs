@@ -2,6 +2,7 @@ use crate::StyleSelector::{Dual, Postfix, Prefix};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -25,34 +26,30 @@ pub enum StyleSelector {
 }
 
 impl PartialOrd for StyleSelector {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for StyleSelector {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Postfix(a), Postfix(b)) => SELECTOR_ORDER_MAP
                 .get(a)
                 .unwrap_or(&0)
                 .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0)),
             (Prefix(a), Prefix(b)) => a.cmp(b),
-            (Dual(p1, a), Dual(p2, b)) => {
-                if p1 == p2 {
-                    SELECTOR_ORDER_MAP
-                        .get(a)
-                        .unwrap_or(&0)
-                        .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0))
-                } else {
-                    p1.cmp(p2)
-                }
-            }
-            (Postfix(_), _) => std::cmp::Ordering::Less,
-            (Prefix(_), Postfix(_)) => std::cmp::Ordering::Greater,
-            (Prefix(_), _) => std::cmp::Ordering::Less,
-            (Dual(_, _), Postfix(_)) => std::cmp::Ordering::Greater,
-            (Dual(_, _), Prefix(_)) => std::cmp::Ordering::Greater,
+            (Dual(p1, a), Dual(p2, b)) => match p1.cmp(p2) {
+                Ordering::Equal => SELECTOR_ORDER_MAP
+                    .get(a)
+                    .unwrap_or(&0)
+                    .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0)),
+                x => x,
+            },
+            (Postfix(_), _) => Ordering::Less,
+            (Prefix(_), Postfix(_)) => Ordering::Greater,
+            (Prefix(_), Dual(_, _)) => Ordering::Less,
+            (Dual(_, _), _) => Ordering::Greater,
         }
     }
 }

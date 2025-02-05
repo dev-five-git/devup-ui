@@ -50,11 +50,15 @@ impl ExtractStyle for StyleSheetProperty {
 static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
 
 fn convert_theme_variable_value(value: &str) -> String {
-    VAR_RE
-        .replace_all(value, |caps: &regex::Captures| {
-            format!("var(--{})", &caps[0][1..])
-        })
-        .to_string()
+    if value.contains("$") {
+        VAR_RE
+            .replace_all(value, |caps: &regex::Captures| {
+                format!("var(--{})", &caps[0][1..])
+            })
+            .to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -75,13 +79,10 @@ fn deserialize_btree_map_u8<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let map: BTreeMap<String, HashSet<StyleSheetProperty>> =
-        Deserialize::deserialize(deserializer)?;
     let mut result = BTreeMap::new();
-
-    for (key, value) in map {
-        let key: u8 = key.parse().map_err(Error::custom)?;
-        result.insert(key, value);
+    for (key, value) in BTreeMap::<String, HashSet<StyleSheetProperty>>::deserialize(deserializer)?
+    {
+        result.insert(key.parse().map_err(Error::custom)?, value);
     }
 
     Ok(result)
@@ -314,6 +315,63 @@ mod tests {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "bg", 0, "red", Some(&"hover".into()), false);
         sheet.add_property("test", "bg", 0, "blue", Some(&"active".into()), false);
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&StyleSelector::from("groupFocusVisible")),
+            false,
+        );
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "blue",
+            Some(&StyleSelector::from("groupFocusVisible")),
+            false,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&StyleSelector::from("groupFocusVisible")),
+            false,
+        );
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "blue",
+            Some(&StyleSelector::from("hover")),
+            false,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&StyleSelector::Dual("*".to_string(), "hover".to_string())),
+            false,
+        );
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "blue",
+            Some(&StyleSelector::from("groupFocusVisible")),
+            false,
+        );
         assert_debug_snapshot!(sheet.create_css());
     }
 
