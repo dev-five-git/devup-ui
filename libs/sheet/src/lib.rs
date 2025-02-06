@@ -163,9 +163,7 @@ impl StyleSheet {
             let (mut medias, mut sorted_props): (Vec<_>, Vec<_>) = props
                 .iter()
                 .partition(|prop| matches!(prop.selector, Some(StyleSelector::Media(_))));
-            println!("{:?}", sorted_props);
             sorted_props.sort();
-            println!("{:?}", sorted_props);
             medias.sort();
             let medias = {
                 let mut map = BTreeMap::new();

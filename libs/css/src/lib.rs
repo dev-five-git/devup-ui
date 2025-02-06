@@ -60,8 +60,6 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        println!("value: {}", value);
-        println!("value: {}", value == "print");
         if let Some(s) = value.strip_prefix("group") {
             Dual("*[role=group]".to_string(), to_kebab_case(s))
         } else if let Some(s) = value.strip_prefix("theme") {

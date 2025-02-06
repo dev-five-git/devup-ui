@@ -137,7 +137,6 @@ impl Theme {
                 .find(|k| *k == "light")
                 .or_else(|| self.colors.keys().next())
         });
-        println!("{:?}", default_theme_key);
         if let Some(default_theme_key) = default_theme_key {
             let entries = {
                 let mut col: Vec<_> = self.colors.iter().collect();
