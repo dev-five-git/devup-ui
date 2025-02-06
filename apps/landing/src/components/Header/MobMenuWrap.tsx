@@ -11,8 +11,15 @@ export function MobMenuWrap({ children }: MobMenuWrapProps) {
     <VStack
       ref={(ref) => {
         bodyScrollLock.disableBodyScroll(ref!)
+
+        function ev() {
+          if (window.innerWidth >= 768) bodyScrollLock.enableBodyScroll(ref!)
+        }
+
+        window.addEventListener('resize', ev)
         return () => {
           bodyScrollLock.enableBodyScroll(ref!)
+          window.removeEventListener('resize', ev)
         }
       }}
       bg="$containerBackground"

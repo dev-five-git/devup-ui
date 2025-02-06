@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
 import { Header } from '../components/Header'
+import { SearchModal } from '../components/SearchModal'
 import { URL_PREFIX } from '../constants'
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({
           color: '$text',
         })}
       >
+        <SearchModal />
         <Header />
         {children}
         <Footer />

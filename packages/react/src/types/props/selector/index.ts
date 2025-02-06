@@ -33,6 +33,7 @@ export interface DevupSelectorProps {
   _onlyChild?: DevupCommonProps
   _optional?: DevupCommonProps
   _readOnly?: DevupCommonProps
+  _print?: DevupCommonProps
 
   _groupActive?: DevupCommonProps
   _groupChecked?: DevupCommonProps

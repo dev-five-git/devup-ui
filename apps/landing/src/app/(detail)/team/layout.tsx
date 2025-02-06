@@ -7,7 +7,7 @@ export default function TeamLayout({
 }>) {
   return (
     <>
-      <Box mx="auto" p="40px 60px" w="1014px">
+      <Box minH="calc(100vh - 500px)" mx="auto" p="40px 60px" w="1014px">
         {children}
       </Box>
     </>

@@ -2,7 +2,7 @@ import { Flex, Image, Input } from '@devup-ui/react'
 
 import { URL_PREFIX } from '../../constants'
 
-export function HeaderInput() {
+export function HeaderInput(props: React.ComponentProps<'input'>) {
   return (
     <Flex
       alignItems="center"
@@ -23,6 +23,8 @@ export function HeaderInput() {
         outline="none"
         placeholder="Search documentation..."
         typography="caption"
+        w="100%"
+        {...props}
       />
     </Flex>
   )

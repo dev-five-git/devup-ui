@@ -31,13 +31,16 @@ function HeaderWrapInner({ children }: { children: React.ReactNode }) {
       alignItems="center"
       bg="$containerBackground"
       borderRadius={root ? [null, null, '16px'] : undefined}
-      boxShadow="0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))"
+      boxShadow={
+        root
+          ? '0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))'
+          : '0px 1px 1px 0px var(--shadow, rgba(135, 135, 135, 0.25))'
+      }
       h={['50px', null, '70px']}
       justifyContent="space-between"
       maxW={root ? '1440px' : '100%'}
       mx="auto"
-      pl={[null, 5, '40px']}
-      pr={[null, 5, '40px']}
+      px={[null, 5, '20px']}
     >
       {children}
     </Flex>

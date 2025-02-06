@@ -101,7 +101,7 @@ export function Header() {
           </Link>
         </Flex>
         <HeaderInputWrap>
-          <HeaderInput />
+          <HeaderInput readOnly />
         </HeaderInputWrap>
         {top}
       </Flex>

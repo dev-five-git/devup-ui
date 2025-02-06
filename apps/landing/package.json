@@ -4,9 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node ./script.js && next dev",
+    "search": "node ./script.js",
+    "build": "node ./script.js && next build",
+    "start": "node ./script.js && next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -29,6 +30,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "typescript": "^5"
+    "typescript": "^5",
+    "glob": "^11.0.1",
+    "remark": "^15.0.1"
   }
 }

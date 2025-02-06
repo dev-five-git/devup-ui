@@ -4,13 +4,16 @@ import Link from 'next/link'
 import { LeftMenu } from '../../app/(detail)/docs/LeftMenu'
 import { URL_PREFIX } from '../../constants'
 import { HeaderInput } from './HeaderInput'
+import { HeaderInputWrap } from './HeaderInputWrap'
 import { MobMenuWrap } from './MobMenuWrap'
 
 export function MobMenu() {
   return (
     <MobMenuWrap>
       <Box px={4} py={2.5}>
-        <HeaderInput />
+        <HeaderInputWrap>
+          <HeaderInput readOnly />
+        </HeaderInputWrap>
       </Box>
       <Box overflowY="auto" px={4}>
         <Link
