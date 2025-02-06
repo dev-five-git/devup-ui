@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::cmp::Ordering::{Equal, Greater, Less};
+use std::cmp::Ordering::Equal;
 use std::collections::{BTreeMap, HashSet};
 
 trait ExtractStyle {
@@ -21,6 +21,34 @@ pub struct StyleSheetProperty {
     pub value: String,
     pub selector: Option<StyleSelector>,
     pub basic: bool,
+}
+impl PartialOrd for StyleSheetProperty {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StyleSheetProperty {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.basic == other.basic {
+            match (self.selector.is_some(), other.selector.is_some()) {
+                (true, true) => match self.selector.cmp(&other.selector) {
+                    Equal => match self.property.cmp(&other.property) {
+                        Equal => self.value.cmp(&other.value),
+                        val => val,
+                    },
+                    val => val,
+                },
+                (false, false) => match self.property.cmp(&other.property) {
+                    Equal => self.value.cmp(&other.value),
+                    prop => prop,
+                },
+                (a, b) => a.cmp(&b),
+            }
+        } else {
+            other.basic.cmp(&self.basic)
+        }
+    }
 }
 
 impl ExtractStyle for StyleSheetProperty {
@@ -132,54 +160,67 @@ impl StyleSheet {
     pub fn create_css(&self) -> String {
         let mut css = self.theme.to_css();
         for (level, props) in self.properties.iter() {
-            let mut sorted_props = props.iter().collect::<Vec<_>>();
-            sorted_props.sort_by(|a, b| {
-                if a.basic == b.basic {
-                    match (a.selector.is_some(), b.selector.is_some()) {
-                        (true, false) => Greater,
-                        (false, true) => Less,
-                        (true, true) => match a.selector.cmp(&b.selector) {
-                            Equal => match a.property.cmp(&b.property) {
-                                Equal => a.value.cmp(&b.value),
-                                val => val,
-                            },
-                            val => val,
-                        },
-                        (false, false) => match a.property.cmp(&b.property) {
-                            Equal => a.value.cmp(&b.value),
-                            prop => prop,
-                        },
+            let (mut medias, mut sorted_props): (Vec<_>, Vec<_>) = props
+                .iter()
+                .partition(|prop| matches!(prop.selector, Some(StyleSelector::Media(_))));
+            println!("{:?}", sorted_props);
+            sorted_props.sort();
+            println!("{:?}", sorted_props);
+            medias.sort();
+            let medias = {
+                let mut map = BTreeMap::new();
+                for prop in medias {
+                    if let Some(StyleSelector::Media(media)) = &prop.selector {
+                        map.entry(media).or_insert_with(Vec::new).push(prop);
                     }
-                } else {
-                    b.basic.cmp(&a.basic)
                 }
-            });
+                map
+            };
 
-            let inner_css = sorted_props
-                .into_iter()
-                .map(ExtractStyle::extract)
-                .collect::<Vec<String>>()
-                .join("");
-            if *level == 0 {
-                css.push_str(inner_css.as_str());
+            let break_point = if *level == 0 {
+                None
             } else {
+                Some(
+                    self.theme
+                        .break_points
+                        .iter()
+                        .enumerate()
+                        .find(|(idx, _)| (*idx as u8) == *level)
+                        .map(|(_, bp)| *bp)
+                        .unwrap_or_else(|| self.theme.break_points.last().cloned().unwrap_or(0)),
+                )
+            };
+            for (media, props) in medias {
+                let inner_css = props
+                    .into_iter()
+                    .map(ExtractStyle::extract)
+                    .collect::<Vec<String>>()
+                    .join("");
                 css.push_str(
-                    format!(
-                        "\n@media (min-width:{}px){{{}}}",
-                        self.theme
-                            .break_points
-                            .iter()
-                            .enumerate()
-                            .find(|(idx, _)| (*idx as u8) == *level)
-                            .map(|(_, bp)| *bp)
-                            .unwrap_or_else(|| self
-                                .theme
-                                .break_points
-                                .last()
-                                .cloned()
-                                .unwrap_or(0)),
+                    if let Some(break_point) = break_point {
+                        format!(
+                            "\n@media (min-width:{}px) and ({}){{{}}}",
+                            break_point, media, inner_css
+                        )
+                    } else {
+                        format!("\n@media ({}){{{}}}", media, inner_css.as_str())
+                    }
+                    .as_str(),
+                );
+            }
+
+            if !sorted_props.is_empty() {
+                let inner_css = sorted_props
+                    .into_iter()
+                    .map(ExtractStyle::extract)
+                    .collect::<Vec<String>>()
+                    .join("");
+                css.push_str(
+                    if let Some(break_point) = break_point {
+                        format!("\n@media (min-width:{}px){{{}}}", break_point, inner_css)
+                    } else {
                         inner_css
-                    )
+                    }
                     .as_str(),
                 );
             }
@@ -403,6 +444,17 @@ mod tests {
         sheet.add_property("test", "mx", 0, "41px", None, false);
         sheet.add_property("test", "mx", 0, "51px", Some(&"themeLight".into()), false);
         sheet.add_property("test", "mx", 0, "42px", None, false);
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_print_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 0, "40px", Some(&"print".into()), false);
+        sheet.add_property("test", "my", 0, "40px", Some(&"print".into()), false);
+
+        sheet.add_property("test", "mx", 1, "40px", Some(&"print".into()), false);
+        sheet.add_property("test", "my", 1, "40px", Some(&"print".into()), false);
         assert_debug_snapshot!(sheet.create_css());
     }
 

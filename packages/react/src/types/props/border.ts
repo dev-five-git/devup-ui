@@ -11,6 +11,9 @@ export interface DevupUiBorderProps {
   >
   borderBottomLeftRadius?: ResponsiveValue<Property.BorderBottomLeftRadius>
   borderBottomRightRadius?: ResponsiveValue<Property.BorderBottomRightRadius>
+  borderBottomRadius?: ResponsiveValue<
+    Property.BorderBottomRightRadius | Property.BorderBottomLeftRadius
+  >
   borderBottomStyle?: ResponsiveValue<Property.BorderBottomStyle>
   borderBottomWidth?: ResponsiveValue<Property.BorderBottomWidth>
   borderCollapse?: ResponsiveValue<Property.BorderCollapse>
@@ -25,12 +28,18 @@ export interface DevupUiBorderProps {
   borderLeftColor?: ResponsiveValue<
     Property.BorderLeftColor | keyof DevupThemeColors
   >
+  borderLeftRadius?: ResponsiveValue<
+    Property.BorderBottomLeftRadius | Property.BorderTopLeftRadius
+  >
   borderLeftStyle?: ResponsiveValue<Property.BorderLeftStyle>
   borderLeftWidth?: ResponsiveValue<Property.BorderLeftWidth>
   borderRadius?: ResponsiveValue<Property.BorderRadius>
   borderRight?: ResponsiveValue<Property.BorderRight>
   borderRightColor?: ResponsiveValue<
     Property.BorderRightColor | keyof DevupThemeColors
+  >
+  borderRightRadius?: ResponsiveValue<
+    Property.BorderBottomRightRadius | Property.BorderTopRightRadius
   >
   borderRightStyle?: ResponsiveValue<Property.BorderRightStyle>
   borderRightWidth?: ResponsiveValue<Property.BorderRightWidth>
@@ -41,6 +50,9 @@ export interface DevupUiBorderProps {
   >
   borderTopLeftRadius?: ResponsiveValue<Property.BorderTopLeftRadius>
   borderTopRightRadius?: ResponsiveValue<Property.BorderTopRightRadius>
+  borderTopRadius?: ResponsiveValue<
+    Property.BorderTopRightRadius | Property.BorderTopLeftRadius
+  >
   borderTopStyle?: ResponsiveValue<Property.BorderTopStyle>
   borderTopWidth?: ResponsiveValue<Property.BorderTopWidth>
   borderWidth?: ResponsiveValue<Property.BorderWidth>

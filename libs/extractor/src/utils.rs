@@ -44,6 +44,10 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "tabIndex",
         "maxLength",
         "minLength",
+        "disabled",
+        "readOnly",
+        "autoFocus",
+        "required",
     ] {
         set.insert(prop);
     }

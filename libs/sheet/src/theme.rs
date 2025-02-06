@@ -130,23 +130,34 @@ impl Theme {
 
     pub fn to_css(&self) -> String {
         let mut theme_declaration = String::new();
-        let default_theme_key = self
-            .colors
-            .keys()
-            .find(|k| *k == "default")
-            .map(Some)
-            .unwrap_or_else(|| self.colors.keys().next());
+
+        let default_theme_key = self.colors.keys().find(|k| *k == "default").or_else(|| {
+            self.colors
+                .keys()
+                .find(|k| *k == "light")
+                .or_else(|| self.colors.keys().next())
+        });
+        println!("{:?}", default_theme_key);
         if let Some(default_theme_key) = default_theme_key {
-            let mut entries: Vec<_> = self.colors.iter().collect();
-            entries.sort_by_key(|(k, _)| *k);
-            entries.reverse();
+            let entries = {
+                let mut col: Vec<_> = self.colors.iter().collect();
+                col.sort_by(|a, b| {
+                    if a.0 == default_theme_key {
+                        std::cmp::Ordering::Less
+                    } else if b.0 == default_theme_key {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        a.0.cmp(b.0)
+                    }
+                });
+                col
+            };
             for (theme_name, theme_properties) in entries {
-                let theme_key = if *theme_name == *default_theme_key {
+                if let Some(theme_key) = if *theme_name == *default_theme_key {
                     None
                 } else {
                     Some(theme_name)
-                };
-                if let Some(theme_key) = theme_key {
+                } {
                     theme_declaration
                         .push_str(format!(":root[data-theme={}]{{", theme_key).as_str());
                 } else {
@@ -194,7 +205,7 @@ impl Theme {
                         .get_mut(&(idx as u8))
                         .map(|v| v.push(typo_css.clone()))
                         .unwrap_or_else(|| {
-                            level_map.insert(idx as u8, vec![typo_css.clone()]);
+                            level_map.insert(idx as u8, vec![typo_css]);
                         });
                 }
             }
@@ -202,14 +213,12 @@ impl Theme {
         for (level, css_vec) in level_map {
             if level == 0 {
                 css.push_str(css_vec.join("").as_str());
-            } else {
-                let media = self
-                    .break_points
-                    .get(level as usize)
-                    .map(|v| format!("(min-width:{}px)", v));
-                if let Some(media) = media {
-                    css.push_str(format!("\n@media {}{{{}}}", media, css_vec.join("")).as_str());
-                }
+            } else if let Some(media) = self
+                .break_points
+                .get(level as usize)
+                .map(|v| format!("(min-width:{}px)", v))
+            {
+                css.push_str(format!("\n@media {}{{{}}}", media, css_vec.join("")).as_str());
             }
         }
         css
@@ -219,6 +228,7 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_debug_snapshot;
 
     #[test]
     fn to_css_from_theme() {
@@ -278,6 +288,104 @@ mod tests {
             vec![Some(Typography::new(None, None, None, None, None))],
         );
         assert_eq!(theme.to_css(), "");
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "default",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "dark",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "dark",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "c",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
     }
 
     #[test]

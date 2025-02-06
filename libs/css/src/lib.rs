@@ -1,4 +1,4 @@
-use crate::StyleSelector::{Dual, Postfix, Prefix};
+use crate::StyleSelector::{Dual, Media, Postfix, Prefix};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
 pub enum StyleSelector {
     Postfix(String),
     Prefix(String),
+    Media(String),
     Dual(String, String),
 }
 
@@ -34,6 +35,9 @@ impl PartialOrd for StyleSelector {
 impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
+            (Media(a), Media(b)) => a.cmp(b),
+            (Media(_), _) => Ordering::Less,
+            (_, Media(_)) => Ordering::Greater,
             (Postfix(a), Postfix(b)) => SELECTOR_ORDER_MAP
                 .get(a)
                 .unwrap_or(&0)
@@ -56,6 +60,8 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
+        println!("value: {}", value);
+        println!("value: {}", value == "print");
         if let Some(s) = value.strip_prefix("group") {
             Dual("*[role=group]".to_string(), to_kebab_case(s))
         } else if let Some(s) = value.strip_prefix("theme") {
@@ -65,6 +71,8 @@ impl From<&str> for StyleSelector {
                 s.chars().next().unwrap().to_ascii_lowercase(),
                 &s[1..]
             ))
+        } else if value == "print" {
+            Media("print".to_string())
         } else {
             Postfix(to_kebab_case(value))
         }
@@ -80,6 +88,7 @@ impl Display for StyleSelector {
                 Postfix(value) => format!("-{}", value),
                 Prefix(value) => format!("-{}-", value),
                 Dual(prefix, postfix) => format!("-{}-{}", prefix, postfix),
+                Media(value) => format!("@{}", value),
             }
         )
     }
@@ -97,6 +106,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
                 SelectorSeparator::Single => format!("{}:{} .{}", prefix, postfix, class_name),
                 SelectorSeparator::Double => format!("{}::{} .{}", prefix, postfix, class_name),
             },
+            Media(_) => format!(".{}", class_name),
         }
     } else {
         format!(".{}", class_name)
@@ -203,6 +213,22 @@ static GLOBAL_STYLE_PROPERTY: Lazy<HashMap<&str, PropertyType>> = Lazy::new(|| {
         ("px", ["padding-left", "padding-right"]),
         ("py", ["padding-top", "padding-bottom"]),
         ("boxSize", ["width", "height"]),
+        (
+            "borderBottomRadius",
+            ["border-bottom-left-radius", "border-bottom-right-radius"],
+        ),
+        (
+            "borderTopRadius",
+            ["border-top-left-radius", "border-top-right-radius"],
+        ),
+        (
+            "borderLeftRadius",
+            ["border-top-left-radius", "border-bottom-left-radius"],
+        ),
+        (
+            "borderRightRadius",
+            ["border-top-right-radius", "border-bottom-right-radius"],
+        ),
     ] {
         map.insert(key, value.into());
     }
@@ -266,7 +292,7 @@ pub fn convert_property(property: &str) -> PropertyType {
         .unwrap_or_else(|| to_kebab_case(property).into())
 }
 
-pub fn sort_to_long(property: &str) -> String {
+pub fn short_to_long(property: &str) -> String {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .map(|v| match v {

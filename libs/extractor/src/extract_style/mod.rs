@@ -1,7 +1,7 @@
 use crate::utils::convert_value;
 use crate::StyleProperty;
 use css::{
-    css_to_classname, sheet_to_classname, sheet_to_variable_name, sort_to_long, StyleSelector,
+    css_to_classname, sheet_to_classname, sheet_to_variable_name, short_to_long, StyleSelector,
 };
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
@@ -41,7 +41,7 @@ impl ExtractStaticStyle {
             } else {
                 convert_value(value)
             },
-            property: sort_to_long(property),
+            property: short_to_long(property),
             level,
             selector,
             basic: false,
@@ -145,7 +145,7 @@ impl ExtractDynamicStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         Self {
-            property: sort_to_long(property),
+            property: short_to_long(property),
             level,
             identifier: identifier.to_string(),
             selector,

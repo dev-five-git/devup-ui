@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/theme.rs
+expression: theme.to_css()
+---
+":root{--primary:#000;}\n:root[data-theme=a]{--primary:#000;}\n:root[data-theme=b]{--primary:#000;}\n:root[data-theme=c]{--primary:#000;}\n"

@@ -6,7 +6,7 @@ use crate::style_extractor::{
     extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
 };
 use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
-use css::sort_to_long;
+use css::short_to_long;
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
@@ -262,7 +262,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let mut rm = false;
                 if let Attribute(ref mut attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
-                        let name = sort_to_long(name.name.as_str());
+                        let name = short_to_long(name.name.as_str());
                         if duplicate_set.contains(&name) {
                             continue;
                         }
