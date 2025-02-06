@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.24
+
+### Patch Changes
+
+- bf47284: Add borderTopRadius, borderBottomRadius, borderLeftRadius, borderRightRadius, \_print
+
 ## 0.1.23
 
 ### Patch Changes
