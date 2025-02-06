@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.35
+
+### Patch Changes
+
+- bf47284: Support @media
+- bf47284: Add special props
+
 ## 0.1.34
 
 ### Patch Changes
