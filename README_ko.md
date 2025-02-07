@@ -20,7 +20,7 @@
 <a href="https://badgen.net/github/stars/dev-five-git/devup-ui">
 <img alt="Github Stars" src="https://badgen.net/github/stars/dev-five-git/devup-ui" />
 </a>
-<a href="https://discord.gg/BtNffusw">
+<a href="https://discord.gg/8zjcGc7cWh">
 <img alt="Discord" src="https://img.shields.io/discord/1321362173619994644.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2" />
 </a>
 <a href="https://codecov.io/gh/dev-five-git/devup-ui" > 

@@ -7,7 +7,7 @@ export function Discord() {
       className={css({
         textDecoration: 'none',
       })}
-      href="https://discord.gg/BtNffusw"
+      href="https://discord.gg/8zjcGc7cWh"
       target="_blank"
     >
       <svg

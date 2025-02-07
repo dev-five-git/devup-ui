@@ -37,7 +37,7 @@ export function Discord() {
             textDecoration: 'none',
             borderRadius: '100px',
           })}
-          href="https://discord.gg/BtNffusw"
+          href="https://discord.gg/8zjcGc7cWh"
           target="_blank"
         >
           <Flex
