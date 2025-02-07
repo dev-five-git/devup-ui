@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.36
+
+### Patch Changes
+
+- 66ba223: Fix media issue
+
 ## 0.1.35
 
 ### Patch Changes
