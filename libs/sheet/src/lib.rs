@@ -197,11 +197,11 @@ impl StyleSheet {
                 css.push_str(
                     if let Some(break_point) = break_point {
                         format!(
-                            "\n@media (min-width:{}px) and ({}){{{}}}",
+                            "\n@media (min-width:{}px) and {}{{{}}}",
                             break_point, media, inner_css
                         )
                     } else {
-                        format!("\n@media ({}){{{}}}", media, inner_css.as_str())
+                        format!("\n@media {}{{{}}}", media, inner_css.as_str())
                     }
                     .as_str(),
                 );
