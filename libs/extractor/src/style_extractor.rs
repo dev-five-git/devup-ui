@@ -74,6 +74,10 @@ pub fn extract_style_from_expression<'a>(
     level: u8,
     selector: Option<&str>,
 ) -> ExtractResult<'a> {
+    println!(
+        "extract_style_from_expression: {:?} {:?} {:?}",
+        selector, name, expression
+    );
     let mut typo = false;
 
     if name.is_none() && selector.is_none() {
@@ -240,13 +244,20 @@ pub fn extract_style_from_expression<'a>(
             // };
         }
 
-        if let Some(selector) = name.strip_prefix("_") {
+        if let Some(new_selector) = name.strip_prefix("_") {
             return extract_style_from_expression(
                 ast_builder,
                 None,
                 expression,
                 level,
-                Some(selector),
+                Some(
+                    if let Some(selector) = selector {
+                        format!("{}:{}", selector, new_selector)
+                    } else {
+                        new_selector.to_string()
+                    }
+                    .as_str(),
+                ),
             );
         }
         typo = name == "typography";
