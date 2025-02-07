@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.37
+
+### Patch Changes
+
+- 553d754: Fix negative issue, literal issue
+
 ## 0.1.36
 
 ### Patch Changes
