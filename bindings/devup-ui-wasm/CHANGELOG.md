@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.38
+
+### Patch Changes
+
+- bf2d907: Fix compound selector issue
+
 ## 0.1.37
 
 ### Patch Changes
