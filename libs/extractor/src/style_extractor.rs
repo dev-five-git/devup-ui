@@ -251,272 +251,294 @@ pub fn extract_style_from_expression<'a>(
         }
         typo = name == "typography";
     }
-    match expression {
-        Expression::ComputedMemberExpression(mem) => {
-            extract_style_from_member_expression(ast_builder, name, mem, level, selector)
-        }
-        Expression::NumericLiteral(v) => name
-            .map(|name| {
-                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
-                    ExtractStaticStyle::new(
-                        name,
-                        &v.value.to_string(),
+    if let Some(value) = get_number_by_literal_expression(expression) {
+        name.map(|name| {
+            ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
+                ExtractStaticStyle::new(
+                    name,
+                    &value.to_string(),
+                    level,
+                    selector.map(|s| s.into()),
+                ),
+            ))])
+        })
+        .unwrap_or(ExtractResult::Maintain)
+    } else if let Some(value) = get_string_by_literal_expression(expression) {
+        name.map(|name| {
+            ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
+                Typography(value.as_str().to_string())
+            } else {
+                Static(ExtractStaticStyle::new(
+                    name,
+                    value.as_str(),
+                    level,
+                    selector.map(|s| s.into()),
+                ))
+            })])
+        })
+        .unwrap_or(ExtractResult::Maintain)
+    } else {
+        match expression {
+            Expression::UnaryExpression(_) | Expression::BinaryExpression(_) => {
+                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                    ExtractDynamicStyle::new(
+                        name.unwrap(),
                         level,
+                        expression_to_code(expression).as_str(),
                         selector.map(|s| s.into()),
                     ),
                 ))])
-            })
-            .unwrap_or(ExtractResult::Maintain),
-        Expression::TemplateLiteral(tmp) => {
-            if let Some(name) = name {
-                if tmp.quasis.len() == 1 {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
-                        Typography(tmp.quasis[0].value.raw.as_str().to_string())
-                    } else {
-                        Static(ExtractStaticStyle::new(
-                            name,
-                            tmp.quasis[0].value.raw.as_str(),
-                            level,
-                            selector.map(|s| s.into()),
-                        ))
-                    })])
-                } else if typo {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
-                        expression: ast_builder.expression_template_literal(
-                            SPAN,
-                            ast_builder.vec_from_array([
-                                ast_builder.template_element(
-                                    SPAN,
-                                    false,
-                                    TemplateElementValue {
-                                        raw: ast_builder.atom("typo-"),
-                                        cooked: None,
-                                    },
-                                ),
-                                ast_builder.template_element(
-                                    SPAN,
-                                    true,
-                                    TemplateElementValue {
-                                        raw: ast_builder.atom(""),
-                                        cooked: None,
-                                    },
-                                ),
-                            ]),
-                            ast_builder
-                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
-                        ),
-                        styles: vec![],
-                    }])
-                } else {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                        ExtractDynamicStyle::new(
-                            name,
-                            level,
-                            expression_to_code(expression).as_str(),
-                            selector.map(|s| s.into()),
-                        ),
-                    ))])
-                }
-            } else {
-                ExtractResult::Maintain
             }
-        }
-        Expression::StringLiteral(v) => name
-            .map(|name| {
-                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
-                    Typography(v.value.as_str().to_string())
-                } else {
-                    Static(ExtractStaticStyle::new(
-                        name,
-                        v.value.as_str(),
-                        level,
-                        selector.map(|s| s.into()),
-                    ))
-                })])
-            })
-            .unwrap_or(ExtractResult::Maintain),
-        Expression::Identifier(identifier) => {
-            if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
-                ExtractResult::Maintain
-            } else if let Some(name) = name {
-                if typo {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
-                        expression: ast_builder.expression_template_literal(
-                            SPAN,
-                            ast_builder.vec_from_array([
-                                ast_builder.template_element(
-                                    SPAN,
-                                    false,
-                                    TemplateElementValue {
-                                        raw: ast_builder.atom("typo-"),
-                                        cooked: None,
-                                    },
-                                ),
-                                ast_builder.template_element(
-                                    SPAN,
-                                    true,
-                                    TemplateElementValue {
-                                        raw: ast_builder.atom(""),
-                                        cooked: None,
-                                    },
-                                ),
-                            ]),
-                            ast_builder
-                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
-                        ),
-                        styles: vec![],
-                    }])
-                } else {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
-                        ExtractDynamicStyle::new(
-                            name,
-                            level,
-                            identifier.name.as_str(),
-                            selector.map(|s| s.into()),
-                        ),
-                    ))])
-                }
-            } else {
-                ExtractResult::Maintain
+            Expression::ComputedMemberExpression(mem) => {
+                extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
-        }
-        Expression::LogicalExpression(logical) => {
-            let res = name.and_then(|name| {
-                match extract_style_from_expression(
-                    ast_builder,
-                    Some(name),
-                    &mut logical.right,
-                    level,
-                    selector,
-                ) {
-                    ExtractResult::ExtractStyle(styles) => {
-                        Some(Box::new(ExtractStyleProp::StaticArray(styles)))
-                    }
-                    _ => None,
-                }
-            });
-            match logical.operator {
-                LogicalOperator::Or => {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
-                        condition: logical.left.clone_in(ast_builder.allocator),
-                        consequent: None,
-                        alternate: res,
-                    }])
-                }
-                LogicalOperator::And => {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
-                        condition: logical.left.clone_in(ast_builder.allocator),
-                        consequent: res,
-                        alternate: None,
-                    }])
-                }
-                LogicalOperator::Coalesce => {
-                    ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
-                        condition: Expression::LogicalExpression(
-                            ast_builder.alloc_logical_expression(
+            Expression::TemplateLiteral(tmp) => {
+                if let Some(name) = name {
+                    if tmp.quasis.len() == 1 {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
+                            Typography(tmp.quasis[0].value.raw.as_str().to_string())
+                        } else {
+                            Static(ExtractStaticStyle::new(
+                                name,
+                                tmp.quasis[0].value.raw.as_str(),
+                                level,
+                                selector.map(|s| s.into()),
+                            ))
+                        })])
+                    } else if typo {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                            expression: ast_builder.expression_template_literal(
                                 SPAN,
-                                Expression::BinaryExpression(ast_builder.alloc_binary_expression(
-                                    SPAN,
-                                    logical.left.clone_in(ast_builder.allocator),
-                                    BinaryOperator::StrictInequality,
-                                    Expression::NullLiteral(ast_builder.alloc_null_literal(SPAN)),
-                                )),
-                                LogicalOperator::And,
-                                Expression::BinaryExpression(ast_builder.alloc_binary_expression(
-                                    SPAN,
-                                    logical.left.clone_in(ast_builder.allocator),
-                                    BinaryOperator::StrictInequality,
-                                    Expression::Identifier(
-                                        ast_builder.alloc_identifier_reference(SPAN, "undefined"),
+                                ast_builder.vec_from_array([
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        false,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom("typo-"),
+                                            cooked: None,
+                                        },
                                     ),
-                                )),
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        true,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom(""),
+                                            cooked: None,
+                                        },
+                                    ),
+                                ]),
+                                ast_builder
+                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
                             ),
-                        ),
-                        consequent: None,
-                        alternate: res,
-                    }])
-                }
-            }
-        }
-        Expression::ParenthesizedExpression(parenthesized) => extract_style_from_expression(
-            ast_builder,
-            name,
-            &mut parenthesized.expression,
-            level,
-            selector,
-        ),
-        Expression::ArrayExpression(array) => {
-            let mut props = vec![];
-
-            for (idx, element) in array.elements.iter_mut().enumerate() {
-                if let ExtractResult::ExtractStyle(mut styles) = extract_style_from_expression(
-                    ast_builder,
-                    name,
-                    element.to_expression_mut(),
-                    idx as u8,
-                    selector,
-                ) {
-                    props.append(&mut styles);
-                }
-            }
-
-            if props.is_empty() {
-                ExtractResult::Maintain
-            } else {
-                ExtractResult::ExtractStyle(props)
-            }
-        }
-        Expression::ConditionalExpression(ref mut conditional) => {
-            ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
-                condition: conditional.test.clone_in(ast_builder.allocator),
-                consequent: if let ExtractResult::ExtractStyle(styles) =
-                    extract_style_from_expression(
-                        ast_builder,
-                        name,
-                        &mut conditional.consequent,
-                        level,
-                        selector,
-                    ) {
-                    Some(Box::new(ExtractStyleProp::StaticArray(styles)))
-                } else {
-                    None
-                },
-                alternate: if let ExtractResult::ExtractStyle(styles) =
-                    extract_style_from_expression(
-                        ast_builder,
-                        name,
-                        &mut conditional.alternate,
-                        level,
-                        selector,
-                    ) {
-                    Some(Box::new(ExtractStyleProp::StaticArray(styles)))
-                } else {
-                    None
-                },
-            }])
-        }
-        Expression::ObjectExpression(obj) => {
-            let mut props = vec![];
-            for p in obj.properties.iter_mut() {
-                if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
-                    if let ExtractResult::ExtractStyle(ref mut ret) = extract_style_from_expression(
-                        ast_builder,
-                        Some(&o.key.name().unwrap()),
-                        &mut o.value,
-                        level,
-                        selector,
-                    ) {
-                        props.append(ret);
+                            styles: vec![],
+                        }])
+                    } else {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                expression_to_code(expression).as_str(),
+                                selector.map(|s| s.into()),
+                            ),
+                        ))])
                     }
-                };
+                } else {
+                    ExtractResult::Maintain
+                }
             }
-            if props.is_empty() {
-                ExtractResult::Remove
-            } else {
-                ExtractResult::ExtractStyle(props)
+            Expression::Identifier(identifier) => {
+                if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
+                    ExtractResult::Maintain
+                } else if let Some(name) = name {
+                    if typo {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Expression {
+                            expression: ast_builder.expression_template_literal(
+                                SPAN,
+                                ast_builder.vec_from_array([
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        false,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom("typo-"),
+                                            cooked: None,
+                                        },
+                                    ),
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        true,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom(""),
+                                            cooked: None,
+                                        },
+                                    ),
+                                ]),
+                                ast_builder
+                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                            ),
+                            styles: vec![],
+                        }])
+                    } else {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                identifier.name.as_str(),
+                                selector.map(|s| s.into()),
+                            ),
+                        ))])
+                    }
+                } else {
+                    ExtractResult::Maintain
+                }
             }
+            Expression::LogicalExpression(logical) => {
+                let res = name.and_then(|name| {
+                    match extract_style_from_expression(
+                        ast_builder,
+                        Some(name),
+                        &mut logical.right,
+                        level,
+                        selector,
+                    ) {
+                        ExtractResult::ExtractStyle(styles) => {
+                            Some(Box::new(ExtractStyleProp::StaticArray(styles)))
+                        }
+                        _ => None,
+                    }
+                });
+                match logical.operator {
+                    LogicalOperator::Or => {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
+                            condition: logical.left.clone_in(ast_builder.allocator),
+                            consequent: None,
+                            alternate: res,
+                        }])
+                    }
+                    LogicalOperator::And => {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
+                            condition: logical.left.clone_in(ast_builder.allocator),
+                            consequent: res,
+                            alternate: None,
+                        }])
+                    }
+                    LogicalOperator::Coalesce => {
+                        ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
+                            condition: Expression::LogicalExpression(
+                                ast_builder.alloc_logical_expression(
+                                    SPAN,
+                                    Expression::BinaryExpression(
+                                        ast_builder.alloc_binary_expression(
+                                            SPAN,
+                                            logical.left.clone_in(ast_builder.allocator),
+                                            BinaryOperator::StrictInequality,
+                                            Expression::NullLiteral(
+                                                ast_builder.alloc_null_literal(SPAN),
+                                            ),
+                                        ),
+                                    ),
+                                    LogicalOperator::And,
+                                    Expression::BinaryExpression(
+                                        ast_builder.alloc_binary_expression(
+                                            SPAN,
+                                            logical.left.clone_in(ast_builder.allocator),
+                                            BinaryOperator::StrictInequality,
+                                            Expression::Identifier(
+                                                ast_builder
+                                                    .alloc_identifier_reference(SPAN, "undefined"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            consequent: None,
+                            alternate: res,
+                        }])
+                    }
+                }
+            }
+            Expression::ParenthesizedExpression(parenthesized) => extract_style_from_expression(
+                ast_builder,
+                name,
+                &mut parenthesized.expression,
+                level,
+                selector,
+            ),
+            Expression::ArrayExpression(array) => {
+                let mut props = vec![];
+
+                for (idx, element) in array.elements.iter_mut().enumerate() {
+                    if let ExtractResult::ExtractStyle(mut styles) = extract_style_from_expression(
+                        ast_builder,
+                        name,
+                        element.to_expression_mut(),
+                        idx as u8,
+                        selector,
+                    ) {
+                        props.append(&mut styles);
+                    }
+                }
+
+                if props.is_empty() {
+                    ExtractResult::Maintain
+                } else {
+                    ExtractResult::ExtractStyle(props)
+                }
+            }
+            Expression::ConditionalExpression(ref mut conditional) => {
+                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Conditional {
+                    condition: conditional.test.clone_in(ast_builder.allocator),
+                    consequent: if let ExtractResult::ExtractStyle(styles) =
+                        extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            &mut conditional.consequent,
+                            level,
+                            selector,
+                        ) {
+                        Some(Box::new(ExtractStyleProp::StaticArray(styles)))
+                    } else {
+                        None
+                    },
+                    alternate: if let ExtractResult::ExtractStyle(styles) =
+                        extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            &mut conditional.alternate,
+                            level,
+                            selector,
+                        ) {
+                        Some(Box::new(ExtractStyleProp::StaticArray(styles)))
+                    } else {
+                        None
+                    },
+                }])
+            }
+            Expression::ObjectExpression(obj) => {
+                let mut props = vec![];
+                for p in obj.properties.iter_mut() {
+                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                        if let ExtractResult::ExtractStyle(ref mut ret) =
+                            extract_style_from_expression(
+                                ast_builder,
+                                Some(&o.key.name().unwrap()),
+                                &mut o.value,
+                                level,
+                                selector,
+                            )
+                        {
+                            props.append(ret);
+                        }
+                    };
+                }
+                if props.is_empty() {
+                    ExtractResult::Remove
+                } else {
+                    ExtractResult::ExtractStyle(props)
+                }
+            }
+            // val if let Some(value) = get_number_by_literal_expression(val) => {}
+            _ => ExtractResult::Maintain,
         }
-        _ => ExtractResult::Maintain,
     }
 }
 
@@ -720,33 +742,43 @@ fn extract_style_from_member_expression<'a>(
 
 fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
     match expr {
-        Expression::NumericLiteral(num) => Some(num.value),
-        Expression::UnaryExpression(unary) => {
-            if let Expression::NumericLiteral(ref num) = unary.argument {
-                match unary.operator {
-                    UnaryOperator::UnaryNegation => Some(-num.value),
-                    UnaryOperator::UnaryPlus => Some(num.value),
-                    _ => None,
-                }
-            } else {
-                None
-            }
+        Expression::ParenthesizedExpression(parenthesized) => {
+            get_number_by_literal_expression(&parenthesized.expression)
         }
+        Expression::NumericLiteral(num) => Some(num.value),
+        Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
+            .and_then(|num| match unary.operator {
+                UnaryOperator::UnaryNegation => Some(-num),
+                UnaryOperator::UnaryPlus => Some(num),
+                _ => None,
+            }),
         _ => None,
     }
 }
 
 fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
-    match expr {
-        Expression::StringLiteral(str) => Some(str.value.as_str().to_string()),
-        Expression::TemplateLiteral(tmp) => {
-            if tmp.quasis.len() == 1 {
-                Some(tmp.quasis[0].value.raw.as_str().to_string())
-            } else {
-                None
+    get_number_by_literal_expression(expr)
+        .map(|num| num.to_string())
+        .or_else(|| match expr {
+            Expression::ParenthesizedExpression(parenthesized) => {
+                get_string_by_literal_expression(&parenthesized.expression)
             }
-        }
-        Expression::NumericLiteral(num) => Some(num.value.to_string()),
-        _ => None,
-    }
+            Expression::StringLiteral(str) => Some(str.value.as_str().to_string()),
+            Expression::TemplateLiteral(tmp) => {
+                let mut collect = vec![];
+                for (idx, q) in tmp.quasis.iter().enumerate() {
+                    collect.push(q.value.raw.to_string());
+                    if idx < tmp.expressions.len() {
+                        if let Some(value) = get_string_by_literal_expression(&tmp.expressions[idx])
+                        {
+                            collect.push(value);
+                        } else {
+                            return None;
+                        }
+                    }
+                }
+                Some(collect.join(""))
+            }
+            _ => None,
+        })
 }
