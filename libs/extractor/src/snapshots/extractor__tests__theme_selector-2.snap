@@ -1,0 +1,36 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box _hover={{bg:\"white\"}} _themeDark={{ _hover:{bg:\"black\"} }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "white",
+                level: 0,
+                selector: Some(
+                    Postfix(
+                        "hover",
+                    ),
+                ),
+                basic: false,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "black",
+                level: 0,
+                selector: Some(
+                    Dual(
+                        ":root[data-theme=dark]",
+                        "hover",
+                    ),
+                ),
+                basic: false,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1\" />;\n",
+}

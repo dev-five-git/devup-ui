@@ -188,6 +188,21 @@ impl StyleSheet {
                         .unwrap_or_else(|| self.theme.break_points.last().cloned().unwrap_or(0)),
                 )
             };
+            if !sorted_props.is_empty() {
+                let inner_css = sorted_props
+                    .into_iter()
+                    .map(ExtractStyle::extract)
+                    .collect::<Vec<String>>()
+                    .join("");
+                css.push_str(
+                    if let Some(break_point) = break_point {
+                        format!("\n@media (min-width:{}px){{{}}}", break_point, inner_css)
+                    } else {
+                        inner_css
+                    }
+                    .as_str(),
+                );
+            }
             for (media, props) in medias {
                 let inner_css = props
                     .into_iter()
@@ -202,22 +217,6 @@ impl StyleSheet {
                         )
                     } else {
                         format!("\n@media {}{{{}}}", media, inner_css.as_str())
-                    }
-                    .as_str(),
-                );
-            }
-
-            if !sorted_props.is_empty() {
-                let inner_css = sorted_props
-                    .into_iter()
-                    .map(ExtractStyle::extract)
-                    .collect::<Vec<String>>()
-                    .join("");
-                css.push_str(
-                    if let Some(break_point) = break_point {
-                        format!("\n@media (min-width:{}px){{{}}}", break_point, inner_css)
-                    } else {
-                        inner_css
                     }
                     .as_str(),
                 );
@@ -400,7 +399,7 @@ mod tests {
             "bg",
             0,
             "red",
-            Some(&StyleSelector::Dual("*".to_string(), "hover".to_string())),
+            Some(&StyleSelector::Prefix("*:hover".to_string())),
             false,
         );
         sheet.add_property(
@@ -411,6 +410,21 @@ mod tests {
             Some(&StyleSelector::from("groupFocusVisible")),
             false,
         );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&"themeDark:hover".into()),
+            false,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "bg", 0, "red", Some(&"wrong:hover".into()), false);
         assert_debug_snapshot!(sheet.create_css());
     }
 
@@ -453,6 +467,12 @@ mod tests {
 
         sheet.add_property("test", "mx", 1, "40px", Some(&"print".into()), false);
         sheet.add_property("test", "my", 1, "40px", Some(&"print".into()), false);
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("test", "mx", 0, "40px", Some(&"print".into()), false);
+        sheet.add_property("test", "my", 0, "40px", None, false);
+
         assert_debug_snapshot!(sheet.create_css());
     }
 

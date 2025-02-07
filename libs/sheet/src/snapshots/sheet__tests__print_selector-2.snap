@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: sheet.create_css()
+---
+".test{margin-top:40px;margin-bottom:40px;}\n@media print{.test{margin-left:40px;margin-right:40px;}}"

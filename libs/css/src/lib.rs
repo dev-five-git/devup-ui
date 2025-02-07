@@ -60,8 +60,21 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        if let Some(s) = value.strip_prefix("group") {
-            Dual("*[role=group]".to_string(), to_kebab_case(s))
+        if value.contains(":") {
+            let t: Vec<_> = value.split(":").collect();
+            if let Prefix(v) = t[0].into() {
+                Dual(v, t[1].to_string())
+            } else {
+                Postfix(t[1].to_string())
+            }
+        } else if let Some(s) = value.strip_prefix("group") {
+            let post = to_kebab_case(s);
+            Prefix(format!(
+                "{}{}{}",
+                "*[role=group]",
+                get_selector_separator(&post),
+                post
+            ))
         } else if let Some(s) = value.strip_prefix("theme") {
             // first character should lower case
             Prefix(format!(
@@ -95,15 +108,20 @@ impl Display for StyleSelector {
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            Postfix(postfix) => match get_selector_separator(postfix) {
-                SelectorSeparator::Single => format!(".{}:{}", class_name, postfix),
-                SelectorSeparator::Double => format!(".{}::{}", class_name, postfix),
-            },
+            Postfix(postfix) => format!(
+                ".{}{}{}",
+                class_name,
+                get_selector_separator(postfix),
+                postfix
+            ),
             Prefix(prefix) => format!("{} .{}", prefix, class_name),
-            Dual(prefix, postfix) => match get_selector_separator(postfix) {
-                SelectorSeparator::Single => format!("{}:{} .{}", prefix, postfix, class_name),
-                SelectorSeparator::Double => format!("{}::{} .{}", prefix, postfix, class_name),
-            },
+            Dual(prefix, postfix) => format!(
+                "{} .{}{}{}",
+                prefix,
+                class_name,
+                get_selector_separator(postfix),
+                postfix
+            ),
             Media(_) => format!(".{}", class_name),
         }
     } else {
@@ -114,6 +132,18 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
 pub enum SelectorSeparator {
     Single,
     Double,
+}
+impl Display for SelectorSeparator {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                SelectorSeparator::Single => ":",
+                SelectorSeparator::Double => "::",
+            }
+        )
+    }
 }
 
 static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
@@ -627,15 +657,23 @@ mod tests {
         );
         assert_eq!(
             StyleSelector::from("groupHover"),
-            Dual("*[role=group]".to_string(), "hover".to_string())
+            Prefix("*[role=group]:hover".to_string())
         );
         assert_eq!(
             StyleSelector::from("groupFocusVisible"),
-            Dual("*[role=group]".to_string(), "focus-visible".to_string())
+            Prefix("*[role=group]:focus-visible".to_string())
         );
         assert_eq!(
             StyleSelector::from("group1"),
-            Dual("*[role=group]".to_string(), "1".to_string())
+            Prefix("*[role=group]:1".to_string())
+        );
+
+        assert_eq!(
+            StyleSelector::from("themeDark:placeholder"),
+            Dual(
+                ":root[data-theme=dark]".to_string(),
+                "placeholder".to_string()
+            )
         );
 
         assert_eq!(Prefix(".cls".to_string()).to_string(), "-.cls-");
@@ -661,22 +699,21 @@ mod tests {
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&Dual(
-                    ":root[data-theme=dark]".to_string(),
-                    "hover".to_string()
-                )),
+                Some(&Prefix(":root[data-theme=dark]:hover".to_string(),)),
             ),
             ":root[data-theme=dark]:hover .cls"
         );
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&Dual(
-                    ":root[data-theme=dark]".to_string(),
-                    "placeholder".to_string()
-                )),
+                Some(&Prefix(":root[data-theme=dark]::placeholder".to_string())),
             ),
             ":root[data-theme=dark]::placeholder .cls"
+        );
+
+        assert_eq!(
+            merge_selector("cls", Some(&"themeDark:hover".into()),),
+            ":root[data-theme=dark] .cls:hover"
         );
     }
 }
