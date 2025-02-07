@@ -2,7 +2,7 @@
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 
 import { URL_PREFIX } from '../../constants'
 
@@ -38,6 +38,7 @@ export function SearchContent() {
         )
     }
   }, [query])
+  const reg = useMemo(() => new RegExp(`(${query})`, 'gi'), [query])
   if (!query) return
   const inner = data ? (
     <>
@@ -58,8 +59,22 @@ export function SearchContent() {
                 p="10px"
               >
                 <Text typography="textSbold">{item.title}</Text>
-                <Text color="$search" typography="caption">
-                  {item.text}
+                <Text color="$caption" typography="caption">
+                  {item.text
+                    .substring(0, 100)
+                    .split(reg)
+                    .map((part, idx) =>
+                      part.toLowerCase() === query.toLowerCase() ? (
+                        <Text key={idx} color="$search" fontWeight="bold">
+                          {part}
+                        </Text>
+                      ) : (
+                        <Text key={idx} as="span">
+                          {part}
+                        </Text>
+                      ),
+                    )}
+                  ...
                 </Text>
               </VStack>
             </Link>

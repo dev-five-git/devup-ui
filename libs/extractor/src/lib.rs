@@ -6,28 +6,20 @@ mod prop_modify_utils;
 mod style_extractor;
 mod utils;
 mod visit;
-
-use oxc_codegen::Codegen;
-use std::collections::BTreeMap;
-
 use crate::extract_style::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Expression;
 use oxc_ast::VisitMut;
+use oxc_codegen::Codegen;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
+use std::collections::BTreeMap;
 use std::error::Error;
-
-/// result of extracting style properties from props
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
     StaticArray(Vec<ExtractStyleProp<'a>>),
-    /// static + static ex) margin={test?"4px":"8px"} --> className={test?"margin-4px-0":"margin-8px-0"}
-    /// static + dynamic ex) margin={test?a:"8px"} --> className={test?"margin-0":"margin-8px-0"} style={{ "--margin-0": a }}
-    /// dynamic + dynamic ex) margin={test?a:b} --> className="margin-0" style={{ "--margin-0": test?a:b }}
-    /// issue case: dynamic + dynamic ex) margin={test?a:(b ? "8px": c)} --> className="margin-0" style={{ "--margin-0": test?a:(b ? "8px": c) }}
     Conditional {
         condition: Expression<'a>,
         consequent: Option<Box<ExtractStyleProp<'a>>>,
@@ -42,6 +34,7 @@ pub enum ExtractStyleProp<'a> {
         expression: Expression<'a>,
     },
 }
+
 impl ExtractStyleProp<'_> {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
@@ -338,6 +331,19 @@ mod tests {
             "test.tsx",
             r"import {Flex} from '@devup-ui/core'
         <Flex padding={1} margin={2} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Flex} from '@devup-ui/core'
+        <Flex padding={('-1')}/>
         ",
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
@@ -1427,6 +1433,100 @@ export {
         )
         .unwrap());
     }
+    #[test]
+    #[serial]
+    fn negative_props() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={-1} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={-a} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={-(1+a)} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={-1*a} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={-(1)} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={(-1)} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+        <Box zIndex={[(-1),-2, -(3)]} />
+        "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 
     #[test]
     #[serial]
@@ -1924,6 +2024,62 @@ import {Button} from '@devup/ui'
             "test.js",
             r#"import {Box} from '@devup-ui/core'
     <Box _themeDark={{ display:"none" }} _themeLight={{ display: "flex" }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn template_literal_props() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box bg={`${"red"}`} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box m={`${1}`} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box m={`${-1}`} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box m={`${1} ${2}`} />
             "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),
