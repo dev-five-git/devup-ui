@@ -74,10 +74,6 @@ pub fn extract_style_from_expression<'a>(
     level: u8,
     selector: Option<&str>,
 ) -> ExtractResult<'a> {
-    println!(
-        "extract_style_from_expression: {:?} {:?} {:?}",
-        selector, name, expression
-    );
     let mut typo = false;
 
     if name.is_none() && selector.is_none() {
@@ -262,19 +258,7 @@ pub fn extract_style_from_expression<'a>(
         }
         typo = name == "typography";
     }
-    if let Some(value) = get_number_by_literal_expression(expression) {
-        name.map(|name| {
-            ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Static(
-                ExtractStaticStyle::new(
-                    name,
-                    &value.to_string(),
-                    level,
-                    selector.map(|s| s.into()),
-                ),
-            ))])
-        })
-        .unwrap_or(ExtractResult::Maintain)
-    } else if let Some(value) = get_string_by_literal_expression(expression) {
+    if let Some(value) = get_string_by_literal_expression(expression) {
         name.map(|name| {
             ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(if typo {
                 Typography(value.as_str().to_string())

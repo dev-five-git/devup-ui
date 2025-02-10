@@ -77,10 +77,59 @@ fn gen_style<'a>(
             (None, None) => {
                 return vec![];
             }
-            (Some(c), None) | (None, Some(c)) => {
-                gen_style(ast_builder, c)
-                    .into_iter()
-                    .for_each(|p| properties.push(p));
+            (None, Some(c)) => {
+                gen_style(ast_builder, c).into_iter().for_each(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p {
+                        properties.push(ObjectPropertyKind::ObjectProperty(
+                            ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                Expression::ConditionalExpression(
+                                    ast_builder.alloc_conditional_expression(
+                                        SPAN,
+                                        condition.clone_in(ast_builder.allocator),
+                                        Expression::Identifier(
+                                            ast_builder
+                                                .alloc_identifier_reference(SPAN, "undefined"),
+                                        ),
+                                        p.value.clone_in(ast_builder.allocator),
+                                    ),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ),
+                        ))
+                    }
+                });
+            }
+            (Some(c), None) => {
+                gen_style(ast_builder, c).into_iter().for_each(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p {
+                        properties.push(ObjectPropertyKind::ObjectProperty(
+                            ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                Expression::ConditionalExpression(
+                                    ast_builder.alloc_conditional_expression(
+                                        SPAN,
+                                        condition.clone_in(ast_builder.allocator),
+                                        p.value.clone_in(ast_builder.allocator),
+                                        Expression::Identifier(
+                                            ast_builder
+                                                .alloc_identifier_reference(SPAN, "undefined"),
+                                        ),
+                                    ),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ),
+                        ))
+                    }
+                });
             }
             (Some(c), Some(a)) => {
                 let collect_c = gen_style(ast_builder, c);
