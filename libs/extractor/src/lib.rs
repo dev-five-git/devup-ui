@@ -499,6 +499,19 @@ mod tests {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box padding={Math.abs(5)} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]

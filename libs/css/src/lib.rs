@@ -731,4 +731,12 @@ mod tests {
             ":root[data-theme=dark] .cls:hover"
         );
     }
+
+    #[test]
+    fn test_set_class_map() {
+        let mut map = HashMap::new();
+        map.insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
+        set_class_map(map);
+        assert_eq!(get_class_map().len(), 1);
+    }
 }

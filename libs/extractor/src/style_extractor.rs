@@ -553,6 +553,16 @@ pub fn extract_style_from_expression<'a>(
                     ExtractResult::ExtractStyle(props)
                 }
             }
+            Expression::CallExpression(_) => {
+                ExtractResult::ExtractStyle(vec![ExtractStyleProp::Static(Dynamic(
+                    ExtractDynamicStyle::new(
+                        name.unwrap(),
+                        level,
+                        expression_to_code(expression).as_str(),
+                        selector.map(|s| s.into()),
+                    ),
+                ))])
+            }
             // val if let Some(value) = get_number_by_literal_expression(val) => {}
             _ => ExtractResult::Maintain,
         }
