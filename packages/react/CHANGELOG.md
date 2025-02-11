@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.25
+
+### Patch Changes
+
+- a3684c5: Add selectors
+
 ## 0.1.24
 
 ### Patch Changes

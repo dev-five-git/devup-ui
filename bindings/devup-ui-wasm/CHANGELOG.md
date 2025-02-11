@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.39
+
+### Patch Changes
+
+- b6997df: Add default value
+- a0fc823: Fix conditional style issue
+
 ## 0.1.38
 
 ### Patch Changes
