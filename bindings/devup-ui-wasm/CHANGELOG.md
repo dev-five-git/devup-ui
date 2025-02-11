@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.41
+
+### Patch Changes
+
+- 322e49b: Fix attribute selector issue
+
 ## 0.1.40
 
 ### Patch Changes
