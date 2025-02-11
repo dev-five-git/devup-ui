@@ -437,6 +437,17 @@ mod tests {
             false,
         );
         assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&"&[disabled='true']".into()),
+            false,
+        );
+        assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
