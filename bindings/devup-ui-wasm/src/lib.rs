@@ -235,7 +235,7 @@ mod tests {
 
         assert_eq!(
             get_css().unwrap(),
-            ":root{--primary:#FFF;}\n:root[data-theme=dark]{--primary:#000;}\n"
+            ":root{color-scheme:light;--primary:#FFF;}\n:root[data-theme=dark]{color-scheme:dark;--primary:#000;}\n"
         );
     }
 

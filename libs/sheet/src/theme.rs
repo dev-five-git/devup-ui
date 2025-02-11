@@ -152,16 +152,29 @@ impl Theme {
                 });
                 col
             };
+            let single_theme = entries.len() <= 1;
             for (theme_name, theme_properties) in entries {
                 if let Some(theme_key) = if *theme_name == *default_theme_key {
                     None
                 } else {
                     Some(theme_name)
                 } {
-                    theme_declaration
-                        .push_str(format!(":root[data-theme={}]{{", theme_key).as_str());
+                    theme_declaration.push_str(
+                        format!(":root[data-theme={}]{{{}", theme_key, "color-scheme:dark;")
+                            .as_str(),
+                    );
                 } else {
-                    theme_declaration.push_str(":root{");
+                    theme_declaration.push_str(
+                        format!(
+                            ":root{{{}",
+                            if single_theme {
+                                ""
+                            } else {
+                                "color-scheme:light;"
+                            }
+                        )
+                        .as_str(),
+                    );
                 }
                 for (prop, value) in theme_properties.0.iter() {
                     theme_declaration.push_str(format!("--{}:{};", prop, value).as_str());
@@ -278,7 +291,7 @@ mod tests {
         let css = theme.to_css();
         assert_eq!(
             css,
-            ":root{--primary:#000;}\n:root[data-theme=dark]{--primary:#fff;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
+            ":root{color-scheme:light;--primary:#000;}\n:root[data-theme=dark]{color-scheme:dark;--primary:#fff;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
         );
 
         assert_eq!(Theme::default().to_css(), "");
@@ -379,6 +392,17 @@ mod tests {
 
         theme.add_color_theme(
             "c",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
             ColorTheme({
                 let mut map = HashMap::new();
                 map.insert("primary".to_string(), "#000".to_string());
