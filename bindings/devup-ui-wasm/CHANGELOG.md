@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.42
+
+### Patch Changes
+
+- 6db4317: Add color schema
+
 ## 0.1.41
 
 ### Patch Changes
