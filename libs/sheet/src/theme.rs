@@ -91,6 +91,7 @@ pub struct Theme {
     pub colors: BTreeMap<String, ColorTheme>,
     #[serde(default = "default_break_points")]
     pub break_points: Vec<u16>,
+    #[serde(default)]
     pub typography: BTreeMap<String, Typographies>,
 }
 

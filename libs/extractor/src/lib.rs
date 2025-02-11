@@ -662,6 +662,32 @@ mod tests {
             }
         )
         .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? `${a}px` : undefined} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? null : `${b}px`} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
     }
 
     #[test]
@@ -2109,6 +2135,61 @@ import {Button} from '@devup/ui'
             "test.js",
             r#"import {Box} from '@devup-ui/core'
     <Box _hover={{bg:"white"}} _themeDark={{ _hover:{bg:"black"} }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn custom_selector() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "&[aria-diabled='true']": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "*[aria-diabled='true'] &:hover": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
             "#,
             ExtractOption {
                 package: "@devup-ui/core".to_string(),

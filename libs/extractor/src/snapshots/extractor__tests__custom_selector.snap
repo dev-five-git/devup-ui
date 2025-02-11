@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box selectors={{\n    \"&[aria-diabled='true']\": {\n      opacity: 0.5\n      }\n    }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: "0.5",
+                level: 0,
+                selector: Some(
+                    Postfix(
+                        "[aria-diabled='true']",
+                    ),
+                ),
+                basic: false,
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0\" />;\n",
+}
