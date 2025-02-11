@@ -733,6 +733,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_set_class_map() {
         let mut map = HashMap::new();
         map.insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
