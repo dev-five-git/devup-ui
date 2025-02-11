@@ -239,6 +239,28 @@ pub fn extract_style_from_expression<'a>(
             //     _ => ExtractResult::Remove,
             // };
         }
+        if name == "selectors" {
+            if let Expression::ObjectExpression(obj) = expression {
+                let mut props = vec![];
+                for p in obj.properties.iter_mut() {
+                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                        let name = o.key.name().unwrap().to_string();
+                        if let ExtractResult::ExtractStyle(mut styles) =
+                            extract_style_from_expression(
+                                ast_builder,
+                                None,
+                                &mut o.value,
+                                level,
+                                Some(name.as_str()),
+                            )
+                        {
+                            props.append(&mut styles);
+                        }
+                    }
+                }
+                return ExtractResult::ExtractStyle(props);
+            }
+        }
 
         if let Some(new_selector) = name.strip_prefix("_") {
             return extract_style_from_expression(
@@ -248,7 +270,7 @@ pub fn extract_style_from_expression<'a>(
                 level,
                 Some(
                     if let Some(selector) = selector {
-                        format!("{}:{}", selector, new_selector)
+                        format!("{}&{}", selector, new_selector)
                     } else {
                         new_selector.to_string()
                     }

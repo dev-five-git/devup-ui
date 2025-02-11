@@ -1,4 +1,5 @@
 .idea
+cobertura.xml
 build
 dist
 node_modules

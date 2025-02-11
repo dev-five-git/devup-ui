@@ -60,10 +60,14 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        if value.contains(":") {
-            let t: Vec<_> = value.split(":").collect();
+        if value.contains("&") {
+            let t: Vec<_> = value.split("&").collect();
             if let Prefix(v) = t[0].into() {
-                Dual(v, t[1].to_string())
+                if t[1].is_empty() {
+                    Prefix(v)
+                } else {
+                    Dual(v, t[1].to_string())
+                }
             } else {
                 Postfix(t[1].to_string())
             }
@@ -84,6 +88,8 @@ impl From<&str> for StyleSelector {
             ))
         } else if value == "print" {
             Media("print".to_string())
+        } else if value.ends_with(" ") {
+            Prefix(value.trim().to_string())
         } else {
             Postfix(to_kebab_case(value))
         }
@@ -132,6 +138,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
 pub enum SelectorSeparator {
     Single,
     Double,
+    None,
 }
 impl Display for SelectorSeparator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -141,6 +148,7 @@ impl Display for SelectorSeparator {
             match self {
                 SelectorSeparator::Single => ":",
                 SelectorSeparator::Double => "::",
+                SelectorSeparator::None => "",
             }
         )
     }
@@ -166,7 +174,9 @@ static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
 });
 
 pub fn get_selector_separator(key: &str) -> SelectorSeparator {
-    if DOUBLE_SEPARATOR.contains(key) {
+    if key.starts_with(":") || key.is_empty() {
+        SelectorSeparator::None
+    } else if DOUBLE_SEPARATOR.contains(key) {
         SelectorSeparator::Double
     } else {
         SelectorSeparator::Single
@@ -669,7 +679,7 @@ mod tests {
         );
 
         assert_eq!(
-            StyleSelector::from("themeDark:placeholder"),
+            StyleSelector::from("themeDark&placeholder"),
             Dual(
                 ":root[data-theme=dark]".to_string(),
                 "placeholder".to_string()
@@ -682,6 +692,11 @@ mod tests {
         assert_eq!(
             StyleSelector::from("themeLight"),
             Prefix(":root[data-theme=light]".to_string())
+        );
+
+        assert_eq!(
+            StyleSelector::from("*[aria=disabled='true'] &:hover"),
+            Dual("*[aria=disabled='true']".to_string(), ":hover".to_string())
         );
     }
 
@@ -712,7 +727,7 @@ mod tests {
         );
 
         assert_eq!(
-            merge_selector("cls", Some(&"themeDark:hover".into()),),
+            merge_selector("cls", Some(&"themeDark&hover".into()),),
             ":root[data-theme=dark] .cls:hover"
         );
     }

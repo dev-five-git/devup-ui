@@ -2143,4 +2143,59 @@ import {Button} from '@devup/ui'
         )
         .unwrap());
     }
+
+    #[test]
+    #[serial]
+    fn custom_selector() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "&[aria-diabled='true']": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "*[aria-diabled='true'] &:hover": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 }

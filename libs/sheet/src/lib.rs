@@ -418,13 +418,24 @@ mod tests {
             "bg",
             0,
             "red",
-            Some(&"themeDark:hover".into()),
+            Some(&"themeDark&hover".into()),
             false,
         );
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "bg", 0, "red", Some(&"wrong:hover".into()), false);
+        sheet.add_property("test", "bg", 0, "red", Some(&"wrong&hover".into()), false);
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&"*[disabled='true'] &:hover".into()),
+            false,
+        );
         assert_debug_snapshot!(sheet.create_css());
     }
 

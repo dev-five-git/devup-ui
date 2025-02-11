@@ -66,4 +66,6 @@ export interface DevupSelectorProps {
   _viewTransitionImagePair?: DevupCommonProps
   _viewTransitionNew?: DevupCommonProps
   _viewTransitionOld?: DevupCommonProps
+
+  selectors?: Record<string, DevupCommonProps>
 }
