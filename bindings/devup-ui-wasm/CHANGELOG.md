@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.40
+
+### Patch Changes
+
+- d6e4605: Add call case
+
 ## 0.1.39
 
 ### Patch Changes
