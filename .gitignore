@@ -12,3 +12,5 @@ tsconfig.tsbuildinfo
 codecov
 codecov.*
 codecov.*.*
+lcov.info
+tarpaulin-report.html

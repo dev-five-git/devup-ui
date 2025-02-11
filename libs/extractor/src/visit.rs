@@ -94,39 +94,40 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             None,
                         ));
                     } else if call.arguments.len() == 1 {
-                        match extract_style_from_expression(
+                        if let ExtractResult::Extract {
+                            styles: Some(styles),
+                            ..
+                        } = extract_style_from_expression(
                             &self.ast,
                             None,
                             call.arguments[0].to_expression_mut(),
                             0,
                             None,
                         ) {
-                            ExtractResult::ExtractStyle(styles)
-                            | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
-                                let class_name = gen_class_names(&self.ast, &styles);
-                                let mut styles = styles
-                                    .into_iter()
-                                    .flat_map(|ex| ex.extract())
-                                    .collect::<Vec<_>>();
+                            // css can not reachable
+                            // ExtractResult::ExtractStyleWithChangeTag(styles, _)
+                            let class_name = gen_class_names(&self.ast, &styles);
+                            let mut styles = styles
+                                .into_iter()
+                                .flat_map(|ex| ex.extract())
+                                .collect::<Vec<_>>();
 
-                                self.styles.append(&mut styles);
-                                if let Some(cls) = class_name {
-                                    *it = cls;
-                                } else {
-                                    *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                                        SPAN,
-                                        "".to_string(),
-                                        None,
-                                    ));
-                                }
-                            }
-                            _ => {
+                            self.styles.append(&mut styles);
+                            if let Some(cls) = class_name {
+                                *it = cls;
+                            } else {
                                 *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                                     SPAN,
                                     "".to_string(),
                                     None,
                                 ));
                             }
+                        } else {
+                            *it = Expression::StringLiteral(self.ast.alloc_string_literal(
+                                SPAN,
+                                "".to_string(),
+                                None,
+                            ));
                         }
                     }
                 }
@@ -199,23 +200,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             None,
                         ));
                         let mut props_styles = vec![];
-                        match extract_style_from_expression(
-                            &self.ast,
-                            None,
-                            it.arguments[1].to_expression_mut(),
-                            0,
-                            None,
-                        ) {
-                            ExtractResult::ExtractStyle(mut styles) => {
-                                props_styles.append(&mut styles);
-                            }
-                            ExtractResult::ExtractStyleWithChangeTag(mut styles, t) => {
-                                tag = t;
-                                props_styles.append(&mut styles);
-                            }
-                            ExtractResult::Maintain => {}
-                            ExtractResult::Remove => {}
-                            ExtractResult::ChangeTag(t) => {
+                        if let ExtractResult::Extract { styles, tag: _tag } =
+                            extract_style_from_expression(
+                                &self.ast,
+                                None,
+                                it.arguments[1].to_expression_mut(),
+                                0,
+                                None,
+                            )
+                        {
+                            styles.into_iter().for_each(|mut ex| {
+                                props_styles.append(&mut ex);
+                            });
+                            if let Some(t) = _tag {
                                 tag = t;
                             }
                         }
@@ -270,20 +267,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if let Some(at) = &mut attr.value {
                             rm = match extract_style_from_jsx_attr(&self.ast, &name, at, None) {
                                 ExtractResult::Maintain => false,
-                                ExtractResult::Remove => true,
-                                ExtractResult::ExtractStyle(mut styles) => {
-                                    styles.reverse();
-                                    props_styles.append(&mut styles);
-                                    true
-                                }
-                                ExtractResult::ChangeTag(tag) => {
-                                    tag_name = tag;
-                                    true
-                                }
-                                ExtractResult::ExtractStyleWithChangeTag(mut styles, tag) => {
-                                    styles.reverse();
-                                    props_styles.append(&mut styles);
-                                    tag_name = tag;
+                                ExtractResult::Extract { styles, tag } => {
+                                    styles.into_iter().for_each(|mut ex| {
+                                        ex.reverse();
+                                        props_styles.append(&mut ex);
+                                    });
+                                    if let Some(t) = tag {
+                                        tag_name = t;
+                                    }
                                     true
                                 }
                             }
