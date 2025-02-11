@@ -94,39 +94,37 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             None,
                         ));
                     } else if call.arguments.len() == 1 {
-                        match extract_style_from_expression(
+                        if let ExtractResult::ExtractStyle(styles) = extract_style_from_expression(
                             &self.ast,
                             None,
                             call.arguments[0].to_expression_mut(),
                             0,
                             None,
                         ) {
-                            ExtractResult::ExtractStyle(styles)
-                            | ExtractResult::ExtractStyleWithChangeTag(styles, _) => {
-                                let class_name = gen_class_names(&self.ast, &styles);
-                                let mut styles = styles
-                                    .into_iter()
-                                    .flat_map(|ex| ex.extract())
-                                    .collect::<Vec<_>>();
+                            // css can not reachable
+                            // ExtractResult::ExtractStyleWithChangeTag(styles, _)
+                            let class_name = gen_class_names(&self.ast, &styles);
+                            let mut styles = styles
+                                .into_iter()
+                                .flat_map(|ex| ex.extract())
+                                .collect::<Vec<_>>();
 
-                                self.styles.append(&mut styles);
-                                if let Some(cls) = class_name {
-                                    *it = cls;
-                                } else {
-                                    *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                                        SPAN,
-                                        "".to_string(),
-                                        None,
-                                    ));
-                                }
-                            }
-                            _ => {
+                            self.styles.append(&mut styles);
+                            if let Some(cls) = class_name {
+                                *it = cls;
+                            } else {
                                 *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                                     SPAN,
                                     "".to_string(),
                                     None,
                                 ));
                             }
+                        } else {
+                            *it = Expression::StringLiteral(self.ast.alloc_string_literal(
+                                SPAN,
+                                "".to_string(),
+                                None,
+                            ));
                         }
                     }
                 }
