@@ -174,7 +174,7 @@ static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
 });
 
 pub fn get_selector_separator(key: &str) -> SelectorSeparator {
-    if key.starts_with(":") || key.is_empty() {
+    if key.starts_with(":") || key.is_empty() || key.starts_with("[") {
         SelectorSeparator::None
     } else if DOUBLE_SEPARATOR.contains(key) {
         SelectorSeparator::Double
