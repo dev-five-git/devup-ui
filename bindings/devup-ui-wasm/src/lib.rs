@@ -82,24 +82,21 @@ impl Output {
             return None;
         }
 
-        log_str(&format!("css: {:?}", sheet.properties));
-        log_str(&sheet.create_css());
         Some(sheet.create_css())
     }
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    *sheet = serde_wasm_bindgen::from_value(sheet_object)
+    *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
         .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 pub fn export_sheet() -> Result<String, JsValue> {
-    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    serde_json::to_string(&*sheet).map_err(|e| JsValue::from_str(e.to_string().as_str()))
+    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap())
+        .map_err(|e| JsValue::from_str(e.to_string().as_str()))
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
