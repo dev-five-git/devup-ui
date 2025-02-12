@@ -10,7 +10,7 @@ ExtractOutput {
                 value: "4px",
                 level: 1,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -19,7 +19,7 @@ ExtractOutput {
                 value: "5px",
                 level: 2,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

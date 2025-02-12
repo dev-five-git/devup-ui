@@ -1,4 +1,3 @@
-use crate::StyleSelector::{Dual, Media, Postfix, Prefix};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -10,20 +9,18 @@ use std::sync::Mutex;
 
 static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    map.insert("disabled".to_string(), 5);
-    map.insert("selected".to_string(), 4);
-    map.insert("active".to_string(), 3);
-    map.insert("focus".to_string(), 2);
-    map.insert("hover".to_string(), 1);
+    map.insert("&:disabled".to_string(), 5);
+    map.insert("&:selected".to_string(), 4);
+    map.insert("&:active".to_string(), 3);
+    map.insert("&:focus".to_string(), 2);
+    map.insert("&:hover".to_string(), 1);
     map
 });
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
-    Postfix(String),
-    Prefix(String),
     Media(String),
-    Dual(String, String),
+    Selector(String),
 }
 
 impl PartialOrd for StyleSelector {
@@ -35,25 +32,17 @@ impl PartialOrd for StyleSelector {
 impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Media(a), Media(b)) => a.cmp(b),
-            (Media(_), _) => Ordering::Less,
-            (_, Media(_)) => Ordering::Greater,
-            (Postfix(a), Postfix(b)) => SELECTOR_ORDER_MAP
+            (StyleSelector::Media(a), StyleSelector::Media(b)) => a.cmp(b),
+            (StyleSelector::Selector(a), StyleSelector::Selector(b)) => SELECTOR_ORDER_MAP
                 .get(a)
-                .unwrap_or(&0)
-                .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0)),
-            (Prefix(a), Prefix(b)) => a.cmp(b),
-            (Dual(p1, a), Dual(p2, b)) => match p1.cmp(p2) {
-                Ordering::Equal => SELECTOR_ORDER_MAP
-                    .get(a)
-                    .unwrap_or(&0)
-                    .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(&0)),
-                x => x,
-            },
-            (Postfix(_), _) => Ordering::Less,
-            (Prefix(_), Postfix(_)) => Ordering::Greater,
-            (Prefix(_), Dual(_, _)) => Ordering::Less,
-            (Dual(_, _), _) => Ordering::Greater,
+                .unwrap_or(if a.starts_with("&") { &0 } else { &99 })
+                .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(if b.starts_with("&") {
+                    &0
+                } else {
+                    &99
+                })),
+            (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
+            (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
         }
     }
 }
@@ -61,38 +50,43 @@ impl Ord for StyleSelector {
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
         if value.contains("&") {
-            let t: Vec<_> = value.split("&").collect();
-            if let Prefix(v) = t[0].into() {
-                if t[1].is_empty() {
-                    Prefix(v)
-                } else {
-                    Dual(v, t[1].to_string())
-                }
-            } else {
-                Postfix(t[1].to_string())
-            }
+            StyleSelector::Selector(value.to_string())
         } else if let Some(s) = value.strip_prefix("group") {
             let post = to_kebab_case(s);
-            Prefix(format!(
-                "{}{}{}",
+            StyleSelector::Selector(format!(
+                "{}{}{} &",
                 "*[role=group]",
                 get_selector_separator(&post),
                 post
             ))
         } else if let Some(s) = value.strip_prefix("theme") {
             // first character should lower case
-            Prefix(format!(
-                ":root[data-theme={}{}]",
+            StyleSelector::Selector(format!(
+                ":root[data-theme={}{}] &",
                 s.chars().next().unwrap().to_ascii_lowercase(),
                 &s[1..]
             ))
         } else if value == "print" {
-            Media("print".to_string())
+            StyleSelector::Media("print".to_string())
         } else if value.ends_with(" ") {
-            Prefix(value.trim().to_string())
+            StyleSelector::Selector(format!("{} &", value.trim()))
         } else {
-            Postfix(to_kebab_case(value))
+            let post = to_kebab_case(value);
+
+            StyleSelector::Selector(format!("&{}{}", get_selector_separator(&post), post))
         }
+    }
+}
+
+impl From<[&str; 2]> for StyleSelector {
+    fn from(value: [&str; 2]) -> Self {
+        let post = to_kebab_case(value[1]);
+        StyleSelector::Selector(format!(
+            "{}{}{}",
+            StyleSelector::from(value[0]),
+            get_selector_separator(&post),
+            post
+        ))
     }
 }
 
@@ -102,10 +96,8 @@ impl Display for StyleSelector {
             f,
             "{}",
             match self {
-                Postfix(value) => format!("-{}", value),
-                Prefix(value) => format!("-{}-", value),
-                Dual(prefix, postfix) => format!("-{}-{}", prefix, postfix),
-                Media(value) => format!("@{}", value),
+                StyleSelector::Selector(value) => value.to_string(),
+                StyleSelector::Media(value) => format!("@{}", value),
             }
         )
     }
@@ -114,21 +106,8 @@ impl Display for StyleSelector {
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            Postfix(postfix) => format!(
-                ".{}{}{}",
-                class_name,
-                get_selector_separator(postfix),
-                postfix
-            ),
-            Prefix(prefix) => format!("{} .{}", prefix, class_name),
-            Dual(prefix, postfix) => format!(
-                "{} .{}{}{}",
-                prefix,
-                class_name,
-                get_selector_separator(postfix),
-                postfix
-            ),
-            Media(_) => format!(".{}", class_name),
+            StyleSelector::Selector(value) => value.replace("&", &format!(".{}", class_name)),
+            StyleSelector::Media(_) => format!(".{}", class_name),
         }
     } else {
         format!(".{}", class_name)
@@ -346,13 +325,15 @@ pub fn sheet_to_classname(
     level: u8,
     value: Option<&str>,
     selector: Option<&str>,
+    style_order: Option<u8>,
 ) -> String {
     let key = format!(
-        "{}-{}-{}-{}",
+        "{}-{}-{}-{}-{}",
         property.trim(),
         level,
         F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
-        selector.unwrap_or("").trim()
+        selector.unwrap_or("").trim(),
+        style_order.unwrap_or(255)
     );
     let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
     map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
@@ -408,40 +389,53 @@ mod tests {
     #[serial]
     fn test_sheet_to_classname() {
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("background", 0, Some("hover"), None),
+            sheet_to_classname("background", 0, Some("hover"), None, None),
             "d1"
         );
-        assert_eq!(sheet_to_classname("background", 1, None, None), "d2");
+        assert_eq!(sheet_to_classname("background", 1, None, None, None), "d2");
         assert_eq!(
-            sheet_to_classname("background", 1, Some("hover"), None),
+            sheet_to_classname("background", 1, Some("hover"), None, None),
             "d3"
         );
 
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
-        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
-        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("  background  ", 0, Some("  red  "), None),
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
             "d1"
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None),
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
             "d2"
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
             "d2"
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)-"), Some(&2));
+            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)--255"), Some(&2));
         }
+
+        reset_class_map();
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, Some(1)),
+            "d1"
+        );
     }
 
     #[test]
@@ -660,43 +654,40 @@ mod tests {
 
     #[test]
     fn test_style_selector() {
-        assert_eq!(StyleSelector::from("hover"), Postfix("hover".to_string()));
+        assert_eq!(
+            StyleSelector::from("hover"),
+            StyleSelector::Selector("&:hover".to_string())
+        );
         assert_eq!(
             StyleSelector::from("focusVisible"),
-            Postfix("focus-visible".to_string())
+            StyleSelector::Selector("&:focus-visible".to_string())
         );
         assert_eq!(
             StyleSelector::from("groupHover"),
-            Prefix("*[role=group]:hover".to_string())
+            StyleSelector::Selector("*[role=group]:hover &".to_string())
         );
         assert_eq!(
             StyleSelector::from("groupFocusVisible"),
-            Prefix("*[role=group]:focus-visible".to_string())
+            StyleSelector::Selector("*[role=group]:focus-visible &".to_string())
         );
         assert_eq!(
             StyleSelector::from("group1"),
-            Prefix("*[role=group]:1".to_string())
+            StyleSelector::Selector("*[role=group]:1 &".to_string())
         );
 
         assert_eq!(
-            StyleSelector::from("themeDark&placeholder"),
-            Dual(
-                ":root[data-theme=dark]".to_string(),
-                "placeholder".to_string()
-            )
+            StyleSelector::from(["themeDark", "placeholder"]),
+            StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string())
         );
-
-        assert_eq!(Prefix(".cls".to_string()).to_string(), "-.cls-");
-        assert_eq!(Postfix(".cls".to_string()).to_string(), "-.cls");
 
         assert_eq!(
             StyleSelector::from("themeLight"),
-            Prefix(":root[data-theme=light]".to_string())
+            StyleSelector::Selector(":root[data-theme=light] &".to_string())
         );
 
         assert_eq!(
             StyleSelector::from("*[aria=disabled='true'] &:hover"),
-            Dual("*[aria=disabled='true']".to_string(), ":hover".to_string())
+            StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string())
         );
     }
 
@@ -714,20 +705,24 @@ mod tests {
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&Prefix(":root[data-theme=dark]:hover".to_string(),)),
+                Some(&StyleSelector::Selector(
+                    ":root[data-theme=dark]:hover &".to_string(),
+                )),
             ),
             ":root[data-theme=dark]:hover .cls"
         );
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&Prefix(":root[data-theme=dark]::placeholder".to_string())),
+                Some(&StyleSelector::Selector(
+                    ":root[data-theme=dark]::placeholder &".to_string()
+                )),
             ),
             ":root[data-theme=dark]::placeholder .cls"
         );
 
         assert_eq!(
-            merge_selector("cls", Some(&"themeDark&hover".into()),),
+            merge_selector("cls", Some(&["themeDark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
         );
     }

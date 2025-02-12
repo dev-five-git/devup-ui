@@ -10,7 +10,7 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

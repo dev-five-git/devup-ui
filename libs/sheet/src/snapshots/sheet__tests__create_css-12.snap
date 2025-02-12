@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: sheet.create_css()
+---
+".test[disabled='true'], .test[disabled='true']{background:red}"

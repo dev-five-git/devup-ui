@@ -14,7 +14,8 @@ use oxc_span::SPAN;
 pub fn modify_prop_object<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<ObjectPropertyKind<'a>>,
-    styles: &[ExtractStyleProp<'a>],
+    styles: &mut [ExtractStyleProp<'a>],
+    style_order: Option<u8>,
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -38,7 +39,7 @@ pub fn modify_prop_object<'a>(
     }
 
     // should modify class name prop
-    if let Some(ex) = gen_class_names(ast_builder, styles) {
+    if let Some(ex) = gen_class_names(ast_builder, styles, style_order) {
         if let Some(pr) = if let Some(class_name_prop) = class_name_prop {
             merge_expression_for_class_name(
                 ast_builder,
@@ -117,7 +118,8 @@ pub fn modify_prop_object<'a>(
 pub fn modify_props<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<JSXAttributeItem<'a>>,
-    styles: &[ExtractStyleProp<'a>],
+    styles: &mut [ExtractStyleProp<'a>],
+    style_order: Option<u8>,
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -141,7 +143,7 @@ pub fn modify_props<'a>(
     }
 
     // should modify class name prop
-    if let Some(ex) = gen_class_names(ast_builder, styles) {
+    if let Some(ex) = gen_class_names(ast_builder, styles, style_order) {
         let mut attr = if let Some(class_name_prop) = class_name_prop {
             class_name_prop
         } else {

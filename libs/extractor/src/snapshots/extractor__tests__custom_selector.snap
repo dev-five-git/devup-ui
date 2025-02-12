@@ -10,11 +10,11 @@ ExtractOutput {
                 value: "0.5",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "[aria-diabled='true']",
+                    Selector(
+                        "&[aria-diabled='true']",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

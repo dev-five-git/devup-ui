@@ -1,0 +1,71 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "extract(\"test.mjs\",\nr#\"import { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nimport { Box as o, Text as t, Flex as i } from \"@devup-ui/react\";\nfunction c() {\n  return  r(\"div\", { children: [\n     e(\n      o,\n      {\n        _hover: {\n          bg: \"blue\"\n        },\n        bg: \"$text\",\n        color: \"red\",\n        children: \"hello\",\n        styleOrder: 10\n      }\n    ),\n     e(t, { typography: \"header\", children: \"typo\", styleOrder:20 }),\n     e(i, { as: \"section\", mt: 2, children: \"section\",styleOrder:30 })\n  ] });\n}\nexport {\n  c as Lib\n};\"#,\nExtractOption\n{ package: \"@devup-ui/react\".to_string(), css_file: None }).unwrap()"
+---
+ExtractOutput {
+    styles: [
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: Some(
+                    10,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "$text",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    10,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    10,
+                ),
+            },
+        ),
+        Typography(
+            "header",
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginTop",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    30,
+                ),
+            },
+        ),
+    ],
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn r(\"div\", { children: [\n\t\te(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"d0 d1 d2\"\n\t\t}),\n\t\te(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\te(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d3 d4\"\n\t\t})\n\t] });\n}\nexport { c as Lib };\n",
+}

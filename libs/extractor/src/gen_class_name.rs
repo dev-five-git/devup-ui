@@ -9,13 +9,14 @@ use oxc_span::SPAN;
 
 pub fn gen_class_names<'a>(
     ast_builder: &AstBuilder<'a>,
-    style_props: &[ExtractStyleProp<'a>],
+    style_props: &mut [ExtractStyleProp<'a>],
+    style_order: Option<u8>,
 ) -> Option<Expression<'a>> {
     merge_expression_for_class_name(
         ast_builder,
         style_props
-            .iter()
-            .filter_map(|st| gen_class_name(ast_builder, st))
+            .iter_mut()
+            .filter_map(|st| gen_class_name(ast_builder, st, style_order))
             .rev()
             .collect(),
     )
@@ -23,42 +24,50 @@ pub fn gen_class_names<'a>(
 
 fn gen_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
-    style_prop: &ExtractStyleProp<'a>,
+    style_prop: &mut ExtractStyleProp<'a>,
+    style_order: Option<u8>,
 ) -> Option<Expression<'a>> {
     match style_prop {
-        ExtractStyleProp::Static(st) => Some(Expression::StringLiteral(
-            ast_builder.alloc_string_literal(
-                SPAN,
-                (match st.extract() {
-                    StyleProperty::ClassName(cls) => cls,
-                    StyleProperty::Variable { class_name, .. } => class_name,
-                })
-                .as_str(),
-                None,
-            ),
-        )),
-        ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
+        ExtractStyleProp::Static(ref mut st) => {
+            if let Some(style_order) = style_order {
+                st.set_style_order(style_order);
+            }
+            let target = st.extract();
+
+            Some(Expression::StringLiteral(
+                ast_builder.alloc_string_literal(
+                    SPAN,
+                    (match target {
+                        StyleProperty::ClassName(cls) => cls,
+                        StyleProperty::Variable { class_name, .. } => class_name,
+                    })
+                    .as_str(),
+                    None,
+                ),
+            ))
+        }
+        ExtractStyleProp::StaticArray(ref mut res) => merge_expression_for_class_name(
             ast_builder,
-            res.iter()
-                .filter_map(|st| gen_class_name(ast_builder, st))
+            res.iter_mut()
+                .filter_map(|st| gen_class_name(ast_builder, st, style_order))
                 .collect(),
         ),
         ExtractStyleProp::Conditional {
-            condition,
-            consequent,
-            alternate,
+            ref condition,
+            ref mut consequent,
+            ref mut alternate,
             ..
         } => {
             let consequent = consequent
-                .as_ref()
-                .and_then(|con| gen_class_name(ast_builder, con))
+                .as_mut()
+                .and_then(|ref mut con| gen_class_name(ast_builder, con.as_mut(), style_order))
                 .unwrap_or_else(|| {
                     Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
                 });
 
             let alternate = alternate
-                .as_ref()
-                .and_then(|alt| gen_class_name(ast_builder, alt))
+                .as_mut()
+                .and_then(|ref mut alt| gen_class_name(ast_builder, alt, style_order))
                 .unwrap_or_else(|| {
                     Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
                 });
@@ -83,8 +92,8 @@ fn gen_class_name<'a>(
                 SPAN,
                 Expression::ObjectExpression(ast_builder.alloc_object_expression(
                     SPAN,
-                    ast_builder.vec_from_iter(map.iter().filter_map(|(key, value)| {
-                        gen_class_name(ast_builder, value).map(|expr| {
+                    ast_builder.vec_from_iter(map.iter_mut().filter_map(|(key, value)| {
+                        gen_class_name(ast_builder, value.as_mut(), style_order).map(|expr| {
                             ObjectPropertyKind::ObjectProperty(ast_builder.alloc_object_property(
                                 SPAN,
                                 PropertyKind::Init,

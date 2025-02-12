@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: sheet.create_css()
 ---
-".test:hover{background:red}"
+".test:wrong:hover{background:red}"

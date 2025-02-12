@@ -10,6 +10,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "SOME_VAR[idx]",
                 selector: None,
+                style_order: None,
             },
         ),
     ],

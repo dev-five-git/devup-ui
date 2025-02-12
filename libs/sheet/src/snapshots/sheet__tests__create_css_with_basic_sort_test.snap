@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: sheet.create_css()
 ---
-"\n@media (min-width:480px){.test{background-color:red}.test{background:some}}"
+"\n@media (min-width:480px){.test{background-color:red}}\n@media (min-width:480px){.test{background:some}}"

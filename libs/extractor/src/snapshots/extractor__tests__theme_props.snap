@@ -10,11 +10,11 @@ ExtractOutput {
                 value: "none",
                 level: 0,
                 selector: Some(
-                    Prefix(
-                        ":root[data-theme=dark]",
+                    Selector(
+                        ":root[data-theme=dark] &",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -23,11 +23,11 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: Some(
-                    Prefix(
-                        ":root[data-theme=light]",
+                    Selector(
+                        ":root[data-theme=light] &",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

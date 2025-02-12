@@ -1,5 +1,5 @@
-use crate::utils::{expression_to_code, is_special_property};
-use crate::ExtractStyleProp;
+use crate::utils::{expression_to_code, get_number_by_literal_expression, is_special_property};
+use crate::{utils, ExtractStyleProp};
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{
     ArrayExpressionElement, ComputedMemberExpression, Expression, JSXAttributeValue,
@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
+use css::StyleSelector;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
-use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator};
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
@@ -29,6 +30,7 @@ pub enum ExtractResult<'a> {
     Extract {
         styles: Option<Vec<ExtractStyleProp<'a>>>,
         tag: Option<Expression<'a>>,
+        style_order: Option<u8>,
     },
 }
 
@@ -36,7 +38,7 @@ pub fn extract_style_from_jsx_attr<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
     value: &mut JSXAttributeValue<'a>,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     match value {
         JSXAttributeValue::ExpressionContainer(ref mut expression) => {
@@ -68,11 +70,12 @@ pub fn extract_style_from_expression<'a>(
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
     if name.is_none() && selector.is_none() {
+        let mut style_order = None;
         return match expression {
             Expression::ObjectExpression(ref mut obj) => {
                 let mut props_styles = vec![];
@@ -83,6 +86,16 @@ pub fn extract_style_from_expression<'a>(
                         ObjectPropertyKind::ObjectProperty(prop) => {
                             if let PropertyKey::StaticIdentifier(ident) = &prop.key {
                                 let name = ident.name.to_string();
+
+                                if name == "styleOrder" {
+                                    if let Some(value) =
+                                        get_number_by_literal_expression(&prop.value)
+                                    {
+                                        style_order = Some(value as u8);
+                                    }
+                                    continue;
+                                }
+
                                 match extract_style_from_expression(
                                     ast_builder,
                                     Some(&name),
@@ -91,7 +104,9 @@ pub fn extract_style_from_expression<'a>(
                                     None,
                                 ) {
                                     ExtractResult::Maintain => false,
-                                    ExtractResult::Extract { styles, tag: _tag } => {
+                                    ExtractResult::Extract {
+                                        styles, tag: _tag, ..
+                                    } => {
                                         styles.into_iter().for_each(|mut styles| {
                                             props_styles.append(&mut styles)
                                         });
@@ -114,7 +129,9 @@ pub fn extract_style_from_expression<'a>(
                                 None,
                             ) {
                                 ExtractResult::Maintain => false,
-                                ExtractResult::Extract { styles, tag: _tag } => {
+                                ExtractResult::Extract {
+                                    styles, tag: _tag, ..
+                                } => {
                                     styles
                                         .into_iter()
                                         .for_each(|mut styles| props_styles.append(&mut styles));
@@ -129,12 +146,14 @@ pub fn extract_style_from_expression<'a>(
                         obj.properties.insert(idx, prop);
                     }
                 }
+                println!("ORDER! {:?}", style_order);
                 if props_styles.is_empty() {
                     ExtractResult::Maintain
                 } else {
                     ExtractResult::Extract {
                         styles: Some(props_styles),
                         tag,
+                        style_order,
                     }
                 }
             }
@@ -171,6 +190,7 @@ pub fn extract_style_from_expression<'a>(
                     },
                 }]),
                 tag: None,
+                style_order,
             },
             Expression::ParenthesizedExpression(parenthesized) => extract_style_from_expression(
                 ast_builder,
@@ -192,6 +212,7 @@ pub fn extract_style_from_expression<'a>(
             return ExtractResult::Extract {
                 styles: None,
                 tag: Some(expression.clone_in(ast_builder.allocator)),
+                style_order: None,
             };
 
             // return match expression {
@@ -248,7 +269,7 @@ pub fn extract_style_from_expression<'a>(
                             None,
                             &mut o.value,
                             level,
-                            Some(name.as_str()),
+                            Some(&name.as_str().into()),
                         ) {
                             props.append(&mut styles);
                         }
@@ -257,6 +278,7 @@ pub fn extract_style_from_expression<'a>(
                 return ExtractResult::Extract {
                     styles: Some(props),
                     tag: None,
+                    style_order: None,
                 };
             }
         }
@@ -267,20 +289,18 @@ pub fn extract_style_from_expression<'a>(
                 None,
                 expression,
                 level,
-                Some(
-                    if let Some(selector) = selector {
-                        format!("{}&{}", selector, new_selector)
-                    } else {
-                        new_selector.to_string()
-                    }
-                    .as_str(),
-                ),
+                Some(&if let Some(selector) = selector {
+                    [&selector.to_string(), new_selector].into()
+                } else {
+                    new_selector.into()
+                }),
             );
         }
         typo = name == "typography";
     }
-    if let Some(value) = get_string_by_literal_expression(expression) {
+    if let Some(value) = utils::get_string_by_literal_expression(expression) {
         name.map(|name| ExtractResult::Extract {
+            style_order: None,
             tag: None,
             styles: Some(vec![ExtractStyleProp::Static(if typo {
                 Typography(value.as_str().to_string())
@@ -289,7 +309,7 @@ pub fn extract_style_from_expression<'a>(
                     name,
                     value.as_str(),
                     level,
-                    selector.map(|s| s.into()),
+                    selector.cloned(),
                 ))
             })]),
         })
@@ -304,10 +324,11 @@ pub fn extract_style_from_expression<'a>(
                         name.unwrap(),
                         level,
                         expression_to_code(expression).as_str(),
-                        selector.map(|s| s.into()),
+                        selector.cloned(),
                     ),
                 ))]),
                 tag: None,
+                style_order: None,
             },
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
@@ -323,10 +344,11 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     tmp.quasis[0].value.raw.as_str(),
                                     level,
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ))
                             })]),
                             tag: None,
+                            style_order: None,
                         }
                     } else if typo {
                         ExtractResult::Extract {
@@ -358,6 +380,7 @@ pub fn extract_style_from_expression<'a>(
                                 styles: vec![],
                             }]),
                             tag: None,
+                            style_order: None,
                         }
                     } else {
                         ExtractResult::Extract {
@@ -366,10 +389,11 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     expression_to_code(expression).as_str(),
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ),
                             ))]),
                             tag: None,
+                            style_order: None,
                         }
                     }
                 } else {
@@ -410,6 +434,7 @@ pub fn extract_style_from_expression<'a>(
                                 styles: vec![],
                             }]),
                             tag: None,
+                            style_order: None,
                         }
                     } else {
                         ExtractResult::Extract {
@@ -418,10 +443,11 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     identifier.name.as_str(),
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ),
                             ))]),
                             tag: None,
+                            style_order: None,
                         }
                     }
                 } else {
@@ -452,6 +478,7 @@ pub fn extract_style_from_expression<'a>(
                             alternate: res,
                         }]),
                         tag: None,
+                        style_order: None,
                     },
                     LogicalOperator::And => ExtractResult::Extract {
                         styles: Some(vec![ExtractStyleProp::Conditional {
@@ -460,6 +487,7 @@ pub fn extract_style_from_expression<'a>(
                             alternate: None,
                         }]),
                         tag: None,
+                        style_order: None,
                     },
                     LogicalOperator::Coalesce => ExtractResult::Extract {
                         styles: Some(vec![ExtractStyleProp::Conditional {
@@ -494,6 +522,7 @@ pub fn extract_style_from_expression<'a>(
                             alternate: res,
                         }]),
                         tag: None,
+                        style_order: None,
                     },
                 }
             }
@@ -528,6 +557,7 @@ pub fn extract_style_from_expression<'a>(
                     ExtractResult::Extract {
                         styles: Some(vec![ExtractStyleProp::StaticArray(props)]),
                         tag: None,
+                        style_order: None,
                     }
                 }
             }
@@ -564,6 +594,7 @@ pub fn extract_style_from_expression<'a>(
                     },
                 }]),
                 tag: None,
+                style_order: None,
             },
             Expression::ObjectExpression(obj) => {
                 let mut props = vec![];
@@ -586,6 +617,7 @@ pub fn extract_style_from_expression<'a>(
                 ExtractResult::Extract {
                     styles: Some(props),
                     tag: None,
+                    style_order: None,
                 }
             }
             // val if let Some(value) = get_number_by_literal_expression(val) => {}
@@ -599,7 +631,7 @@ fn extract_style_from_member_expression<'a>(
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
     let mut ret: Vec<ExtractStyleProp> = vec![];
@@ -610,14 +642,16 @@ fn extract_style_from_member_expression<'a>(
                 return ExtractResult::Extract {
                     styles: None,
                     tag: None,
+                    style_order: None,
                 };
             }
 
-            if let Some(num) = get_number_by_literal_expression(mem_expression) {
+            if let Some(num) = utils::get_number_by_literal_expression(mem_expression) {
                 if num < 0f64 {
                     return ExtractResult::Extract {
                         styles: None,
                         tag: None,
+                        style_order: None,
                     };
                 }
                 let mut etc = None;
@@ -640,6 +674,7 @@ fn extract_style_from_member_expression<'a>(
                             return ExtractResult::Extract {
                                 styles: Some(styles),
                                 tag: None,
+                                style_order: None,
                             };
                         }
                     }
@@ -658,10 +693,11 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         )))]
                     }),
                     tag: None,
+                    style_order: None,
                 };
             }
 
@@ -682,7 +718,7 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         )))),
                     );
                 } else if let ExtractResult::Extract {
@@ -712,11 +748,12 @@ fn extract_style_from_member_expression<'a>(
                 return ExtractResult::Extract {
                     styles: None,
                     tag: None,
+                    style_order: None,
                 };
             }
 
             let mut map = BTreeMap::new();
-            if let Some(k) = get_string_by_literal_expression(mem_expression) {
+            if let Some(k) = utils::get_string_by_literal_expression(mem_expression) {
                 let mut etc = None;
                 for p in obj.properties.iter_mut() {
                     if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
@@ -735,6 +772,7 @@ fn extract_style_from_member_expression<'a>(
                                     return ExtractResult::Extract {
                                         styles: Some(styles),
                                         tag: None,
+                                        style_order: None,
                                     };
                                 }
                             }
@@ -749,6 +787,7 @@ fn extract_style_from_member_expression<'a>(
                         return ExtractResult::Extract {
                             styles: None,
                             tag: None,
+                            style_order: None,
                         }
                     }
                     Some(etc) => {
@@ -764,7 +803,7 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         ))))
                     }
                 }
@@ -813,7 +852,7 @@ fn extract_style_from_member_expression<'a>(
                         ),
                     ))
                     .as_str(),
-                    selector.map(|s| s.into()),
+                    selector.cloned(),
                 ))))
             }
         }
@@ -823,48 +862,6 @@ fn extract_style_from_member_expression<'a>(
     ExtractResult::Extract {
         styles: Some(ret),
         tag: None,
+        style_order: None,
     }
-}
-
-fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
-    match expr {
-        Expression::ParenthesizedExpression(parenthesized) => {
-            get_number_by_literal_expression(&parenthesized.expression)
-        }
-        Expression::NumericLiteral(num) => Some(num.value),
-        Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
-            .and_then(|num| match unary.operator {
-                UnaryOperator::UnaryNegation => Some(-num),
-                UnaryOperator::UnaryPlus => Some(num),
-                _ => None,
-            }),
-        _ => None,
-    }
-}
-
-fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
-    get_number_by_literal_expression(expr)
-        .map(|num| num.to_string())
-        .or_else(|| match expr {
-            Expression::ParenthesizedExpression(parenthesized) => {
-                get_string_by_literal_expression(&parenthesized.expression)
-            }
-            Expression::StringLiteral(str) => Some(str.value.as_str().to_string()),
-            Expression::TemplateLiteral(tmp) => {
-                let mut collect = vec![];
-                for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push(q.value.raw.to_string());
-                    if idx < tmp.expressions.len() {
-                        if let Some(value) = get_string_by_literal_expression(&tmp.expressions[idx])
-                        {
-                            collect.push(value);
-                        } else {
-                            return None;
-                        }
-                    }
-                }
-                Some(collect.join(""))
-            }
-            _ => None,
-        })
 }

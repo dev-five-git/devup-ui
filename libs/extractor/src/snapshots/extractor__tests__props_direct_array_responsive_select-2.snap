@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -19,7 +21,7 @@ ExtractOutput {
                 value: "4px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -28,7 +30,7 @@ ExtractOutput {
                 value: "8px",
                 level: 1,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -37,7 +39,7 @@ ExtractOutput {
                 value: "12px",
                 level: 2,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -46,7 +48,7 @@ ExtractOutput {
                 value: "16px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -55,7 +57,7 @@ ExtractOutput {
                 value: "20px",
                 level: 1,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -64,7 +66,7 @@ ExtractOutput {
                 value: "24px",
                 level: 2,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

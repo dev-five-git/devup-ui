@@ -10,11 +10,11 @@ ExtractOutput {
                 value: "blue",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -23,7 +23,7 @@ ExtractOutput {
                 value: "$text",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -32,7 +32,7 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Typography(
@@ -44,7 +44,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -53,7 +55,7 @@ ExtractOutput {
                 value: "8px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

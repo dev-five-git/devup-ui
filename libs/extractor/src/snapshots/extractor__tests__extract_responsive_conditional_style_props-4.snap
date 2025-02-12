@@ -10,6 +10,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "c",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -18,6 +19,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "d",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -26,6 +28,7 @@ ExtractOutput {
                 level: 1,
                 identifier: "e",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -34,6 +37,7 @@ ExtractOutput {
                 level: 2,
                 identifier: "f",
                 selector: None,
+                style_order: None,
             },
         ),
         Static(
@@ -42,7 +46,7 @@ ExtractOutput {
                 value: "4px",
                 level: 3,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -51,7 +55,7 @@ ExtractOutput {
                 value: "2px",
                 level: 3,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],
