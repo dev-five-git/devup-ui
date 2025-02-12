@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.26
+
+### Patch Changes
+
+- 27c414d: Implement style order
+
 ## 0.1.25
 
 ### Patch Changes
