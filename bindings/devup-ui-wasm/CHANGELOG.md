@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.43
+
+### Patch Changes
+
+- 4a1dd61: Fix selector issue
+- 27c414d: Implement style order
+
 ## 0.1.42
 
 ### Patch Changes
