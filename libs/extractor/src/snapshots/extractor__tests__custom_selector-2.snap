@@ -10,9 +10,8 @@ ExtractOutput {
                 value: "0.5",
                 level: 0,
                 selector: Some(
-                    Dual(
-                        "*[aria-diabled='true']",
-                        ":hover",
+                    Selector(
+                        "*[aria-diabled='true'] &:hover",
                     ),
                 ),
                 basic: false,

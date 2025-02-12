@@ -19,8 +19,8 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,
@@ -32,8 +32,8 @@ ExtractOutput {
                 value: "blue",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,
@@ -45,8 +45,8 @@ ExtractOutput {
                 value: "bold",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,
@@ -58,8 +58,8 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,

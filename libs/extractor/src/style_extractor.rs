@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
+use css::StyleSelector;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
@@ -36,7 +37,7 @@ pub fn extract_style_from_jsx_attr<'a>(
     ast_builder: &AstBuilder<'a>,
     name: &str,
     value: &mut JSXAttributeValue<'a>,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     match value {
         JSXAttributeValue::ExpressionContainer(ref mut expression) => {
@@ -68,7 +69,7 @@ pub fn extract_style_from_expression<'a>(
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
@@ -248,7 +249,7 @@ pub fn extract_style_from_expression<'a>(
                             None,
                             &mut o.value,
                             level,
-                            Some(name.as_str()),
+                            Some(&name.as_str().into()),
                         ) {
                             props.append(&mut styles);
                         }
@@ -267,14 +268,11 @@ pub fn extract_style_from_expression<'a>(
                 None,
                 expression,
                 level,
-                Some(
-                    if let Some(selector) = selector {
-                        format!("{}&{}", selector, new_selector)
-                    } else {
-                        new_selector.to_string()
-                    }
-                    .as_str(),
-                ),
+                Some(&if let Some(selector) = selector {
+                    [&selector.to_string(), new_selector].into()
+                } else {
+                    new_selector.into()
+                }),
             );
         }
         typo = name == "typography";
@@ -289,7 +287,7 @@ pub fn extract_style_from_expression<'a>(
                     name,
                     value.as_str(),
                     level,
-                    selector.map(|s| s.into()),
+                    selector.cloned(),
                 ))
             })]),
         })
@@ -304,7 +302,7 @@ pub fn extract_style_from_expression<'a>(
                         name.unwrap(),
                         level,
                         expression_to_code(expression).as_str(),
-                        selector.map(|s| s.into()),
+                        selector.cloned(),
                     ),
                 ))]),
                 tag: None,
@@ -323,7 +321,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     tmp.quasis[0].value.raw.as_str(),
                                     level,
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ))
                             })]),
                             tag: None,
@@ -366,7 +364,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     expression_to_code(expression).as_str(),
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ),
                             ))]),
                             tag: None,
@@ -418,7 +416,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     identifier.name.as_str(),
-                                    selector.map(|s| s.into()),
+                                    selector.cloned(),
                                 ),
                             ))]),
                             tag: None,
@@ -599,7 +597,7 @@ fn extract_style_from_member_expression<'a>(
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
-    selector: Option<&str>,
+    selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
     let mut ret: Vec<ExtractStyleProp> = vec![];
@@ -658,7 +656,7 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         )))]
                     }),
                     tag: None,
@@ -682,7 +680,7 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         )))),
                     );
                 } else if let ExtractResult::Extract {
@@ -764,7 +762,7 @@ fn extract_style_from_member_expression<'a>(
                                 ),
                             ))
                             .as_str(),
-                            selector.map(|s| s.into()),
+                            selector.cloned(),
                         ))))
                     }
                 }
@@ -813,7 +811,7 @@ fn extract_style_from_member_expression<'a>(
                         ),
                     ))
                     .as_str(),
-                    selector.map(|s| s.into()),
+                    selector.cloned(),
                 ))))
             }
         }

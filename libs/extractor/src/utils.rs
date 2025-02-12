@@ -48,6 +48,13 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "readOnly",
         "autoFocus",
         "required",
+        "checked",
+        "defaultChecked",
+        "value",
+        "defaultValue",
+        "selected",
+        "multiple",
+        "accept",
     ] {
         set.insert(prop);
     }

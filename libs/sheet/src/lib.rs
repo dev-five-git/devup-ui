@@ -273,7 +273,7 @@ mod tests {
             "background-color",
             1,
             "red",
-            Some(&StyleSelector::Postfix("hover".to_string())),
+            Some(&"hover".into()),
             false,
         );
         sheet.add_property("test", "background-color", 1, "some", None, false);
@@ -286,7 +286,7 @@ mod tests {
             "background-color",
             1,
             "some",
-            Some(&StyleSelector::Postfix("hover".to_string())),
+            Some(&"hover".into()),
             false,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -322,7 +322,7 @@ mod tests {
             "background-color",
             1,
             "red",
-            Some(&StyleSelector::Postfix("hover".to_string())),
+            Some(&"hover".into()),
             false,
         );
         sheet.add_property("test", "background-color", 1, "some", None, true);
@@ -394,14 +394,7 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property(
-            "test",
-            "bg",
-            0,
-            "red",
-            Some(&StyleSelector::Prefix("*:hover".to_string())),
-            false,
-        );
+        sheet.add_property("test", "bg", 0, "red", Some(&"*:hover &".into()), false);
         sheet.add_property(
             "test",
             "bg",
@@ -418,13 +411,20 @@ mod tests {
             "bg",
             0,
             "red",
-            Some(&"themeDark&hover".into()),
+            Some(&["themeDark", "hover"].into()),
             false,
         );
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "bg", 0, "red", Some(&"wrong&hover".into()), false);
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&["wrong", "hover"].into()),
+            false,
+        );
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
@@ -445,6 +445,17 @@ mod tests {
             0,
             "red",
             Some(&"&[disabled='true']".into()),
+            false,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "bg",
+            0,
+            "red",
+            Some(&"&[disabled='true'], &[disabled='true']".into()),
             false,
         );
         assert_debug_snapshot!(sheet.create_css());

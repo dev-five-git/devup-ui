@@ -19,8 +19,8 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,

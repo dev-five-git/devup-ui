@@ -10,8 +10,8 @@ ExtractOutput {
                 value: "white",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
                 basic: false,
@@ -23,9 +23,8 @@ ExtractOutput {
                 value: "black",
                 level: 0,
                 selector: Some(
-                    Dual(
-                        ":root[data-theme=dark]",
-                        "hover",
+                    Selector(
+                        ":root[data-theme=dark] &:hover",
                     ),
                 ),
                 basic: false,

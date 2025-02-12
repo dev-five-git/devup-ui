@@ -10,8 +10,8 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: Some(
-                    Prefix(
-                        "*[role=group]:hover",
+                    Selector(
+                        "*[role=group]:hover &",
                     ),
                 ),
                 basic: false,
