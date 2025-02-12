@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -19,7 +21,7 @@ ExtractOutput {
                 value: "1",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -28,7 +30,7 @@ ExtractOutput {
                 value: "2",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -37,7 +39,7 @@ ExtractOutput {
                 value: "900",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -46,7 +48,7 @@ ExtractOutput {
                 value: "2",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -55,7 +57,7 @@ ExtractOutput {
                 value: "1",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

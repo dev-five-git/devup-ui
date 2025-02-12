@@ -10,6 +10,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "`${variable}`",
                 selector: None,
+                style_order: None,
             },
         ),
     ],

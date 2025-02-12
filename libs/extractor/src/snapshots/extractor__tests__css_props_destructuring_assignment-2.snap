@@ -10,7 +10,7 @@ ExtractOutput {
                 value: "4px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -19,7 +19,7 @@ ExtractOutput {
                 value: "4px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -28,7 +28,7 @@ ExtractOutput {
                 value: "solid 1px red",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -37,7 +37,7 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -46,7 +46,7 @@ ExtractOutput {
                 value: "blue",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

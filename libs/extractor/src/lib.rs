@@ -2211,4 +2211,138 @@ import {Button} from '@devup/ui'
         )
         .unwrap());
     }
+
+    #[test]
+    #[serial]
+    fn style_order() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box} from '@devup-ui/core'
+    <Box styleOrder={20} p="4" _hover={{ bg: ["red", "blue"]}} selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.mjs",
+            r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
+import { Box as o, Text as t, Flex as i } from "@devup-ui/react";
+function c() {
+  return  r("div", { children: [
+     e(
+      o,
+      {
+        _hover: {
+          bg: "blue"
+        },
+        bg: "$text",
+        color: "red",
+        children: "hello",
+        styleOrder: 10
+      }
+    ),
+     e(t, { typography: "header", children: "typo", styleOrder:20 }),
+     e(i, { as: "section", mt: 2, children: "section",styleOrder:30 })
+  ] });
+}
+export {
+  c as Lib
+};"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box, css} from '@devup-ui/core'
+    <Box className={css({color:"white", styleOrder:100})} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box, css} from '@devup-ui/core'
+    <Box className={css({color:"white"})} styleOrder={20} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box, css} from '@devup-ui/core'
+    <Box className={css({color:"white",styleOrder:30})} styleOrder={20} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box, css} from '@devup-ui/core'
+    <Box styleOrder={20} p="4" _hover={{ bg: ["red", "blue"]}}
+    className={css({color:"white", styleOrder:100})}
+
+     selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.js",
+            r#"import {Box, css} from '@devup-ui/core'
+<Box
+        aria-disabled={false}
+        bg="red"
+        className={css({
+          bg: 'blue',
+          styleOrder: 17,
+        })}
+        styleOrder={3}
+      />
+            "#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
 }

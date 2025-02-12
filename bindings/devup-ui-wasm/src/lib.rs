@@ -53,7 +53,7 @@ impl Output {
                         st.level(),
                         st.value(),
                         st.selector(),
-                        st.basic(),
+                        st.style_order(),
                     ) {
                         collected = true;
                     }
@@ -65,7 +65,7 @@ impl Output {
                         dy.level(),
                         &format!("var({})", variable.unwrap()),
                         dy.selector(),
-                        false,
+                        dy.style_order(),
                     ) {
                         collected = true;
                     }
@@ -81,6 +81,9 @@ impl Output {
         if !collected {
             return None;
         }
+
+        log_str(&format!("css: {:?}", sheet.properties));
+        log_str(&sheet.create_css());
         Some(sheet.create_css())
     }
 }

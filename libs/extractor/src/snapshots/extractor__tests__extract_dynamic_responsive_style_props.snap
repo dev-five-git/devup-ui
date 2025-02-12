@@ -10,6 +10,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "someStyleVar",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -18,6 +19,7 @@ ExtractOutput {
                 level: 2,
                 identifier: "someStyleVar1",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -26,6 +28,7 @@ ExtractOutput {
                 level: 1,
                 identifier: "someStyleVar2",
                 selector: None,
+                style_order: None,
             },
         ),
     ],

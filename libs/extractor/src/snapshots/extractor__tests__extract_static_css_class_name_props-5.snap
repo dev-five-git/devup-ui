@@ -14,7 +14,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -27,7 +27,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

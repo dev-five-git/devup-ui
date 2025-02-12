@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
     ],

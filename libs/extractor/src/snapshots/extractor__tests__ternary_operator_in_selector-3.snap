@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -23,7 +25,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -36,7 +38,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -49,7 +51,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -62,7 +64,7 @@ ExtractOutput {
                         "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

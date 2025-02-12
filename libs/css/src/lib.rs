@@ -325,13 +325,15 @@ pub fn sheet_to_classname(
     level: u8,
     value: Option<&str>,
     selector: Option<&str>,
+    style_order: Option<u8>,
 ) -> String {
     let key = format!(
-        "{}-{}-{}-{}",
+        "{}-{}-{}-{}-{}",
         property.trim(),
         level,
         F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
-        selector.unwrap_or("").trim()
+        selector.unwrap_or("").trim(),
+        style_order.unwrap_or(255)
     );
     let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
     map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
@@ -387,40 +389,53 @@ mod tests {
     #[serial]
     fn test_sheet_to_classname() {
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("background", 0, Some("hover"), None),
+            sheet_to_classname("background", 0, Some("hover"), None, None),
             "d1"
         );
-        assert_eq!(sheet_to_classname("background", 1, None, None), "d2");
+        assert_eq!(sheet_to_classname("background", 1, None, None, None), "d2");
         assert_eq!(
-            sheet_to_classname("background", 1, Some("hover"), None),
+            sheet_to_classname("background", 1, Some("hover"), None, None),
             "d3"
         );
 
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
-        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
-        assert_eq!(sheet_to_classname("background", 0, Some("red"), None), "d1");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("  background  ", 0, Some("  red  "), None),
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
             "d1"
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None),
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
             "d2"
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
             "d2"
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)-"), Some(&2));
+            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)--255"), Some(&2));
         }
+
+        reset_class_map();
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, Some(1)),
+            "d1"
+        );
     }
 
     #[test]

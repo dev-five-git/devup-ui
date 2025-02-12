@@ -68,4 +68,6 @@ export interface DevupSelectorProps {
   _viewTransitionOld?: DevupCommonProps
 
   selectors?: Record<string, DevupCommonProps>
+
+  styleOrder?: number
 }

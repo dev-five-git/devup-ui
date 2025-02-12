@@ -21,6 +21,7 @@ use oxc_ast::visit::walk_mut::{
     walk_variable_declarator,
 };
 
+use crate::utils::get_number_by_jsx_expression;
 use oxc_ast::{AstBuilder, VisitMut};
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -95,7 +96,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         ));
                     } else if call.arguments.len() == 1 {
                         if let ExtractResult::Extract {
-                            styles: Some(styles),
+                            styles: Some(mut styles),
+                            style_order,
                             ..
                         } = extract_style_from_expression(
                             &self.ast,
@@ -106,9 +108,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         ) {
                             // css can not reachable
                             // ExtractResult::ExtractStyleWithChangeTag(styles, _)
-                            let class_name = gen_class_names(&self.ast, &styles);
+                            let class_name = gen_class_names(&self.ast, &mut styles, style_order);
                             let mut styles = styles
                                 .into_iter()
+                                // already set style order
                                 .flat_map(|ex| ex.extract())
                                 .collect::<Vec<_>>();
 
@@ -200,15 +203,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             None,
                         ));
                         let mut props_styles = vec![];
-                        if let ExtractResult::Extract { styles, tag: _tag } =
-                            extract_style_from_expression(
-                                &self.ast,
-                                None,
-                                it.arguments[1].to_expression_mut(),
-                                0,
-                                None,
-                            )
-                        {
+                        let mut style_order = None;
+                        if let ExtractResult::Extract {
+                            styles,
+                            tag: _tag,
+                            style_order: _style_order,
+                        } = extract_style_from_expression(
+                            &self.ast,
+                            None,
+                            it.arguments[1].to_expression_mut(),
+                            0,
+                            None,
+                        ) {
+                            style_order = _style_order;
                             styles.into_iter().for_each(|mut ex| {
                                 props_styles.append(&mut ex);
                             });
@@ -222,12 +229,28 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
 
                         for style in props_styles.iter().rev() {
-                            self.styles.append(&mut style.extract());
+                            self.styles.append(
+                                &mut style
+                                    .extract()
+                                    .into_iter()
+                                    .map(|mut s| {
+                                        style_order.into_iter().for_each(|order| {
+                                            s.set_style_order(order);
+                                        });
+                                        s
+                                    })
+                                    .collect(),
+                            );
                         }
                         if let Expression::ObjectExpression(obj) =
                             it.arguments[1].to_expression_mut()
                         {
-                            modify_prop_object(&self.ast, &mut obj.properties, &props_styles);
+                            modify_prop_object(
+                                &self.ast,
+                                &mut obj.properties,
+                                &mut props_styles,
+                                style_order,
+                            );
                         }
 
                         it.arguments[0] = Argument::from(tag);
@@ -236,90 +259,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             }
         }
         walk_call_expression(self, it);
-    }
-    fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
-        walk_jsx_element(self, elem);
-        // after run to convert css literal
-
-        let opening_element = &mut elem.opening_element;
-        let component_name = &opening_element.name.to_string();
-        if let Some(kind) = self.imports.get(component_name) {
-            let attrs = &mut opening_element.attributes;
-            let mut tag_name = Expression::StringLiteral(self.ast.alloc_string_literal(
-                SPAN,
-                kind.to_tag().unwrap_or("div"),
-                None,
-            ));
-            let mut props_styles = vec![];
-
-            // extract ExtractStyleProp and remain style and class name, just extract
-            let mut duplicate_set = HashSet::new();
-            for i in (0..attrs.len()).rev() {
-                let mut attr = attrs.remove(i);
-                let mut rm = false;
-                if let Attribute(ref mut attr) = &mut attr {
-                    if let Identifier(name) = &attr.name {
-                        let name = short_to_long(name.name.as_str());
-                        if duplicate_set.contains(&name) {
-                            continue;
-                        }
-                        duplicate_set.insert(name.clone());
-                        if let Some(at) = &mut attr.value {
-                            rm = match extract_style_from_jsx_attr(&self.ast, &name, at, None) {
-                                ExtractResult::Maintain => false,
-                                ExtractResult::Extract { styles, tag } => {
-                                    styles.into_iter().for_each(|mut ex| {
-                                        ex.reverse();
-                                        props_styles.append(&mut ex);
-                                    });
-                                    if let Some(t) = tag {
-                                        tag_name = t;
-                                    }
-                                    true
-                                }
-                            }
-                        }
-                    }
-                }
-                if !rm {
-                    attrs.insert(i, attr);
-                }
-            }
-
-            for ex in kind.extract().into_iter().rev() {
-                props_styles.push(ExtractStyleProp::Static(ex));
-            }
-            for style in props_styles.iter().rev() {
-                self.styles.append(&mut style.extract());
-            }
-            // modify!!
-            modify_props(&self.ast, attrs, &props_styles);
-
-            match tag_name {
-                Expression::StringLiteral(str) => {
-                    // change tag name
-                    let ident = JSXElementName::Identifier(
-                        self.ast.alloc_jsx_identifier(SPAN, str.value.as_str()),
-                    );
-                    opening_element.name = ident.clone_in(self.ast.allocator);
-                    if let Some(el) = &mut elem.closing_element {
-                        el.name = ident;
-                    }
-                }
-                Expression::TemplateLiteral(literal) => {
-                    let ident = JSXElementName::Identifier(
-                        self.ast
-                            .alloc_jsx_identifier(SPAN, literal.quasis[0].value.raw.as_str()),
-                    );
-                    opening_element.name = ident.clone_in(self.ast.allocator);
-                    if let Some(el) = &mut elem.closing_element {
-                        el.name = ident;
-                    }
-                }
-
-                _ => {}
-            }
-        }
     }
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
         if let Some(Expression::CallExpression(call)) = &it.init {
@@ -401,6 +340,95 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                     }
                 }
+            }
+        }
+    }
+    fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
+        walk_jsx_element(self, elem);
+        // after run to convert css literal
+
+        let opening_element = &mut elem.opening_element;
+        let component_name = &opening_element.name.to_string();
+        if let Some(kind) = self.imports.get(component_name) {
+            let attrs = &mut opening_element.attributes;
+            let mut tag_name = Expression::StringLiteral(self.ast.alloc_string_literal(
+                SPAN,
+                kind.to_tag().unwrap_or("div"),
+                None,
+            ));
+            let mut props_styles = vec![];
+
+            // extract ExtractStyleProp and remain style and class name, just extract
+            let mut duplicate_set = HashSet::new();
+            let mut style_order = None;
+            for i in (0..attrs.len()).rev() {
+                let mut attr = attrs.remove(i);
+                if let Attribute(ref mut attr) = &mut attr {
+                    if let Identifier(name) = &attr.name {
+                        let name = short_to_long(name.name.as_str());
+                        if duplicate_set.contains(&name) {
+                            continue;
+                        }
+                        duplicate_set.insert(name.clone());
+                        if name == "styleOrder" {
+                            style_order =
+                                get_number_by_jsx_expression(attr.value.as_ref().unwrap())
+                                    .map(|n| n as u8);
+                            continue;
+                        }
+
+                        if let Some(at) = &mut attr.value {
+                            if let ExtractResult::Extract { styles, tag, .. } =
+                                extract_style_from_jsx_attr(&self.ast, &name, at, None)
+                            {
+                                styles.into_iter().for_each(|mut ex| {
+                                    ex.reverse();
+                                    props_styles.append(&mut ex);
+                                });
+                                if let Some(t) = tag {
+                                    tag_name = t;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
+                attrs.insert(i, attr);
+            }
+
+            for ex in kind.extract().into_iter().rev() {
+                props_styles.push(ExtractStyleProp::Static(ex));
+            }
+
+            modify_props(&self.ast, attrs, &mut props_styles, style_order);
+            for style in props_styles.iter().rev() {
+                self.styles.append(&mut style.extract());
+            }
+            // modify!!
+
+            match tag_name {
+                Expression::StringLiteral(str) => {
+                    // change tag name
+                    let ident = JSXElementName::Identifier(
+                        self.ast.alloc_jsx_identifier(SPAN, str.value.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+                Expression::TemplateLiteral(literal) => {
+                    let ident = JSXElementName::Identifier(
+                        self.ast
+                            .alloc_jsx_identifier(SPAN, literal.quasis[0].value.raw.as_str()),
+                    );
+                    opening_element.name = ident.clone_in(self.ast.allocator);
+                    if let Some(el) = &mut elem.closing_element {
+                        el.name = ident;
+                    }
+                }
+
+                _ => {}
             }
         }
     }

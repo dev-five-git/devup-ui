@@ -14,7 +14,7 @@ ExtractOutput {
                         "*[role=group]:hover &",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

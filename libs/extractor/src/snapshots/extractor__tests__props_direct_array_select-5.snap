@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -19,7 +21,9 @@ ExtractOutput {
                 value: "center",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -28,7 +32,9 @@ ExtractOutput {
                 value: "center",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -37,7 +43,7 @@ ExtractOutput {
                 value: "$webBg",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -46,7 +52,7 @@ ExtractOutput {
                 value: "$appBg",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -55,7 +61,7 @@ ExtractOutput {
                 value: "$solutionBg",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
     ],

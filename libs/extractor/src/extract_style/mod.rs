@@ -16,8 +16,8 @@ pub struct ExtractStaticStyle {
     level: u8,
     /// selector
     selector: Option<StyleSelector>,
-    /// basic, if the value is true then css created by this style will be added to the first
-    basic: bool,
+    /// None is inf, 0 is first, 1 is second, etc
+    style_order: Option<u8>,
 }
 
 static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
@@ -44,7 +44,7 @@ impl ExtractStaticStyle {
             property: short_to_long(property),
             level,
             selector,
-            basic: false,
+            style_order: None,
         }
     }
 
@@ -63,7 +63,7 @@ impl ExtractStaticStyle {
             property: property.to_string(),
             level,
             selector,
-            basic: true,
+            style_order: Some(0),
         }
     }
 
@@ -83,8 +83,8 @@ impl ExtractStaticStyle {
         self.selector.as_ref()
     }
 
-    pub fn basic(&self) -> bool {
-        self.basic
+    pub fn style_order(&self) -> Option<u8> {
+        self.style_order
     }
 }
 
@@ -108,6 +108,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
                 .as_str(),
             ),
             s.as_deref(),
+            self.style_order,
         ))
     }
 }
@@ -134,6 +135,8 @@ pub struct ExtractDynamicStyle {
 
     /// selector
     selector: Option<StyleSelector>,
+
+    style_order: Option<u8>,
 }
 
 impl ExtractDynamicStyle {
@@ -149,6 +152,7 @@ impl ExtractDynamicStyle {
             level,
             identifier: identifier.to_string(),
             selector,
+            style_order: None,
         }
     }
 
@@ -167,6 +171,10 @@ impl ExtractDynamicStyle {
     pub fn identifier(&self) -> &str {
         self.identifier.as_str()
     }
+
+    pub fn style_order(&self) -> Option<u8> {
+        self.style_order
+    }
 }
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
@@ -178,6 +186,7 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
                 self.level,
                 None,
                 selector.as_deref(),
+                self.style_order,
             ),
             variable_name: sheet_to_variable_name(
                 self.property.as_str(),
@@ -207,6 +216,19 @@ impl ExtractStyleValue {
             }
         }
     }
+    pub fn set_style_order(&mut self, order: u8) {
+        match self {
+            ExtractStyleValue::Static(style) => {
+                if style.style_order.is_none() {
+                    style.style_order = Some(order);
+                }
+            }
+            ExtractStyleValue::Dynamic(style) => {
+                style.style_order = Some(order);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -220,7 +242,6 @@ mod tests {
         assert_eq!(style.value(), "red");
         assert_eq!(style.level(), 0);
         assert_eq!(style.selector(), None);
-        assert_eq!(style.basic(), false);
     }
 
     #[test]
@@ -239,6 +260,5 @@ mod tests {
         assert_eq!(style.value(), "red");
         assert_eq!(style.level(), 0);
         assert_eq!(style.selector(), None);
-        assert_eq!(style.basic(), true);
     }
 }

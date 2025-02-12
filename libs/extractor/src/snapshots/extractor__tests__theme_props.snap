@@ -14,7 +14,7 @@ ExtractOutput {
                         ":root[data-theme=dark] &",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
         Static(
@@ -27,7 +27,7 @@ ExtractOutput {
                         ":root[data-theme=light] &",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
     ],

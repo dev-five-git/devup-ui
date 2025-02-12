@@ -10,7 +10,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Dynamic(
@@ -19,6 +21,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "some[100]",
                 selector: None,
+                style_order: None,
             },
         ),
     ],

@@ -10,6 +10,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "-(1 + a)",
                 selector: None,
+                style_order: None,
             },
         ),
     ],
