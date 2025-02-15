@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.44
+
+### Patch Changes
+
+- 11c4257: Implement debug mode
+
 ## 0.1.43
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.48
+
+### Patch Changes
+
+- 11c4257: Implement debug mode
+- Updated dependencies [11c4257]
+  - @devup-ui/wasm@0.1.44
+
 ## 0.1.47
 
 ### Patch Changes
