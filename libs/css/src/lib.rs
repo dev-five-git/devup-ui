@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Mutex;
 
 static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
@@ -16,6 +17,17 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     map.insert("&:hover".to_string(), 1);
     map
 });
+
+static DEBUG: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+pub fn set_debug(value: bool) {
+    let mut debug = DEBUG.lock().unwrap();
+    *debug = value;
+}
+
+pub fn is_debug() -> bool {
+    *DEBUG.lock().unwrap()
+}
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
@@ -327,41 +339,81 @@ pub fn sheet_to_classname(
     selector: Option<&str>,
     style_order: Option<u8>,
 ) -> String {
-    let key = format!(
-        "{}-{}-{}-{}-{}",
-        property.trim(),
-        level,
-        F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
-        selector.unwrap_or("").trim(),
-        style_order.unwrap_or(255)
-    );
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
-        let len = map.len();
-        map.insert(key, len as i32);
-        format!("d{}", map.len() - 1)
-    })
+    if *DEBUG.lock().unwrap() {
+        let selector = selector.unwrap_or("").trim();
+        format!(
+            "{}-{}-{}-{}-{}",
+            property.trim(),
+            level,
+            F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            },
+            style_order.unwrap_or(255)
+        )
+    } else {
+        let key = format!(
+            "{}-{}-{}-{}-{}",
+            property.trim(),
+            level,
+            F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
+            selector.unwrap_or("").trim(),
+            style_order.unwrap_or(255)
+        );
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(key, len as i32);
+            format!("d{}", map.len() - 1)
+        })
+    }
 }
 
 pub fn css_to_classname(css: &str) -> String {
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(css).map(|v| format!("d{}", v)).unwrap_or_else(|| {
-        let len = map.len();
-        map.insert(css.to_string(), len as i32);
-        format!("d{}", map.len() - 1)
-    })
+    if *DEBUG.lock().unwrap() {
+        let mut hasher = DefaultHasher::new();
+        css.hash(&mut hasher);
+        format!("css-{}", hasher.finish())
+    } else {
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(css).map(|v| format!("d{}", v)).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(css.to_string(), len as i32);
+            format!("d{}", map.len() - 1)
+        })
+    }
 }
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    let key = format!("{}-{}-{}", property, level, selector.unwrap_or(""));
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(&key)
-        .map(|v| format!("--d{}", v))
-        .unwrap_or_else(|| {
-            let len = map.len();
-            map.insert(key, len as i32);
-            format!("--d{}", map.len() - 1)
-        })
+    if *DEBUG.lock().unwrap() {
+        let selector = selector.unwrap_or("").trim();
+        format!(
+            "--{}-{}-{}",
+            property,
+            level,
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            }
+        )
+    } else {
+        let key = format!("{}-{}-{}", property, level, selector.unwrap_or("").trim());
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key)
+            .map(|v| format!("--d{}", v))
+            .unwrap_or_else(|| {
+                let len = map.len();
+                map.insert(key, len as i32);
+                format!("--d{}", map.len() - 1)
+            })
+    }
 }
 
 #[cfg(test)]
@@ -371,8 +423,18 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_set_debug() {
+        set_debug(true);
+        assert!(is_debug());
+        set_debug(false);
+        assert!(!is_debug());
+    }
+
+    #[test]
+    #[serial]
     fn test_sheet_to_variable_name() {
         reset_class_map();
+        set_debug(false);
         assert_eq!(sheet_to_variable_name("background", 0, None), "--d0");
         assert_eq!(
             sheet_to_variable_name("background", 0, Some("hover")),
@@ -387,16 +449,42 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_sheet_to_classname() {
-        reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+    fn test_debug_sheet_to_variable_name() {
+        set_debug(true);
         assert_eq!(
-            sheet_to_classname("background", 0, Some("hover"), None, None),
+            sheet_to_variable_name("background", 0, None),
+            "--background-0-"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 0, Some("hover".into())),
+            "--background-0-12448419602614487988"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 1, None),
+            "--background-1-"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 1, Some("hover".into())),
+            "--background-1-12448419602614487988"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_sheet_to_classname() {
+        set_debug(false);
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
             "d1"
         );
         assert_eq!(sheet_to_classname("background", 1, None, None, None), "d2");
         assert_eq!(
-            sheet_to_classname("background", 1, Some("hover"), None, None),
+            sheet_to_classname("background", 1, None, Some("hover"), None),
             "d3"
         );
 
@@ -435,6 +523,56 @@ mod tests {
         assert_eq!(
             sheet_to_classname("background", 0, None, None, Some(1)),
             "d1"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_debug_sheet_to_classname() {
+        set_debug(true);
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, None),
+            "background-0---255"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
+            "background-0-red-12448419602614487988-255"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 1, None, None, None),
+            "background-1---255"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 1, Some("red"), Some("hover"), None),
+            "background-1-red-12448419602614487988-255"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_to_classname() {
+        set_debug(false);
+        reset_class_map();
+        assert_eq!(css_to_classname("background: red"), "d0");
+        assert_eq!(css_to_classname("background: blue"), "d1");
+    }
+    #[test]
+    #[serial]
+    fn test_debug_css_to_classname() {
+        set_debug(true);
+        assert_eq!(
+            css_to_classname("background: red"),
+            "css-10773204219957113694"
+        );
+        assert_eq!(
+            css_to_classname("background: blue"),
+            "css-1226995032436176700"
+        );
+        set_debug(true);
+        reset_class_map();
+        assert_eq!(
+            css_to_classname("background: red"),
+            "css-10773204219957113694"
         );
     }
 
@@ -725,6 +863,41 @@ mod tests {
             merge_selector("cls", Some(&["themeDark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
         );
+    }
+    #[test]
+    fn test_get_selector_separator() {
+        assert!(matches!(
+            get_selector_separator("placeholder"),
+            SelectorSeparator::Double
+        ));
+        assert!(matches!(
+            get_selector_separator("before"),
+            SelectorSeparator::Double
+        ));
+        assert!(matches!(
+            get_selector_separator("after"),
+            SelectorSeparator::Double
+        ));
+
+        assert!(matches!(
+            get_selector_separator("hover"),
+            SelectorSeparator::Single
+        ));
+
+        assert!(matches!(
+            get_selector_separator(":hover"),
+            SelectorSeparator::None
+        ));
+
+        assert!(matches!(
+            get_selector_separator("::placeholder"),
+            SelectorSeparator::None
+        ));
+
+        assert!(matches!(
+            get_selector_separator("[aria-disabled='true']"),
+            SelectorSeparator::None
+        ));
     }
 
     #[test]

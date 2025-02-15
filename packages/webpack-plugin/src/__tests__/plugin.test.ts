@@ -33,6 +33,7 @@ describe('devupUIPlugin', () => {
         devupPath: 'devup.json',
         interfacePath: '.df',
         watch: false,
+        debug: false,
       })
     })
 
@@ -52,6 +53,7 @@ describe('devupUIPlugin', () => {
         devupPath: 'new-devup-path',
         interfacePath: 'new-interface-path',
         watch: false,
+        debug: false,
       })
     })
 
