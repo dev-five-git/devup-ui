@@ -7,6 +7,7 @@ import {
   getCss,
   getThemeInterface,
   registerTheme,
+  setDebug,
 } from '@devup-ui/wasm'
 import { type PluginOption } from 'vite'
 
@@ -19,9 +20,12 @@ export interface DevupUIPluginOptions {
   devupPath: string
   interfacePath: string
   extractCss: boolean
+  debug: boolean
 }
 
-function writeDataFiles(options: Omit<DevupUIPluginOptions, 'extractCss'>) {
+function writeDataFiles(
+  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug'>,
+) {
   registerTheme(JSON.parse(readFileSync(options.devupPath, 'utf-8'))?.['theme'])
   const interfaceCode = getThemeInterface(
     options.package,
@@ -46,7 +50,9 @@ export function DevupUI({
   devupPath = 'devup.json',
   interfacePath = '.df',
   extractCss = true,
+  debug = false,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
+  setDebug(debug)
   if (existsSync(devupPath)) {
     try {
       writeDataFiles({

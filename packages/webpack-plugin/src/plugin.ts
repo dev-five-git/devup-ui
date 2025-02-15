@@ -13,6 +13,7 @@ import {
   importClassMap,
   importSheet,
   registerTheme,
+  setDebug,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
@@ -22,6 +23,7 @@ export interface DevupUIWebpackPluginOptions {
   devupPath: string
   interfacePath: string
   watch: boolean
+  debug: boolean
 }
 
 export class DevupUIWebpackPlugin {
@@ -33,6 +35,7 @@ export class DevupUIWebpackPlugin {
     interfacePath = '.df',
     cssFile = resolve(interfacePath, 'devup-ui.css'),
     watch = false,
+    debug = false,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
@@ -40,6 +43,7 @@ export class DevupUIWebpackPlugin {
       devupPath,
       interfacePath,
       watch,
+      debug,
     }
   }
 
@@ -71,6 +75,7 @@ export class DevupUIWebpackPlugin {
   }
 
   apply(compiler: Compiler) {
+    setDebug(this.options.debug)
     // read devup.json
     const existsDevup = existsSync(this.options.devupPath)
 

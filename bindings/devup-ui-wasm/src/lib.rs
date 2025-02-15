@@ -86,6 +86,16 @@ impl Output {
     }
 }
 
+#[wasm_bindgen(js_name = "setDebug")]
+pub fn set_debug(debug: bool) {
+    css::set_debug(debug);
+}
+
+#[wasm_bindgen(js_name = "isDebug")]
+pub fn is_debug() {
+    css::is_debug();
+}
+
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
