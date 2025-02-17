@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.44
+
+### Patch Changes
+
+- ff4494c: Fix test coverage
+
 ## 0.1.43
 
 ### Patch Changes
