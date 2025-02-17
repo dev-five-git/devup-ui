@@ -28,6 +28,7 @@ describe('devupUIPlugin', () => {
     it('should apply default options', () => {
       import.meta.resolve = vi.fn().mockReturnValue('resolved')
       expect(new DevupUIWebpackPlugin({}).options).toEqual({
+        include: [],
         package: '@devup-ui/react',
         cssFile: resolve('.df', 'devup-ui.css'),
         devupPath: 'devup.json',
@@ -48,6 +49,7 @@ describe('devupUIPlugin', () => {
           watch: false,
         }).options,
       ).toEqual({
+        include: [],
         package: 'new-package',
         cssFile: 'new-css-file',
         devupPath: 'new-devup-path',
@@ -264,5 +266,41 @@ describe('devupUIPlugin', () => {
         1,
       )
     })
+  })
+
+  it('should include lib', () => {
+    vi.mocked(readFileSync).mockReturnValue('{"theme": "theme"}')
+    vi.mocked(getThemeInterface).mockReturnValue('interfaceCode')
+    vi.mocked(getCss).mockReturnValue('css')
+    vi.mocked(writeFileSync).mockReturnValue()
+    vi.mocked(mkdirSync)
+
+    const plugin = new DevupUIWebpackPlugin({
+      include: ['lib'],
+    })
+    const compiler = {
+      options: {
+        module: {
+          rules: [],
+        },
+      },
+      hooks: {
+        afterCompile: {
+          tap: vi.fn(),
+        },
+        watchRun: {
+          tapAsync: vi.fn(),
+        },
+      },
+    } as any
+    plugin.apply(compiler)
+
+    expect(writeFileSync).toHaveBeenCalledWith(
+      resolve('.df', 'devup-ui.css'),
+      '',
+      {
+        encoding: 'utf-8',
+      },
+    )
   })
 })

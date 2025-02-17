@@ -30,6 +30,7 @@
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
-    "vite": "*"
+    "vite": "*",
+    "@devup-ui/wasm": "*"
   }
 }

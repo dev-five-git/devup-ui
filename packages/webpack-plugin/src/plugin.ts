@@ -24,6 +24,7 @@ export interface DevupUIWebpackPluginOptions {
   interfacePath: string
   watch: boolean
   debug: boolean
+  include: string[]
 }
 
 export class DevupUIWebpackPlugin {
@@ -36,6 +37,7 @@ export class DevupUIWebpackPlugin {
     cssFile = resolve(interfacePath, 'devup-ui.css'),
     watch = false,
     debug = false,
+    include = [],
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
@@ -44,6 +46,7 @@ export class DevupUIWebpackPlugin {
       interfacePath,
       watch,
       debug,
+      include,
     }
   }
 
@@ -132,7 +135,11 @@ export class DevupUIWebpackPlugin {
     compiler.options.module.rules.push(
       {
         test: /\.(tsx|ts|js|mjs|jsx)$/,
-        exclude: /node_modules/,
+        exclude: new RegExp(
+          this.options.include.length
+            ? `node_modules(?!(.*${this.options.include.join('|').replaceAll('/', '[\\/\\\\]')})([\\/\\\\]|$))`
+            : 'node_modules',
+        ),
         enforce: 'pre',
         use: [
           {
