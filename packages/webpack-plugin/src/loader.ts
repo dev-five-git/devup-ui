@@ -23,14 +23,6 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
-    if (
-      id.includes('node_modules/') ||
-      id.includes('@devup-ui/react') ||
-      !/\.[tj](s|sx)?$/.test(id)
-    ) {
-      callback(null, source)
-      return
-    }
 
     try {
       const { code, css } = codeExtract(

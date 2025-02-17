@@ -34,6 +34,9 @@
   "dependencies": {
     "@devup-ui/wasm": "workspace:*"
   },
+  "peerDependencies": {
+    "@devup-ui/wasm": "*"
+  },
   "devDependencies": {
     "vite": "^6.1.0",
     "@types/webpack": "^5.28.5",

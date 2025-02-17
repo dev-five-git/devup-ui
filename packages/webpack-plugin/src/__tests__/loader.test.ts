@@ -13,46 +13,6 @@ beforeEach(() => {
 })
 
 describe('devupUILoader', () => {
-  it('should ignore lib files', () => {
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssFile: 'cssFile',
-        watch: false,
-      }),
-      addDependency: vi.fn(),
-      async: vi.fn().mockReturnValue(vi.fn()),
-      resourcePath: 'node_modules/package/index.ts',
-    }
-    devupUILoader.bind(t as any)(
-      Buffer.from('code'),
-      'node_modules/package/index.ts',
-    )
-
-    expect(t.async).toHaveBeenCalled()
-    expect(t.async()).toHaveBeenCalledWith(null, Buffer.from('code'))
-  })
-
-  it('should ignore wrong files', () => {
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssFile: 'cssFile',
-        watch: false,
-      }),
-      async: vi.fn().mockReturnValue(vi.fn()),
-      resourcePath: 'node_modules/package/index.css',
-      addDependency: vi.fn(),
-    }
-    devupUILoader.bind(t as any)(
-      Buffer.from('code'),
-      'node_modules/package/index.css',
-    )
-
-    expect(t.async).toHaveBeenCalled()
-    expect(t.async()).toHaveBeenCalledWith(null, Buffer.from('code'))
-  })
-
   it('should extract code with css', async () => {
     const _compiler = {
       __DEVUP_CACHE: '',
