@@ -112,13 +112,15 @@ export function DevupUI({
         if (command === 'serve')
           return {
             code: `${retCode}
-            const exists = !!document.getElementById('devup-ui');
-            const style = document.getElementById('devup-ui') || document.createElement('style');
-            style.id = 'devup-ui';
-            style.textContent = \`
-            ${css}
-            \`;
-            if (!exists) document.head.appendChild(style);
+            if(typeof window !== 'undefined'){
+              const exists = !!document.getElementById('devup-ui');
+              const style = document.getElementById('devup-ui') || document.createElement('style');
+              style.id = 'devup-ui';
+              style.textContent = \`
+              ${css}
+              \`;
+              if (!exists) document.head.appendChild(style);
+            }
           `,
           }
       }
