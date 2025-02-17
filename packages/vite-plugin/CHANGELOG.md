@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.43
+
+### Patch Changes
+
+- 86564a5: check browser
+
 ## 0.1.42
 
 ### Patch Changes
