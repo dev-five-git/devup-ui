@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.49
+
+### Patch Changes
+
+- 49f3508: Add include option
+
 ## 0.1.48
 
 ### Patch Changes
