@@ -109,7 +109,7 @@ export function DevupUI({
         writeFileSync(cssFile, css, {
           encoding: 'utf-8',
         })
-        if (command === 'serve')
+        if (command === 'serve' && process.env.NODE_ENV !== 'test')
           return {
             code: `${retCode}
             if(typeof window !== 'undefined'){
