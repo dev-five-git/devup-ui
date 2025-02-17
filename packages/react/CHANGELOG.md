@@ -1,5 +1,12 @@
 # @devup-ui/react
 
+## 0.1.27
+
+### Patch Changes
+
+- 68f79d0: Add lineClamp, willChange
+- 456cb42: Add visiblity
+
 ## 0.1.26
 
 ### Patch Changes

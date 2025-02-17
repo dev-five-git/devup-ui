@@ -1,7 +1,7 @@
 {
   "name": "@devup-ui/webpack-plugin",
   "type": "module",
-  "version": "0.1.49",
+  "version": "0.1.50",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
