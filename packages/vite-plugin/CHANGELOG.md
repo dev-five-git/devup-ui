@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.45
+
+### Patch Changes
+
+- 49f3508: Add include option
+
 ## 0.1.44
 
 ### Patch Changes

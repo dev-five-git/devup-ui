@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 0.1.49
+
+### Patch Changes
+
+- 49f3508: Add include option
+- Updated dependencies [49f3508]
+  - @devup-ui/webpack-plugin@0.1.49
+
 ## 0.1.48
 
 ### Patch Changes
