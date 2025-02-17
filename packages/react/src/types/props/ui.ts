@@ -18,4 +18,5 @@ export interface DevupUiUiProps {
   pointerEvents?: ResponsiveValue<Property.PointerEvents>
   resize?: ResponsiveValue<Property.Resize>
   userSelect?: ResponsiveValue<Property.UserSelect>
+  willChange?: ResponsiveValue<Property.WillChange>
 }

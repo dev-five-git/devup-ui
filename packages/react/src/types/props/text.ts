@@ -36,6 +36,8 @@ export interface DevupUiTextProps {
 
   content?: ResponsiveValue<Property.Content>
 
+  lineClamp?: ResponsiveValue<Property.LineClamp>
+
   typography?: TypographyKey<DevupThemeTypography>
 }
 
