@@ -10,4 +10,5 @@ export interface DevupUiColorProps {
 
   color?: ResponsiveValue<Property.Color | keyof DevupThemeColors>
   opacity?: ResponsiveValue<Property.Opacity>
+  visibility?: ResponsiveValue<Property.Visibility>
 }
