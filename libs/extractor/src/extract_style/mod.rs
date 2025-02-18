@@ -30,6 +30,15 @@ static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
     set.insert("scale".to_string());
     set.insert("aspectRatio".to_string());
     set.insert("flexGrow".to_string());
+    set.insert("flexShrink".to_string());
+    set.insert("order".to_string());
+    set.insert("gridColumn".to_string());
+    set.insert("gridColumnStart".to_string());
+    set.insert("gridColumnEnd".to_string());
+    set.insert("gridRow".to_string());
+    set.insert("gridRowStart".to_string());
+    set.insert("gridRowEnd".to_string());
+    set.insert("animationIterationCount".to_string());
     set
 });
 
