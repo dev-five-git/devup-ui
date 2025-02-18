@@ -269,7 +269,19 @@ pub fn extract_style_from_expression<'a>(
                             None,
                             &mut o.value,
                             level,
-                            Some(&name.as_str().into()),
+                            Some(
+                                &if let Some(selector) = selector {
+                                    format!(
+                                        "{}{}",
+                                        selector.to_string().split("&").collect::<Vec<_>>()[0],
+                                        name.as_str()
+                                    )
+                                } else {
+                                    name
+                                }
+                                .as_str()
+                                .into(),
+                            ),
                         ) {
                             props.append(&mut styles);
                         }
