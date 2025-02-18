@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.29
+
+### Patch Changes
+
+- 7535643: Change default generic type of VStack
+
 ## 0.1.28
 
 ### Patch Changes
