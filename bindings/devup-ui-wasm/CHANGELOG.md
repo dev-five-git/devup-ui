@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.46
+
+### Patch Changes
+
+- f327278: Add maintain value
+
 ## 0.1.45
 
 ### Patch Changes
