@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.47
+
+### Patch Changes
+
+- 28c57b7: Fix dark selector issue
+
 ## 0.1.46
 
 ### Patch Changes
