@@ -1,14 +1,16 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { codeExtract, getThemeInterface } from '@devup-ui/wasm'
-import { expect } from 'vitest'
+import { describe } from 'vitest'
 
 import { DevupUI } from '../plugin'
 
 vi.mock('@devup-ui/wasm')
 vi.mock('node:fs')
+vi.mock('node:fs/promises')
 
 const _filename = fileURLToPath(import.meta.url)
 const _dirname = resolve(dirname(_filename), '..')
@@ -23,7 +25,7 @@ describe('devupUIPlugin', () => {
     const interfacePath = '.df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
     vi.mocked(getThemeInterface).mockReturnValue('interface code')
     vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
     const options = {
@@ -35,6 +37,8 @@ describe('devupUIPlugin', () => {
     const plugin = DevupUI(options)
     expect(plugin).toEqual({
       name: 'devup-ui',
+      load: expect.any(Function),
+      resolveId: expect.any(Function),
       config: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
@@ -54,6 +58,13 @@ describe('devupUIPlugin', () => {
       server: {
         watch: {
           ignored: [`!${devupPath}`],
+        },
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: expect.any(Function),
+          },
         },
       },
     })
@@ -99,7 +110,7 @@ describe('devupUIPlugin', () => {
       code: 'code',
     } as any)
     ;(plugin as any).transform('code', 'correct.ts')
-    expect(writeFileSync).toBeCalledTimes(1)
+    expect(writeFile).toBeCalledTimes(1)
 
     vi.clearAllMocks()
     vi.mocked(codeExtract).mockReturnValueOnce({
@@ -107,22 +118,22 @@ describe('devupUIPlugin', () => {
       code: 'code',
     } as any)
     ;(plugin as any).transform('code', 'correct.ts')
-    expect(writeFileSync).toBeCalledTimes(0)
+    expect(writeFile).toBeCalledTimes(0)
     ;(plugin as any).apply({}, { command: 'serve' })
     vi.clearAllMocks()
     vi.mocked(codeExtract).mockReturnValueOnce({
-      css: 'css code',
+      css: 'css code next',
       code: 'code',
     } as any)
     ;(plugin as any).transform('code', 'correct.ts')
-    expect(writeFileSync).toBeCalledTimes(1)
+    expect(writeFile).toBeCalledTimes(1)
   })
   it('should transform code', () => {
     const devupPath = 'devup.json'
     const interfacePath = '.df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
     vi.mocked(getThemeInterface).mockReturnValue('interface code')
     vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
     const options = {
@@ -134,6 +145,8 @@ describe('devupUIPlugin', () => {
     const plugin = DevupUI(options)
     expect(plugin).toEqual({
       name: 'devup-ui',
+      load: expect.any(Function),
+      resolveId: expect.any(Function),
       config: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
@@ -151,7 +164,7 @@ describe('devupUIPlugin', () => {
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
     vi.clearAllMocks()
     vi.mocked(codeExtract).mockReturnValueOnce({
-      css: 'css code',
+      css: 'css code 1223444',
       code: 'code',
     } as any)
     // eslint-disable-next-line prefer-spread
@@ -159,17 +172,15 @@ describe('devupUIPlugin', () => {
       command: 'serve',
     })
     vi.stubEnv('NODE_ENV', 'development')
-    expect((plugin as any).transform('code', 'correct.ts').code).toContain(
-      'document.head.appendChild',
-    )
-    expect(writeFileSync).toBeCalledTimes(1)
+    ;(plugin as any).transform('code', 'correct.ts')
+    expect(writeFile).toBeCalledTimes(1)
   })
   it('should not extract code', () => {
     const devupPath = 'devup.json'
     const interfacePath = '.df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
     vi.mocked(getThemeInterface).mockReturnValue('interface code')
     vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
     const options = {
@@ -182,6 +193,8 @@ describe('devupUIPlugin', () => {
     const plugin = DevupUI(options)
     expect(plugin).toEqual({
       name: 'devup-ui',
+      load: expect.any(Function),
+      resolveId: expect.any(Function),
       config: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
@@ -206,7 +219,7 @@ describe('devupUIPlugin', () => {
     const interfacePath = '.df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
     vi.mocked(getThemeInterface).mockReturnValue('interface code')
     vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
     vi.mocked(writeFileSync).mockImplementation(() => {
@@ -221,6 +234,8 @@ describe('devupUIPlugin', () => {
     const plugin = DevupUI(options)
     expect(plugin).toEqual({
       name: 'devup-ui',
+      load: expect.any(Function),
+      resolveId: expect.any(Function),
       config: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
@@ -243,7 +258,7 @@ describe('devupUIPlugin', () => {
     const interfacePath = '.df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
     vi.mocked(getThemeInterface).mockReturnValue('interface code')
     vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
     const options = {
@@ -256,6 +271,8 @@ describe('devupUIPlugin', () => {
     expect(plugin).toEqual({
       name: 'devup-ui',
       config: expect.any(Function),
+      load: expect.any(Function),
+      resolveId: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
@@ -271,5 +288,59 @@ describe('devupUIPlugin', () => {
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
     expect((plugin as any).apply({}, { command: 'build' })).toBe(true)
+  })
+
+  describe('basic', () => {
+    const devupPath = 'devup.json'
+    const interfacePath = '.df'
+    const cssFile = join(_dirname, 'devup-ui.css')
+    const libPackage = '@devup-ui/react'
+    vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.mocked(getThemeInterface).mockReturnValue('interface code')
+    vi.mocked(readFileSync).mockReturnValueOnce('{"theme": {}}')
+    const options = {
+      package: libPackage,
+      cssFile,
+      devupPath,
+      interfacePath,
+    }
+    const plugin = DevupUI(options)
+    it('should merge chunks', () => {
+      expect(
+        (plugin as any)
+          .config()
+          .build.rollupOptions.output.manualChunks('code', 'code'),
+      ).toBeUndefined()
+
+      expect(
+        (plugin as any)
+          .config()
+          .build.rollupOptions.output.manualChunks('devup-ui.css', 'code'),
+      ).toEqual('devup-ui.css')
+      expect(
+        (plugin as any)
+          .config()
+          .build.rollupOptions.output.manualChunks('devup-ui.css?v=1', 'code'),
+      ).toEqual('devup-ui.css')
+    })
+    it('should resolveId', () => {
+      expect((plugin as any).resolveId('code', 'code')).toBeUndefined()
+      expect(
+        (plugin as any)
+          .resolveId(cssFile, 'code')
+          .startsWith('devup-ui.css?v='),
+      ).toBe(true)
+    })
+    it('should load', () => {
+      expect((plugin as any).load('code')).toBeUndefined()
+      expect((plugin as any).load(cssFile)).toBeUndefined()
+      expect(
+        (plugin as any).load('devup-ui.css?v=some').length.toString(),
+      ).toBe(
+        (plugin as any)
+          .resolveId(cssFile, 'code')
+          .substring('devup-ui.css?v='.length),
+      )
+    })
   })
 })
