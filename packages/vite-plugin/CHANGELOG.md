@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.49
+
+### Patch Changes
+
+- e9b4817: Fix vite build, dev issue
+
 ## 0.1.48
 
 ### Patch Changes
