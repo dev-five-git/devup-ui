@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 0.1.49
+
+### Patch Changes
+
+- c7ae821: Optimize value
+- dd5ce79: Fix selector order in theme
+
 ## 0.1.48
 
 ### Patch Changes
