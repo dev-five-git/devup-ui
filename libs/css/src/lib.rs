@@ -10,11 +10,19 @@ use std::sync::Mutex;
 
 static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    map.insert("&:disabled".to_string(), 5);
-    map.insert("&:selected".to_string(), 4);
-    map.insert("&:active".to_string(), 3);
-    map.insert("&:focus".to_string(), 2);
-    map.insert("&:hover".to_string(), 1);
+    for (idx, selector) in [
+        "hover",
+        "focus-visible",
+        "focus",
+        "active",
+        "selected",
+        "disabled",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        map.insert(format!("&:{}", selector), idx as u8);
+    }
     map
 });
 
@@ -41,18 +49,30 @@ impl PartialOrd for StyleSelector {
     }
 }
 
+fn get_selector_order(selector: &str) -> u8 {
+    // & count
+    let t = if selector.chars().filter(|c| c == &'&').count() == 1 {
+        selector
+            .split('&')
+            .last()
+            .map(|a| format!("&{}", a))
+            .unwrap_or(selector.to_string())
+    } else {
+        selector.to_string()
+    };
+
+    *SELECTOR_ORDER_MAP
+        .get(&t)
+        .unwrap_or(if t.starts_with("&") { &0 } else { &99 })
+}
+
 impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (StyleSelector::Media(a), StyleSelector::Media(b)) => a.cmp(b),
-            (StyleSelector::Selector(a), StyleSelector::Selector(b)) => SELECTOR_ORDER_MAP
-                .get(a)
-                .unwrap_or(if a.starts_with("&") { &0 } else { &99 })
-                .cmp(SELECTOR_ORDER_MAP.get(b).unwrap_or(if b.starts_with("&") {
-                    &0
-                } else {
-                    &99
-                })),
+            (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
+                get_selector_order(a).cmp(&get_selector_order(b))
+            }
             (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
             (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
         }

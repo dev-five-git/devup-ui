@@ -515,6 +515,25 @@ mod tests {
         sheet.add_property("test", "mx", 0, "51px", Some(&"themeLight".into()), None);
         sheet.add_property("test", "mx", 0, "42px", None, None);
         assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "mx",
+            0,
+            "50px",
+            Some(&["themeLight", "active"].into()),
+            None,
+        );
+        sheet.add_property(
+            "test",
+            "mx",
+            0,
+            "50px",
+            Some(&["themeLight", "hover"].into()),
+            None,
+        );
+        assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
