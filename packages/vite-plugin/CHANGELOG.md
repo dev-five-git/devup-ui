@@ -1,5 +1,13 @@
 # @devup-ui/vite-plugin
 
+## 0.1.50
+
+### Patch Changes
+
+- e644b46: Fix vite cache issue
+- Updated dependencies [e644b46]
+  - @devup-ui/wasm@0.1.48
+
 ## 0.1.49
 
 ### Patch Changes
