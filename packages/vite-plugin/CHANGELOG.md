@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 0.1.52
+
+### Patch Changes
+
+- ca807e5: Support storybook
+
 ## 0.1.51
 
 ### Patch Changes
