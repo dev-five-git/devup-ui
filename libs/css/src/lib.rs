@@ -362,6 +362,11 @@ fn optimize_color(value: &str) -> String {
         if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] {
             ret = format!("{}{}{}", ch[0], ch[2], ch[4]);
         }
+    } else if ret.len() == 8 {
+        let ch = ret.chars().collect::<Vec<char>>();
+        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
+            ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
+        }
     }
 
     format!("#{}", ret)
@@ -568,11 +573,25 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FFF"), None, None),
         );
 
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-#FFF--255"), Some(&3));
+        }
+
         assert_eq!(
             sheet_to_classname("background", 0, Some("#ffffff"), None, None),
             sheet_to_classname("background", 0, Some("#FFFFFF"), None, None),
         );
 
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffffAA"), None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None),
+        );
+
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-#FFFA--255"), Some(&4));
+        }
         assert_eq!(
             sheet_to_classname(
                 "background",
