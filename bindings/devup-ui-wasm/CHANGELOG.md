@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.50
+
+### Patch Changes
+
+- 60ded6f: Optimize hex color with alpha
+
 ## 0.1.49
 
 ### Patch Changes
