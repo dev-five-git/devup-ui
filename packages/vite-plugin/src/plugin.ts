@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 
 import {
   codeExtract,
+  getCss,
   getThemeInterface,
   registerTheme,
   setDebug,
@@ -115,7 +116,9 @@ export function DevupUI({
         return `devup-ui.css?t=${Date.now().toString() + globalCss.length}`
     },
     load(id) {
-      if (id.split('?')[0] === 'devup-ui.css') return globalCss
+      if (id.split('?')[0] === 'devup-ui.css')
+        // for no share env like storybook
+        return (globalCss = getCss())
     },
     enforce: 'pre',
     async transform(code, id) {

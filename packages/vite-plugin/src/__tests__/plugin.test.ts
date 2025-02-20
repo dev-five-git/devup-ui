@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { codeExtract, getThemeInterface } from '@devup-ui/wasm'
+import { codeExtract, getCss, getThemeInterface } from '@devup-ui/wasm'
 import { describe } from 'vitest'
 
 import { DevupUI } from '../plugin'
@@ -344,13 +344,10 @@ describe('devupUIPlugin', () => {
       Date.now = () => 1
       expect((plugin as any).load('code')).toBeUndefined()
       expect((plugin as any).load(cssFile)).toBeUndefined()
+      vi.mocked(getCss).mockReturnValueOnce('css code')
       expect(
         (plugin as any).load('devup-ui.css?v=some').length.toString(),
-      ).toBe(
-        (plugin as any)
-          .resolveId(cssFile, 'code')
-          .substring(`devup-ui.css?v=${Date.now()}`.length),
-      )
+      ).toBe('css code'.length.toString())
     })
   })
 })
