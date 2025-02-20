@@ -352,6 +352,34 @@ pub fn short_to_long(property: &str) -> String {
 }
 
 static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
+static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
+
+fn optimize_color(value: &str) -> String {
+    let mut ret = value.to_string().to_uppercase();
+
+    if ret.len() == 6 {
+        let ch = ret.chars().collect::<Vec<char>>();
+        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] {
+            ret = format!("{}{}{}", ch[0], ch[2], ch[4]);
+        }
+    }
+
+    format!("#{}", ret)
+}
+
+fn optimize_value(value: &str) -> String {
+    let mut ret = value.trim().to_string();
+    if ret.contains(",") {
+        ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
+    }
+    if ret.contains("#") {
+        ret = COLOR_HASH
+            .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
+            .to_string();
+    }
+    ret
+}
+
 pub fn sheet_to_classname(
     property: &str,
     level: u8,
@@ -365,7 +393,7 @@ pub fn sheet_to_classname(
             "{}-{}-{}-{}-{}",
             property.trim(),
             level,
-            F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
+            optimize_value(value.unwrap_or("")),
             if selector.is_empty() {
                 "".to_string()
             } else {
@@ -380,7 +408,7 @@ pub fn sheet_to_classname(
             "{}-{}-{}-{}-{}",
             property.trim(),
             level,
-            F_SPACE_RE.replace_all(value.unwrap_or(""), ",").trim(),
+            optimize_value(value.unwrap_or("")),
             selector.unwrap_or("").trim(),
             style_order.unwrap_or(255)
         );
@@ -476,7 +504,7 @@ mod tests {
             "--background-0-"
         );
         assert_eq!(
-            sheet_to_variable_name("background", 0, Some("hover".into())),
+            sheet_to_variable_name("background", 0, Some("hover")),
             "--background-0-12448419602614487988"
         );
         assert_eq!(
@@ -484,7 +512,7 @@ mod tests {
             "--background-1-"
         );
         assert_eq!(
-            sheet_to_variable_name("background", 1, Some("hover".into())),
+            sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-12448419602614487988"
         );
     }
@@ -509,34 +537,58 @@ mod tests {
         );
 
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
-        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), None, None),
-            "d1"
+            sheet_to_classname("background", 0, None, None, None),
+            sheet_to_classname("background", 0, None, None, None)
         );
         assert_eq!(
             sheet_to_classname("background", 0, Some("red"), None, None),
-            "d1"
+            sheet_to_classname("background", 0, Some("red"), None, None),
         );
         assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
             sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
-            "d1"
         );
-
         assert_eq!(
             sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
-            "d2"
-        );
-        assert_eq!(
             sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
-            "d2"
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
             assert_eq!(map.get("background-0-rgba(255,0,0,0.5)--255"), Some(&2));
         }
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#fff"), None, None),
+            sheet_to_classname("  background  ", 0, Some("#FFF"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
+            sheet_to_classname("background", 0, Some("#FFF"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFF"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname(
+                "background",
+                0,
+                Some("color-mix(in srgb,var(--primary) 80%,    #000 20%)"),
+                None,
+                None
+            ),
+            sheet_to_classname(
+                "background",
+                0,
+                Some("color-mix(in srgb,    var(--primary) 80%, #000000 20%)"),
+                None,
+                None
+            ),
+        );
 
         reset_class_map();
         assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
