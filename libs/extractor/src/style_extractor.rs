@@ -146,7 +146,6 @@ pub fn extract_style_from_expression<'a>(
                         obj.properties.insert(idx, prop);
                     }
                 }
-                println!("ORDER! {:?}", style_order);
                 if props_styles.is_empty() {
                     ExtractResult::Maintain
                 } else {
