@@ -328,10 +328,11 @@ describe('devupUIPlugin', () => {
       expect(
         (plugin as any)
           .resolveId(cssFile, 'code')
-          .startsWith('devup-ui.css?v='),
+          .startsWith('devup-ui.css?t='),
       ).toBe(true)
     })
     it('should load', () => {
+      Date.now = () => 1
       expect((plugin as any).load('code')).toBeUndefined()
       expect((plugin as any).load(cssFile)).toBeUndefined()
       expect(
@@ -339,7 +340,7 @@ describe('devupUIPlugin', () => {
       ).toBe(
         (plugin as any)
           .resolveId(cssFile, 'code')
-          .substring('devup-ui.css?v='.length),
+          .substring(`devup-ui.css?v=${Date.now()}`.length),
       )
     })
   })

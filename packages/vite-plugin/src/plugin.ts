@@ -108,9 +108,8 @@ export function DevupUI({
       }
     },
     resolveId(id) {
-      if (normalizePath(id) === normalizePath(cssFile)) {
-        return 'devup-ui.css?v=' + globalCss.length
-      }
+      if (normalizePath(id) === normalizePath(cssFile))
+        return `devup-ui.css?t=${Date.now().toString() + globalCss.length}`
     },
     load(id) {
       if (id.split('?')[0] === 'devup-ui.css') return globalCss

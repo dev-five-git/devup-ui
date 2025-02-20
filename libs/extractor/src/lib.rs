@@ -2168,7 +2168,6 @@ import {Button} from '@devup/ui'
             }
         )
         .unwrap());
-        println!("=================");
 
         reset_class_map();
         assert_debug_snapshot!(extract(
