@@ -322,6 +322,15 @@ describe('devupUIPlugin', () => {
           .config()
           .build.rollupOptions.output.manualChunks('devup-ui.css?v=1', 'code'),
       ).toEqual('devup-ui.css')
+
+      const plugin1 = DevupUI({
+        package: libPackage,
+        cssFile,
+        devupPath,
+        interfacePath,
+        extractCss: false,
+      })
+      expect((plugin1 as any).config().build).toBeUndefined()
     })
     it('should resolveId', () => {
       expect((plugin as any).resolveId('code', 'code')).toBeUndefined()

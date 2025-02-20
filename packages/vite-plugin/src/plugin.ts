@@ -8,7 +8,7 @@ import {
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
-import { normalizePath, type PluginOption } from 'vite'
+import { normalizePath, type PluginOption, type UserConfig } from 'vite'
 
 export interface DevupUIPluginOptions {
   package: string
@@ -69,13 +69,15 @@ export function DevupUI({
   return {
     name: 'devup-ui',
     config() {
-      return {
+      const ret: Omit<UserConfig, 'plugins'> = {
         server: {
           watch: {
             ignored: [`!${devupPath}`],
           },
         },
-        build: {
+      }
+      if (extractCss) {
+        ret['build'] = {
           rollupOptions: {
             output: {
               manualChunks(id) {
@@ -86,8 +88,9 @@ export function DevupUI({
               },
             },
           },
-        },
+        }
       }
+      return ret
     },
     apply() {
       return true
