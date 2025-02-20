@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.48
+
+### Patch Changes
+
+- e644b46: Remove print
+
 ## 0.1.47
 
 ### Patch Changes
