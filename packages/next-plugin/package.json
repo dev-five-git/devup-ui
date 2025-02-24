@@ -1,7 +1,7 @@
 {
   "name": "@devup-ui/next-plugin",
   "type": "module",
-  "version": "0.1.55",
+  "version": "0.1.56",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
