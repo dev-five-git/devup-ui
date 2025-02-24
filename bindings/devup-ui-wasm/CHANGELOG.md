@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.51
+
+### Patch Changes
+
+- 0e1ab6e: Support for conditional selector
+
 ## 0.1.50
 
 ### Patch Changes

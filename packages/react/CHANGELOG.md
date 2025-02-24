@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.30
+
+### Patch Changes
+
+- 0e1ab6e: Support for conditional selector
+
 ## 0.1.29
 
 ### Patch Changes
