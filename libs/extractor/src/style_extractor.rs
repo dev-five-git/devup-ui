@@ -466,21 +466,19 @@ pub fn extract_style_from_expression<'a>(
                 }
             }
             Expression::LogicalExpression(logical) => {
-                let res = name.and_then(|name| {
-                    match extract_style_from_expression(
-                        ast_builder,
-                        Some(name),
-                        &mut logical.right,
-                        level,
-                        selector,
-                    ) {
-                        ExtractResult::Extract {
-                            styles: Some(styles),
-                            ..
-                        } => Some(Box::new(ExtractStyleProp::StaticArray(styles))),
-                        _ => None,
-                    }
-                });
+                let res = match extract_style_from_expression(
+                    ast_builder,
+                    name,
+                    &mut logical.right,
+                    level,
+                    selector,
+                ) {
+                    ExtractResult::Extract {
+                        styles: Some(styles),
+                        ..
+                    } => Some(Box::new(ExtractStyleProp::StaticArray(styles))),
+                    _ => None,
+                };
                 match logical.operator {
                     LogicalOperator::Or => ExtractResult::Extract {
                         styles: Some(vec![ExtractStyleProp::Conditional {

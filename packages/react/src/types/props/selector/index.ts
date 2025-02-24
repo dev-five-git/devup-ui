@@ -13,59 +13,59 @@ export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
     }
 
 export interface DevupSelectorProps {
-  _active?: DevupCommonProps
-  _checked?: DevupCommonProps
-  _default?: DevupCommonProps
-  _disabled?: DevupCommonProps
-  _empty?: DevupCommonProps
-  _enabled?: DevupCommonProps
-  _first?: DevupCommonProps
-  _firstChild?: DevupCommonProps
-  _firstOfType?: DevupCommonProps
-  _focus?: DevupCommonProps
-  _focusVisible?: DevupCommonProps
-  _focusWithin?: DevupCommonProps
-  _hover?: DevupCommonProps
-  _invalid?: DevupCommonProps
-  _lastChild?: DevupCommonProps
-  _lastOfType?: DevupCommonProps
-  _link?: DevupCommonProps
-  _onlyChild?: DevupCommonProps
-  _optional?: DevupCommonProps
-  _readOnly?: DevupCommonProps
-  _print?: DevupCommonProps
+  _active?: DevupCommonProps | false
+  _checked?: DevupCommonProps | false
+  _default?: DevupCommonProps | false
+  _disabled?: DevupCommonProps | false
+  _empty?: DevupCommonProps | false
+  _enabled?: DevupCommonProps | false
+  _first?: DevupCommonProps | false
+  _firstChild?: DevupCommonProps | false
+  _firstOfType?: DevupCommonProps | false
+  _focus?: DevupCommonProps | false
+  _focusVisible?: DevupCommonProps | false
+  _focusWithin?: DevupCommonProps | false
+  _hover?: DevupCommonProps | false
+  _invalid?: DevupCommonProps | false
+  _lastChild?: DevupCommonProps | false
+  _lastOfType?: DevupCommonProps | false
+  _link?: DevupCommonProps | false
+  _onlyChild?: DevupCommonProps | false
+  _optional?: DevupCommonProps | false
+  _readOnly?: DevupCommonProps | false
+  _print?: DevupCommonProps | false
 
-  _groupActive?: DevupCommonProps
-  _groupChecked?: DevupCommonProps
-  _groupDefault?: DevupCommonProps
-  _groupDisabled?: DevupCommonProps
-  _groupEmpty?: DevupCommonProps
-  _groupEnabled?: DevupCommonProps
-  _groupFirst?: DevupCommonProps
-  _groupFirstChild?: DevupCommonProps
-  _groupFirstOfType?: DevupCommonProps
-  _groupFocus?: DevupCommonProps
-  _groupFocusVisible?: DevupCommonProps
-  _groupFocusWithin?: DevupCommonProps
-  _groupHover?: DevupCommonProps
-  _groupInvalid?: DevupCommonProps
-  _groupLastChild?: DevupCommonProps
-  _groupLastOfType?: DevupCommonProps
-  _groupLink?: DevupCommonProps
-  _groupOnlyChild?: DevupCommonProps
-  _groupOptional?: DevupCommonProps
-  _groupReadOnly?: DevupCommonProps
+  _groupActive?: DevupCommonProps | false
+  _groupChecked?: DevupCommonProps | false
+  _groupDefault?: DevupCommonProps | false
+  _groupDisabled?: DevupCommonProps | false
+  _groupEmpty?: DevupCommonProps | false
+  _groupEnabled?: DevupCommonProps | false
+  _groupFirst?: DevupCommonProps | false
+  _groupFirstChild?: DevupCommonProps | false
+  _groupFirstOfType?: DevupCommonProps | false
+  _groupFocus?: DevupCommonProps | false
+  _groupFocusVisible?: DevupCommonProps | false
+  _groupFocusWithin?: DevupCommonProps | false
+  _groupHover?: DevupCommonProps | false
+  _groupInvalid?: DevupCommonProps | false
+  _groupLastChild?: DevupCommonProps | false
+  _groupLastOfType?: DevupCommonProps | false
+  _groupLink?: DevupCommonProps | false
+  _groupOnlyChild?: DevupCommonProps | false
+  _groupOptional?: DevupCommonProps | false
+  _groupReadOnly?: DevupCommonProps | false
 
   // double separator
-  _placeholder?: DevupCommonProps
-  _before?: DevupCommonProps
-  _after?: DevupCommonProps
-  _highlight?: DevupCommonProps
-  _viewTransition?: DevupCommonProps
-  _viewTransitionGroup?: DevupCommonProps
-  _viewTransitionImagePair?: DevupCommonProps
-  _viewTransitionNew?: DevupCommonProps
-  _viewTransitionOld?: DevupCommonProps
+  _placeholder?: DevupCommonProps | false
+  _before?: DevupCommonProps | false
+  _after?: DevupCommonProps | false
+  _highlight?: DevupCommonProps | false
+  _viewTransition?: DevupCommonProps | false
+  _viewTransitionGroup?: DevupCommonProps | false
+  _viewTransitionImagePair?: DevupCommonProps | false
+  _viewTransitionNew?: DevupCommonProps | false
+  _viewTransitionOld?: DevupCommonProps | false
 
   selectors?: Record<string, DevupCommonProps>
 
