@@ -916,6 +916,69 @@ mod tests {
 
     #[test]
     #[serial]
+    fn extract_conditional_selector() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={a===b ? undefined : {
+          mx: 1
+        }} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={a===b && {
+          mx: 1
+        }} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={a===b && {}} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r"import {Box} from '@devup-ui/core'
+        <Box _hover={a===b && {
+          mx: 1,
+          my: 1
+        }} />
+        ",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
     fn extract_selector_with_responsive() {
         reset_class_map();
         assert_debug_snapshot!(extract(
