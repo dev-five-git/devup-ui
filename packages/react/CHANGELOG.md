@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.31
+
+### Patch Changes
+
+- e7fd185: Add textDecoration type
+
 ## 0.1.30
 
 ### Patch Changes
