@@ -23,6 +23,10 @@ export interface DevupUiTextProps {
   textDecorationColor?: ResponsiveValue<Property.TextDecorationColor>
   textDecorationLine?: ResponsiveValue<Property.TextDecorationLine>
   textDecorationStyle?: ResponsiveValue<Property.TextDecorationStyle>
+  textDecorationSkipInk?: ResponsiveValue<Property.TextDecorationSkipInk>
+  textDecorationThickness?: ResponsiveValue<Property.TextDecorationThickness>
+  textUnderlineOffset?: ResponsiveValue<Property.TextUnderlineOffset>
+  textUnderlinePosition?: ResponsiveValue<Property.TextUnderlinePosition>
   textEmphasis?: ResponsiveValue<Property.TextEmphasis>
   textEmphasisColor?: ResponsiveValue<Property.TextEmphasisColor>
   textEmphasisPosition?: ResponsiveValue<Property.TextEmphasisPosition>
