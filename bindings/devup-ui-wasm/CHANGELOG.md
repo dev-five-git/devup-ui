@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.52
+
+### Patch Changes
+
+- b9b4700: Support static member expression
+
 ## 0.1.51
 
 ### Patch Changes
