@@ -329,6 +329,7 @@ pub fn extract_style_from_expression<'a>(
         match expression {
             Expression::UnaryExpression(_)
             | Expression::BinaryExpression(_)
+            | Expression::StaticMemberExpression(_)
             | Expression::CallExpression(_) => ExtractResult::Extract {
                 styles: Some(vec![ExtractStyleProp::Static(Dynamic(
                     ExtractDynamicStyle::new(
