@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.53
+
+### Patch Changes
+
+- 0bd2c42: Support TsAsExpression
+
 ## 0.1.52
 
 ### Patch Changes
