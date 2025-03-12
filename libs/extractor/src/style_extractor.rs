@@ -72,6 +72,7 @@ pub fn extract_style_from_expression<'a>(
     level: u8,
     selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
+    println!("extract_style_from_expression: {:?}", expression);
     let mut typo = false;
 
     if name.is_none() && selector.is_none() {
@@ -342,6 +343,13 @@ pub fn extract_style_from_expression<'a>(
                 tag: None,
                 style_order: None,
             },
+            Expression::TSAsExpression(exp) => extract_style_from_expression(
+                ast_builder,
+                name,
+                &mut exp.expression,
+                level,
+                selector,
+            ),
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }

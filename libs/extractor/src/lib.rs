@@ -542,6 +542,49 @@ mod tests {
 
     #[test]
     #[serial]
+    fn extract_dynamic_style_props_with_type() {
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box padding={a as A} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box padding={data[d as A] as B} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(extract(
+            "test.tsx",
+            r#"import { Box } from "@devup-ui/core";
+<Box padding={"10px" as B} />;
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_file: None
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    #[serial]
     fn extract_dynamic_responsive_style_props() {
         reset_class_map();
         assert_debug_snapshot!(extract(
