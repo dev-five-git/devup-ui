@@ -1,5 +1,5 @@
 use crate::utils::{expression_to_code, get_number_by_literal_expression, is_special_property};
-use crate::{utils, ExtractStyleProp};
+use crate::{ExtractStyleProp, utils};
 use oxc_allocator::CloneIn;
 use oxc_ast::ast::{
     ArrayExpressionElement, ComputedMemberExpression, Expression, JSXAttributeValue,
@@ -41,7 +41,7 @@ pub fn extract_style_from_jsx_attr<'a>(
     selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
     match value {
-        JSXAttributeValue::ExpressionContainer(ref mut expression) => {
+        JSXAttributeValue::ExpressionContainer(expression) => {
             if expression.expression.is_expression() {
                 extract_style_from_expression(
                     ast_builder,
@@ -78,7 +78,7 @@ pub fn extract_style_from_expression<'a>(
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         return match expression {
-            Expression::ObjectExpression(ref mut obj) => {
+            Expression::ObjectExpression(obj) => {
                 let mut props_styles = vec![];
                 let mut tag = None;
                 for idx in (0..obj.properties.len()).rev() {
@@ -157,7 +157,7 @@ pub fn extract_style_from_expression<'a>(
                     }
                 }
             }
-            Expression::ConditionalExpression(ref mut conditional) => ExtractResult::Extract {
+            Expression::ConditionalExpression(conditional) => ExtractResult::Extract {
                 styles: Some(vec![ExtractStyleProp::Conditional {
                     condition: conditional.test.clone_in(ast_builder.allocator),
                     consequent: if let ExtractResult::Extract {
@@ -259,7 +259,7 @@ pub fn extract_style_from_expression<'a>(
             if let Expression::ObjectExpression(obj) = expression {
                 let mut props = vec![];
                 for p in obj.properties.iter_mut() {
-                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p {
                         let name = o.key.name().unwrap().to_string();
                         if let ExtractResult::Extract {
                             styles: Some(mut styles),
@@ -579,7 +579,7 @@ pub fn extract_style_from_expression<'a>(
                     }
                 }
             }
-            Expression::ConditionalExpression(ref mut conditional) => ExtractResult::Extract {
+            Expression::ConditionalExpression(conditional) => ExtractResult::Extract {
                 styles: Some(vec![ExtractStyleProp::Conditional {
                     condition: conditional.test.clone_in(ast_builder.allocator),
                     consequent: if let ExtractResult::Extract {
@@ -617,7 +617,7 @@ pub fn extract_style_from_expression<'a>(
             Expression::ObjectExpression(obj) => {
                 let mut props = vec![];
                 for p in obj.properties.iter_mut() {
-                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p {
                         if let ExtractResult::Extract {
                             styles: Some(mut styles),
                             ..
@@ -721,7 +721,7 @@ fn extract_style_from_member_expression<'a>(
 
             let mut map = BTreeMap::new();
             for (idx, p) in array.elements.iter_mut().enumerate() {
-                if let ArrayExpressionElement::SpreadElement(ref sp) = p {
+                if let ArrayExpressionElement::SpreadElement(sp) = p {
                     map.insert(
                         idx.to_string(),
                         Box::new(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
@@ -774,7 +774,7 @@ fn extract_style_from_member_expression<'a>(
             if let Some(k) = utils::get_string_by_literal_expression(mem_expression) {
                 let mut etc = None;
                 for p in obj.properties.iter_mut() {
-                    if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p {
                         if let PropertyKey::StaticIdentifier(ref pk) = o.key {
                             if pk.name == k {
                                 if let ExtractResult::Extract {
@@ -795,7 +795,7 @@ fn extract_style_from_member_expression<'a>(
                                 }
                             }
                         }
-                    } else if let ObjectPropertyKind::SpreadProperty(ref sp) = p {
+                    } else if let ObjectPropertyKind::SpreadProperty(sp) = p {
                         etc = Some(sp.argument.clone_in(ast_builder.allocator));
                     }
                 }
@@ -806,7 +806,7 @@ fn extract_style_from_member_expression<'a>(
                             styles: None,
                             tag: None,
                             style_order: None,
-                        }
+                        };
                     }
                     Some(etc) => {
                         ret.push(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
@@ -828,7 +828,7 @@ fn extract_style_from_member_expression<'a>(
             }
 
             for p in obj.properties.iter_mut() {
-                if let ObjectPropertyKind::ObjectProperty(ref mut o) = p {
+                if let ObjectPropertyKind::ObjectProperty(o) = p {
                     if let PropertyKey::StaticIdentifier(_)
                     | PropertyKey::NumericLiteral(_)
                     | PropertyKey::StringLiteral(_) = o.key

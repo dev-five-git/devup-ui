@@ -1,10 +1,10 @@
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
+use oxc_ast::AstBuilder;
 use oxc_ast::ast::{
     Expression, JSXAttribute, JSXAttributeValue, JSXExpression, ObjectPropertyKind, PropertyKey,
     PropertyKind, TemplateElement, TemplateElementValue,
 };
-use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 
 pub fn gen_class_names<'a>(
@@ -28,7 +28,7 @@ fn gen_class_name<'a>(
     style_order: Option<u8>,
 ) -> Option<Expression<'a>> {
     match style_prop {
-        ExtractStyleProp::Static(ref mut st) => {
+        ExtractStyleProp::Static(st) => {
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
@@ -46,16 +46,16 @@ fn gen_class_name<'a>(
                 ),
             ))
         }
-        ExtractStyleProp::StaticArray(ref mut res) => merge_expression_for_class_name(
+        ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
             res.iter_mut()
                 .filter_map(|st| gen_class_name(ast_builder, st, style_order))
                 .collect(),
         ),
         ExtractStyleProp::Conditional {
-            ref condition,
-            ref mut consequent,
-            ref mut alternate,
+            condition,
+            consequent,
+            alternate,
             ..
         } => {
             let consequent = consequent

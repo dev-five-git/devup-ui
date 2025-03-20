@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import {
   codeExtract,
   getCss,
+  getDefaultTheme,
   getThemeInterface,
   registerTheme,
   setDebug,
@@ -75,6 +76,10 @@ export function DevupUI({
           watch: {
             ignored: [`!${devupPath}`],
           },
+        },
+        define: {
+          'process.env.DEVUP_UI_DEFAULT_THEME':
+            JSON.stringify(getDefaultTheme()),
         },
       }
       if (extractCss) {

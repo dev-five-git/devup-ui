@@ -129,22 +129,30 @@ impl Theme {
         self.typography.insert(name.to_string(), typography.into());
     }
 
+    pub fn get_default_theme(&self) -> Option<String> {
+        self.colors
+            .keys()
+            .find(|k| *k == "default")
+            .or_else(|| {
+                self.colors
+                    .keys()
+                    .find(|k| *k == "light")
+                    .or_else(|| self.colors.keys().next())
+            })
+            .cloned()
+    }
+
     pub fn to_css(&self) -> String {
         let mut theme_declaration = String::new();
 
-        let default_theme_key = self.colors.keys().find(|k| *k == "default").or_else(|| {
-            self.colors
-                .keys()
-                .find(|k| *k == "light")
-                .or_else(|| self.colors.keys().next())
-        });
+        let default_theme_key = self.get_default_theme();
         if let Some(default_theme_key) = default_theme_key {
             let entries = {
                 let mut col: Vec<_> = self.colors.iter().collect();
                 col.sort_by(|a, b| {
-                    if a.0 == default_theme_key {
+                    if *a.0 == default_theme_key {
                         std::cmp::Ordering::Less
-                    } else if b.0 == default_theme_key {
+                    } else if *b.0 == default_theme_key {
                         std::cmp::Ordering::Greater
                     } else {
                         a.0.cmp(b.0)

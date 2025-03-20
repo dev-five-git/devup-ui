@@ -3,7 +3,7 @@ use crate::extract_style::ExtractCss;
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
-    extract_style_from_expression, extract_style_from_jsx_attr, ExtractResult,
+    ExtractResult, extract_style_from_expression, extract_style_from_jsx_attr,
 };
 use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
 use css::short_to_long;
@@ -363,7 +363,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut style_order = None;
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
-                if let Attribute(ref mut attr) = &mut attr {
+                if let Attribute(attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
                         let name = short_to_long(name.name.as_str());
                         if duplicate_set.contains(&name) {
