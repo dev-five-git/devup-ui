@@ -368,9 +368,6 @@ importers:
       '@devup-ui/wasm':
         specifier: workspace:*
         version: link:../../bindings/devup-ui-wasm
-      webpack:
-        specifier: ^5.98
-        version: 5.98.0
     devDependencies:
       '@types/webpack':
         specifier: ^5.28.5
