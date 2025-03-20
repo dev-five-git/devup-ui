@@ -16,7 +16,7 @@ import {
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
-import { type Compiler, DefinePlugin } from 'webpack'
+import { type Compiler } from 'webpack'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -134,7 +134,7 @@ export class DevupUIWebpackPlugin {
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
 
     compiler.options.plugins.push(
-      new DefinePlugin({
+      new compiler.webpack.DefinePlugin({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
       }),
     )

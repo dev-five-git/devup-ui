@@ -32,12 +32,10 @@
     "dist"
   ],
   "dependencies": {
-    "@devup-ui/wasm": "workspace:*",
-    "webpack": "^5.98"
+    "@devup-ui/wasm": "workspace:*"
   },
   "peerDependencies": {
-    "@devup-ui/wasm": "*",
-    "webpack": "*"
+    "@devup-ui/wasm": "*"
   },
   "devDependencies": {
     "vite": "^6.2.2",
