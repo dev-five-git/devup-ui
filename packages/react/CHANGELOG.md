@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.32
+
+### Patch Changes
+
+- 5f2ad1d: Add default theme
+
 ## 0.1.31
 
 ### Patch Changes

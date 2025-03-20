@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 0.1.59
+
+### Patch Changes
+
+- 5f2ad1d: Add default theme
+- Updated dependencies [5f2ad1d]
+  - @devup-ui/webpack-plugin@0.1.59
+
 ## 0.1.58
 
 ### Patch Changes
