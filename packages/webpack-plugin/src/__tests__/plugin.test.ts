@@ -7,7 +7,12 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { getCss, getThemeInterface, registerTheme } from '@devup-ui/wasm'
+import {
+  getCss,
+  getDefaultTheme,
+  getThemeInterface,
+  registerTheme,
+} from '@devup-ui/wasm'
 import { describe } from 'vitest'
 
 import { DevupUIWebpackPlugin } from '../plugin'
@@ -113,8 +118,11 @@ describe('devupUIPlugin', () => {
             tapAsync: vi.fn(),
           },
         },
-      }
-      plugin.apply(compiler as any)
+        webpack: {
+          DefinePlugin: vi.fn(),
+        },
+      } as any
+      plugin.apply(compiler)
       // asyncCompile
       const add = vi.fn()
       vi.mocked(compiler.hooks.afterCompile.tap).mock.calls[0][1]({
@@ -151,6 +159,9 @@ describe('devupUIPlugin', () => {
             tapAsync: vi.fn(),
           },
         },
+        webpack: {
+          DefinePlugin: vi.fn(),
+        },
       } as any)
 
       expect(writeFileSync).toHaveBeenCalledWith('css', '', {
@@ -184,6 +195,9 @@ describe('devupUIPlugin', () => {
             tapAsync: vi.fn(),
           },
         },
+        webpack: {
+          DefinePlugin: vi.fn(),
+        },
       } as any
       plugin.apply(compiler)
 
@@ -213,6 +227,9 @@ describe('devupUIPlugin', () => {
           watchRun: {
             tapAsync: vi.fn(),
           },
+        },
+        webpack: {
+          DefinePlugin: vi.fn(),
         },
       } as any
       vi.mocked(existsSync).mockReturnValue(true)
@@ -297,6 +314,9 @@ describe('devupUIPlugin', () => {
           tapAsync: vi.fn(),
         },
       },
+      webpack: {
+        DefinePlugin: vi.fn(),
+      },
     } as any
     plugin.apply(compiler)
 
@@ -307,5 +327,8 @@ describe('devupUIPlugin', () => {
         encoding: 'utf-8',
       },
     )
+    expect(compiler.webpack.DefinePlugin).toHaveBeenCalledWith({
+      'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
+    })
   })
 })
