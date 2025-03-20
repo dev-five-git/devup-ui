@@ -155,6 +155,12 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
+#[wasm_bindgen(js_name = "getDefaultTheme")]
+pub fn get_default_theme() -> Result<Option<String>, JsValue> {
+    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    Ok(sheet.theme.get_default_theme())
+}
+
 #[wasm_bindgen(js_name = "getCss")]
 pub fn get_css() -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();

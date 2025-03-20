@@ -103,6 +103,7 @@ describe('devupUIPlugin', () => {
           module: {
             rules: [],
           },
+          plugins: [],
         },
         hooks: {
           afterCompile: {
@@ -140,6 +141,7 @@ describe('devupUIPlugin', () => {
           module: {
             rules: [],
           },
+          plugins: [],
         },
         hooks: {
           afterCompile: {
@@ -172,6 +174,7 @@ describe('devupUIPlugin', () => {
           module: {
             rules: [],
           },
+          plugins: [],
         },
         hooks: {
           afterCompile: {
@@ -201,6 +204,7 @@ describe('devupUIPlugin', () => {
           module: {
             rules: [],
           },
+          plugins: [],
         },
         hooks: {
           afterCompile: {
@@ -283,6 +287,7 @@ describe('devupUIPlugin', () => {
         module: {
           rules: [],
         },
+        plugins: [],
       },
       hooks: {
         afterCompile: {

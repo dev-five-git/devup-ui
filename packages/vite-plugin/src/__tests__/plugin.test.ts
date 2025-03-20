@@ -3,7 +3,12 @@ import { writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { codeExtract, getCss, getThemeInterface } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  getCss,
+  getDefaultTheme,
+  getThemeInterface,
+} from '@devup-ui/wasm'
 import { describe } from 'vitest'
 
 import { DevupUI } from '../plugin'
@@ -55,6 +60,9 @@ describe('devupUIPlugin', () => {
     expect(readFileSync).toHaveBeenCalledWith(devupPath, 'utf-8')
     expect(existsSync).toHaveBeenCalledWith(interfacePath)
     expect((plugin as any).config()).toEqual({
+      define: {
+        'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
+      },
       server: {
         watch: {
           ignored: [`!${devupPath}`],

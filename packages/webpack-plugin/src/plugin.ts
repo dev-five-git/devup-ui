@@ -9,13 +9,14 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
 import {
+  getDefaultTheme,
   getThemeInterface,
   importClassMap,
   importSheet,
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
-import { type Compiler } from 'webpack'
+import { type Compiler, DefinePlugin } from 'webpack'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
@@ -131,6 +132,12 @@ export class DevupUIWebpackPlugin {
     // Create an empty CSS file
     if (!existsSync(this.options.cssFile))
       writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
+
+    compiler.options.plugins.push(
+      new DefinePlugin({
+        'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
+      }),
+    )
 
     compiler.options.module.rules.push(
       {
