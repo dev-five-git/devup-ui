@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.54
+
+### Patch Changes
+
+- 5f2ad1d: Add default theme
+
 ## 0.1.53
 
 ### Patch Changes

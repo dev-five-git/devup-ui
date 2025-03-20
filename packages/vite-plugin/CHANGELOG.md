@@ -1,5 +1,13 @@
 # @devup-ui/vite-plugin
 
+## 0.1.58
+
+### Patch Changes
+
+- 5f2ad1d: Add default theme
+- Updated dependencies [5f2ad1d]
+  - @devup-ui/wasm@0.1.54
+
 ## 0.1.57
 
 ### Patch Changes
