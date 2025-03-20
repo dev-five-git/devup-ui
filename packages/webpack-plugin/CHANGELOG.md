@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 0.1.60
+
+### Patch Changes
+
+- 5a2ab9d: Fix webpack issue
+
 ## 0.1.59
 
 ### Patch Changes
