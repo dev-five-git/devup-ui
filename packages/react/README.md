@@ -143,7 +143,7 @@ You can use responsive and pseudo selector.
 // Responsive with Selector
 <Box _hover={{bg: ["red", "blue"]}}/>
 
-// Same
+// Another way
 <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 
 ```

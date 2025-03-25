@@ -19,10 +19,11 @@ export interface DevupUIPluginOptions {
   interfacePath: string
   extractCss: boolean
   debug: boolean
+  include: string[]
 }
 
 function writeDataFiles(
-  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug'>,
+  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
 ) {
   if (!existsSync(options.interfacePath)) mkdirSync(options.interfacePath)
   if (existsSync(options.devupPath)) {
@@ -56,6 +57,7 @@ export function DevupUI({
   cssFile = resolve(interfacePath, 'devup-ui.css'),
   extractCss = true,
   debug = false,
+  include = [],
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
   try {
@@ -128,8 +130,17 @@ export function DevupUI({
     enforce: 'pre',
     async transform(code, id) {
       if (!extractCss) return
-      if (id.includes('node_modules')) return
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(id)) return
+
+      if (
+        include.length
+          ? new RegExp(
+              `node_modules(?!(.*${include.join('|').replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+            ).test(id)
+          : id.includes('node_modules')
+      ) {
+        return
+      }
+      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(id.split('?')[0])) return
 
       const { code: retCode, css } = codeExtract(id, code, libPackage, cssFile)
 
