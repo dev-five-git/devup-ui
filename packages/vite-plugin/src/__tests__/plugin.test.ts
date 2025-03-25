@@ -68,6 +68,9 @@ describe('devupUIPlugin', () => {
           ignored: [`!${devupPath}`],
         },
       },
+      optimizeDeps: {
+        exclude: [],
+      },
       build: {
         rollupOptions: {
           output: {
@@ -331,7 +334,7 @@ describe('devupUIPlugin', () => {
       'C:/devfive/minions-front/apps/vendor/node_modules/.vite/deps/@devup_product-system.js?v=63f19272',
     )
     expect(codeExtract).toHaveBeenCalledWith(
-      'C:/devfive/minions-front/apps/vendor/node_modules/.vite/deps/@devup_product-system.js?v=63f19272',
+      'C:/devfive/minions-front/apps/vendor/node_modules/.vite/deps/@devup_product-system.js',
       'code',
       libPackage,
       cssFile,

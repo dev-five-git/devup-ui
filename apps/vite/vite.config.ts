@@ -4,5 +4,10 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), DevupUI()],
+  plugins: [
+    react(),
+    DevupUI({
+      include: ['vite-lib-example'],
+    }),
+  ],
 })

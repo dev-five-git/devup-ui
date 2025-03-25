@@ -83,6 +83,9 @@ export function DevupUI({
           'process.env.DEVUP_UI_DEFAULT_THEME':
             JSON.stringify(getDefaultTheme()),
         },
+        optimizeDeps: {
+          exclude: include,
+        },
       }
       if (extractCss) {
         ret['build'] = {
@@ -131,18 +134,27 @@ export function DevupUI({
     async transform(code, id) {
       if (!extractCss) return
 
+      const fileName = id.split('?')[0]
       if (
         include.length
           ? new RegExp(
-              `node_modules(?!(.*${include.join('|').replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-            ).test(id)
+              `node_modules(?!(${include
+                .map((i) => `.*${i}`)
+                .join('|')
+                .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+            ).test(fileName)
           : id.includes('node_modules')
       ) {
         return
       }
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(id.split('?')[0])) return
+      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
 
-      const { code: retCode, css } = codeExtract(id, code, libPackage, cssFile)
+      const { code: retCode, css } = codeExtract(
+        fileName,
+        code,
+        libPackage,
+        cssFile,
+      )
 
       if (css && globalCss.length < css.length) {
         globalCss = css
