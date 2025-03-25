@@ -12,7 +12,8 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@devup-ui/react": "workspace:*"
+    "@devup-ui/react": "workspace:*",
+    "vite-lib-example": "workspace:*"
   },
   "devDependencies": {
     "@devup-ui/vite-plugin": "workspace:*",

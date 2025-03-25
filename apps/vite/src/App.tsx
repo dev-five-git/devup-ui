@@ -1,4 +1,5 @@
 import { Box, Text } from '@devup-ui/react'
+import { Lib } from 'vite-lib-example'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         color="red"
       >
         hello
+        <Lib />
       </Box>
       <Text typography="header">typo</Text>
     </div>
