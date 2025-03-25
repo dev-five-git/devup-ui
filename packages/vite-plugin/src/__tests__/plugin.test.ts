@@ -298,6 +298,46 @@ describe('devupUIPlugin', () => {
     expect((plugin as any).apply({}, { command: 'build' })).toBe(true)
   })
 
+  it('should include', () => {
+    const devupPath = 'devup.json'
+    const interfacePath = '.df'
+    const cssFile = join(_dirname, 'devup-ui.css')
+    const libPackage = '@devup-ui/react'
+    const plugin = DevupUI({
+      package: libPackage,
+      cssFile,
+      devupPath,
+      interfacePath,
+      include: ['@devup/product-system'],
+    })
+    vi.mocked(codeExtract).mockReturnValue({
+      css: 'css code',
+      code: 'code',
+    } as any)
+    ;(plugin as any).transform('code', 'node_modules/@devup/test/dist/index.js')
+    expect(codeExtract).toBeCalledTimes(0)
+    ;(plugin as any).transform(
+      'code',
+      'node_modules/@devup/product-system/dist/index.js',
+    )
+    expect(codeExtract).toHaveBeenCalledWith(
+      'node_modules/@devup/product-system/dist/index.js',
+      'code',
+      libPackage,
+      cssFile,
+    )
+    ;(plugin as any).transform(
+      'code',
+      'C:/devfive/minions-front/apps/vendor/node_modules/.vite/deps/@devup_product-system.js?v=63f19272',
+    )
+    expect(codeExtract).toHaveBeenCalledWith(
+      'C:/devfive/minions-front/apps/vendor/node_modules/.vite/deps/@devup_product-system.js?v=63f19272',
+      'code',
+      libPackage,
+      cssFile,
+    )
+  })
+
   describe('basic', () => {
     const devupPath = 'devup.json'
     const interfacePath = '.df'
