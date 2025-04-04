@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.33
+
+### Patch Changes
+
+- 57db495: Add initTheme, Fix typing issue of ThemeScript
+
 ## 0.1.32
 
 ### Patch Changes
