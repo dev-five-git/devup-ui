@@ -18,13 +18,8 @@
     "@next/mdx": "^15.2.4",
     "@types/mdx": "^2.0.13",
     "next": "^15.2.4",
-<<<<<<< HEAD
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-=======
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
->>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     "react-syntax-highlighter": "^15.6.1",
     "sanitize.css": "^13.0.0"
   },
