@@ -2,6 +2,7 @@ import type { Property } from 'csstype'
 
 import type { ResponsiveValue } from '../responsive-value'
 import type { DevupThemeTypography } from '../typography'
+import type { Conditional } from '../utils'
 
 export interface DevupUiTextProps {
   hangingPunctuation?: ResponsiveValue<Property.HangingPunctuation>
@@ -42,8 +43,7 @@ export interface DevupUiTextProps {
 
   lineClamp?: ResponsiveValue<Property.LineClamp>
 
-  typography?: TypographyKey<DevupThemeTypography>
+  typography?: Conditional<DevupThemeTypography>
 }
 
 // for skip type checking without .df
-type TypographyKey<T> = keyof T extends undefined ? string : keyof T

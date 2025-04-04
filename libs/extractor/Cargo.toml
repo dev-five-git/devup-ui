@@ -11,7 +11,7 @@ oxc_allocator = "0.52.0"
 oxc_ast = "0.52.0"
 oxc_codegen = "0.52.0"
 css = { path = "../css" }
-once_cell = "1.21.1"
+once_cell = "1.21.3"
 
 [dev-dependencies]
 insta = "1.42.2"

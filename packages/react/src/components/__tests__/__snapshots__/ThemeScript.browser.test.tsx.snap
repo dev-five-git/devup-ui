@@ -3,7 +3,7 @@
 exports[`ThemeScript > should apply ThemeScript 1`] = `
 <div>
   <script>
-    (function (){const o=localStorage.getItem('__DF_THEME_SELECTED__')||(true&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default');document.documentElement.setAttribute('data-theme',o);})()
+    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(true&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'));})()
   </script>
 </div>
 `;
@@ -11,7 +11,7 @@ exports[`ThemeScript > should apply ThemeScript 1`] = `
 exports[`ThemeScript > should apply ThemeScript with not auto 1`] = `
 <div>
   <script>
-    (function (){const o=localStorage.getItem('__DF_THEME_SELECTED__')||(false&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default');document.documentElement.setAttribute('data-theme',o);})()
+    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(false&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'));})()
   </script>
 </div>
 `;
