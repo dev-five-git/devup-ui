@@ -10,8 +10,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+<<<<<<< HEAD
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+=======
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     "next": "^15.2.4",
     "@devup-ui/react": "workspace:*"
   },

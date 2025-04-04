@@ -1,5 +1,17 @@
 # @devup-ui/vite-plugin
 
+## 0.1.60
+
+### Patch Changes
+
+- 3f6cd2b: Add optimize for lib
+
+## 0.1.59
+
+### Patch Changes
+
+- 04d0391: Add include
+
 ## 0.1.58
 
 ### Patch Changes

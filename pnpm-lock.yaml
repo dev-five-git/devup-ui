@@ -58,7 +58,11 @@ importers:
         version: 3.1.5
       next:
         specifier: ^15.2.4
+<<<<<<< HEAD
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -107,7 +111,11 @@ importers:
         version: link:../../packages/react
       next:
         specifier: ^15.2.4
+<<<<<<< HEAD
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -209,7 +217,11 @@ importers:
         version: 11.14.0(@types/react@19.1.0)(react@19.1.0)
       next:
         specifier: ^15.2.4
+<<<<<<< HEAD
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -243,7 +255,11 @@ importers:
         version: link:../../packages/react
       next:
         specifier: ^15.2.4
+<<<<<<< HEAD
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -271,10 +287,17 @@ importers:
     dependencies:
       '@kuma-ui/core':
         specifier: ^1.5.9
+<<<<<<< HEAD
         version: 1.5.9(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
       next:
         specifier: ^15.2.4
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 1.5.9(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+      next:
+        specifier: ^15.2.4
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -284,7 +307,11 @@ importers:
     devDependencies:
       '@kuma-ui/next-plugin':
         specifier: ^1.3.3
+<<<<<<< HEAD
         version: 1.3.3(@babel/core@7.26.10)(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)(webpack@5.98.0)
+=======
+        version: 1.3.3(@babel/core@7.26.7)(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)(webpack@5.98.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       '@types/node':
         specifier: ^22
         version: 22.14.0
@@ -307,7 +334,11 @@ importers:
         version: link:../webpack-plugin
       next:
         specifier: ^15.2
+<<<<<<< HEAD
         version: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+=======
+        version: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     devDependencies:
       typescript:
         specifier: ^5.8.2
@@ -2570,8 +2601,13 @@ packages:
     resolution: {integrity: sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==}
     engines: {node: '>=6'}
 
+<<<<<<< HEAD
   caniuse-lite@1.0.30001709:
     resolution: {integrity: sha512-NgL3vUTnDrPCZ3zTahp4fsugQ4dc7EKTSzwQDPEel6DMoMnfH2jhry9n2Zm8onbSR+f/QtKHFOA+iAQu4kbtWA==}
+=======
+  caniuse-lite@1.0.30001707:
+    resolution: {integrity: sha512-3qtRjw/HQSMlDWf+X79N206fepf4SOOU6SQLMaq/0KkZLmSjPxAkBOQQ+FxbHKfHmYLZFfdWsO3KA90ceHPSnw==}
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -3755,6 +3791,14 @@ packages:
 
   nanoid@3.3.11:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
+<<<<<<< HEAD
+=======
+    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+    hasBin: true
+
+  nanoid@3.3.8:
+    resolution: {integrity: sha512-WNLf5Sd8oZxOm+TzppcYk8gVOgP+l58xNy58D0nbUnOxOWRWvlcCV4kUF7ltmI6PsrLl/BgKEyS4mqsGChFN0w==}
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -6102,10 +6146,17 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
+<<<<<<< HEAD
   '@kuma-ui/babel-plugin@1.2.3(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@babel/core': 7.26.10
       '@kuma-ui/core': 1.5.9(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
+=======
+  '@kuma-ui/babel-plugin@1.2.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)':
+    dependencies:
+      '@babel/core': 7.26.7
+      '@kuma-ui/core': 1.5.9(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       '@kuma-ui/sheet': 1.3.1
       '@kuma-ui/system': 1.7.6
     transitivePeerDependencies:
@@ -6114,11 +6165,19 @@ snapshots:
       - react
       - supports-color
 
+<<<<<<< HEAD
   '@kuma-ui/compiler@1.3.3(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)':
     dependencies:
       '@babel/core': 7.26.10
       '@kuma-ui/babel-plugin': 1.2.3(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
       '@kuma-ui/core': 1.5.9(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
+=======
+  '@kuma-ui/compiler@1.3.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)':
+    dependencies:
+      '@babel/core': 7.26.7
+      '@kuma-ui/babel-plugin': 1.2.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+      '@kuma-ui/core': 1.5.9(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       '@kuma-ui/sheet': 1.3.1
       '@kuma-ui/system': 1.7.6
       '@kuma-ui/wasm': 1.0.3
@@ -6129,7 +6188,11 @@ snapshots:
       - react
       - supports-color
 
+<<<<<<< HEAD
   '@kuma-ui/core@1.5.9(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)':
+=======
+  '@kuma-ui/core@1.5.9(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)':
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     dependencies:
       '@kuma-ui/sheet': 1.3.1
       '@kuma-ui/system': 1.7.6
@@ -6137,6 +6200,7 @@ snapshots:
       react: 19.1.0
       stylis: 4.3.6
     optionalDependencies:
+<<<<<<< HEAD
       '@types/react': 19.1.0
       next: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
 
@@ -6151,6 +6215,22 @@ snapshots:
       browserslist: 4.21.5
       next: 15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       react: 19.1.0
+=======
+      '@types/react': 19.0.8
+      next: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+
+  '@kuma-ui/next-plugin@1.3.3(@babel/core@7.26.7)(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)(webpack@5.98.0)':
+    dependencies:
+      '@babel/preset-env': 7.26.7(@babel/core@7.26.7)
+      '@babel/preset-react': 7.26.3(@babel/core@7.26.7)
+      '@babel/preset-typescript': 7.26.0(@babel/core@7.26.7)
+      '@kuma-ui/core': 1.5.9(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+      '@kuma-ui/webpack-plugin': 1.4.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)(webpack@5.98.0)
+      babel-loader: 9.2.1(@babel/core@7.26.7)(webpack@5.98.0)
+      browserslist: 4.21.5
+      next: 15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+      react: 19.0.0
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       webpack: 5.98.0
     optionalDependencies:
       '@types/react': 19.1.0
@@ -6169,9 +6249,15 @@ snapshots:
 
   '@kuma-ui/wasm@1.0.3': {}
 
+<<<<<<< HEAD
   '@kuma-ui/webpack-plugin@1.4.3(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)(webpack@5.98.0)':
     dependencies:
       '@kuma-ui/compiler': 1.3.3(@types/react@19.1.0)(next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react@19.1.0)
+=======
+  '@kuma-ui/webpack-plugin@1.4.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)(webpack@5.98.0)':
+    dependencies:
+      '@kuma-ui/compiler': 1.3.3(@types/react@19.0.8)(next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0))(react@19.0.0)
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       '@kuma-ui/sheet': 1.3.1
       '@kuma-ui/system': 1.7.6
       esbuild: 0.18.20
@@ -7524,15 +7610,25 @@ snapshots:
 
   browserslist@4.21.5:
     dependencies:
+<<<<<<< HEAD
       caniuse-lite: 1.0.30001709
       electron-to-chromium: 1.5.131
+=======
+      caniuse-lite: 1.0.30001707
+      electron-to-chromium: 1.5.92
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       node-releases: 2.0.19
       update-browserslist-db: 1.1.3(browserslist@4.21.5)
 
   browserslist@4.24.4:
     dependencies:
+<<<<<<< HEAD
       caniuse-lite: 1.0.30001709
       electron-to-chromium: 1.5.131
+=======
+      caniuse-lite: 1.0.30001707
+      electron-to-chromium: 1.5.92
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       node-releases: 2.0.19
       update-browserslist-db: 1.1.3(browserslist@4.24.4)
 
@@ -7563,7 +7659,11 @@ snapshots:
 
   callsites@3.1.0: {}
 
+<<<<<<< HEAD
   caniuse-lite@1.0.30001709: {}
+=======
+  caniuse-lite@1.0.30001707: {}
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
 
   ccount@2.0.1: {}
 
@@ -9122,6 +9222,11 @@ snapshots:
   muggle-string@0.4.1: {}
 
   nanoid@3.3.11: {}
+<<<<<<< HEAD
+=======
+
+  nanoid@3.3.8: {}
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
 
   natural-compare@1.4.0: {}
 
@@ -9132,13 +9237,21 @@ snapshots:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
 
+<<<<<<< HEAD
   next@15.2.4(@babel/core@7.26.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
+=======
+  next@15.2.4(@babel/core@7.26.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0):
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
     dependencies:
       '@next/env': 15.2.4
       '@swc/counter': 0.1.3
       '@swc/helpers': 0.5.15
       busboy: 1.6.0
+<<<<<<< HEAD
       caniuse-lite: 1.0.30001709
+=======
+      caniuse-lite: 1.0.30001707
+>>>>>>> 9d2d7cb521c3a21b6da9d4abc50857607b6b5112
       postcss: 8.4.31
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
