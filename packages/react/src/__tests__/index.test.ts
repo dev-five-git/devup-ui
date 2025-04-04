@@ -18,6 +18,7 @@ describe('export', () => {
 
       getTheme: expect.any(Function),
       setTheme: expect.any(Function),
+      initTheme: expect.any(Function),
 
       useTheme: expect.any(Function),
     })
