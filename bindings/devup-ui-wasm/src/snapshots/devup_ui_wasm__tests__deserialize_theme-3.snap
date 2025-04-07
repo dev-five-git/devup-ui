@@ -4,7 +4,7 @@ expression: theme
 ---
 Theme {
     colors: {},
-    break_points: [
+    breakpoints: [
         0,
         480,
         768,

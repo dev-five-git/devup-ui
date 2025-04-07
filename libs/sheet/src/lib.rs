@@ -188,13 +188,13 @@ impl StyleSheet {
                 } else {
                     Some(
                         self.theme
-                            .break_points
+                            .breakpoints
                             .iter()
                             .enumerate()
                             .find(|(idx, _)| (*idx as u8) == *level)
                             .map(|(_, bp)| *bp)
                             .unwrap_or_else(|| {
-                                self.theme.break_points.last().cloned().unwrap_or(0)
+                                self.theme.breakpoints.last().cloned().unwrap_or(0)
                             }),
                     )
                 };

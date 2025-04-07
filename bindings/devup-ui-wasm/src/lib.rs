@@ -1,6 +1,6 @@
 use css::{get_class_map, set_class_map};
 use extractor::extract_style::ExtractStyleValue;
-use extractor::{extract, ExtractOption, StyleProperty};
+use extractor::{ExtractOption, StyleProperty, extract};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
 use std::collections::HashSet;
@@ -331,7 +331,7 @@ mod tests {
         }"##,
             )
             .unwrap();
-            assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280]);
+            assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280]);
             assert_debug_snapshot!(theme.to_css());
         }
         {

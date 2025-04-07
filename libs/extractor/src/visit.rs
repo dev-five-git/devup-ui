@@ -16,13 +16,14 @@ use oxc_ast::ast::{
     ImportOrExportKind, JSXElement, JSXElementName, Program, PropertyKey, Statement,
     VariableDeclarator, WithClause,
 };
-use oxc_ast::visit::walk_mut::{
+use oxc_ast_visit::VisitMut;
+use oxc_ast_visit::walk_mut::{
     walk_call_expression, walk_expression, walk_import_declaration, walk_jsx_element, walk_program,
     walk_variable_declarator,
 };
 
 use crate::utils::get_number_by_jsx_expression;
-use oxc_ast::{AstBuilder, VisitMut};
+use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
 
