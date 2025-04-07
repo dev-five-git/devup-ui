@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.55
+
+### Patch Changes
+
+- 05036f7: Change breakpoint key
+
 ## 0.1.54
 
 ### Patch Changes
