@@ -89,13 +89,13 @@ impl<'de> Deserialize<'de> for Typographies {
 pub struct Theme {
     #[serde(default)]
     pub colors: BTreeMap<String, ColorTheme>,
-    #[serde(default = "default_break_points")]
-    pub break_points: Vec<u16>,
+    #[serde(default = "default_breakpoints")]
+    pub breakpoints: Vec<u16>,
     #[serde(default)]
     pub typography: BTreeMap<String, Typographies>,
 }
 
-fn default_break_points() -> Vec<u16> {
+fn default_breakpoints() -> Vec<u16> {
     vec![0, 480, 768, 992, 1280]
 }
 
@@ -103,20 +103,20 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             colors: Default::default(),
-            break_points: vec![0, 480, 768, 992, 1280],
+            breakpoints: vec![0, 480, 768, 992, 1280],
             typography: BTreeMap::new(),
         }
     }
 }
 
 impl Theme {
-    pub fn update_break_points(&mut self, break_points: Vec<u16>) {
-        for (idx, value) in break_points.iter().enumerate() {
-            let prev = self.break_points.get_mut(idx);
+    pub fn update_breakpoints(&mut self, breakpoints: Vec<u16>) {
+        for (idx, value) in breakpoints.iter().enumerate() {
+            let prev = self.breakpoints.get_mut(idx);
             if let Some(prev) = prev {
                 *prev = *value;
             } else {
-                self.break_points.push(*value);
+                self.breakpoints.push(*value);
             }
         }
     }
@@ -193,7 +193,7 @@ impl Theme {
         let mut css = theme_declaration;
         let mut level_map = BTreeMap::<u8, Vec<String>>::new();
         for ty in self.typography.iter() {
-            for (idx, t) in ty.1 .0.iter().enumerate() {
+            for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
                     let css_content = format!(
                         "{}{}{}{}{}",
@@ -235,7 +235,7 @@ impl Theme {
             if level == 0 {
                 css.push_str(css_vec.join("").as_str());
             } else if let Some(media) = self
-                .break_points
+                .breakpoints
                 .get(level as usize)
                 .map(|v| format!("(min-width:{}px)", v))
             {
@@ -421,13 +421,13 @@ mod tests {
     }
 
     #[test]
-    fn update_break_points() {
+    fn update_breakpoints() {
         let mut theme = Theme::default();
-        theme.update_break_points(vec![0, 480, 768, 992, 1280]);
-        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280]);
-        theme.update_break_points(vec![0, 480, 768, 992, 1280, 1600]);
-        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280, 1600]);
-        theme.update_break_points(vec![0, 480, 768, 992, 1280, 1600, 1920]);
-        assert_eq!(theme.break_points, vec![0, 480, 768, 992, 1280, 1600, 1920]);
+        theme.update_breakpoints(vec![0, 480, 768, 992, 1280]);
+        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280]);
+        theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600]);
+        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
+        theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600, 1920]);
+        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600, 1920]);
     }
 }

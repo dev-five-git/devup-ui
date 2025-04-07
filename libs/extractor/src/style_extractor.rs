@@ -378,19 +378,19 @@ pub fn extract_style_from_expression<'a>(
                                     ast_builder.vec_from_array([
                                         ast_builder.template_element(
                                             SPAN,
-                                            false,
                                             TemplateElementValue {
                                                 raw: ast_builder.atom("typo-"),
                                                 cooked: None,
                                             },
+                                            false,
                                         ),
                                         ast_builder.template_element(
                                             SPAN,
-                                            true,
                                             TemplateElementValue {
                                                 raw: ast_builder.atom(""),
                                                 cooked: None,
                                             },
+                                            true,
                                         ),
                                     ]),
                                     ast_builder.vec_from_array([
@@ -432,19 +432,19 @@ pub fn extract_style_from_expression<'a>(
                                     ast_builder.vec_from_array([
                                         ast_builder.template_element(
                                             SPAN,
-                                            false,
                                             TemplateElementValue {
                                                 raw: ast_builder.atom("typo-"),
                                                 cooked: None,
                                             },
+                                            false,
                                         ),
                                         ast_builder.template_element(
                                             SPAN,
-                                            true,
                                             TemplateElementValue {
                                                 raw: ast_builder.atom(""),
                                                 cooked: None,
                                             },
+                                            true,
                                         ),
                                     ]),
                                     ast_builder.vec_from_array([

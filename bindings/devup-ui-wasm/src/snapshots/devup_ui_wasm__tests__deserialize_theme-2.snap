@@ -15,7 +15,7 @@ Theme {
             },
         ),
     },
-    break_points: [
+    breakpoints: [
         0,
         480,
         768,
