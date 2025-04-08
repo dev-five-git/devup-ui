@@ -138,9 +138,11 @@ mod tests {
     #[derive(Debug)]
     struct ToBTreeSet {
         // used styles
+        #[warn(dead_code)]
         styles: BTreeSet<ExtractStyleValue>,
 
         // output source
+        #[warn(dead_code)]
         code: String,
     }
 
