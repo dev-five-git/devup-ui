@@ -14,7 +14,7 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::Codegen;
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
@@ -73,10 +73,10 @@ pub enum StyleProperty {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ExtractOutput {
     // used styles
-    pub styles: Vec<ExtractStyleValue>,
+    pub styles: HashSet<ExtractStyleValue>,
 
     // output source
     pub code: String,
@@ -96,7 +96,7 @@ pub fn extract(
     if !code.contains(option.package.as_str()) {
         // skip if not using package
         return Ok(ExtractOutput {
-            styles: vec![],
+            styles: HashSet::new(),
             code: code.to_string(),
         });
     }
@@ -128,16 +128,39 @@ pub fn extract(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use css::reset_class_map;
     use insta::assert_debug_snapshot;
     use serial_test::serial;
 
+    #[derive(Debug)]
+    struct ToBTreeSet {
+        // used styles
+        styles: BTreeSet<ExtractStyleValue>,
+
+        // output source
+        code: String,
+    }
+
+    impl From<ExtractOutput> for ToBTreeSet {
+        fn from(output: ExtractOutput) -> Self {
+            Self {
+                styles: {
+                    let mut set = BTreeSet::new();
+                    set.extend(output.styles);
+                    set
+                },
+                code: output.code,
+            }
+        }
+    }
     #[test]
     #[serial]
     fn extract_just_tsx() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 "const a = 1;",
@@ -147,10 +170,10 @@ mod tests {
                 },
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 "<Box gap={1} />",
@@ -160,26 +183,28 @@ mod tests {
                 },
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn ignore_special_props() {
         reset_class_map();
-        assert_debug_snapshot!(extract(
-            "test.tsx",
-            r#"import {Box} from '@devup-ui/core'
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
         <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} id="id" />
         "#,
-            ExtractOption {
-                package: "@devup-ui/core".to_string(),
-                css_file: None
-            }
-        )
-        .unwrap());
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Input} from '@devup-ui/core'
@@ -191,14 +216,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn convert_tag() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -210,10 +235,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -225,8 +250,8 @@ mod tests {
                 }
             )
             .unwrap()
-        );
-        assert_debug_snapshot!(
+        ));
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -238,7 +263,7 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
         // assert_debug_snapshot!(extract(
         //     "test.tsx",
         //     r#"import {Box} from '@devup-ui/core'
@@ -289,7 +314,7 @@ mod tests {
     #[serial]
     fn extract_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -301,9 +326,9 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box as C} from '@devup-ui/core'
@@ -315,9 +340,9 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Input} from '@devup-ui/core'
@@ -329,10 +354,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Button} from '@devup-ui/core'
@@ -344,10 +369,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Flex} from '@devup-ui/core'
@@ -359,10 +384,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Flex} from '@devup-ui/core'
@@ -374,14 +399,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_style_props_with_class_name() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box as C} from '@devup-ui/core'
@@ -393,10 +418,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box as C} from '@devup-ui/core'
@@ -408,10 +433,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box as C} from '@devup-ui/core'
@@ -423,10 +448,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box as C} from '@devup-ui/core'
@@ -438,9 +463,9 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box as C} from '@devup-ui/core'
@@ -452,10 +477,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Image} from '@devup-ui/core'
@@ -473,14 +498,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_class_name_from_component() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {VStack as C} from '@devup-ui/core'
@@ -492,13 +517,13 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn extract_responsive_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -510,8 +535,8 @@ mod tests {
                 }
             )
             .unwrap()
-        );
-        assert_debug_snapshot!(
+        ));
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Flex } from "@devup-ui/core";
@@ -523,14 +548,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_dynamic_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -542,10 +567,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -557,10 +582,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -572,10 +597,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -587,14 +612,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_dynamic_style_props_with_type() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -606,10 +631,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -621,10 +646,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -636,14 +661,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_dynamic_responsive_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -655,14 +680,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_compound_responsive_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -674,14 +699,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_wrong_responsive_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -693,14 +718,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_variable_style_props_with_style() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -712,10 +737,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -727,14 +752,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_conditional_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -746,10 +771,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -761,10 +786,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -776,10 +801,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -791,10 +816,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -806,10 +831,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -821,10 +846,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -836,10 +861,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -851,14 +876,29 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? `${b}px` : undefined} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_responsive_conditional_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -870,196 +910,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-        <Box margin={["6px", a === b ? "4px" : "3px"]} />;
-        "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a === b ? c : [d, e, f, "2px"]} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a === b ? c : [d, e, f, x === y ? "4px" : "2px"]} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a === b ? [d, e, f, x === y ? "4px" : "2px"] : c} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a === b ? [d, e, f, x === y ? "4px" : "2px"] : ["1px", "2px", "3px"]} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={[null, a === b && "4px"]} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={[null, a === b && "4px", c === d ? "5px" : null]} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn extract_logical_case() {
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a===b && "1px"} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a===b || "1px"} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={a ?? "1px"} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={(a===1||a===2)&&b===3 && "1px"} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-    }
-    #[test]
-    #[serial]
-    fn extract_responsive_conditional_style_props_with_class_name() {
-        reset_class_map();
-        assert_debug_snapshot!(
-            extract(
-                "test.tsx",
-                r#"import { Box } from "@devup-ui/core";
-<Box margin={[null, a === b ? (q > w ? "4px" : "8px") : "3px"]} className={"exists"} />;
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        );
-
-        reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
@@ -1071,14 +925,200 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? c : [d, e, f, "2px"]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? c : [d, e, f, x === y ? "4px" : "2px"]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? [d, e, f, x === y ? "4px" : "2px"] : c} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a === b ? [d, e, f, x === y ? "4px" : "2px"] : ["1px", "2px", "3px"]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={[null, a === b && "4px"]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={[null, a === b && "4px", c === d ? "5px" : null]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_logical_case() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a===b && "1px"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a===b || "1px"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={a ?? "1px"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={(a===1||a===2)&&b===3 && "1px"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+    #[test]
+    #[serial]
+    fn extract_responsive_conditional_style_props_with_class_name() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={[null, a === b ? (q > w ? "4px" : "8px") : "3px"]} className={"exists"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
+<Box margin={[null, a === b || "4px"]} className={"exists"} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_selector() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1092,14 +1132,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_conditional_selector() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1113,10 +1153,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1130,10 +1170,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1145,10 +1185,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1163,14 +1203,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_selector_with_responsive() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1184,10 +1224,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r"import {Box} from '@devup-ui/core'
@@ -1203,14 +1243,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_static_css_class_name_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1224,10 +1264,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css as c } from "@devup-ui/core";
@@ -1241,10 +1281,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1259,10 +1299,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css as c } from "@devup-ui/core";
@@ -1276,10 +1316,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1296,10 +1336,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1311,10 +1351,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1326,10 +1366,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import { css } from "@devup-ui/core";
@@ -1341,14 +1381,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn extract_static_css_with_theme() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -1360,10 +1400,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -1375,10 +1415,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
@@ -1390,14 +1430,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn apply_typography() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1409,10 +1449,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1424,10 +1464,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1439,13 +1479,13 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn apply_var_typography() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1457,10 +1497,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1472,10 +1512,10 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Text} from '@devup-ui/core'
@@ -1487,7 +1527,7 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
@@ -1528,7 +1568,7 @@ mod tests {
     #[serial]
     fn import_wrong_component() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {W} from '@devup-ui/core'
@@ -1539,14 +1579,14 @@ mod tests {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn support_transpile_mjs() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
                 r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
@@ -1577,10 +1617,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
@@ -1611,14 +1651,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
-        assert_debug_snapshot!(extract(
+        assert_debug_snapshot!(ToBTreeSet::from(extract(
             "test.cjs",
             r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
             ExtractOption {
@@ -1626,10 +1666,10 @@ export {
                 css_file: None
             }
         )
-        .unwrap());
+        .unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(extract(
+        assert_debug_snapshot!(ToBTreeSet::from(extract(
             "test.cjs",
             r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
             ExtractOption {
@@ -1637,10 +1677,10 @@ export {
                 css_file: None
             }
         )
-        .unwrap());
+        .unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(extract(
+        assert_debug_snapshot!(ToBTreeSet::from(extract(
             "test.js",
             r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#,
             ExtractOption {
@@ -1648,14 +1688,14 @@ export {
                 css_file: None
             }
         )
-        .unwrap());
+        .unwrap()));
     }
 
     #[test]
     #[serial]
     fn maintain_value() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1667,14 +1707,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn ternary_operator_in_selector() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1686,10 +1726,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1701,10 +1741,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1716,14 +1756,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn test_rest_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1735,14 +1775,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_wrong_direct_array_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1754,10 +1794,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1769,10 +1809,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1784,10 +1824,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1799,13 +1839,13 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn negative_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1817,10 +1857,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1832,10 +1872,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1847,10 +1887,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1862,10 +1902,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1877,10 +1917,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1892,10 +1932,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1907,14 +1947,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_wrong_direct_object_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -1926,10 +1966,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1941,10 +1981,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1956,10 +1996,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1971,14 +2011,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_array_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -1990,10 +2030,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2005,10 +2045,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2020,10 +2060,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2035,10 +2075,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Center} from '@devup-ui/core'
@@ -2053,10 +2093,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2068,10 +2108,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2083,14 +2123,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_object_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2102,10 +2142,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2117,10 +2157,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2132,10 +2172,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2147,14 +2187,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_variable_object_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2166,9 +2206,9 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2180,14 +2220,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_object_responsive_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2199,10 +2239,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2214,13 +2254,13 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn props_direct_variable_object_responsive_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2232,14 +2272,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_array_responsive_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2251,10 +2291,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2266,13 +2306,13 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn props_direct_variable_array_responsive_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2284,14 +2324,14 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn props_direct_hybrid_responsive_select() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2303,13 +2343,13 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
     #[test]
     #[serial]
     fn test_component_in_func() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Flex} from '@devup-ui/core'
@@ -2326,14 +2366,14 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn backtick_prop() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2345,10 +2385,10 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2360,14 +2400,14 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn group_selector_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2379,14 +2419,14 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn test_duplicate_style_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2398,14 +2438,14 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn avoid_same_name_component() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2419,14 +2459,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn css_props_destructuring_assignment() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {css} from '@devup-ui/core'
@@ -2441,10 +2481,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {css} from '@devup-ui/core'
@@ -2459,14 +2499,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn theme_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2478,14 +2518,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn template_literal_props() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2497,10 +2537,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2512,10 +2552,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2527,10 +2567,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2542,14 +2582,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn theme_selector() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2561,9 +2601,9 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2575,10 +2615,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2597,14 +2637,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn custom_selector() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2620,10 +2660,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2639,10 +2679,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2658,14 +2698,14 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
     }
 
     #[test]
     #[serial]
     fn style_order() {
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box} from '@devup-ui/core'
@@ -2681,10 +2721,10 @@ import {Button} from '@devup/ui'
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
                 r#"import { jsxs as r, jsx as e } from "react/jsx-runtime";
@@ -2716,10 +2756,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -2731,10 +2771,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -2746,10 +2786,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -2761,10 +2801,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -2783,10 +2823,10 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
 
         reset_class_map();
-        assert_debug_snapshot!(
+        assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
                 r#"import {Box, css} from '@devup-ui/core'
@@ -2806,6 +2846,6 @@ export {
                 }
             )
             .unwrap()
-        );
+        ));
     }
 }

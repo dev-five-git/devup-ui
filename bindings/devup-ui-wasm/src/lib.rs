@@ -13,7 +13,7 @@ static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
 #[wasm_bindgen]
 pub struct Output {
     code: String,
-    styles: Vec<ExtractStyleValue>,
+    styles: HashSet<ExtractStyleValue>,
 }
 #[wasm_bindgen]
 extern "C" {

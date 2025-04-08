@@ -22,7 +22,7 @@
     "@testing-library/react": "^16.3.0"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.7.1",
+  "packageManager": "pnpm@10.8.0",
   "resolutions": {
     "vite": "^6"
   }

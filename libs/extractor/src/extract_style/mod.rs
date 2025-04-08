@@ -1,12 +1,13 @@
-use crate::utils::convert_value;
 use crate::StyleProperty;
+use crate::utils::convert_value;
 use css::{
-    css_to_classname, sheet_to_classname, sheet_to_variable_name, short_to_long, StyleSelector,
+    StyleSelector, css_to_classname, optimize_value, sheet_to_classname, sheet_to_variable_name,
+    short_to_long,
 };
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractStaticStyle {
     /// property
     property: String,
@@ -46,11 +47,11 @@ impl ExtractStaticStyle {
     /// create a new ExtractStaticStyle
     pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
-            value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
                 value.to_string()
             } else {
                 convert_value(value)
-            },
+            }),
             property: short_to_long(property),
             level,
             selector,
@@ -65,11 +66,11 @@ impl ExtractStaticStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         Self {
-            value: if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
                 value.to_string()
             } else {
                 convert_value(value)
-            },
+            }),
             property: property.to_string(),
             level,
             selector,
@@ -113,7 +114,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
                 if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
                     self.value.to_string()
                 } else {
-                    convert_value(self.value.as_str())
+                    optimize_value(convert_value(self.value.as_str()).as_str())
                 }
                 .as_str(),
             ),
@@ -122,7 +123,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
         ))
     }
 }
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractCss {
     /// css code
     pub css: String,
@@ -135,7 +136,7 @@ impl ExtractStyleProperty for ExtractCss {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractDynamicStyle {
     /// property
     property: String,
@@ -207,7 +208,7 @@ impl ExtractStyleProperty for ExtractDynamicStyle {
         }
     }
 }
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum ExtractStyleValue {
     Static(ExtractStaticStyle),
     Typography(String),

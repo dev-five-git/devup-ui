@@ -372,7 +372,7 @@ fn optimize_color(value: &str) -> String {
     format!("#{}", ret)
 }
 
-fn optimize_value(value: &str) -> String {
+pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
     if ret.contains(",") {
         ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();

@@ -36,7 +36,7 @@ pub struct DevupVisitor<'a> {
     jsx_object: Option<String>,
     package: String,
     css_file: String,
-    pub styles: Vec<ExtractStyleValue>,
+    pub styles: HashSet<ExtractStyleValue>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -47,7 +47,7 @@ impl<'a> DevupVisitor<'a> {
             jsx_imports: HashMap::new(),
             package: package.to_string(),
             css_file: css_file.to_string(),
-            styles: vec![],
+            styles: HashSet::new(),
             import_object: None,
             jsx_object: None,
             css_imports: HashMap::new(),
@@ -110,13 +110,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             // css can not reachable
                             // ExtractResult::ExtractStyleWithChangeTag(styles, _)
                             let class_name = gen_class_names(&self.ast, &mut styles, style_order);
-                            let mut styles = styles
-                                .into_iter()
-                                // already set style order
-                                .flat_map(|ex| ex.extract())
-                                .collect::<Vec<_>>();
 
-                            self.styles.append(&mut styles);
+                            self.styles.extend(
+                                styles
+                                    .into_iter()
+                                    // already set style order
+                                    .flat_map(|ex| ex.extract()),
+                            );
                             if let Some(cls) = class_name {
                                 *it = cls;
                             } else {
@@ -155,7 +155,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.ast.alloc_string_literal(SPAN, cls, None),
                         );
                     }
-                    self.styles.push(css);
+                    self.styles.insert(css);
                 }
             }
         }
@@ -230,18 +230,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
 
                         for style in props_styles.iter().rev() {
-                            self.styles.append(
-                                &mut style
-                                    .extract()
-                                    .into_iter()
-                                    .map(|mut s| {
-                                        style_order.into_iter().for_each(|order| {
-                                            s.set_style_order(order);
-                                        });
-                                        s
-                                    })
-                                    .collect(),
-                            );
+                            self.styles.extend(style.extract().into_iter().map(|mut s| {
+                                style_order.into_iter().for_each(|order| {
+                                    s.set_style_order(order);
+                                });
+                                s
+                            }));
                         }
                         if let Expression::ObjectExpression(obj) =
                             it.arguments[1].to_expression_mut()
@@ -403,7 +397,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             modify_props(&self.ast, attrs, &mut props_styles, style_order);
             for style in props_styles.iter().rev() {
-                self.styles.append(&mut style.extract());
+                self.styles.extend(style.extract());
             }
             // modify!!
 

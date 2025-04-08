@@ -1,8 +1,8 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\", \"const a = 1;\", ExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None },).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.tsx\", \"const a = 1;\", ExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None },).unwrap())"
 ---
-ExtractOutput {
-    styles: [],
+ToBTreeSet {
+    styles: {},
     code: "const a = 1;",
 }

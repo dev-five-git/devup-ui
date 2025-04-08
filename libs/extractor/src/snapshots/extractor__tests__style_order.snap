@@ -1,25 +1,14 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box styleOrder={20} p=\"4\" _hover={{ bg: [\"red\", \"blue\"]}} selectors={{\n    \"*[aria-diabled='true'] &\": {\n      opacity: 0.5\n      }\n    }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box styleOrder={20} p=\"4\" _hover={{ bg: [\"red\", \"blue\"]}} selectors={{\n    \"*[aria-diabled='true'] &\": {\n      opacity: 0.5\n      }\n    }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
-        Static(
-            ExtractStaticStyle {
-                property: "padding",
-                value: "16px",
-                level: 0,
-                selector: None,
-                style_order: Some(
-                    20,
-                ),
-            },
-        ),
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
                 property: "background",
-                value: "red",
-                level: 0,
+                value: "blue",
+                level: 1,
                 selector: Some(
                     Selector(
                         "&:hover",
@@ -33,8 +22,8 @@ ExtractOutput {
         Static(
             ExtractStaticStyle {
                 property: "background",
-                value: "blue",
-                level: 1,
+                value: "red",
+                level: 0,
                 selector: Some(
                     Selector(
                         "&:hover",
@@ -60,6 +49,17 @@ ExtractOutput {
                 ),
             },
         ),
-    ],
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    20,
+                ),
+            },
+        ),
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3\" />;\n",
 }
