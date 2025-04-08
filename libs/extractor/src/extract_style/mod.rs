@@ -110,14 +110,13 @@ impl ExtractStyleProperty for ExtractStaticStyle {
         StyleProperty::ClassName(sheet_to_classname(
             self.property.as_str(),
             self.level,
-            Some(
-                if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
+            Some(&optimize_value(
+                &if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
                     self.value.to_string()
                 } else {
-                    optimize_value(convert_value(self.value.as_str()).as_str())
-                }
-                .as_str(),
-            ),
+                    convert_value(self.value.as_str())
+                },
+            )),
             s.as_deref(),
             self.style_order,
         ))
