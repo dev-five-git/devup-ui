@@ -1,5 +1,13 @@
 # @devup-ui/vite-plugin
 
+## 0.1.62
+
+### Patch Changes
+
+- 9aba0a1: Fix css duplicate issue when exporting
+- Updated dependencies [9aba0a1]
+  - @devup-ui/wasm@0.1.56
+
 ## 0.1.61
 
 ### Patch Changes
