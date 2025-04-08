@@ -1,9 +1,27 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={[someStyleVar,undefined,someStyleVar1]} margin={[null,someStyleVar2]} bg=\"red\" />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={[someStyleVar,undefined,someStyleVar1]} margin={[null,someStyleVar2]} bg=\"red\" />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 1,
+                identifier: "someStyleVar2",
+                selector: None,
+                style_order: None,
+            },
+        ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "padding",
@@ -22,24 +40,6 @@ ExtractOutput {
                 style_order: None,
             },
         ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "margin",
-                level: 1,
-                identifier: "someStyleVar2",
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "background",
-                value: "red",
-                level: 0,
-                selector: None,
-                style_order: None,
-            },
-        ),
-    ],
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d2 d4 d6\" style={{\n\t\"--d1\": someStyleVar,\n\t\"--d3\": someStyleVar1,\n\t\"--d5\": someStyleVar2\n}} />;\n",
 }

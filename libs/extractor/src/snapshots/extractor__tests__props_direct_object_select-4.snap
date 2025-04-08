@@ -1,18 +1,16 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex bg={{a:\"$red\", b:\"$blue\"}[idx]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex bg={{a:\"$red\", b:\"$blue\"}[idx]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
-                property: "display",
-                value: "flex",
+                property: "background",
+                value: "$blue",
                 level: 0,
                 selector: None,
-                style_order: Some(
-                    0,
-                ),
+                style_order: None,
             },
         ),
         Static(
@@ -26,13 +24,15 @@ ExtractOutput {
         ),
         Static(
             ExtractStaticStyle {
-                property: "background",
-                value: "$blue",
+                property: "display",
+                value: "flex",
                 level: 0,
                 selector: None,
-                style_order: None,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
-    ],
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 ${{\n\t\"a\": \"d1\",\n\t\"b\": \"d2\"\n}[idx]}`} />;\n",
 }

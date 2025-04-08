@@ -1,9 +1,54 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : [\"1px\", \"2px\", \"3px\"]} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? [d, e, f, x === y ? \"4px\" : \"2px\"] : [\"1px\", \"2px\", \"3px\"]} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "2px",
+                level: 1,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "2px",
+                level: 3,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "3px",
+                level: 2,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "4px",
+                level: 3,
+                selector: None,
+                style_order: None,
+            },
+        ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "margin",
@@ -31,51 +76,6 @@ ExtractOutput {
                 style_order: None,
             },
         ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "4px",
-                level: 3,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "2px",
-                level: 3,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "1px",
-                level: 0,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "2px",
-                level: 1,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "3px",
-                level: 2,
-                selector: None,
-                style_order: None,
-            },
-        ),
-    ],
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? `d0 d2 d4 ${x === y ? \"d6\" : \"d7\"}` : \"d8 d9 d10\"} style={{\n\t\"--d1\": d,\n\t\"--d3\": e,\n\t\"--d5\": f\n}} />;\n",
 }

@@ -1,18 +1,9 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\",\nr#\"import {Box as C} from '@devup-ui/core'\n        <C padding={1} margin={2} className={\"exists class name\"} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box as C} from '@devup-ui/core'\n        <C padding={1} margin={2} className={\"exists class name\"} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
-        Static(
-            ExtractStaticStyle {
-                property: "padding",
-                value: "4px",
-                level: 0,
-                selector: None,
-                style_order: None,
-            },
-        ),
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
                 property: "margin",
@@ -22,6 +13,15 @@ ExtractOutput {
                 style_order: None,
             },
         ),
-    ],
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"exists class name d0 d1\" />;\n",
 }

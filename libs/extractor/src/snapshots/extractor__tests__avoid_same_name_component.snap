@@ -1,9 +1,9 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\nimport {Button} from '@devup/ui'\n            ;<Box bg=\"red\" background=\"red\" />\n            ;<Button bg=\"red\" background=\"red\" />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import {Box} from '@devup-ui/core'\nimport {Button} from '@devup/ui'\n            ;<Box bg=\"red\" background=\"red\" />\n            ;<Button bg=\"red\" background=\"red\" />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
                 property: "background",
@@ -13,6 +13,6 @@ ExtractOutput {
                 style_order: None,
             },
         ),
-    ],
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Button } from \"@devup/ui\";\n<div className=\"d0\" />;\n<Button bg=\"red\" background=\"red\" />;\n",
 }

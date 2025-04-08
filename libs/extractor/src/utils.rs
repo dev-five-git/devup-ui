@@ -3,7 +3,7 @@ use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::{Expression, JSXAttributeValue, Statement};
 use oxc_codegen::Codegen;
 use oxc_parser::Parser;
-use oxc_span::{SourceType, SPAN};
+use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::UnaryOperator;
 use std::collections::HashSet;
 

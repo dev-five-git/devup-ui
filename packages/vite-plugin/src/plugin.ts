@@ -166,5 +166,15 @@ export function DevupUI({
         code: retCode,
       }
     },
+    async generateBundle(_options, bundle) {
+      if (!extractCss) return
+
+      const cssFile = Object.keys(bundle).find(
+        (file) => file.includes('devup-ui') && file.endsWith('.css'),
+      )
+      if (cssFile && 'source' in bundle[cssFile]) {
+        bundle[cssFile].source = globalCss
+      }
+    },
   }
 }

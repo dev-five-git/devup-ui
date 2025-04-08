@@ -49,6 +49,7 @@ describe('devupUIPlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      generateBundle: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -163,6 +164,7 @@ describe('devupUIPlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      generateBundle: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -211,6 +213,7 @@ describe('devupUIPlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      generateBundle: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -252,6 +255,7 @@ describe('devupUIPlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      generateBundle: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -288,6 +292,7 @@ describe('devupUIPlugin', () => {
       enforce: 'pre',
       transform: expect.any(Function),
       apply: expect.any(Function),
+      generateBundle: expect.any(Function),
     })
     expect(existsSync).toHaveBeenCalledWith(devupPath)
     expect(getThemeInterface).toHaveBeenCalledWith(
@@ -399,6 +404,38 @@ describe('devupUIPlugin', () => {
       expect(
         (plugin as any).load('devup-ui.css?v=some').length.toString(),
       ).toBe('css code'.length.toString())
+    })
+    it('should generate bundle', () => {
+      const plugin = DevupUI({
+        package: libPackage,
+        cssFile,
+        devupPath,
+        interfacePath,
+      })
+      const bundle = {
+        'devup-ui.css': {
+          source: 'css code',
+        },
+      } as any
+      ;(plugin as any).generateBundle({}, bundle)
+      expect(bundle['devup-ui.css'].source).toBe('css code')
+    })
+
+    it('should generate bundle without extractCss', () => {
+      const plugin = DevupUI({
+        package: libPackage,
+        cssFile,
+        devupPath,
+        interfacePath,
+        extractCss: false,
+      })
+      const bundle = {
+        'devup-ui.css': {
+          source: 'no',
+        },
+      } as any
+      ;(plugin as any).generateBundle({}, bundle)
+      expect(bundle['devup-ui.css'].source).toBe('no')
     })
   })
 })

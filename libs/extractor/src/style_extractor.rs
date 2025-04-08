@@ -72,14 +72,13 @@ pub fn extract_style_from_expression<'a>(
     level: u8,
     selector: Option<&StyleSelector>,
 ) -> ExtractResult<'a> {
-    println!("extract_style_from_expression: {:?}", expression);
     let mut typo = false;
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         return match expression {
             Expression::ObjectExpression(obj) => {
-                let mut props_styles = vec![];
+                let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
                 let mut tag = None;
                 for idx in (0..obj.properties.len()).rev() {
                     let mut prop = obj.properties.remove(idx);
