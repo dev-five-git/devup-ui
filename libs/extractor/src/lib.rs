@@ -136,14 +136,13 @@ mod tests {
     use serial_test::serial;
 
     #[derive(Debug)]
+    #[allow(dead_code)]
     struct ToBTreeSet {
         // used styles
-        #[warn(dead_code)]
-        styles: BTreeSet<ExtractStyleValue>,
+        pub(crate) styles: BTreeSet<ExtractStyleValue>,
 
         // output source
-        #[warn(dead_code)]
-        code: String,
+        pub(crate) code: String,
     }
 
     impl From<ExtractOutput> for ToBTreeSet {
