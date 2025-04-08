@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.56
+
+### Patch Changes
+
+- 9aba0a1: Apply css optimize
+
 ## 0.1.55
 
 ### Patch Changes
