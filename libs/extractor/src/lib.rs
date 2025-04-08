@@ -919,8 +919,8 @@ mod tests {
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
-<Box margin={[null, a === b || "4px"]} className={"exists"} />;
-"#,
+        <Box margin={["6px", a === b ? "4px" : "3px"]} />;
+        "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_file: None
@@ -988,6 +988,7 @@ mod tests {
             )
             .unwrap()
         ));
+
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
