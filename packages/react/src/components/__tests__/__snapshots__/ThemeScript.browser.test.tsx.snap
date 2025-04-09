@@ -19,7 +19,7 @@ exports[`ThemeScript > should apply ThemeScript with not auto 1`] = `
 exports[`ThemeScript > should apply ThemeScript with theme 1`] = `
 <div>
   <script>
-    (function (){document.documentElement.setAttribute('data-theme',default);}())
+    (function (){document.documentElement.setAttribute('data-theme','default');}())
   </script>
 </div>
 `;

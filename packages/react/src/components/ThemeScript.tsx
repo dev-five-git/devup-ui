@@ -12,7 +12,7 @@ export function ThemeScript({ auto = true, theme }: ThemeScriptProps) {
     <script
       dangerouslySetInnerHTML={{
         __html: theme
-          ? `(function (){document.documentElement.setAttribute('data-theme',${theme});}())`
+          ? `(function (){document.documentElement.setAttribute('data-theme','${theme}');}())`
           : `(function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(${String(auto)}&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'${process.env.DEVUP_UI_DEFAULT_THEME ?? 'default'}'));})()`,
       }}
     />
