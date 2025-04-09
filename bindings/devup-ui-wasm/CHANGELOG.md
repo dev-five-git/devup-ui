@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.57
+
+### Patch Changes
+
+- b937925: Add special props
+
 ## 0.1.56
 
 ### Patch Changes
