@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 0.1.58
+
+### Patch Changes
+
+- b99448c: Rm content
+
 ## 0.1.57
 
 ### Patch Changes
