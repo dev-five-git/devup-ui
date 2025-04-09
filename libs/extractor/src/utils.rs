@@ -95,7 +95,6 @@ static SPECIAL_PROPERTIES: Lazy<HashSet<&str>> = Lazy::new(|| {
         "muted",
         "playsInline",
         "preload",
-        "content",
         "httpEquiv",
         "high",
         "low",
