@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 0.1.34
+
+### Patch Changes
+
+- c029a8d: Fix theme script
+
 ## 0.1.33
 
 ### Patch Changes
