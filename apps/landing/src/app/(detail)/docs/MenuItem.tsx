@@ -36,6 +36,9 @@ export function MenuItem(props: MenuItemProps) {
               bg: '$menuHover',
             }
       }
+      _active={{
+        bg: '$menuActive',
+      }}
       alignItems="center"
       bg={selected ? '$menuActive' : undefined}
       borderRadius="6px"
