@@ -112,7 +112,7 @@ export function Header() {
         gap="10px"
         p="10px"
       >
-        <Suspense fallback={<MobMenu />}>
+        <Suspense>
           <MobMenuButton>
             <MobMenu />
           </MobMenuButton>
