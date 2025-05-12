@@ -11,4 +11,6 @@ th, td {
     padding: 6px 13px;
 }
 
-
+pre {
+    border-radius: 10px;
+}
