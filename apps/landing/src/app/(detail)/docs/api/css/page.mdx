@@ -1,40 +1,38 @@
 export const metadata = {
-    title: "css",
+  title: 'css',
 }
 
 # css
 
-css function is a function that returns a string.
+`css` function is a function that returns a string.
 
-## Usage
+## How to use
 
 ### CSS Literal
-You can use the css function to create a css string.
+
+You can use `css` as a tag function to create a css string. Pass in a string of css properties as an argument, ans it will be converted
+into a class list.
+
 ```jsx
-<any css={css`
+// Before
+<any className={css`
     color: red;
 `}/>
 
-<any className={"d0"}/>
+// After
+<any className="d0"/>
 ```
 
 ### CSS Object
-You can use the css function to create a css object.
+
+You can also use the css function by passing in a css object as an argument.
+
 ```jsx
+// Before
 <any className={css({
     color: "red"
 })}/>
 
-<any className={"d0"}/>
-```
-
-Also, css function can be used in the style prop. (responsive, pseudo-class, etc.)
-```jsx
-// It works like this
-<any style={css({
-    color: ["red", "blue"],
-    _hover: {
-        color: "green"
-    }
-})}/>
+// After
+<any className="d0" />
 ```

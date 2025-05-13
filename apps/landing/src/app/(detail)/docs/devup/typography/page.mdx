@@ -1,5 +1,24 @@
 export const metadata = {
-    title: "Typography",
+  title: 'Typography',
 }
 
 # Typography
+
+You can create a typography theme in your `devup.json` file and pass variables to `typography` props.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": {
+        "fontSize": "24px",
+        "fontWeight": "bold"
+      }
+    }
+  }
+}
+```
+
+```jsx
+<Text typography="h1">Hello</Text>
+```
