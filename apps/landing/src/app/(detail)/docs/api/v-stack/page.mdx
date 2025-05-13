@@ -1,5 +1,27 @@
 export const metadata = {
-    title: "VStack",
+  title: 'VStack',
 }
 
 # VStack
+
+The `VStack` component is a layout component that uses flexbox to vertically layout its children.
+
+It has a `display: flex` style with `flex-direction: column`.
+
+## How to use
+
+```jsx
+// Before
+<VStack>
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+</VStack>
+
+// After, it has 2 classes on default
+<div className="d3 d4">
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+</div>
+```
