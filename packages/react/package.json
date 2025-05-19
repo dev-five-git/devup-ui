@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/react",
-  "version": "0.1.34",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "lint": "eslint",
