@@ -66,7 +66,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         SPAN,
                         None,
                         self.ast
-                            .string_literal(SPAN, self.css_file.to_string(), None),
+                            .string_literal(SPAN, self.ast.atom(&self.css_file), None),
                         None,
                         None,
                         ImportOrExportKind::Value,
@@ -92,7 +92,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if call.arguments.is_empty() {
                         *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                             SPAN,
-                            "".to_string(),
+                            self.ast.atom(&"".to_string()),
                             None,
                         ));
                     } else if call.arguments.len() == 1 {
@@ -122,14 +122,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             } else {
                                 *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                                     SPAN,
-                                    "".to_string(),
+                                    self.ast.atom(""),
                                     None,
                                 ));
                             }
                         } else {
                             *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                                 SPAN,
-                                "".to_string(),
+                                self.ast.atom(""),
                                 None,
                             ));
                         }
@@ -151,9 +151,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     });
 
                     if let StyleProperty::ClassName(cls) = css.extract() {
-                        *it = Expression::StringLiteral(
-                            self.ast.alloc_string_literal(SPAN, cls, None),
-                        );
+                        *it = Expression::StringLiteral(self.ast.alloc_string_literal(
+                            SPAN,
+                            self.ast.atom(&cls),
+                            None,
+                        ));
                     }
                     self.styles.insert(css);
                 }
@@ -200,7 +202,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if it.arguments.len() > 1 {
                         let mut tag = Expression::StringLiteral(self.ast.alloc_string_literal(
                             SPAN,
-                            kind.to_tag().unwrap_or("div"),
+                            self.ast.atom(&kind.to_tag().unwrap_or("div")),
                             None,
                         ));
                         let mut props_styles = vec![];
@@ -405,7 +407,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 Expression::StringLiteral(str) => {
                     // change tag name
                     let ident = JSXElementName::Identifier(
-                        self.ast.alloc_jsx_identifier(SPAN, str.value.as_str()),
+                        self.ast
+                            .alloc_jsx_identifier(SPAN, self.ast.atom(&str.value)),
                     );
                     opening_element.name = ident.clone_in(self.ast.allocator);
                     if let Some(el) = &mut elem.closing_element {
@@ -413,10 +416,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
                 Expression::TemplateLiteral(literal) => {
-                    let ident = JSXElementName::Identifier(
-                        self.ast
-                            .alloc_jsx_identifier(SPAN, literal.quasis[0].value.raw.as_str()),
-                    );
+                    let ident =
+                        JSXElementName::Identifier(self.ast.alloc_jsx_identifier(
+                            SPAN,
+                            self.ast.atom(&literal.quasis[0].value.raw),
+                        ));
                     opening_element.name = ident.clone_in(self.ast.allocator);
                     if let Some(el) = &mut elem.closing_element {
                         el.name = ident;

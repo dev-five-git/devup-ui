@@ -34,17 +34,14 @@ fn gen_class_name<'a>(
             }
             let target = st.extract();
 
-            Some(Expression::StringLiteral(
-                ast_builder.alloc_string_literal(
-                    SPAN,
-                    (match target {
-                        StyleProperty::ClassName(cls) => cls,
-                        StyleProperty::Variable { class_name, .. } => class_name,
-                    })
-                    .as_str(),
-                    None,
-                ),
-            ))
+            Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
+                SPAN,
+                ast_builder.atom(match &target {
+                    StyleProperty::ClassName(cls) => cls,
+                    StyleProperty::Variable { class_name, .. } => class_name,
+                }),
+                None,
+            )))
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
@@ -99,7 +96,7 @@ fn gen_class_name<'a>(
                                 PropertyKind::Init,
                                 PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                                     SPAN,
-                                    key.as_str(),
+                                    ast_builder.atom(key),
                                     None,
                                 )),
                                 expr,
@@ -109,7 +106,6 @@ fn gen_class_name<'a>(
                             ))
                         })
                     })),
-                    None,
                 )),
                 expression.clone_in(ast_builder.allocator),
                 false,
@@ -175,6 +171,7 @@ pub fn merge_expression_for_class_name<'a>(
                             cooked: None,
                         },
                         tail: false,
+                        lone_surrogates: false,
                     });
                 } else if idx == unknown_expr.len() {
                     qu.push(TemplateElement {
@@ -184,7 +181,8 @@ pub fn merge_expression_for_class_name<'a>(
                             cooked: None,
                         },
                         tail: true,
-                    })
+                        lone_surrogates: false,
+                    });
                 } else {
                     qu.push(TemplateElement {
                         span: SPAN,
@@ -193,6 +191,7 @@ pub fn merge_expression_for_class_name<'a>(
                             cooked: None,
                         },
                         tail: false,
+                        lone_surrogates: false,
                     });
                 }
             }
@@ -210,7 +209,7 @@ pub fn merge_expression_for_class_name<'a>(
     } else {
         Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
             SPAN,
-            class_name.as_str(),
+            ast_builder.atom(&class_name),
             None,
         )))
     }

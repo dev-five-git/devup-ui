@@ -1,10 +1,10 @@
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
+use oxc_ast::AstBuilder;
 use oxc_ast::ast::{
     Expression, JSXAttribute, JSXAttributeValue, JSXExpression, ObjectExpression,
     ObjectPropertyKind, PropertyKey, PropertyKind,
 };
-use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
@@ -25,7 +25,6 @@ pub fn gen_styles<'a>(
     Some(ast_builder.object_expression(
         SPAN,
         oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
-        None,
     ))
 }
 fn gen_style<'a>(
@@ -47,11 +46,12 @@ fn gen_style<'a>(
                         PropertyKind::Init,
                         PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                             SPAN,
-                            variable_name,
+                            ast_builder.atom(&variable_name),
                             None,
                         )),
                         Expression::Identifier(
-                            ast_builder.alloc_identifier_reference(SPAN, identifier),
+                            ast_builder
+                                .alloc_identifier_reference(SPAN, ast_builder.atom(&identifier)),
                         ),
                         false,
                         false,
@@ -233,12 +233,13 @@ fn gen_style<'a>(
                                 PropertyKind::Init,
                                 PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                                     SPAN,
-                                    variable_name,
+                                    ast_builder.atom(&variable_name),
                                     None,
                                 )),
-                                Expression::Identifier(
-                                    ast_builder.alloc_identifier_reference(SPAN, identifier),
-                                ),
+                                Expression::Identifier(ast_builder.alloc_identifier_reference(
+                                    SPAN,
+                                    ast_builder.atom(&identifier),
+                                )),
                                 false,
                                 false,
                                 false,
@@ -273,13 +274,18 @@ fn gen_style<'a>(
                     ast_builder.alloc_object_property(
                         SPAN,
                         PropertyKind::Init,
-                        PropertyKey::StringLiteral(
-                            ast_builder.alloc_string_literal(SPAN, key, None),
-                        ),
+                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            SPAN,
+                            ast_builder.atom(&key),
+                            None,
+                        )),
                         if value.len() == 1 {
                             // do not create object expression when property is single
                             Expression::Identifier(
-                                ast_builder.alloc_identifier_reference(SPAN, &value[0].1),
+                                ast_builder.alloc_identifier_reference(
+                                    SPAN,
+                                    ast_builder.atom(&value[0].1),
+                                ),
                             )
                         } else {
                             Expression::ComputedMemberExpression(
@@ -299,13 +305,15 @@ fn gen_style<'a>(
                                                                 PropertyKey::StaticIdentifier(
                                                                     ast_builder
                                                                         .alloc_identifier_name(
-                                                                            SPAN, k,
+                                                                            SPAN,
+                                                                            ast_builder.atom(&k),
                                                                         ),
                                                                 ),
                                                                 Expression::Identifier(
                                                                     ast_builder
                                                                         .alloc_identifier_reference(
-                                                                            SPAN, v,
+                                                                            SPAN,
+                                                                            ast_builder.atom(&v),
                                                                         ),
                                                                 ),
                                                                 false,
@@ -317,7 +325,6 @@ fn gen_style<'a>(
                                                     .collect::<Vec<_>>(),
                                                 ast_builder.allocator,
                                             ),
-                                            None,
                                         ),
                                     ),
                                     expression.clone_in(ast_builder.allocator),
