@@ -353,6 +353,8 @@ pub fn short_to_long(property: &str) -> String {
 
 static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
 static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
+static ZERO_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(^|\s)0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
 
 fn optimize_color(value: &str) -> String {
     let mut ret = value.to_string().to_uppercase();
@@ -381,6 +383,9 @@ pub fn optimize_value(value: &str) -> String {
         ret = COLOR_HASH
             .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
             .to_string();
+    }
+    if ret.contains("0") {
+        ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
     }
     ret
 }
@@ -524,6 +529,24 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_optimize_value() {
+        assert_eq!(optimize_value("0px"), "0");
+        assert_eq!(optimize_value("0em"), "0");
+        assert_eq!(optimize_value("0rem"), "0");
+        assert_eq!(optimize_value("0vh"), "0");
+        assert_eq!(optimize_value("0vw"), "0");
+        assert_eq!(optimize_value("0%"), "0");
+        assert_eq!(optimize_value("0dvh"), "0");
+        assert_eq!(optimize_value("0dvw"), "0");
+        assert_eq!(optimize_value("0px 0px"), "0 0");
+        assert_eq!(optimize_value("0em 0em"), "0 0");
+        assert_eq!(optimize_value("0rem 0rem"), "0 0");
+        assert_eq!(optimize_value("0vh 0vh"), "0 0");
+        assert_eq!(optimize_value("0vw 0vw"), "0 0");
+    }
+
+    #[test]
+    #[serial]
     fn test_sheet_to_classname() {
         set_debug(false);
         reset_class_map();
@@ -614,6 +637,104 @@ mod tests {
         assert_eq!(
             sheet_to_classname("background", 0, None, None, Some(1)),
             "d1"
+        );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0px"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0em"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0rem"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vh"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0%"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvh"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvw"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vw"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0px red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0% red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0em red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0rem red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vw red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None),
+            "d1"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0px 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0em 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0rem 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vh 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vw 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0dvh 0"), None, None),
+            "d2"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vh"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vw"), None, None),
+            "d2"
         );
     }
 

@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-oxc_parser = "0.62.0"
-oxc_syntax = "0.62.0"
-oxc_span = "0.62.0"
-oxc_allocator = "0.62.0"
-oxc_ast = "0.62.0"
-oxc_ast_visit = "0.62.0"
-oxc_codegen = "0.62.0"
+oxc_parser = "0.70.0"
+oxc_syntax = "0.70.0"
+oxc_span = "0.70.0"
+oxc_allocator = "0.70.0"
+oxc_ast = "0.70.0"
+oxc_ast_visit = "0.70.0"
+oxc_codegen = "0.70.0"
 css = { path = "../css" }
 once_cell = "1.21.3"
 
 [dev-dependencies]
-insta = "1.42.2"
+insta = "1.43.1"
 serial_test = "3.2.0"

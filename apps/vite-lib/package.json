@@ -14,12 +14,12 @@
   "dependencies": {
     "react": "^19.1.0",
     "@devup-ui/react": "workspace:*",
-    "vite": "^6.2.7"
+    "vite": "^6.3.5"
   },
   "devDependencies": {
-    "vite-plugin-dts": "^4.5.3",
+    "vite-plugin-dts": "^4.5.4",
     "@devup-ui/vite-plugin": "workspace:*",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^4.4.1",
     "typescript": "^5",
     "@types/node": "^22",
     "@types/react": "^19"
