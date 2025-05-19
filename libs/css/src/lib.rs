@@ -354,7 +354,7 @@ pub fn short_to_long(property: &str) -> String {
 static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
 static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
 static ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(^|\s)0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
+    Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
 
 fn optimize_color(value: &str) -> String {
     let mut ret = value.to_string().to_uppercase();
@@ -543,6 +543,19 @@ mod tests {
         assert_eq!(optimize_value("0rem 0rem"), "0 0");
         assert_eq!(optimize_value("0vh 0vh"), "0 0");
         assert_eq!(optimize_value("0vw 0vw"), "0 0");
+        assert_eq!(optimize_value("-0vw -0vw"), "0 0");
+        assert_eq!(optimize_value("scale(0px)"), "scale(0)");
+        assert_eq!(optimize_value("scale(-0px)"), "scale(0)");
+        assert_eq!(optimize_value("translate(0px)"), "translate(0)");
+        assert_eq!(optimize_value("translate(-0px,0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(-0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(10px, 0px)"), "translate(10px,0)");
+        assert_eq!(
+            optimize_value("translateX(0px) translateY(0px)"),
+            "translateX(0) translateY(0)"
+        );
     }
 
     #[test]
