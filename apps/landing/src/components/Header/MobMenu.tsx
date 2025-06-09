@@ -2,7 +2,6 @@ import { Box, css, Flex, Text } from '@devup-ui/react'
 import Link from 'next/link'
 
 import { LeftMenu } from '../../app/(detail)/docs/LeftMenu'
-import { URL_PREFIX } from '../../constants'
 import { HeaderInput } from './HeaderInput'
 import { HeaderInputWrap } from './HeaderInputWrap'
 import { MobMenuWrap } from './MobMenuWrap'
@@ -20,7 +19,7 @@ export function MobMenu() {
           className={css({
             textDecoration: 'none',
           })}
-          href={URL_PREFIX + '/docs/overview'}
+          href="/docs/overview"
         >
           <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
@@ -33,7 +32,7 @@ export function MobMenu() {
           className={css({
             textDecoration: 'none',
           })}
-          href={URL_PREFIX + '/team'}
+          href="/team"
         >
           <Flex alignItems="center" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">

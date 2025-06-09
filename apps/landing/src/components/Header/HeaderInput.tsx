@@ -1,7 +1,5 @@
 import { Flex, Image, Input } from '@devup-ui/react'
 
-import { URL_PREFIX } from '../../constants'
-
 export function HeaderInput(props: React.ComponentProps<'input'>) {
   return (
     <Flex
@@ -12,7 +10,7 @@ export function HeaderInput(props: React.ComponentProps<'input'>) {
       p="8px 8px 6px"
       w="100%"
     >
-      <Image boxSize="24px" src={URL_PREFIX + '/search.svg'} />
+      <Image boxSize="24px" src="/search.svg" />
       <Input
         _placeholder={{
           color: '$caption',

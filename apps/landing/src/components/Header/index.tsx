@@ -2,7 +2,6 @@ import { Box, css, Flex } from '@devup-ui/react'
 import Link from 'next/link'
 import { Suspense } from 'react'
 
-import { URL_PREFIX } from '../../constants'
 import { Logo } from '../Logo'
 import { Discord } from './Discord'
 import { Github } from './Github'
@@ -46,7 +45,7 @@ export function Header() {
               textDecoration: 'none',
               ml: 4,
             })}
-            href={URL_PREFIX + '/'}
+            href="/"
           >
             <Logo />
           </Link>
@@ -59,7 +58,7 @@ export function Header() {
                   textDecoration: 'none',
                   ml: 4,
                 })}
-                href={URL_PREFIX + '/'}
+                href="/"
               >
                 <Logo />
               </Link>
@@ -71,7 +70,7 @@ export function Header() {
                   textDecoration: 'none',
                   ml: 4,
                 })}
-                href={URL_PREFIX + '/'}
+                href="/"
               >
                 <Logo />
               </Link>
@@ -85,7 +84,7 @@ export function Header() {
             className={css({
               textDecoration: 'none',
             })}
-            href={URL_PREFIX + '/docs/overview'}
+            href="/docs/overview"
           >
             <Menu keyword="docs">Docs</Menu>
           </Link>
@@ -95,7 +94,7 @@ export function Header() {
             className={css({
               textDecoration: 'none',
             })}
-            href={URL_PREFIX + '/team'}
+            href="/team"
           >
             <Menu keyword="team">Team</Menu>
           </Link>

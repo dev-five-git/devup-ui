@@ -3,7 +3,6 @@ import { Box, css, Flex, Text } from '@devup-ui/react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-import { URL_PREFIX } from '../../../constants'
 import { OpenMenuItem } from './OpenMenuItem'
 
 export interface MenuItemProps {
@@ -19,12 +18,8 @@ export function MenuItem(props: MenuItemProps) {
   const { children, to, subMenu } = props
   const path = usePathname()
   const selected = to
-    ? path.startsWith(to) || path.startsWith(URL_PREFIX + to)
-    : !!subMenu?.some((item) =>
-        item.to
-          ? path.startsWith(URL_PREFIX + item.to) || path.startsWith(item.to)
-          : false,
-      )
+    ? path.startsWith(to)
+    : !!subMenu?.some((item) => (item.to ? path.startsWith(item.to) : false))
 
   if (subMenu) return <OpenMenuItem {...props} subMenu={subMenu} />
   const inner = (
@@ -61,7 +56,7 @@ export function MenuItem(props: MenuItemProps) {
       className={css({
         textDecoration: 'none',
       })}
-      href={URL_PREFIX + to}
+      href={to}
     >
       {inner}
     </Link>

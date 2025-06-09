@@ -1,8 +1,6 @@
 import { Box, css, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 
-import { URL_PREFIX } from '../constants'
-
 export function Footer() {
   return (
     <Box as="footer" bg="$footerBg" px="16px" py={['30px', '60px']}>
@@ -15,7 +13,7 @@ export function Footer() {
           <VStack flex="1" gap={[1, 0]}>
             <Link
               className={css({ textDecoration: 'none' })}
-              href={URL_PREFIX + '/docs/overview'}
+              href="/docs/overview"
             >
               <Text color="$footerTitle" typography="buttonS">
                 Docs
@@ -24,7 +22,7 @@ export function Footer() {
             <VStack gap="14px">
               <Link
                 className={css({ textDecoration: 'none' })}
-                href={URL_PREFIX + '/docs/overview'}
+                href="/docs/overview"
               >
                 <Text color="$footerText" typography="footerMenu">
                   Overview
@@ -33,7 +31,7 @@ export function Footer() {
 
               <Link
                 className={css({ textDecoration: 'none' })}
-                href={URL_PREFIX + '/docs/installation'}
+                href="/docs/installation"
               >
                 <Text color="$footerText" typography="footerMenu">
                   Installation
@@ -41,7 +39,7 @@ export function Footer() {
               </Link>
               <Link
                 className={css({ textDecoration: 'none' })}
-                href={URL_PREFIX + '/docs/features'}
+                href="/docs/features"
               >
                 <Text color="$footerText" typography="footerMenu">
                   Features
@@ -49,7 +47,7 @@ export function Footer() {
               </Link>
               <Link
                 className={css({ textDecoration: 'none' })}
-                href={URL_PREFIX + '/docs/api/box'}
+                href="/docs/api/box"
               >
                 <Text color="$footerText" typography="footerMenu">
                   API
@@ -57,7 +55,7 @@ export function Footer() {
               </Link>
               <Link
                 className={css({ textDecoration: 'none' })}
-                href={URL_PREFIX + '/docs/devup/devup-json'}
+                href="/docs/devup/devup-json"
               >
                 <Text color="$footerText" typography="footerMenu">
                   Devup
@@ -66,10 +64,7 @@ export function Footer() {
             </VStack>
           </VStack>
           <VStack flex="1" gap="20px">
-            <Link
-              className={css({ textDecoration: 'none' })}
-              href={URL_PREFIX + '/team'}
-            >
+            <Link className={css({ textDecoration: 'none' })} href="/team">
               <Text color="$footerTitle" typography="buttonS">
                 Team
               </Text>
@@ -81,10 +76,10 @@ export function Footer() {
           flexDir={['column', 'row']}
           justifyContent="space-between"
         >
-          <Link href={URL_PREFIX + '/'}>
+          <Link href="/">
             <Image
               alt="white-logo"
-              src={URL_PREFIX + '/white-logo.svg'}
+              src="/white-logo.svg"
               w={['164px', '204px']}
             />
           </Link>
