@@ -4,8 +4,7 @@ use css::{
     StyleSelector, css_to_classname, optimize_value, sheet_to_classname, sheet_to_variable_name,
     short_to_long,
 };
-use once_cell::sync::Lazy;
-use std::collections::HashSet;
+use phf::phf_set;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractStaticStyle {
@@ -21,27 +20,25 @@ pub struct ExtractStaticStyle {
     style_order: Option<u8>,
 }
 
-static MAINTAIN_VALUE_PROPERTIES: Lazy<HashSet<String>> = Lazy::new(|| {
-    let mut set = HashSet::<String>::new();
-    set.insert("opacity".to_string());
-    set.insert("flex".to_string());
-    set.insert("zIndex".to_string());
-    set.insert("lineClamp".to_string());
-    set.insert("fontWeight".to_string());
-    set.insert("scale".to_string());
-    set.insert("aspectRatio".to_string());
-    set.insert("flexGrow".to_string());
-    set.insert("flexShrink".to_string());
-    set.insert("order".to_string());
-    set.insert("gridColumn".to_string());
-    set.insert("gridColumnStart".to_string());
-    set.insert("gridColumnEnd".to_string());
-    set.insert("gridRow".to_string());
-    set.insert("gridRowStart".to_string());
-    set.insert("gridRowEnd".to_string());
-    set.insert("animationIterationCount".to_string());
-    set
-});
+static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
+    "opacity",
+    "flex",
+    "zIndex",
+    "lineClamp",
+    "fontWeight",
+    "scale",
+    "aspectRatio",
+    "flexGrow",
+    "flexShrink",
+    "order",
+    "gridColumn",
+    "gridColumnStart",
+    "gridColumnEnd",
+    "gridRow",
+    "gridRowStart",
+    "gridRowEnd",
+    "animationIterationCount"
+};
 
 impl ExtractStaticStyle {
     /// create a new ExtractStaticStyle

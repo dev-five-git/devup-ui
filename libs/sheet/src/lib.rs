@@ -1,7 +1,7 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{convert_property, merge_selector, PropertyType, StyleSelector};
+use css::{PropertyType, StyleSelector, convert_property, merge_selector};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Error;
@@ -193,9 +193,7 @@ impl StyleSheet {
                             .enumerate()
                             .find(|(idx, _)| (*idx as u8) == *level)
                             .map(|(_, bp)| *bp)
-                            .unwrap_or_else(|| {
-                                self.theme.breakpoints.last().cloned().unwrap_or(0)
-                            }),
+                            .unwrap_or_else(|| self.theme.breakpoints.last().cloned().unwrap_or(0)),
                     )
                 };
                 if !sorted_props.is_empty() {
