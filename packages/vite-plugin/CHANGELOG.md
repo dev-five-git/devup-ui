@@ -1,5 +1,16 @@
 # @devup-ui/vite-plugin
 
+## 1.0.0
+
+### Major Changes
+
+- 18b1bd7: Optimize Zero value
+
+### Patch Changes
+
+- Updated dependencies [18b1bd7]
+  - @devup-ui/wasm@1.0.0
+
 ## 0.1.64
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.0
+
+### Major Changes
+
+- 18b1bd7: Optimize Zero value
+
 ## 0.1.58
 
 ### Patch Changes
