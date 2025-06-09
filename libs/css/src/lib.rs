@@ -1,8 +1,9 @@
 use once_cell::sync::Lazy;
+use phf::{phf_map, phf_set};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -26,7 +27,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     map
 });
 
-static DEBUG: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+static DEBUG: Mutex<bool> = Mutex::new(false);
 
 pub fn set_debug(value: bool) {
     let mut debug = DEBUG.lock().unwrap();
@@ -165,10 +166,7 @@ impl Display for SelectorSeparator {
     }
 }
 
-static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
-    let mut set = HashSet::new();
-
-    for key in [
+static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
         "placeholder",
         "before",
         "after",
@@ -178,11 +176,7 @@ static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
         "view-transition-image-pair",
         "view-transition-new",
         "view-transition-old",
-    ] {
-        set.insert(key);
-    }
-    set
-});
+};
 
 pub fn get_selector_separator(key: &str) -> SelectorSeparator {
     if key.starts_with(":") || key.is_empty() || key.starts_with("[") {
@@ -218,71 +212,47 @@ impl From<[&str; 2]> for PropertyType {
     }
 }
 
-static GLOBAL_STYLE_PROPERTY: Lazy<HashMap<&str, PropertyType>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-
-    for (key, value) in [
-        ("bg", "background"),
-        ("bgAttachment", "background-attachment"),
-        ("bgClip", "background-clip"),
-        ("bgColor", "background-color"),
-        ("bgImage", "background-image"),
-        ("bgOrigin", "background-origin"),
-        ("bgPosition", "background-position"),
-        ("bgPositionX", "background-position-x"),
-        ("bgPositionY", "background-position-y"),
-        ("bgRepeat", "background-repeat"),
-        ("bgSize", "background-size"),
-        ("animationDir", "animation-direction"),
-        ("flexDir", "flex-direction"),
-        ("pos", "position"),
-        ("m", "margin"),
-        ("mt", "margin-top"),
-        ("mr", "margin-right"),
-        ("mb", "margin-bottom"),
-        ("ml", "margin-left"),
-        ("p", "padding"),
-        ("pt", "padding-top"),
-        ("pr", "padding-right"),
-        ("pb", "padding-bottom"),
-        ("pl", "padding-left"),
-        ("w", "width"),
-        ("h", "height"),
-        ("minW", "min-width"),
-        ("minH", "min-height"),
-        ("maxW", "max-width"),
-        ("maxH", "max-height"),
-    ] {
-        map.insert(key, value.into());
-    }
-
-    for (key, value) in [
-        ("mx", ["margin-left", "margin-right"]),
-        ("my", ["margin-top", "margin-bottom"]),
-        ("px", ["padding-left", "padding-right"]),
-        ("py", ["padding-top", "padding-bottom"]),
-        ("boxSize", ["width", "height"]),
-        (
-            "borderBottomRadius",
-            ["border-bottom-left-radius", "border-bottom-right-radius"],
-        ),
-        (
-            "borderTopRadius",
-            ["border-top-left-radius", "border-top-right-radius"],
-        ),
-        (
-            "borderLeftRadius",
-            ["border-top-left-radius", "border-bottom-left-radius"],
-        ),
-        (
-            "borderRightRadius",
-            ["border-top-right-radius", "border-bottom-right-radius"],
-        ),
-    ] {
-        map.insert(key, value.into());
-    }
-    map
-});
+static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
+    "bg" => &["background"],
+    "bgAttachment" => &["background-attachment"],
+    "bgClip" => &["background-clip"],
+    "bgColor" => &["background-color"],
+    "bgImage" => &["background-image"],
+    "bgOrigin" => &["background-origin"],
+    "bgPosition" => &["background-position"],
+    "bgPositionX" => &["background-position-x"],
+    "bgPositionY" => &["background-position-y"],
+    "bgRepeat" => &["background-repeat"],
+    "bgSize" => &["background-size"],
+    "animationDir" => &["animation-direction"],
+    "flexDir" => &["flex-direction"],
+    "pos" => &["position"],
+    "m" => &["margin"],
+    "mt" => &["margin-top"],
+    "mr" => &["margin-right"],
+    "mb" => &["margin-bottom"],
+    "ml" => &["margin-left"],
+    "p" => &["padding"],
+    "pt" => &["padding-top"],
+    "pr" => &["padding-right"],
+    "pb" => &["padding-bottom"],
+    "pl" => &["padding-left"],
+    "w" => &["width"],
+    "h" => &["height"],
+    "minW" => &["min-width"],
+    "minH" => &["min-height"],
+    "maxW" => &["max-width"],
+    "maxH" => &["max-height"],
+    "mx" => &["margin-left", "margin-right"],
+    "my" => &["margin-top", "margin-bottom"],
+    "px" => &["padding-left", "padding-right"],
+    "py" => &["padding-top", "padding-bottom"],
+    "boxSize" => &["width", "height"],
+    "borderBottomRadius" => &["border-bottom-left-radius", "border-bottom-right-radius"],
+    "borderTopRadius" => &["border-top-left-radius", "border-top-right-radius"],
+    "borderLeftRadius" => &["border-top-left-radius", "border-bottom-left-radius"],
+    "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
+};
 
 static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -338,15 +308,19 @@ pub fn convert_property(property: &str) -> PropertyType {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .cloned()
+        .map(|v| match v.len() {
+            1 => PropertyType::Single(v[0].to_string()),
+            _ => PropertyType::Multi(v.iter().map(|v| v.to_string()).collect()),
+        })
         .unwrap_or_else(|| to_kebab_case(property).into())
 }
 
 pub fn short_to_long(property: &str) -> String {
     GLOBAL_STYLE_PROPERTY
         .get(property)
-        .map(|v| match v {
-            PropertyType::Single(value) => to_camel_case(value),
-            PropertyType::Multi(_) => property.to_string(),
+        .map(|v| match v.len() {
+            1 => to_camel_case(v[0]),
+            _ => property.to_string(),
         })
         .unwrap_or_else(|| property.to_string())
 }

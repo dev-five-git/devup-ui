@@ -20,6 +20,11 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-devup-ui/.df'))
+    rmSync('./benchmark/next-devup-ui/.df', {
+      recursive: true,
+      force: true,
+    })
 }
 
 function checkDirSize(path) {
