@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.1
+
+### Patch Changes
+
+- 94681ff: to phf
+- 864c37b: Add info to package.json
+
 ## 1.0.0
 
 ### Major Changes

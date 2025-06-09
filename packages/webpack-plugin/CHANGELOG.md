@@ -1,5 +1,14 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.1
+
+### Patch Changes
+
+- 864c37b: Add info to package.json
+- Updated dependencies [94681ff]
+- Updated dependencies [864c37b]
+  - @devup-ui/wasm@1.0.1
+
 ## 1.0.0
 
 ### Major Changes
