@@ -4,8 +4,6 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 
-import { URL_PREFIX } from '../../constants'
-
 export function SearchContent() {
   const query = useSearchParams().get('query')
   const [data, setData] = useState<
@@ -17,7 +15,7 @@ export function SearchContent() {
   >()
   useEffect(() => {
     if (query) {
-      fetch(URL_PREFIX + '/search.json')
+      fetch('/search.json')
         .then((response) => response.json())
         .then(
           (

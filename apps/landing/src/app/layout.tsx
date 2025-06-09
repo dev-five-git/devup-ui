@@ -7,7 +7,6 @@ import type { Metadata } from 'next'
 import { Footer } from '../components/Footer'
 import { Header } from '../components/Header'
 import { SearchModal } from '../components/SearchModal'
-import { URL_PREFIX } from '../constants'
 
 export const metadata: Metadata = {
   title: 'Devup UI',
@@ -22,10 +21,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-PSRKC4QZ');</script>
+<!-- End Google Tag Manager -->`,
+          }}
+        />
         <ThemeScript auto />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        {URL_PREFIX && <base href={URL_PREFIX} />}
-        <link href={URL_PREFIX + '/favicon.ico'} rel="shortcut icon" />
+        <link href="/favicon.ico" rel="shortcut icon" />
       </head>
       <body
         className={css({
@@ -33,6 +42,14 @@ export default function RootLayout({
           color: '$text',
         })}
       >
+        <noscript>
+          <iframe
+            height="0"
+            src="https://www.googletagmanager.com/ns.html?id=GTM-PSRKC4QZ"
+            style={{ display: 'none', visibility: 'hidden' }}
+            width="0"
+          />
+        </noscript>
         <SearchModal />
         <Header />
         {children}

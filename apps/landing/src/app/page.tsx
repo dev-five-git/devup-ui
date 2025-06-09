@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
-import { URL_PREFIX } from '../constants'
 import { FeatureCard } from './FeatureCard'
 
 export default function HomePage() {
   return (
     <>
+      <link href="https://devup-ui.com" rel="canonical" />
       <Box
         h="80dvh"
         pointerEvents="none"
@@ -66,7 +66,7 @@ export default function HomePage() {
       <Box pt={['100px', '150px']}>
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">
-            <Image h="50px" src={URL_PREFIX + '/icon.svg'} w="52px" />
+            <Image h="50px" src="/icon.svg" w="52px" />
             <Text color="$title" textAlign="center" typography="h1">
               Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
             </Text>
@@ -81,7 +81,7 @@ export default function HomePage() {
             className={css({
               textDecoration: 'none',
             })}
-            href={URL_PREFIX + '/docs/overview'}
+            href="/docs/overview"
           >
             <Flex
               _active={{
@@ -112,11 +112,7 @@ export default function HomePage() {
                 <Text color="$base" typography="buttonL">
                   Get started
                 </Text>
-                <Image
-                  bg="$base"
-                  boxSize="24px"
-                  maskImage={`url(${URL_PREFIX + '/arrow.svg'})`}
-                />
+                <Image bg="$base" boxSize="24px" maskImage="url(/arrow.svg)" />
               </Flex>
             </Flex>
           </Link>
