@@ -312,7 +312,22 @@ pub fn convert_property(property: &str) -> PropertyType {
             1 => PropertyType::Single(v[0].to_string()),
             _ => PropertyType::Multi(v.iter().map(|v| v.to_string()).collect()),
         })
-        .unwrap_or_else(|| to_kebab_case(property).into())
+        .unwrap_or_else(|| {
+            if (property.starts_with("Webkit")
+                && property.len() > 6
+                && property.chars().nth(6).unwrap().is_uppercase())
+                || (property.starts_with("Moz")
+                    && property.len() > 3
+                    && property.chars().nth(3).unwrap().is_uppercase())
+                || (property.starts_with("ms")
+                    && property.len() > 2
+                    && property.chars().nth(2).unwrap().is_uppercase())
+            {
+                PropertyType::Single(format!("-{}", to_kebab_case(property)))
+            } else {
+                to_kebab_case(property).into()
+            }
+        })
 }
 
 pub fn short_to_long(property: &str) -> String {
@@ -874,6 +889,22 @@ mod tests {
                 "padding-top".to_string(),
                 "padding-bottom".to_string()
             ])
+        );
+    }
+
+    #[test]
+    fn test_convert_vendor_property() {
+        assert_eq!(
+            convert_property("MozUserSelect"),
+            PropertyType::Single("-moz-user-select".to_string())
+        );
+        assert_eq!(
+            convert_property("msAccelerator"),
+            PropertyType::Single("-ms-accelerator".to_string())
+        );
+        assert_eq!(
+            convert_property("WebkitAlignContent"),
+            PropertyType::Single("-webkit-align-content".to_string())
         );
     }
 

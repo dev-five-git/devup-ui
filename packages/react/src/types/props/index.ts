@@ -28,10 +28,12 @@ import type { DevupUiTextProps } from './text'
 import type { DevupUiTransformProps } from './transform'
 import type { DevupUiTransitionProps } from './transition'
 import type { DevupUiUiProps } from './ui'
+import type { DevupUiVendorProps } from './vendor'
 import type { DevupUiViewTransitionProps } from './view-transition'
 
 export interface DevupCommonProps
-  extends DevupUiAnimationProps,
+  extends DevupUiVendorProps,
+    DevupUiAnimationProps,
     DevupUiBackgroundProps,
     DevupUiBlendingProps,
     DevupUiBorderProps,
