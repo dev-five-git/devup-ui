@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.2
+
+### Patch Changes
+
+- bb2f49f: Add vendor properties (moz, webkit, ms)
+
 ## 1.0.1
 
 ### Patch Changes
