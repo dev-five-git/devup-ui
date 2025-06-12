@@ -19,4 +19,6 @@ export interface DevupUiUiProps {
   resize?: ResponsiveValue<Property.Resize>
   userSelect?: ResponsiveValue<Property.UserSelect>
   willChange?: ResponsiveValue<Property.WillChange>
+  writingMode?: ResponsiveValue<Property.WritingMode>
+  textOrientation?: ResponsiveValue<Property.TextOrientation>
 }
