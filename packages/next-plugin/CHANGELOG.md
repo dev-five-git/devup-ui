@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 1.0.3
+
+### Patch Changes
+
+- b9d8a17: Support next build cache
+- Updated dependencies [b9d8a17]
+  - @devup-ui/webpack-plugin@1.0.3
+
 ## 1.0.2
 
 ### Patch Changes
