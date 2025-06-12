@@ -36,7 +36,7 @@ export function Discord() {
               textDecoration: 'none',
               borderRadius: '100px',
             })}
-            href="#"
+            href="https://open.kakao.com/o/giONwVAh"
             target="_blank"
           >
             <Flex

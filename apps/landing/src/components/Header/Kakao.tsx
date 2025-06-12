@@ -7,7 +7,7 @@ export function Kakao() {
       className={css({
         textDecoration: 'none',
       })}
-      href="#"
+      href="https://open.kakao.com/o/giONwVAh"
       target="_blank"
     >
       <svg
