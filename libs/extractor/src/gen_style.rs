@@ -220,32 +220,32 @@ fn gen_style<'a>(
         },
         ExtractStyleProp::Expression { styles, .. } => {
             for style in styles {
-                match style.extract() {
-                    StyleProperty::ClassName(_) => {}
-                    StyleProperty::Variable {
-                        variable_name,
-                        identifier,
-                        ..
-                    } => {
-                        properties.push(ObjectPropertyKind::ObjectProperty(
-                            ast_builder.alloc_object_property(
+                if let StyleProperty::Variable {
+                    variable_name,
+                    identifier,
+                    ..
+                } = style.extract()
+                {
+                    properties.push(ObjectPropertyKind::ObjectProperty(
+                        ast_builder.alloc_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                                 SPAN,
-                                PropertyKind::Init,
-                                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                                    SPAN,
-                                    ast_builder.atom(&variable_name),
-                                    None,
-                                )),
-                                Expression::Identifier(ast_builder.alloc_identifier_reference(
+                                ast_builder.atom(&variable_name),
+                                None,
+                            )),
+                            Expression::Identifier(
+                                ast_builder.alloc_identifier_reference(
                                     SPAN,
                                     ast_builder.atom(&identifier),
-                                )),
-                                false,
-                                false,
-                                false,
+                                ),
                             ),
-                        ));
-                    }
+                            false,
+                            false,
+                            false,
+                        ),
+                    ));
                 }
             }
         }
@@ -253,18 +253,16 @@ fn gen_style<'a>(
             let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
             for (key, value) in map.iter() {
                 for style in value.extract() {
-                    match style.extract() {
-                        StyleProperty::ClassName(_) => {}
-                        StyleProperty::Variable {
-                            variable_name,
-                            identifier,
-                            ..
-                        } => {
-                            tmp_map
-                                .entry(variable_name)
-                                .or_default()
-                                .push((key.to_string(), identifier));
-                        }
+                    if let StyleProperty::Variable {
+                        variable_name,
+                        identifier,
+                        ..
+                    } = style.extract()
+                    {
+                        tmp_map
+                            .entry(variable_name)
+                            .or_default()
+                            .push((key.to_string(), identifier));
                     }
                 }
             }
@@ -359,29 +357,24 @@ pub fn apply_style_attribute<'a>(
 ) {
     if let Some(ref mut value) = style_prop.value {
         if let JSXAttributeValue::ExpressionContainer(container) = value {
-            match container.expression {
-                JSXExpression::ObjectExpression(ref mut obj) => {
-                    expression.properties.insert(
-                        0,
-                        ObjectPropertyKind::SpreadProperty(ast_builder.alloc_spread_element(
-                            SPAN,
-                            Expression::ObjectExpression(obj.clone_in(ast_builder.allocator)),
-                        )),
-                    );
-                }
-                JSXExpression::Identifier(ref ident) => {
-                    expression.properties.insert(
-                        0,
-                        ObjectPropertyKind::SpreadProperty(ast_builder.alloc_spread_element(
-                            SPAN,
-                            Expression::Identifier(ident.clone_in(ast_builder.allocator)),
-                        )),
-                    );
-                }
-                _ => {}
-            };
+            if let Some(spread_property) = match &container.expression {
+                JSXExpression::ObjectExpression(obj) => Some(Expression::ObjectExpression(
+                    obj.clone_in(ast_builder.allocator),
+                )),
+                JSXExpression::Identifier(ident) => Some(Expression::Identifier(
+                    ident.clone_in(ast_builder.allocator),
+                )),
+                _ => None,
+            } {
+                expression.properties.insert(
+                    0,
+                    ObjectPropertyKind::SpreadProperty(
+                        ast_builder.alloc_spread_element(SPAN, spread_property),
+                    ),
+                );
+            }
             container.expression = JSXExpression::ObjectExpression(ast_builder.alloc(expression));
-        };
+        }
     } else {
         style_prop.value = Some(JSXAttributeValue::ExpressionContainer(
             ast_builder.alloc_jsx_expression_container(

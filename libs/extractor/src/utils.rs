@@ -165,7 +165,7 @@ pub fn is_special_property(name: &str) -> bool {
         || SPECIAL_PROPERTIES.contains(name)
 }
 
-pub fn get_number_by_jsx_expression(expr: &JSXAttributeValue) -> Option<f64> {
+pub fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
         JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
             &Expression::StringLiteral(sl.clone_in(&Allocator::default())),
@@ -182,6 +182,15 @@ pub fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
         Expression::ParenthesizedExpression(parenthesized) => {
             get_number_by_literal_expression(&parenthesized.expression)
         }
+        Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
+        Expression::TemplateLiteral(tmp) => tmp
+            .quasis
+            .iter()
+            .map(|q| q.value.raw.to_string())
+            .collect::<Vec<String>>()
+            .join("")
+            .parse::<f64>()
+            .ok(),
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
             .and_then(|num| match unary.operator {
@@ -200,7 +209,7 @@ pub fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
             Expression::ParenthesizedExpression(parenthesized) => {
                 get_string_by_literal_expression(&parenthesized.expression)
             }
-            Expression::StringLiteral(str) => Some(str.value.as_str().to_string()),
+            Expression::StringLiteral(str) => Some(str.value.into()),
             Expression::TemplateLiteral(tmp) => {
                 let mut collect = vec![];
                 for (idx, q) in tmp.quasis.iter().enumerate() {
@@ -222,6 +231,9 @@ pub fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use oxc_allocator::Vec;
+    use oxc_ast::ast::{JSXAttributeName, JSXElementName};
+
     use super::*;
 
     #[test]
@@ -230,5 +242,124 @@ mod tests {
         assert_eq!(convert_value("1%"), "1%");
         assert_eq!(convert_value("foo"), "foo");
         assert_eq!(convert_value("4"), "16px");
+    }
+
+    #[test]
+    fn test_get_number_by_literal_expression() {
+        let allocator = Allocator::default();
+        {
+            let parsed = Parser::new(&allocator, "1", SourceType::d_ts()).parse();
+            assert_eq!(parsed.program.body.len(), 1);
+            assert!(matches!(
+                parsed.program.body[0],
+                Statement::ExpressionStatement(_)
+            ));
+            if let Statement::ExpressionStatement(expr) = &parsed.program.body[0] {
+                assert_eq!(
+                    get_number_by_literal_expression(&expr.expression),
+                    Some(1.0)
+                );
+            }
+        }
+        {
+            let parsed = Parser::new(&allocator, "-1", SourceType::d_ts()).parse();
+            assert_eq!(parsed.program.body.len(), 1);
+            assert!(matches!(
+                parsed.program.body[0],
+                Statement::ExpressionStatement(_)
+            ));
+            if let Statement::ExpressionStatement(expr) = &parsed.program.body[0] {
+                assert_eq!(
+                    get_number_by_literal_expression(&expr.expression),
+                    Some(-1.0)
+                );
+            }
+        }
+        {
+            let parsed = Parser::new(&allocator, "1.5", SourceType::d_ts()).parse();
+            assert_eq!(parsed.program.body.len(), 1);
+            assert!(matches!(
+                parsed.program.body[0],
+                Statement::ExpressionStatement(_)
+            ));
+            if let Statement::ExpressionStatement(expr) = &parsed.program.body[0] {
+                assert_eq!(
+                    get_number_by_literal_expression(&expr.expression),
+                    Some(1.5)
+                );
+            }
+        }
+        {
+            let parsed = Parser::new(&allocator, "delete 1", SourceType::d_ts()).parse();
+            assert_eq!(parsed.program.body.len(), 1);
+            assert!(matches!(
+                parsed.program.body[0],
+                Statement::ExpressionStatement(_)
+            ));
+            if let Statement::ExpressionStatement(expr) = &parsed.program.body[0] {
+                assert_eq!(get_number_by_literal_expression(&expr.expression), None);
+            }
+        }
+    }
+
+    #[test]
+    fn test_jsx_expression_to_number() {
+        let allocator = Allocator::default();
+        let builder = oxc_ast::AstBuilder::new(&allocator);
+        assert_eq!(
+            jsx_expression_to_number(
+                &builder
+                    .alloc_jsx_attribute(
+                        SPAN,
+                        JSXAttributeName::Identifier(
+                            builder.alloc_jsx_identifier(SPAN, "styleOrder")
+                        ),
+                        Some(JSXAttributeValue::StringLiteral(
+                            builder.alloc_string_literal(SPAN, "1", None),
+                        )),
+                    )
+                    .value
+                    .as_ref()
+                    .unwrap()
+            ),
+            Some(1.0)
+        );
+
+        assert_eq!(
+            jsx_expression_to_number(
+                &builder
+                    .alloc_jsx_attribute(
+                        SPAN,
+                        JSXAttributeName::Identifier(
+                            builder.alloc_jsx_identifier(SPAN, "styleOrder")
+                        ),
+                        Some(JSXAttributeValue::Element(builder.alloc_jsx_element(
+                            SPAN,
+                            builder.alloc_jsx_opening_element(
+                                SPAN,
+                                JSXElementName::Identifier(
+                                    builder.alloc_jsx_identifier(SPAN, "div")
+                                ),
+                                Some(builder.ts_type_parameter_instantiation(
+                                    SPAN,
+                                    Vec::new_in(&allocator)
+                                )),
+                                Vec::new_in(&allocator).into(),
+                            ),
+                            Vec::new_in(&allocator).into(),
+                            Some(builder.alloc_jsx_closing_element(
+                                SPAN,
+                                JSXElementName::Identifier(
+                                    builder.alloc_jsx_identifier(SPAN, "div")
+                                )
+                            )),
+                        )))
+                    )
+                    .value
+                    .as_ref()
+                    .unwrap()
+            ),
+            None
+        );
     }
 }
