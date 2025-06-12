@@ -1,8 +1,9 @@
 use once_cell::sync::Lazy;
+use phf::{phf_map, phf_set};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -26,7 +27,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     map
 });
 
-static DEBUG: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+static DEBUG: Mutex<bool> = Mutex::new(false);
 
 pub fn set_debug(value: bool) {
     let mut debug = DEBUG.lock().unwrap();
@@ -165,10 +166,7 @@ impl Display for SelectorSeparator {
     }
 }
 
-static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
-    let mut set = HashSet::new();
-
-    for key in [
+static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
         "placeholder",
         "before",
         "after",
@@ -178,11 +176,7 @@ static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
         "view-transition-image-pair",
         "view-transition-new",
         "view-transition-old",
-    ] {
-        set.insert(key);
-    }
-    set
-});
+};
 
 pub fn get_selector_separator(key: &str) -> SelectorSeparator {
     if key.starts_with(":") || key.is_empty() || key.starts_with("[") {
@@ -218,71 +212,47 @@ impl From<[&str; 2]> for PropertyType {
     }
 }
 
-static GLOBAL_STYLE_PROPERTY: Lazy<HashMap<&str, PropertyType>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-
-    for (key, value) in [
-        ("bg", "background"),
-        ("bgAttachment", "background-attachment"),
-        ("bgClip", "background-clip"),
-        ("bgColor", "background-color"),
-        ("bgImage", "background-image"),
-        ("bgOrigin", "background-origin"),
-        ("bgPosition", "background-position"),
-        ("bgPositionX", "background-position-x"),
-        ("bgPositionY", "background-position-y"),
-        ("bgRepeat", "background-repeat"),
-        ("bgSize", "background-size"),
-        ("animationDir", "animation-direction"),
-        ("flexDir", "flex-direction"),
-        ("pos", "position"),
-        ("m", "margin"),
-        ("mt", "margin-top"),
-        ("mr", "margin-right"),
-        ("mb", "margin-bottom"),
-        ("ml", "margin-left"),
-        ("p", "padding"),
-        ("pt", "padding-top"),
-        ("pr", "padding-right"),
-        ("pb", "padding-bottom"),
-        ("pl", "padding-left"),
-        ("w", "width"),
-        ("h", "height"),
-        ("minW", "min-width"),
-        ("minH", "min-height"),
-        ("maxW", "max-width"),
-        ("maxH", "max-height"),
-    ] {
-        map.insert(key, value.into());
-    }
-
-    for (key, value) in [
-        ("mx", ["margin-left", "margin-right"]),
-        ("my", ["margin-top", "margin-bottom"]),
-        ("px", ["padding-left", "padding-right"]),
-        ("py", ["padding-top", "padding-bottom"]),
-        ("boxSize", ["width", "height"]),
-        (
-            "borderBottomRadius",
-            ["border-bottom-left-radius", "border-bottom-right-radius"],
-        ),
-        (
-            "borderTopRadius",
-            ["border-top-left-radius", "border-top-right-radius"],
-        ),
-        (
-            "borderLeftRadius",
-            ["border-top-left-radius", "border-bottom-left-radius"],
-        ),
-        (
-            "borderRightRadius",
-            ["border-top-right-radius", "border-bottom-right-radius"],
-        ),
-    ] {
-        map.insert(key, value.into());
-    }
-    map
-});
+static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
+    "bg" => &["background"],
+    "bgAttachment" => &["background-attachment"],
+    "bgClip" => &["background-clip"],
+    "bgColor" => &["background-color"],
+    "bgImage" => &["background-image"],
+    "bgOrigin" => &["background-origin"],
+    "bgPosition" => &["background-position"],
+    "bgPositionX" => &["background-position-x"],
+    "bgPositionY" => &["background-position-y"],
+    "bgRepeat" => &["background-repeat"],
+    "bgSize" => &["background-size"],
+    "animationDir" => &["animation-direction"],
+    "flexDir" => &["flex-direction"],
+    "pos" => &["position"],
+    "m" => &["margin"],
+    "mt" => &["margin-top"],
+    "mr" => &["margin-right"],
+    "mb" => &["margin-bottom"],
+    "ml" => &["margin-left"],
+    "p" => &["padding"],
+    "pt" => &["padding-top"],
+    "pr" => &["padding-right"],
+    "pb" => &["padding-bottom"],
+    "pl" => &["padding-left"],
+    "w" => &["width"],
+    "h" => &["height"],
+    "minW" => &["min-width"],
+    "minH" => &["min-height"],
+    "maxW" => &["max-width"],
+    "maxH" => &["max-height"],
+    "mx" => &["margin-left", "margin-right"],
+    "my" => &["margin-top", "margin-bottom"],
+    "px" => &["padding-left", "padding-right"],
+    "py" => &["padding-top", "padding-bottom"],
+    "boxSize" => &["width", "height"],
+    "borderBottomRadius" => &["border-bottom-left-radius", "border-bottom-right-radius"],
+    "borderTopRadius" => &["border-top-left-radius", "border-top-right-radius"],
+    "borderLeftRadius" => &["border-top-left-radius", "border-bottom-left-radius"],
+    "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
+};
 
 static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -338,21 +308,42 @@ pub fn convert_property(property: &str) -> PropertyType {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .cloned()
-        .unwrap_or_else(|| to_kebab_case(property).into())
+        .map(|v| match v.len() {
+            1 => PropertyType::Single(v[0].to_string()),
+            _ => PropertyType::Multi(v.iter().map(|v| v.to_string()).collect()),
+        })
+        .unwrap_or_else(|| {
+            if (property.starts_with("Webkit")
+                && property.len() > 6
+                && property.chars().nth(6).unwrap().is_uppercase())
+                || (property.starts_with("Moz")
+                    && property.len() > 3
+                    && property.chars().nth(3).unwrap().is_uppercase())
+                || (property.starts_with("ms")
+                    && property.len() > 2
+                    && property.chars().nth(2).unwrap().is_uppercase())
+            {
+                PropertyType::Single(format!("-{}", to_kebab_case(property)))
+            } else {
+                to_kebab_case(property).into()
+            }
+        })
 }
 
 pub fn short_to_long(property: &str) -> String {
     GLOBAL_STYLE_PROPERTY
         .get(property)
-        .map(|v| match v {
-            PropertyType::Single(value) => to_camel_case(value),
-            PropertyType::Multi(_) => property.to_string(),
+        .map(|v| match v.len() {
+            1 => to_camel_case(v[0]),
+            _ => property.to_string(),
         })
         .unwrap_or_else(|| property.to_string())
 }
 
 static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
 static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
+static ZERO_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
 
 fn optimize_color(value: &str) -> String {
     let mut ret = value.to_string().to_uppercase();
@@ -381,6 +372,9 @@ pub fn optimize_value(value: &str) -> String {
         ret = COLOR_HASH
             .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
             .to_string();
+    }
+    if ret.contains("0") {
+        ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
     }
     ret
 }
@@ -524,6 +518,37 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_optimize_value() {
+        assert_eq!(optimize_value("0px"), "0");
+        assert_eq!(optimize_value("0em"), "0");
+        assert_eq!(optimize_value("0rem"), "0");
+        assert_eq!(optimize_value("0vh"), "0");
+        assert_eq!(optimize_value("0vw"), "0");
+        assert_eq!(optimize_value("0%"), "0");
+        assert_eq!(optimize_value("0dvh"), "0");
+        assert_eq!(optimize_value("0dvw"), "0");
+        assert_eq!(optimize_value("0px 0px"), "0 0");
+        assert_eq!(optimize_value("0em 0em"), "0 0");
+        assert_eq!(optimize_value("0rem 0rem"), "0 0");
+        assert_eq!(optimize_value("0vh 0vh"), "0 0");
+        assert_eq!(optimize_value("0vw 0vw"), "0 0");
+        assert_eq!(optimize_value("-0vw -0vw"), "0 0");
+        assert_eq!(optimize_value("scale(0px)"), "scale(0)");
+        assert_eq!(optimize_value("scale(-0px)"), "scale(0)");
+        assert_eq!(optimize_value("translate(0px)"), "translate(0)");
+        assert_eq!(optimize_value("translate(-0px,0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(-0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
+        assert_eq!(optimize_value("translate(10px, 0px)"), "translate(10px,0)");
+        assert_eq!(
+            optimize_value("translateX(0px) translateY(0px)"),
+            "translateX(0) translateY(0)"
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_sheet_to_classname() {
         set_debug(false);
         reset_class_map();
@@ -614,6 +639,104 @@ mod tests {
         assert_eq!(
             sheet_to_classname("background", 0, None, None, Some(1)),
             "d1"
+        );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0px"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0em"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0rem"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vh"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0%"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvh"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvw"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vw"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0px red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0% red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0em red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0rem red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vw red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None),
+            "d1"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0px 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0em 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0rem 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vh 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vw 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0dvh 0"), None, None),
+            "d2"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vh"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vw"), None, None),
+            "d2"
         );
     }
 
@@ -766,6 +889,22 @@ mod tests {
                 "padding-top".to_string(),
                 "padding-bottom".to_string()
             ])
+        );
+    }
+
+    #[test]
+    fn test_convert_vendor_property() {
+        assert_eq!(
+            convert_property("MozUserSelect"),
+            PropertyType::Single("-moz-user-select".to_string())
+        );
+        assert_eq!(
+            convert_property("msAccelerator"),
+            PropertyType::Single("-ms-accelerator".to_string())
+        );
+        assert_eq!(
+            convert_property("WebkitAlignContent"),
+            PropertyType::Single("-webkit-align-content".to_string())
         );
     }
 

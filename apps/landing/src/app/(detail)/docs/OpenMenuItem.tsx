@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useReducer } from 'react'
 
-import { URL_PREFIX } from '../../../constants'
 import { MenuItemProps } from './MenuItem'
 
 export function OpenMenuItem({
@@ -14,9 +13,7 @@ export function OpenMenuItem({
   Required<Pick<MenuItemProps, 'subMenu'>>) {
   const path = usePathname()
   const selected = subMenu.some((item) =>
-    item.to
-      ? path.startsWith(URL_PREFIX + item.to) || path.startsWith(item.to)
-      : false,
+    item.to ? path.startsWith(item.to) : false,
   )
   const [open, handleOpen] = useReducer((state) => !state, selected)
   return (
@@ -45,7 +42,7 @@ export function OpenMenuItem({
         {subMenu && (
           <Image
             boxSize="16px"
-            src={URL_PREFIX + '/menu-arrow.svg'}
+            src="/menu-arrow.svg"
             transform={open ? 'rotate(0deg)' : 'rotate(-90deg)'}
             transition="transform 0.2s"
           />
@@ -56,9 +53,7 @@ export function OpenMenuItem({
           <Box borderRight="1px solid var(--border, #E0E0E0)" w="10px" />
           <VStack flex="1" gap="4px">
             {subMenu.map(({ children, to }, idx) => {
-              const selected = to
-                ? path.startsWith(to) || path.startsWith(URL_PREFIX + to)
-                : false
+              const selected = to ? path.startsWith(to) : false
               const inner = (
                 <Flex
                   _hover={{
@@ -90,7 +85,7 @@ export function OpenMenuItem({
                   className={css({
                     textDecoration: 'none',
                   })}
-                  href={URL_PREFIX + to}
+                  href={to}
                 >
                   {inner}
                 </Link>

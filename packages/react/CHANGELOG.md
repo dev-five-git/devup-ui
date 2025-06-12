@@ -1,5 +1,29 @@
 # @devup-ui/react
 
+## 1.0.3
+
+### Patch Changes
+
+- c5336c9: Add writingMode, textOrientation
+
+## 1.0.2
+
+### Patch Changes
+
+- bb2f49f: Add vendor properties (moz, webkit, ms)
+
+## 1.0.1
+
+### Patch Changes
+
+- 864c37b: Add info to package.json
+
+## 1.0.0
+
+### Major Changes
+
+- 18b1bd7: Optimize Zero value
+
 ## 0.1.34
 
 ### Patch Changes

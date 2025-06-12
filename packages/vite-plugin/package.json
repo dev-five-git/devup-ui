@@ -1,7 +1,24 @@
 {
   "name": "@devup-ui/vite-plugin",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react",
+    "vite"
+  ],
   "type": "module",
-  "version": "0.1.64",
+  "version": "1.0.2",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -26,7 +43,7 @@
     "@devup-ui/wasm": "workspace:*"
   },
   "devDependencies": {
-    "vite-plugin-dts": "^4.5.3",
+    "vite-plugin-dts": "^4.5.4",
     "typescript": "^5.8.3"
   },
   "peerDependencies": {

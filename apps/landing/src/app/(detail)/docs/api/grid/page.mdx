@@ -1,5 +1,5 @@
 export const metadata = {
-    title: "Grid",
+  title: 'Grid',
 }
 
 # Grid
@@ -10,10 +10,19 @@ It has a `display: grid` style by default.
 
 ## How to use
 
-```jsx
+````jsx
 // Before
-<Grid/>
+<Grid>
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+</Grid>
 
 // After, It has a class on default
-<div className="d0"/>
-```
+<div className="d3">
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+</div>
+    ```
+````

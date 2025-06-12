@@ -16,7 +16,7 @@ export function useTheme(): keyof DevupTheme | null {
     const currentTheme = document.documentElement.getAttribute('data-theme')
     if (currentTheme !== null && currentTheme !== theme)
       setTheme(currentTheme as keyof DevupTheme)
-  }, [])
+  }, [theme])
   useSafeEffect(() => {
     const targetNode = document.documentElement
     setThemeMap[id] = setTheme

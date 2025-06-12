@@ -1,5 +1,30 @@
 # @devup-ui/next-plugin
 
+## 1.0.2
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.2
+
+## 1.0.1
+
+### Patch Changes
+
+- 864c37b: Add info to package.json
+- Updated dependencies [864c37b]
+  - @devup-ui/webpack-plugin@1.0.1
+
+## 1.0.0
+
+### Major Changes
+
+- 18b1bd7: Optimize Zero value
+
+### Patch Changes
+
+- Updated dependencies [18b1bd7]
+  - @devup-ui/webpack-plugin@1.0.0
+
 ## 0.1.64
 
 ### Patch Changes

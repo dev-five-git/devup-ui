@@ -1699,7 +1699,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} />
         "#,
@@ -1718,7 +1718,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex _hover={a ? { bg: "red" } : undefined} />
         "#,
@@ -1733,7 +1733,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex _hover={a ? { bg: "red" } : {}} />
         "#,
@@ -1748,7 +1748,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex _hover={a ? { bg: "red",color:"blue" } : { fontWeight:"bold", color:"red" }} />
         "#,
@@ -1767,7 +1767,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={0.5} {...props} />
         "#,
@@ -1786,7 +1786,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[][0]} />
         "#,
@@ -1801,7 +1801,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][-10]} />
         "#,
@@ -1816,7 +1816,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][+10]} />
         "#,
@@ -1831,7 +1831,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][100]} />
         "#,
@@ -1849,7 +1849,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={-1} />
         "#,
@@ -1864,7 +1864,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={-a} />
         "#,
@@ -1879,7 +1879,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={-(1+a)} />
         "#,
@@ -1894,7 +1894,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={-1*a} />
         "#,
@@ -1909,7 +1909,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={-(1)} />
         "#,
@@ -1924,7 +1924,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={(-1)} />
         "#,
@@ -1939,7 +1939,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box zIndex={[(-1),-2, -(3)]} />
         "#,
@@ -1958,7 +1958,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box opacity={{}[1]} />
         "#,
@@ -1973,7 +1973,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}["wrong"]} />
         "#,
@@ -1988,7 +1988,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[`wrong`]} />
         "#,
@@ -2003,7 +2003,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[1]} />
         "#,
@@ -2022,7 +2022,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][0]} />
         "#,
@@ -2037,7 +2037,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][a]} />
         "#,
@@ -2052,7 +2052,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex bg={["$red", "$blue"][idx]} />
         "#,
@@ -2067,7 +2067,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex bg={[`$red`, `${variable}`][idx]} />
         "#,
@@ -2082,7 +2082,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Center} from '@devup-ui/core'
 <Center
             bg={['$webBg', '$appBg', '$solutionBg'][categoryId - 1]}
@@ -2100,7 +2100,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5, ...some][100]} />
         "#,
@@ -2115,7 +2115,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5, ...some][a]} />
         "#,
@@ -2134,7 +2134,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}["a"]} />
         "#,
@@ -2149,7 +2149,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5, ...any}["b"]} />
         "#,
@@ -2164,7 +2164,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5, ...any}["some"]} />
         "#,
@@ -2179,7 +2179,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex bg={{a:"$red", b:"$blue"}[idx]} />
         "#,
@@ -2198,7 +2198,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[a]} />
         "#,
@@ -2212,7 +2212,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
 <Box bg={SOME_VAR[idx]} />
         "#,
@@ -2231,7 +2231,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={{ 0: [1, 2, 3], 1: [4, 5, 6] }[idx]} />
         "#,
@@ -2246,7 +2246,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={{ "a": [1, 2, 3], "b": [4, 5, 6] }[idx]} />
         "#,
@@ -2264,7 +2264,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={{ 0: [a, b, c], "1": [d, e, f] }[idx]} />
         "#,
@@ -2283,7 +2283,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[1, 2, 3], [4, 5, 6]][idx]} />
         "#,
@@ -2298,7 +2298,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[1, 2, 3],[4, 5, 6]][idx]} />
         "#,
@@ -2316,7 +2316,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[a, b, c], [d, e, f]][idx]} />
         "#,
@@ -2335,7 +2335,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />
         "#,
@@ -2353,7 +2353,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
 PROCESS_DATA.map(({ id, title, content }, idx) => (
           <MotionDiv key={idx}>
@@ -2377,7 +2377,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
             <Box bg={`black`} />
         "#,
@@ -2392,7 +2392,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
             <Box bg={`${variable}`} />
         "#,
@@ -2411,7 +2411,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
             <Box _groupHover={{ bg: "red" }} />
         "#,
@@ -2430,7 +2430,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
             <Box bg="red" background="red" />
         "#,
@@ -2449,7 +2449,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
 import {Button} from '@devup/ui'
             ;<Box bg="red" background="red" />
@@ -2470,7 +2470,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {css} from '@devup-ui/core'
     <div className={css({
        ...(a ? { bg: 'red' } : { bg: 'blue' }),
@@ -2488,7 +2488,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {css} from '@devup-ui/core'
     <div className={css({
        ...(a ? { bg: 'red', border: "solid 1px red" } : { bg: 'blue' }),
@@ -2510,7 +2510,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box _themeDark={{ display:"none" }} _themeLight={{ display: "flex" }} />
             "#,
@@ -2529,7 +2529,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box bg={`${"red"}`} />
             "#,
@@ -2544,7 +2544,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box m={`${1}`} />
             "#,
@@ -2559,7 +2559,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box m={`${-1}`} />
             "#,
@@ -2574,7 +2574,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box m={`${1} ${2}`} />
             "#,
@@ -2593,7 +2593,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box _themeDark={{ _hover:{bg:"black"} }} />
             "#,
@@ -2607,7 +2607,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box _hover={{bg:"white"}} _themeDark={{ _hover:{bg:"black"} }} />
             "#,
@@ -2622,7 +2622,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box _hover={{bg:"white"}} _themeDark={{
         selectors: {
@@ -2648,7 +2648,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box selectors={{
     "&[aria-diabled='true']": {
@@ -2667,7 +2667,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box selectors={{
     "*[aria-diabled='true'] &:hover": {
@@ -2686,7 +2686,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box selectors={{
     "*[aria-diabled='true'] &": {
@@ -2709,7 +2709,7 @@ import {Button} from '@devup/ui'
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box styleOrder={20} p="4" _hover={{ bg: ["red", "blue"]}} selectors={{
     "*[aria-diabled='true'] &": {
@@ -2763,7 +2763,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
     <Box className={css({color:"white", styleOrder:100})} />
             "#,
@@ -2778,7 +2778,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
     <Box className={css({color:"white"})} styleOrder={20} />
             "#,
@@ -2793,7 +2793,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
     <Box className={css({color:"white",styleOrder:30})} styleOrder={20} />
             "#,
@@ -2808,7 +2808,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
     <Box styleOrder={20} p="4" _hover={{ bg: ["red", "blue"]}}
     className={css({color:"white", styleOrder:100})}
@@ -2830,7 +2830,7 @@ export {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "test.js",
+                "test.jsx",
                 r#"import {Box, css} from '@devup-ui/core'
 <Box
         aria-disabled={false}

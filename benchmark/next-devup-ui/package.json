@@ -5,14 +5,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --experimental-debug-memory-usage",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "next": "^15.2.4",
+    "next": "^15.3.2",
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
