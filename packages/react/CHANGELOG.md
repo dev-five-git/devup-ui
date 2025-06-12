@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.3
+
+### Patch Changes
+
+- c5336c9: Add writingMode, textOrientation
+
 ## 1.0.2
 
 ### Patch Changes
