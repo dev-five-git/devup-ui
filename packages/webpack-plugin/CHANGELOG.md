@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.3
+
+### Patch Changes
+
+- b9d8a17: Support next build cache
+- Updated dependencies [abfe5e5]
+  - @devup-ui/wasm@1.0.3
+
 ## 1.0.2
 
 ### Patch Changes
