@@ -40,6 +40,7 @@ export function MobMenu() {
             </Text>
           </Flex>
         </Link>
+        <Box h="100px" />
       </Box>
     </MobMenuWrap>
   )
