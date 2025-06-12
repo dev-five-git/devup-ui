@@ -30,34 +30,66 @@ export function Discord() {
             CSS-in-JS!
           </Text>
         </VStack>
-        <Link
-          className={css({
-            textDecoration: 'none',
-            borderRadius: '100px',
-          })}
-          href="https://discord.gg/8zjcGc7cWh"
-          target="_blank"
-        >
-          <Flex
-            _active={{
-              bg: '$buttonBlueActive',
-            }}
-            _hover={{
-              bg: '$buttonBlueHover',
-            }}
-            alignItems="center"
-            bg="$buttonBlue"
-            borderRadius="100px"
-            p="16px 40px"
+        <Flex gap="10px">
+          <Link
+            className={css({
+              textDecoration: 'none',
+              borderRadius: '100px',
+            })}
+            href="https://open.kakao.com/o/giONwVAh"
+            target="_blank"
           >
-            <Flex alignItems="center" gap="10px">
-              <Text color="#FFF" typography="buttonLbold">
-                Join our Discord
-              </Text>
-              <Image boxSize="24px" src="/outlink.svg" />
+            <Flex
+              _active={{
+                bg: '$kakaoButtonActive',
+              }}
+              _hover={{
+                bg: '$kakaoButtonHover',
+              }}
+              alignItems="center"
+              bg="$kakaoButton"
+              borderRadius="100px"
+              gap="20px"
+              px="40px"
+              py="16px"
+            >
+              <Flex alignItems="center" gap="10px">
+                <Text color="#FFF" typography="buttonLbold">
+                  Open KakaoTalk
+                </Text>
+                <Image boxSize="24px" src="/outlink.svg" />
+              </Flex>
             </Flex>
-          </Flex>
-        </Link>
+          </Link>
+          <Link
+            className={css({
+              textDecoration: 'none',
+              borderRadius: '100px',
+            })}
+            href="https://discord.gg/8zjcGc7cWh"
+            target="_blank"
+          >
+            <Flex
+              _active={{
+                bg: '$buttonBlueActive',
+              }}
+              _hover={{
+                bg: '$buttonBlueHover',
+              }}
+              alignItems="center"
+              bg="$buttonBlue"
+              borderRadius="100px"
+              p="16px 40px"
+            >
+              <Flex alignItems="center" gap="10px">
+                <Text color="#FFF" typography="buttonLbold">
+                  Join our Discord
+                </Text>
+                <Image boxSize="24px" src="/outlink.svg" />
+              </Flex>
+            </Flex>
+          </Link>
+        </Flex>
       </VStack>
     </VStack>
   )

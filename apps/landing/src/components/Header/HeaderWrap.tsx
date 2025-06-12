@@ -16,7 +16,7 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
       top="0"
       transition="all, 0.2s"
       w="100%"
-      zIndex={1}
+      zIndex={2}
     >
       <HeaderWrapInner>{children}</HeaderWrapInner>
     </Box>
