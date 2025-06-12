@@ -9,6 +9,7 @@ import { Github } from './Github'
 import { HeaderInput } from './HeaderInput'
 import { HeaderInputWrap } from './HeaderInputWrap'
 import { HeaderWrap } from './HeaderWrap'
+import { Kakao } from './Kakao'
 import { Menu } from './Menu'
 import { MobMenu } from './MobMenu'
 import { MobMenuButton } from './MobMenuButton'
@@ -31,6 +32,9 @@ export function Header() {
       </Flex>
       <Flex alignItems="center" px="10px">
         <Discord />
+      </Flex>
+      <Flex alignItems="center" px="10px">
+        <Kakao />
       </Flex>
       <Flex alignItems="center" px="10px">
         <ThemeSwitch />
