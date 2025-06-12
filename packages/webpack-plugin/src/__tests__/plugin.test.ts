@@ -103,6 +103,8 @@ describe('devupUIPlugin', () => {
       const plugin = new DevupUIWebpackPlugin({
         devupPath: 'custom-devup.json',
       })
+
+      vi.mocked(getCss).mockReturnValue('css')
       const compiler = {
         options: {
           module: {
@@ -112,6 +114,9 @@ describe('devupUIPlugin', () => {
         },
         hooks: {
           afterCompile: {
+            tap: vi.fn(),
+          },
+          done: {
             tap: vi.fn(),
           },
           watchRun: {
@@ -131,6 +136,23 @@ describe('devupUIPlugin', () => {
         },
       })
       expect(add).toHaveBeenCalledWith(resolve('custom-devup.json'))
+      expect(compiler.hooks.done.tap).toHaveBeenCalled()
+
+      vi.mocked(compiler.hooks.done.tap).mock.calls[0][1]({
+        hasErrors: () => true,
+      })
+      expect(writeFileSync).not.toHaveBeenCalled()
+
+      vi.mocked(compiler.hooks.done.tap).mock.calls[0][1]({
+        hasErrors: () => false,
+      })
+      expect(writeFileSync).toHaveBeenCalledWith(
+        resolve('.df', 'devup-ui.css'),
+        'css',
+        {
+          encoding: 'utf-8',
+        },
+      )
     })
 
     it('should skip writing css file', () => {
@@ -153,6 +175,9 @@ describe('devupUIPlugin', () => {
         },
         hooks: {
           afterCompile: {
+            tap: vi.fn(),
+          },
+          done: {
             tap: vi.fn(),
           },
           watchRun: {
@@ -191,6 +216,9 @@ describe('devupUIPlugin', () => {
           afterCompile: {
             tap: vi.fn(),
           },
+          done: {
+            tap: vi.fn(),
+          },
           watchRun: {
             tapAsync: vi.fn(),
           },
@@ -208,6 +236,7 @@ describe('devupUIPlugin', () => {
           encoding: 'utf-8',
         },
       )
+      expect(compiler.hooks.done.tap).not.toHaveBeenCalled()
     })
     it('should register devup watch', () => {
       const plugin = new DevupUIWebpackPlugin({
@@ -222,6 +251,9 @@ describe('devupUIPlugin', () => {
         },
         hooks: {
           afterCompile: {
+            tap: vi.fn(),
+          },
+          done: {
             tap: vi.fn(),
           },
           watchRun: {
@@ -308,6 +340,9 @@ describe('devupUIPlugin', () => {
       },
       hooks: {
         afterCompile: {
+          tap: vi.fn(),
+        },
+        done: {
           tap: vi.fn(),
         },
         watchRun: {

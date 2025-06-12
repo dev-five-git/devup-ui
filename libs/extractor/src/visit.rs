@@ -22,7 +22,7 @@ use oxc_ast_visit::walk_mut::{
     walk_variable_declarator,
 };
 
-use crate::utils::get_number_by_jsx_expression;
+use crate::utils::jsx_expression_to_number;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -164,24 +164,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
         let jsx = if let Expression::Identifier(ident) = &it.callee {
-            self.jsx_imports
-                .get(&ident.name.to_string())
-                .map(|s| s.to_string())
-        } else if let Expression::StaticMemberExpression(member) = &it.callee {
-            if let Expression::Identifier(ident) = &member.object {
-                if self.jsx_object == Some(ident.name.to_string()) {
-                    Some(member.property.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+            self.jsx_imports.get(ident.name.as_str()).cloned()
         } else {
-            None
+            match &self.jsx_object {
+                Some(name) => {
+                    if let Expression::StaticMemberExpression(member) = &it.callee {
+                        if let Expression::Identifier(ident) = &member.object {
+                            if name == ident.name.as_str() {
+                                Some(member.property.name.to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            }
         };
         if let Some(j) = jsx {
-            if (j == "jsx" || j == "jsxs") && it.arguments.len() > 0 {
+            if (j == "jsx" || j == "jsxs") && !it.arguments.is_empty() {
                 let expr = it.arguments[0].to_expression();
                 let element_kind = if let Expression::Identifier(ident) = expr {
                     self.imports.get(ident.name.as_str()).cloned()
@@ -259,42 +264,45 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
         if let Some(Expression::CallExpression(call)) = &it.init {
-            if call.arguments.len() == 1 {
-                if let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
-                    (&call.callee, &call.arguments[0])
-                {
-                    if ident.name == "require" {
-                        if arg.value == "react/jsx-runtime" {
-                            if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
-                                self.jsx_object = Some(ident.name.to_string());
-                            } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
-                                for prop in &object.properties {
-                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                        if let Some(k) = prop
-                                            .value
-                                            .get_binding_identifier()
-                                            .map(|id| id.name.to_string())
-                                        {
-                                            self.jsx_imports.insert(k, ident.name.to_string());
-                                        }
-                                    }
+            if call.arguments.len() != 1 {
+                return;
+            }
+            if let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
+                (&call.callee, &call.arguments[0])
+            {
+                if ident.name != "require" {
+                    return;
+                }
+
+                if arg.value == "react/jsx-runtime" {
+                    if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                        self.jsx_object = Some(ident.name.to_string());
+                    } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                        for prop in &object.properties {
+                            if let PropertyKey::StaticIdentifier(ident) = &prop.key {
+                                if let Some(k) = prop
+                                    .value
+                                    .get_binding_identifier()
+                                    .map(|id| id.name.to_string())
+                                {
+                                    self.jsx_imports.insert(k, ident.name.to_string());
                                 }
                             }
-                        } else if arg.value == self.package {
-                            if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
-                                self.import_object = Some(ident.name.to_string());
-                            } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
-                                for prop in &object.properties {
-                                    if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                        if let Ok(kind) = ExportVariableKind::try_from(
-                                            prop.value
-                                                .get_binding_identifier()
-                                                .map(|id| id.name.to_string())
-                                                .unwrap_or("".to_string()),
-                                        ) {
-                                            self.imports.insert(ident.name.to_string(), kind);
-                                        }
-                                    }
+                        }
+                    }
+                } else if arg.value == self.package {
+                    if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                        self.import_object = Some(ident.name.to_string());
+                    } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                        for prop in &object.properties {
+                            if let PropertyKey::StaticIdentifier(ident) = &prop.key {
+                                if let Ok(kind) = ExportVariableKind::try_from(
+                                    prop.value
+                                        .get_binding_identifier()
+                                        .map(|id| id.name.to_string())
+                                        .unwrap_or("".to_string()),
+                                ) {
+                                    self.imports.insert(ident.name.to_string(), kind);
                                 }
                             }
                         }
@@ -316,7 +324,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-
             return;
         }
 
@@ -362,15 +369,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr {
                     if let Identifier(name) = &attr.name {
-                        let name = short_to_long(name.name.as_str());
+                        let name = short_to_long(&name.name);
                         if duplicate_set.contains(&name) {
                             continue;
                         }
                         duplicate_set.insert(name.clone());
                         if name == "styleOrder" {
-                            style_order =
-                                get_number_by_jsx_expression(attr.value.as_ref().unwrap())
-                                    .map(|n| n as u8);
+                            style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
+                                .map(|n| n as u8);
                             continue;
                         }
 
@@ -393,41 +399,32 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 attrs.insert(i, attr);
             }
 
-            for ex in kind.extract().into_iter().rev() {
-                props_styles.push(ExtractStyleProp::Static(ex));
-            }
+            kind.extract()
+                .into_iter()
+                .rev()
+                .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
             modify_props(&self.ast, attrs, &mut props_styles, style_order);
-            for style in props_styles.iter().rev() {
-                self.styles.extend(style.extract());
-            }
+
+            props_styles
+                .iter()
+                .rev()
+                .for_each(|style| self.styles.extend(style.extract()));
             // modify!!
 
-            match tag_name {
-                Expression::StringLiteral(str) => {
-                    // change tag name
-                    let ident = JSXElementName::Identifier(
-                        self.ast
-                            .alloc_jsx_identifier(SPAN, self.ast.atom(&str.value)),
-                    );
-                    opening_element.name = ident.clone_in(self.ast.allocator);
-                    if let Some(el) = &mut elem.closing_element {
-                        el.name = ident;
-                    }
-                }
-                Expression::TemplateLiteral(literal) => {
-                    let ident =
-                        JSXElementName::Identifier(self.ast.alloc_jsx_identifier(
-                            SPAN,
-                            self.ast.atom(&literal.quasis[0].value.raw),
-                        ));
-                    opening_element.name = ident.clone_in(self.ast.allocator);
-                    if let Some(el) = &mut elem.closing_element {
-                        el.name = ident;
-                    }
-                }
+            if let Some(tag) = match tag_name {
+                Expression::StringLiteral(str) => Some(str.value.as_str()),
+                Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
+                _ => None,
+            } {
+                let ident = JSXElementName::Identifier(
+                    self.ast.alloc_jsx_identifier(SPAN, self.ast.atom(tag)),
+                );
 
-                _ => {}
+                if let Some(el) = &mut elem.closing_element {
+                    el.name = ident.clone_in(self.ast.allocator);
+                }
+                opening_element.name = ident;
             }
         }
     }

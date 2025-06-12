@@ -85,14 +85,11 @@ pub fn extract_style_from_expression<'a>(
                     if !match &mut prop {
                         ObjectPropertyKind::ObjectProperty(prop) => {
                             if let PropertyKey::StaticIdentifier(ident) = &prop.key {
-                                let name = ident.name.to_string();
+                                let name = ident.name.as_str();
 
                                 if name == "styleOrder" {
-                                    if let Some(value) =
-                                        get_number_by_literal_expression(&prop.value)
-                                    {
-                                        style_order = Some(value as u8);
-                                    }
+                                    style_order = get_number_by_literal_expression(&prop.value)
+                                        .map(|v| v as u8);
                                     continue;
                                 }
 
@@ -110,9 +107,7 @@ pub fn extract_style_from_expression<'a>(
                                         styles.into_iter().for_each(|mut styles| {
                                             props_styles.append(&mut styles)
                                         });
-                                        if let Some(t) = _tag {
-                                            tag = Some(t);
-                                        }
+                                        tag = _tag.or(tag);
                                         true
                                     }
                                 }
@@ -135,9 +130,7 @@ pub fn extract_style_from_expression<'a>(
                                     styles
                                         .into_iter()
                                         .for_each(|mut styles| props_styles.append(&mut styles));
-                                    if let Some(t) = _tag {
-                                        tag = Some(t);
-                                    }
+                                    tag = _tag.or(tag);
                                     true
                                 }
                             }
@@ -273,7 +266,7 @@ pub fn extract_style_from_expression<'a>(
                                     format!(
                                         "{}{}",
                                         selector.to_string().split("&").collect::<Vec<_>>()[0],
-                                        name.as_str()
+                                        name
                                     )
                                 } else {
                                     name
@@ -314,11 +307,11 @@ pub fn extract_style_from_expression<'a>(
             style_order: None,
             tag: None,
             styles: Some(vec![ExtractStyleProp::Static(if typo {
-                Typography(value.as_str().to_string())
+                Typography(value.to_string())
             } else {
                 Static(ExtractStaticStyle::new(
                     name,
-                    value.as_str(),
+                    &value,
                     level,
                     selector.cloned(),
                 ))
@@ -335,7 +328,7 @@ pub fn extract_style_from_expression<'a>(
                     ExtractDynamicStyle::new(
                         name.unwrap(),
                         level,
-                        expression_to_code(expression).as_str(),
+                        &expression_to_code(expression),
                         selector.cloned(),
                     ),
                 ))]),
@@ -357,11 +350,11 @@ pub fn extract_style_from_expression<'a>(
                     if tmp.quasis.len() == 1 {
                         ExtractResult::Extract {
                             styles: Some(vec![ExtractStyleProp::Static(if typo {
-                                Typography(tmp.quasis[0].value.raw.as_str().to_string())
+                                Typography(tmp.quasis[0].value.raw.to_string())
                             } else {
                                 Static(ExtractStaticStyle::new(
                                     name,
-                                    tmp.quasis[0].value.raw.as_str(),
+                                    &tmp.quasis[0].value.raw,
                                     level,
                                     selector.cloned(),
                                 ))
@@ -407,7 +400,7 @@ pub fn extract_style_from_expression<'a>(
                                 ExtractDynamicStyle::new(
                                     name,
                                     level,
-                                    expression_to_code(expression).as_str(),
+                                    &expression_to_code(expression),
                                     selector.cloned(),
                                 ),
                             ))]),
@@ -461,7 +454,7 @@ pub fn extract_style_from_expression<'a>(
                                 ExtractDynamicStyle::new(
                                     name,
                                     level,
-                                    identifier.name.as_str(),
+                                    &identifier.name,
                                     selector.cloned(),
                                 ),
                             ))]),
@@ -701,15 +694,14 @@ fn extract_style_from_member_expression<'a>(
                         vec![ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
                             name.unwrap(),
                             level,
-                            expression_to_code(&Expression::ComputedMemberExpression(
+                            &expression_to_code(&Expression::ComputedMemberExpression(
                                 ast_builder.alloc_computed_member_expression(
                                     SPAN,
                                     etc,
                                     mem_expression.clone_in(ast_builder.allocator),
                                     false,
                                 ),
-                            ))
-                            .as_str(),
+                            )),
                             selector.cloned(),
                         )))]
                     }),
@@ -726,15 +718,14 @@ fn extract_style_from_member_expression<'a>(
                         Box::new(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
                             name.unwrap(),
                             level,
-                            expression_to_code(&Expression::ComputedMemberExpression(
+                            &expression_to_code(&Expression::ComputedMemberExpression(
                                 ast_builder.alloc_computed_member_expression(
                                     SPAN,
                                     sp.argument.clone_in(ast_builder.allocator),
                                     mem_expression.clone_in(ast_builder.allocator),
                                     false,
                                 ),
-                            ))
-                            .as_str(),
+                            )),
                             selector.cloned(),
                         )))),
                     );
@@ -811,15 +802,14 @@ fn extract_style_from_member_expression<'a>(
                         ret.push(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
                             name.unwrap(),
                             level,
-                            expression_to_code(&Expression::ComputedMemberExpression(
+                            &expression_to_code(&Expression::ComputedMemberExpression(
                                 ast_builder.alloc_computed_member_expression(
                                     SPAN,
                                     etc,
                                     mem_expression.clone_in(ast_builder.allocator),
                                     false,
                                 ),
-                            ))
-                            .as_str(),
+                            )),
                             selector.cloned(),
                         ))))
                     }
@@ -860,15 +850,14 @@ fn extract_style_from_member_expression<'a>(
                 ret.push(ExtractStyleProp::Static(Dynamic(ExtractDynamicStyle::new(
                     name,
                     level,
-                    expression_to_code(&Expression::ComputedMemberExpression(
+                    &expression_to_code(&Expression::ComputedMemberExpression(
                         ast_builder.alloc_computed_member_expression(
                             SPAN,
                             mem.object.clone_in(ast_builder.allocator),
                             mem_expression.clone_in(ast_builder.allocator),
                             false,
                         ),
-                    ))
-                    .as_str(),
+                    )),
                     selector.cloned(),
                 ))))
             }
