@@ -1,3 +1,4 @@
+import { Text } from '@devup-ui/react'
 import type { MDXComponents } from 'mdx/types'
 
 import { Code } from './components/Code'
@@ -15,6 +16,34 @@ const _components = {
       <code className={className} {...props}>
         {children}
       </code>
+    )
+  },
+  h1({ children }: { children: React.ReactNode }) {
+    return (
+      <Text as="h1" color="$title" typography="h1">
+        {children}
+      </Text>
+    )
+  },
+  h2({ children }: { children: React.ReactNode }) {
+    return (
+      <Text as="h2" color="$title" typography="h2">
+        {children}
+      </Text>
+    )
+  },
+  h3({ children }: { children: React.ReactNode }) {
+    return (
+      <Text as="h3" color="$title" typography="h3">
+        {children}
+      </Text>
+    )
+  },
+  p({ children }: { children: React.ReactNode }) {
+    return (
+      <Text as="p" color="$text" typography="bodyReg">
+        {children}
+      </Text>
     )
   },
 }
