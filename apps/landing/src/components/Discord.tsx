@@ -30,7 +30,7 @@ export function Discord() {
             CSS-in-JS!
           </Text>
         </VStack>
-        <Flex gap="10px">
+        <Flex flexDirection={['column', null, 'row']} gap="10px">
           <Link
             className={css({
               textDecoration: 'none',
