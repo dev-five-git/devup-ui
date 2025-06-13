@@ -228,7 +228,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-        <Box as="secton" />
+        <Box as="section" />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -243,7 +243,7 @@ mod tests {
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-        <Box as={"secton"} />
+        <Box as={"section"} />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -256,7 +256,35 @@ mod tests {
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-        <Box as={`secton`} />
+        <Box as={`section`} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={"section"}></Box>
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={`section`}></Box>
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -268,7 +296,7 @@ mod tests {
         // assert_debug_snapshot!(extract(
         //     "test.tsx",
         //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? "div":"secton"} />
+        // <Box as={b ? "div":"section"} />
         // "#,
         //     ExtractOption {
         //         package: "@devup-ui/core".to_string(),
@@ -279,7 +307,7 @@ mod tests {
         // assert_debug_snapshot!(extract(
         //     "test.tsx",
         //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? undefined:"secton"} />
+        // <Box as={b ? undefined:"section"} />
         // "#,
         //     ExtractOption {
         //         package: "@devup-ui/core".to_string(),
@@ -291,7 +319,7 @@ mod tests {
         // assert_debug_snapshot!(extract(
         //     "test.tsx",
         //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? null:"secton"} />
+        // <Box as={b ? null:"section"} />
         // "#,
         //     ExtractOption {
         //         package: "@devup-ui/core".to_string(),
@@ -2841,6 +2869,76 @@ export {
         })}
         styleOrder={3}
       />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order2() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box, css} from '@devup-ui/core'
+    <Box styleOrder="20" p="4" _hover={{ bg: ["red", "blue"]}}
+    className={css({color:"white", styleOrder:"100"})}
+
+     selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box, css} from '@devup-ui/core'
+    <Box styleOrder={"20"} p="4" _hover={{ bg: ["red", "blue"]}}
+    className={css({color:"white", styleOrder:("100")})}
+
+     selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box, css} from '@devup-ui/core'
+    <Box styleOrder={`20`} p="4" _hover={{ bg: ["red", "blue"]}}
+    className={css({color:"white", styleOrder:`100`})}
+
+     selectors={{
+    "*[aria-diabled='true'] &": {
+      opacity: 0.5
+      }
+    }} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

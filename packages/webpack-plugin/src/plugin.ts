@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
 import {
+  getCss,
   getDefaultTheme,
   getThemeInterface,
   importClassMap,
@@ -138,6 +139,14 @@ export class DevupUIWebpackPlugin {
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
       }),
     )
+    if (!this.options.watch) {
+      compiler.hooks.done.tap('DevupUIWebpackPlugin', (stats) => {
+        if (!stats.hasErrors()) {
+          // write css file
+          writeFileSync(this.options.cssFile, getCss(), { encoding: 'utf-8' })
+        }
+      })
+    }
 
     compiler.options.module.rules.push(
       {

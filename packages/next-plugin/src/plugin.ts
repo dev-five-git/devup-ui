@@ -65,6 +65,10 @@ export function DevupUI(
 
   const { webpack } = config
   config.webpack = (config, _options) => {
+    options.cssFile ??= resolve(
+      options.interfacePath ?? '.next/cache',
+      `devup-ui_${_options.buildId}.css`,
+    )
     config.plugins.push(
       new DevupUIWebpackPlugin({
         ...options,

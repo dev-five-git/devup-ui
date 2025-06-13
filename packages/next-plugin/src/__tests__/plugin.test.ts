@@ -13,9 +13,11 @@ describe('plugin', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
 
-      ret.webpack!({ plugins: [] }, {} as any)
+      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
-      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({})
+      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
+      })
     })
 
     it('should apply webpack plugin with config', async () => {
@@ -26,10 +28,11 @@ describe('plugin', () => {
         },
       )
 
-      ret.webpack!({ plugins: [] }, {} as any)
+      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
         package: 'new-package',
+        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
       })
     })
 
@@ -44,10 +47,11 @@ describe('plugin', () => {
         },
       )
 
-      ret.webpack!({ plugins: [] }, {} as any)
+      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
         package: 'new-package',
+        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
       })
       expect(webpack).toHaveBeenCalled()
     })
