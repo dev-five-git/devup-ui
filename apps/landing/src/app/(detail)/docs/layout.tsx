@@ -16,7 +16,13 @@ export default function DetailLayout({
             <LeftMenu />
           </Box>
         </Box>
-        <Box className="markdown-body" flex={1} px="60px" py="40px">
+        <Box
+          className="markdown-body"
+          flex={1}
+          px={['20px', null, '60px']}
+          py={['20px', null, '40px']}
+          w="100%"
+        >
           {children}
         </Box>
         <Box display={['none', null, null, 'initial']}>
