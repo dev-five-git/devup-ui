@@ -4,7 +4,7 @@ export function Github() {
   return (
     <svg
       className={css({
-        color: '$text',
+        color: '$title',
       })}
       fill="none"
       height="24"

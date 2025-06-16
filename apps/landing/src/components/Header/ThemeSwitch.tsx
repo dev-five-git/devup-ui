@@ -6,7 +6,7 @@ export function ThemeSwitch() {
   return (
     <Box
       boxSize="24px"
-      color="$text"
+      color="$title"
       cursor="pointer"
       onClick={() => {
         setTheme(getTheme() === 'dark' ? 'light' : 'dark')
