@@ -1,4 +1,5 @@
 import { Box, css, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
+import { Metadata } from 'next'
 import Link from 'next/link'
 
 import { CodeBoard } from '../components/CodeBoard'
@@ -6,10 +7,15 @@ import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
 import { FeatureCard } from './FeatureCard'
 
+export const metadata: Metadata = {
+  alternates: {
+    canonical: '/',
+  },
+}
+
 export default function HomePage() {
   return (
     <>
-      <link href="https://devup-ui.com" rel="canonical" />
       <Box
         h="80dvh"
         pointerEvents="none"
