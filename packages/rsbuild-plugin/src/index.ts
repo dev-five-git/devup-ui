@@ -1,4 +1,4 @@
 export {
   DevupUIRsbuildPlugin,
-  type DevupUIRsbuildPluginOptions
+  type DevupUIRsbuildPluginOptions,
 } from './plugin'

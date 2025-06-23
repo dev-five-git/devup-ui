@@ -1,10 +1,8 @@
+import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import {
-  codeExtract,
-} from '@devup-ui/wasm'
+import { codeExtract } from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
-import { mkdir, writeFile } from 'node:fs/promises'
 
 export interface DevupUIRsbuildPluginOptions {
   package: string
@@ -24,32 +22,34 @@ export const DevupUIRsbuildPlugin = ({
   extractCss = true,
   interfacePath = '.df',
   cssFile = resolve(interfacePath, 'devup-ui.css'),
-}: Partial<DevupUIRsbuildPluginOptions> = {
-  }): RsbuildPlugin => ({
-    name: 'devup-ui-rsbuild-plugin',
+}: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
+  name: 'devup-ui-rsbuild-plugin',
 
-    async setup(api) {
-      if (!extractCss)
-        return
-      await mkdir(interfacePath, { recursive: true })
-      await writeFile(cssFile, '')
+  async setup(api) {
+    if (!extractCss) return
+    await mkdir(interfacePath, { recursive: true })
+    await writeFile(cssFile, '')
 
-      api.transform({
-        test: cssFile
-      }, () => globalCss)
+    api.transform(
+      {
+        test: cssFile,
+      },
+      () => globalCss,
+    )
 
-
-      api.transform({
+    api.transform(
+      {
         test: /\.(tsx|ts|js|mjs|jsx)$/,
-      }, async ({ code, resourcePath }) => {
+      },
+      async ({ code, resourcePath }) => {
         if (
           include.length
             ? new RegExp(
-              `node_modules(?!(${include
-                .map((i) => `.*${i}`)
-                .join('|')
-                .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-            ).test(resourcePath)
+                `node_modules(?!(${include
+                  .map((i) => `.*${i}`)
+                  .join('|')
+                  .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+              ).test(resourcePath)
             : resourcePath.includes('node_modules')
         )
           return code
@@ -67,6 +67,7 @@ export const DevupUIRsbuildPlugin = ({
           })
         }
         return retCode
-      })
-    },
-  });
+      },
+    )
+  },
+})

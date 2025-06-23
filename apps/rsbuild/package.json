@@ -6,7 +6,8 @@
   "scripts": {
     "build": "rsbuild build",
     "dev": "rsbuild dev --open",
-    "preview": "rsbuild preview"
+    "preview": "rsbuild preview",
+    "lint": "tsc && eslint"
   },
   "dependencies": {
     "react": "^19.1.0",
