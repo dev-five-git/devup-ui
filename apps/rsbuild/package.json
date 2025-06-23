@@ -1,0 +1,22 @@
+{
+  "name": "rsbuild-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rsbuild build",
+    "dev": "rsbuild dev --open",
+    "preview": "rsbuild preview",
+    "lint": "tsc && eslint"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@devup-ui/react": "workspace:*"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.3.22",
+    "@rsbuild/plugin-react": "^1.3.2",
+    "@devup-ui/rsbuild-plugin": "workspace:*"
+  }
+}
