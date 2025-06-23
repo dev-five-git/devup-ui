@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.4
+
+### Patch Changes
+
+- 9d45acb: Update wasm
+
 ## 1.0.3
 
 ### Patch Changes

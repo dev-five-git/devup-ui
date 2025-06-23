@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 1.0.4
+
+### Patch Changes
+
+- 9d45acb: Update wasm
+- Updated dependencies [9d45acb]
+  - @devup-ui/webpack-plugin@1.0.4
+
 ## 1.0.3
 
 ### Patch Changes
