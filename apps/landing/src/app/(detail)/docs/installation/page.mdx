@@ -65,6 +65,29 @@ export default defineConfig({
 })
 ```
 
+### Using Devup UI with Rsbuild
+
+If you are using rsbuild, you can install the rsbuild plugin.
+
+```bash
+npm install @devup-ui/rsbuild-plugin
+```
+
+After installing the plugin, you can use the plugin in your rsbuild project.
+
+```js
+// rsbuild.config.mjs
+
+import { defineConfig } from '@rsbuild/core';
+import { pluginReact } from '@rsbuild/plugin-react';
+import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin';
+
+export default defineConfig({
+  plugins: [pluginReact(), DevupUIRsbuildPlugin()],
+});
+
+````
+
 ## Project Examples
 
 - [Next.js Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/next)
