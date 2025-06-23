@@ -62,8 +62,8 @@ describe('plugin', () => {
       vi.mocked(existsSync).mockReturnValue(true)
       const ret = DevupUI({})
 
-      expect(ret.experimental).toEqual({
-        turbo: {
+      expect(ret).toEqual({
+        turbopack: {
           rules: {
             'devup-ui.css': [
               {
@@ -96,8 +96,8 @@ describe('plugin', () => {
       vi.mocked(writeFileSync).mockReturnValue()
       const ret = DevupUI({})
 
-      expect(ret.experimental).toEqual({
-        turbo: {
+      expect(ret).toEqual({
+        turbopack: {
           rules: {
             'devup-ui.css': [
               {
