@@ -26,6 +26,7 @@ static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "zIndex",
     "lineClamp",
     "fontWeight",
+    "lineHeight",
     "scale",
     "aspectRatio",
     "flexGrow",
