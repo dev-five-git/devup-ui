@@ -1729,7 +1729,7 @@ export {
             extract(
                 "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} />
+        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
