@@ -98,7 +98,7 @@ export function Header() {
             className={css({
               textDecoration: 'none',
             })}
-            href="/components"
+            href="/components/overview"
           >
             <Menu keyword="components">Components</Menu>
           </Link>

@@ -1,6 +1,6 @@
 import { Center, Flex, Image, Text, VStack } from '@devup-ui/react'
 
-import Card from './Card'
+import Card from '../Card'
 
 export default function Page() {
   return (

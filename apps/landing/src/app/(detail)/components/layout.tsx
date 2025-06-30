@@ -1,7 +1,7 @@
 import { Box, Flex } from '@devup-ui/react'
 
-import { LeftMenu } from '../docs/LeftMenu'
 import { RightIndex } from '../docs/RightIndex'
+import { LeftMenu } from './LeftMenu'
 
 export default function Layout({
   children,
