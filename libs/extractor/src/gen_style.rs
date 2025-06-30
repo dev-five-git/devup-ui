@@ -193,27 +193,24 @@ fn gen_style<'a>(
                             ObjectPropertyKind::ObjectProperty(p),
                             ObjectPropertyKind::ObjectProperty(q),
                         ) = (p, q)
+                            && p.key.name() == q.key.name()
                         {
-                            if p.key.name() == q.key.name() {
-                                found = true;
-                                break;
-                            }
+                            found = true;
+                            break;
                         }
                     }
-                    if !found {
-                        if let ObjectPropertyKind::ObjectProperty(q) = q {
-                            properties.push(ObjectPropertyKind::ObjectProperty(
-                                ast_builder.alloc_object_property(
-                                    SPAN,
-                                    PropertyKind::Init,
-                                    q.key.clone_in(ast_builder.allocator),
-                                    q.value.clone_in(ast_builder.allocator),
-                                    false,
-                                    false,
-                                    false,
-                                ),
-                            ));
-                        }
+                    if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
+                        properties.push(ObjectPropertyKind::ObjectProperty(
+                            ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                q.key.clone_in(ast_builder.allocator),
+                                q.value.clone_in(ast_builder.allocator),
+                                false,
+                                false,
+                                false,
+                            ),
+                        ));
                     }
                 }
             }

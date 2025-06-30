@@ -433,6 +433,48 @@ mod tests {
 
     #[test]
     #[serial]
+    fn extract_style_props_with_namespace_import() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import * as B from '@devup-ui/core'
+        <B.Flex padding={('-1')} className={B.css({
+            color: 'red'
+        })}/>
+        ",
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_style_props_with_default_import() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import B from '@devup-ui/core'
+        <B.Flex padding={('-1')} className={B.css({
+            color: 'red'
+        })}/>
+        ",
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn extract_style_props_with_class_name() {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -1602,6 +1644,21 @@ mod tests {
             extract(
                 "test.tsx",
                 r#"import {W} from '@devup-ui/core'
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {W, useTheme} from '@devup-ui/core';
+useTheme();
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
