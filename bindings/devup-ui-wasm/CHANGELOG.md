@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.5
+
+### Patch Changes
+
+- 5c3bb33: Maintain lineheight
+- 0fdd0c4: Fix import issue, merged let if
+
 ## 1.0.4
 
 ### Patch Changes
