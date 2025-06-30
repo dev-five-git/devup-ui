@@ -17,10 +17,10 @@
   },
   "devDependencies": {
     "@devup-ui/vite-plugin": "workspace:*",
-    "vite": "^6.3.5",
-    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^7.0.0",
+    "@vitejs/plugin-react": "^4.6.0",
     "typescript": "^5",
-    "@types/node": "^22",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19"
   }

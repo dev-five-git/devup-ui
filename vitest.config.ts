@@ -7,7 +7,7 @@ export default defineConfig({
       include: ['packages/*/src/**'],
       exclude: ['packages/*/src/types', 'packages/*/src/**/__tests__'],
     },
-    workspace: [
+    projects: [
       {
         test: {
           name: 'node',

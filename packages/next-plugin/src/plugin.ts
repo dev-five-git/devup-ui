@@ -24,9 +24,9 @@ export function DevupUI(
 ): NextConfig {
   const isTurbo = process.env.TURBOPACK === '1'
   if (isTurbo) {
-    config.experimental ??= {}
-    config.experimental.turbo ??= {}
-    config.experimental.turbo.rules ??= {}
+    config ??= {}
+    config.turbopack ??= {}
+    config.turbopack.rules ??= {}
     const {
       package: libPackage = '@devup-ui/react',
       interfacePath = '.df',
@@ -37,7 +37,7 @@ export function DevupUI(
     const classMapFile = join(interfacePath, 'classMap.json')
     if (!existsSync(interfacePath)) mkdirSync(interfacePath)
     if (!existsSync(cssFile)) writeFileSync(cssFile, '/* devup-ui */')
-    const rules: NonNullable<typeof config.experimental.turbo.rules> = {
+    const rules: NonNullable<typeof config.turbopack.rules> = {
       [basename(cssFile)]: [
         {
           loader: '@devup-ui/webpack-plugin/css-loader',
@@ -59,7 +59,7 @@ export function DevupUI(
         },
       ],
     }
-    Object.assign(config.experimental.turbo.rules, rules)
+    Object.assign(config.turbopack.rules, rules)
     return config
   }
 

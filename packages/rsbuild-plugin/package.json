@@ -1,0 +1,65 @@
+{
+  "name": "@devup-ui/rsbuild-plugin",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react",
+    "rsbuild"
+  ],
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./loader": {
+      "import": "./dist/loader.js",
+      "require": "./dist/loader.cjs"
+    },
+    "./css-loader": {
+      "import": "./dist/css-loader.js",
+      "require": "./dist/css-loader.cjs"
+    },
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@devup-ui/wasm": "workspace:*"
+  },
+  "peerDependencies": {
+    "@devup-ui/wasm": "*",
+    "@rsbuild/core": "*"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.4.2",
+    "vite": "^7.0.0",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^3.2.4",
+    "typescript": "^5.8.3"
+  }
+}
