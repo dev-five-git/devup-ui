@@ -1,9 +1,11 @@
+use crate::ExtractStyleValue;
 use crate::extract_style::ExtractStaticStyle;
 use crate::extract_style::ExtractStyleValue::Static;
-use crate::ExtractStyleValue;
+use strum::IntoEnumIterator;
+use strum_macros::{Display, EnumIter};
 
 /// devup-ui export variable kind
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, EnumIter, Display)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -87,18 +89,12 @@ impl TryFrom<String> for ExportVariableKind {
     type Error = ();
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
-            "Box" => Ok(ExportVariableKind::Box),
-            "Text" => Ok(ExportVariableKind::Text),
-            "Image" => Ok(ExportVariableKind::Image),
-            "Button" => Ok(ExportVariableKind::Button),
-            "Input" => Ok(ExportVariableKind::Input),
-            "Flex" => Ok(ExportVariableKind::Flex),
-            "VStack" => Ok(ExportVariableKind::VStack),
-            "Center" => Ok(ExportVariableKind::Center),
-            "Grid" => Ok(ExportVariableKind::Grid),
-            _ => Err(()),
+        for kind in ExportVariableKind::iter() {
+            if kind.to_string() == value {
+                return Ok(kind);
+            }
         }
+        Err(())
     }
 }
 
