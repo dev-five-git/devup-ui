@@ -98,6 +98,16 @@ export function Header() {
             className={css({
               textDecoration: 'none',
             })}
+            href="/components"
+          >
+            <Menu keyword="components">Components</Menu>
+          </Link>
+        </Flex>
+        <Flex alignItems="center" px="24px">
+          <Link
+            className={css({
+              textDecoration: 'none',
+            })}
             href="/team"
           >
             <Menu keyword="team">Team</Menu>
