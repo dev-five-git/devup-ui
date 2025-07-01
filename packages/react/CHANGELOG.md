@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.5
+
+### Patch Changes
+
+- 2dd81f5: Implement styleVars
+
 ## 1.0.4
 
 ### Patch Changes
