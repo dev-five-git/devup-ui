@@ -158,7 +158,7 @@ impl ExtractDynamicStyle {
         Self {
             property: short_to_long(property),
             level,
-            identifier: identifier.to_string(),
+            identifier: optimize_value(identifier),
             selector,
             style_order: None,
         }

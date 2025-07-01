@@ -375,6 +375,22 @@ pub fn optimize_value(value: &str) -> String {
     if ret.contains("0") {
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
     }
+    // remove ; from dynamic value
+    for str_symbol in ["", "`", "\"", "'"] {
+        if ret.ends_with(&format!(";{}", str_symbol)) {
+            ret = format!(
+                "{}{}",
+                ret[..ret.len() - str_symbol.len() - 1].trim_end_matches(';'),
+                str_symbol
+            );
+        } else if ret.ends_with(&format!(";{})", str_symbol)) {
+            ret = format!(
+                "{}{})",
+                ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'),
+                str_symbol
+            );
+        }
+    }
     ret
 }
 
@@ -534,12 +550,24 @@ mod tests {
         assert_eq!(optimize_value("-0vw -0vw"), "0 0");
         assert_eq!(optimize_value("scale(0px)"), "scale(0)");
         assert_eq!(optimize_value("scale(-0px)"), "scale(0)");
+        assert_eq!(optimize_value("scale(-0px);"), "scale(0)");
+        assert_eq!(optimize_value("red;"), "red");
         assert_eq!(optimize_value("translate(0px)"), "translate(0)");
         assert_eq!(optimize_value("translate(-0px,0px)"), "translate(0,0)");
         assert_eq!(optimize_value("translate(-0px, 0px)"), "translate(0,0)");
         assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
         assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
         assert_eq!(optimize_value("translate(10px, 0px)"), "translate(10px,0)");
+        assert_eq!(optimize_value("\"red\""), "\"red\"");
+        assert_eq!(optimize_value("'red'"), "'red'");
+        assert_eq!(optimize_value("`red`"), "`red`");
+        assert_eq!(optimize_value("\"red;\""), "\"red\"");
+        assert_eq!(optimize_value("'red;'"), "'red'");
+        assert_eq!(optimize_value("`red;`"), "`red`");
+        assert_eq!(optimize_value("(\"red;\")"), "(\"red\")");
+        assert_eq!(optimize_value("(`red;`)"), "(`red`)");
+        assert_eq!(optimize_value("('red;')"), "('red')");
+        assert_eq!(optimize_value("('red') + 'blue;'"), "('red') + 'blue'");
         assert_eq!(
             optimize_value("translateX(0px) translateY(0px)"),
             "translateX(0) translateY(0)"
@@ -577,6 +605,10 @@ mod tests {
         assert_eq!(
             sheet_to_classname("background", 0, Some("red"), None, None),
             sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            sheet_to_classname("  background  ", 0, Some("red;"), None, None),
         );
         assert_eq!(
             sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
