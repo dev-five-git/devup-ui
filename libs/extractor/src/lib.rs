@@ -1818,6 +1818,54 @@ export {
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/core";
+e(o, { className: "a", bg: "red" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/core";
+e(o, { className: "a", bg: variable, style: { color: "blue" } })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/core";
+e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -3252,6 +3300,26 @@ export {
                 r#"import {Box} from '@devup-ui/core'
         <Box styleVars={styleVars} />
                 "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_variables_mjs() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/core";
+e(o, { styleVars: { c: "yellow" } })
+"#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_file: None

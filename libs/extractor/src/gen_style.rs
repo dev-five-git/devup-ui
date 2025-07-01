@@ -1,16 +1,13 @@
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
-use oxc_ast::ast::{
-    Expression, JSXAttribute, JSXAttributeValue, JSXExpression, ObjectExpression,
-    ObjectPropertyKind, PropertyKey, PropertyKind,
-};
+use oxc_ast::ast::{Expression, ObjectPropertyKind, PropertyKey, PropertyKind};
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
-) -> Option<ObjectExpression<'a>> {
+) -> Option<Expression<'a>> {
     if style_props.is_empty() {
         return None;
     }
@@ -22,9 +19,11 @@ pub fn gen_styles<'a>(
     if properties.is_empty() {
         return None;
     }
-    Some(ast_builder.object_expression(
-        SPAN,
-        oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
+    Some(Expression::ObjectExpression(
+        ast_builder.alloc_object_expression(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
+        ),
     ))
 }
 fn gen_style<'a>(
@@ -344,40 +343,4 @@ fn gen_style<'a>(
     });
     properties.reverse();
     properties
-}
-
-pub fn apply_style_attribute<'a>(
-    ast_builder: &AstBuilder<'a>,
-    style_prop: &mut JSXAttribute<'a>,
-    // must be an object expression
-    mut expression: ObjectExpression<'a>,
-) {
-    if let Some(ref mut value) = style_prop.value {
-        if let JSXAttributeValue::ExpressionContainer(container) = value {
-            if let Some(spread_property) = match &container.expression {
-                JSXExpression::ObjectExpression(obj) => Some(Expression::ObjectExpression(
-                    obj.clone_in(ast_builder.allocator),
-                )),
-                JSXExpression::Identifier(ident) => Some(Expression::Identifier(
-                    ident.clone_in(ast_builder.allocator),
-                )),
-                _ => None,
-            } {
-                expression.properties.insert(
-                    0,
-                    ObjectPropertyKind::SpreadProperty(
-                        ast_builder.alloc_spread_element(SPAN, spread_property),
-                    ),
-                );
-            }
-            container.expression = JSXExpression::ObjectExpression(ast_builder.alloc(expression));
-        }
-    } else {
-        style_prop.value = Some(JSXAttributeValue::ExpressionContainer(
-            ast_builder.alloc_jsx_expression_container(
-                SPAN,
-                JSXExpression::ObjectExpression(ast_builder.alloc(expression)),
-            ),
-        ));
-    };
 }

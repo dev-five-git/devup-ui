@@ -94,11 +94,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } else if let Expression::StaticMemberExpression(member) = &call.callee
                 && let Expression::Identifier(ident) = &member.object
             {
-                Some(format!(
-                    "{}.{}",
-                    ident.name,
-                    member.property.name
-                ))
+                Some(format!("{}.{}", ident.name, member.property.name))
             } else {
                 None
             };
@@ -215,10 +211,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 ));
                 let mut props_styles = vec![];
                 let mut style_order = None;
+                let mut style_vars = None;
                 if let ExtractResult::Extract {
                     styles,
                     tag: _tag,
                     style_order: _style_order,
+                    style_vars: _style_vars,
                 } = extract_style_from_expression(
                     &self.ast,
                     None,
@@ -233,6 +231,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if let Some(t) = _tag {
                         tag = t;
                     }
+                    style_vars = _style_vars;
                 }
 
                 for ex in kind.extract().into_iter().rev() {
@@ -253,6 +252,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut obj.properties,
                         &mut props_styles,
                         style_order,
+                        style_vars,
                     );
                 }
 
@@ -343,11 +343,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     ) => {
                         for kind in ExportVariableKind::iter() {
                             self.imports.insert(
-                                format!(
-                                    "{}.{}",
-                                    import_default_specifier.local,
-                                    kind
-                                ),
+                                format!("{}.{}", import_default_specifier.local, kind),
                                 kind,
                             );
                         }
@@ -361,11 +357,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     ) => {
                         for kind in ExportVariableKind::iter() {
                             self.imports.insert(
-                                format!(
-                                    "{}.{}",
-                                    import_namespace_specifier.local,
-                                    kind
-                                ),
+                                format!("{}.{}", import_namespace_specifier.local, kind),
                                 kind,
                             );
                         }
