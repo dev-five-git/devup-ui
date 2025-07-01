@@ -1,4 +1,4 @@
-import { Center, Flex, Grid, Text, VStack } from '@devup-ui/react'
+import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
 
 import * as Icons from '@/components/icons/components'
 
@@ -33,11 +33,10 @@ export default function Page() {
             'repeat(4, 1fr)',
             'repeat(5, 1fr)',
           ]}
-          overflow="visible"
         >
           <Card>
             <Center h="140px">
-              <Icons.IconButtonComponent />
+              <Icons.IconButtonComponent className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -53,7 +52,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconTextBoxComp />
+              <Icons.IconTextBoxComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -69,7 +68,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconTextAreaComp />
+              <Icons.IconTextAreaComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -85,7 +84,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconDropdownComp />
+              <Icons.IconDropdownComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -101,7 +100,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconRadioComp />
+              <Icons.IconRadioComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -117,7 +116,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconCheckboxComp />
+              <Icons.IconCheckboxComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -133,7 +132,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconStepperComp />
+              <Icons.IconStepperComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -149,7 +148,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconToggleComp />
+              <Icons.IconToggleComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -165,7 +164,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconSliderComp />
+              <Icons.IconSliderComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -181,7 +180,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconDatePickerComp />
+              <Icons.IconDatePickerComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -197,7 +196,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconColorPickerComp />
+              <Icons.IconColorPickerComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -213,7 +212,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconUploaderComp />
+              <Icons.IconUploaderComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -229,7 +228,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconPagination />
+              <Icons.IconPagination className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -245,7 +244,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconProgressBar />
+              <Icons.IconProgressBar className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -261,7 +260,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconSearchComp />
+              <Icons.IconSearchComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -277,7 +276,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconSelectComp />
+              <Icons.IconSelectComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -293,7 +292,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconLabelComp />
+              <Icons.IconLabelComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -326,7 +325,7 @@ export default function Page() {
         >
           <Card>
             <Center h="140px">
-              <Icons.IconFooterComp />
+              <Icons.IconFooterComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -342,7 +341,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconTooltipComp />
+              <Icons.IconTooltipComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -358,7 +357,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconTabComp />
+              <Icons.IconTabComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -374,7 +373,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconMenuComp />
+              <Icons.IconMenuComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -390,7 +389,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconHeaderComp />
+              <Icons.IconHeaderComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -406,7 +405,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconConfirmComp />
+              <Icons.IconConfirmComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -422,7 +421,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconSnackbarComp />
+              <Icons.IconSnackbarComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -438,7 +437,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Icons.IconBottomSheetComp />
+              <Icons.IconBottomSheetComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"
@@ -471,7 +470,7 @@ export default function Page() {
         >
           <Card>
             <Center h="140px">
-              <Icons.IconThemeButtonComp />
+              <Icons.IconThemeButtonComp className={css({ w: '100%' })} />
             </Center>
             <Flex
               alignItems="center"

@@ -10,6 +10,7 @@ export default function IconCheckboxComp({
   const theme = useTheme()
   return (
     <svg
+      className={className}
       fill="none"
       height="140"
       viewBox="0 0 259 140"
