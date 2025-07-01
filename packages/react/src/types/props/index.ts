@@ -69,4 +69,5 @@ export interface DevupProps<T extends React.ElementType>
     DevupSelectorProps,
     DevupThemeSelectorProps {
   as?: T
+  styleVars?: Record<string, string>
 }

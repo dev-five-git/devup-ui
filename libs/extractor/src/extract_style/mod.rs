@@ -220,7 +220,7 @@ impl ExtractStyleValue {
             ExtractStyleValue::Dynamic(style) => style.extract(),
             ExtractStyleValue::Css(css) => css.extract(),
             ExtractStyleValue::Typography(typo) => {
-                StyleProperty::ClassName(format!("typo-{}", typo))
+                StyleProperty::ClassName(format!("typo-{typo}"))
             }
         }
     }

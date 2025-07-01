@@ -21,7 +21,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     .into_iter()
     .enumerate()
     {
-        map.insert(format!("&:{}", selector), idx as u8);
+        map.insert(format!("&:{selector}"), idx as u8);
     }
     map
 });
@@ -54,8 +54,8 @@ fn get_selector_order(selector: &str) -> u8 {
     let t = if selector.chars().filter(|c| c == &'&').count() == 1 {
         selector
             .split('&')
-            .last()
-            .map(|a| format!("&{}", a))
+            .next_back()
+            .map(|a| format!("&{a}"))
             .unwrap_or(selector.to_string())
     } else {
         selector.to_string()
@@ -129,7 +129,7 @@ impl Display for StyleSelector {
             "{}",
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
-                StyleSelector::Media(value) => format!("@{}", value),
+                StyleSelector::Media(value) => format!("@{value}"),
             }
         )
     }
@@ -138,11 +138,11 @@ impl Display for StyleSelector {
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            StyleSelector::Selector(value) => value.replace("&", &format!(".{}", class_name)),
-            StyleSelector::Media(_) => format!(".{}", class_name),
+            StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
+            StyleSelector::Media(_) => format!(".{class_name}"),
         }
     } else {
-        format!(".{}", class_name)
+        format!(".{class_name}")
     }
 }
 
@@ -359,7 +359,7 @@ fn optimize_color(value: &str) -> String {
         }
     }
 
-    format!("#{}", ret)
+    format!("#{ret}")
 }
 
 pub fn optimize_value(value: &str) -> String {
@@ -377,13 +377,13 @@ pub fn optimize_value(value: &str) -> String {
     }
     // remove ; from dynamic value
     for str_symbol in ["", "`", "\"", "'"] {
-        if ret.ends_with(&format!(";{}", str_symbol)) {
+        if ret.ends_with(&format!(";{str_symbol}")) {
             ret = format!(
                 "{}{}",
                 ret[..ret.len() - str_symbol.len() - 1].trim_end_matches(';'),
                 str_symbol
             );
-        } else if ret.ends_with(&format!(";{})", str_symbol)) {
+        } else if ret.ends_with(&format!(";{str_symbol})")) {
             ret = format!(
                 "{}{})",
                 ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'),
@@ -427,7 +427,7 @@ pub fn sheet_to_classname(
             style_order.unwrap_or(255)
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
+        map.get(&key).map(|v| format!("d{v}")).unwrap_or_else(|| {
             let len = map.len();
             map.insert(key, len as i32);
             format!("d{}", map.len() - 1)
@@ -442,7 +442,7 @@ pub fn css_to_classname(css: &str) -> String {
         format!("css-{}", hasher.finish())
     } else {
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(css).map(|v| format!("d{}", v)).unwrap_or_else(|| {
+        map.get(css).map(|v| format!("d{v}")).unwrap_or_else(|| {
             let len = map.len();
             map.insert(css.to_string(), len as i32);
             format!("d{}", map.len() - 1)
@@ -469,7 +469,7 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         let key = format!("{}-{}-{}", property, level, selector.unwrap_or("").trim());
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
         map.get(&key)
-            .map(|v| format!("--d{}", v))
+            .map(|v| format!("--d{v}"))
             .unwrap_or_else(|| {
                 let len = map.len();
                 map.insert(key, len as i32);
