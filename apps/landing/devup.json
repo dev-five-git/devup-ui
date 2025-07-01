@@ -38,7 +38,7 @@
                 "kakaoButtonActive": "#B77D00"
             },
             "dark": {
-                "primary": "#737FE4",
+                "primary": "#6670F9",
                 "secondary": "#2A4586",
                 "link": "#006BFF",
                 "text": "#EDEDED",
@@ -237,7 +237,7 @@
                 {
                     "fontFamily": "Pretendard",
                     "fontStyle": "normal",
-                    "fontWeight": 600,
+                    "fontWeight": 700,
                     "fontSize": "24px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
@@ -350,7 +350,7 @@
                 {
                     "fontFamily": "Pretendard",
                     "fontStyle": "normal",
-                    "fontWeight": 600,
+                    "fontWeight": 700,
                     "fontSize": "30px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
@@ -427,14 +427,27 @@
                     "letterSpacing": "-0.03em"
                 }
             ],
-            "captionBold": {
-                "fontFamily": "Pretendard",
-                "fontStyle": "normal",
-                "fontWeight": 700,
-                "fontSize": "14px",
-                "lineHeight": 1.3,
-                "letterSpacing": "-0.03em"
-            },
+            "captionBold": [
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 700,
+                    "fontSize": "13px",
+                    "lineHeight": 1.3,
+                    "letterSpacing": "-0.03em"
+                },
+                null,
+                null,
+                null,
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 700,
+                    "fontSize": "14px",
+                    "lineHeight": 1.3,
+                    "letterSpacing": "-0.03em"
+                }
+            ],
             "textSbold": {
                 "fontFamily": "Pretendard",
                 "fontStyle": "normal",
@@ -485,14 +498,27 @@
                     "letterSpacing": "-0.03em"
                 }
             ],
-            "bodyReg": {
-                "fontFamily": "Pretendard",
-                "fontStyle": "normal",
-                "fontWeight": 400,
-                "fontSize": "16px",
-                "lineHeight": 1.5,
-                "letterSpacing": "-0.03em"
-            },
+            "bodyReg": [
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 400,
+                    "fontSize": "14px",
+                    "lineHeight": 1.5,
+                    "letterSpacing": "-0.03em"
+                },
+                null,
+                null,
+                null,
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 400,
+                    "fontSize": "16px",
+                    "lineHeight": 1.5,
+                    "letterSpacing": "-0.03em"
+                }
+            ],
             "smallBold": {
                 "fontFamily": "Pretendard",
                 "fontStyle": "normal",
