@@ -8,7 +8,7 @@ export default function Layout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
-      <Flex maxW="1920px" minH="calc(100vh - 500px)" mx="auto">
+      <Flex maxW="1920px" minH="calc(100vh - 500px)" mx="auto" w="100%">
         <Box display={['none', null, 'initial']} p="20px 16px" w="220px">
           <Box pos="sticky" top={['70px', null, '90px']}>
             <LeftMenu />
@@ -17,7 +17,7 @@ export default function Layout({
         <Box className="markdown-body" flex={1}>
           {children}
         </Box>
-        <Box display={['none', null, null, 'initial']}>
+        <Box display={['none', null, null, null, null, 'initial']}>
           <Box pos="sticky" top={['50px', null, '70px']}>
             <RightIndex />
           </Box>

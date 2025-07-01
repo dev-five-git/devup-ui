@@ -14,7 +14,6 @@ export default function Card({ children }: { children: React.ReactNode }) {
       border="1px solid $border"
       borderRadius="10px"
       cursor="pointer"
-      maxW="260px"
       transition="all 0.2s ease"
     >
       {children}

@@ -1,10 +1,12 @@
-import { Center, Flex, Image, Text, VStack } from '@devup-ui/react'
+import { Center, Flex, Grid, Text, VStack } from '@devup-ui/react'
+
+import * as Icons from '@/components/icons/components/componentIcons'
 
 import Card from '../Card'
 
 export default function Page() {
   return (
-    <VStack flex="1" gap="16px" maxW="100%" px="60px" py="40px">
+    <VStack gap="16px" px={['16px', '30px', '60px']} py={['24px', '40px']}>
       <Text color="$primary" typography="captionBold">
         Overview
       </Text>
@@ -22,10 +24,20 @@ export default function Page() {
         <Text color="$title" typography="h6">
           Form
         </Text>
-        <Flex alignItems="center" flexWrap="wrap" gap="20px" overflow="visible">
+        <Grid
+          gap={['10px', null, null, null, '20px']}
+          gridTemplateColumns={[
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
+            null,
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
+          ]}
+          overflow="visible"
+        >
           <Card>
             <Center h="140px">
-              <Image src="/images/components/button.svg" />
+              <Icons.IconButtonComponent />
             </Center>
             <Flex
               alignItems="center"
@@ -41,7 +53,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/text-box.svg" />
+              <Icons.IconTextBoxComp />
             </Center>
             <Flex
               alignItems="center"
@@ -57,7 +69,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/text-area.svg" />
+              <Icons.IconTextAreaComp />
             </Center>
             <Flex
               alignItems="center"
@@ -73,7 +85,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/dropdown.svg" />
+              <Icons.IconDropdownComp />
             </Center>
             <Flex
               alignItems="center"
@@ -89,7 +101,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/radio.svg" />
+              <Icons.IconRadioComp />
             </Center>
             <Flex
               alignItems="center"
@@ -105,7 +117,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/checkbox.svg" />
+              <Icons.IconCheckboxComp />
             </Center>
             <Flex
               alignItems="center"
@@ -121,7 +133,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/stepper.svg" />
+              <Icons.IconStepperComp />
             </Center>
             <Flex
               alignItems="center"
@@ -137,7 +149,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/toggle.svg" />
+              <Icons.IconToggleComp />
             </Center>
             <Flex
               alignItems="center"
@@ -153,7 +165,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/slider.svg" />
+              <Icons.IconSliderComp />
             </Center>
             <Flex
               alignItems="center"
@@ -169,7 +181,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/date-picker.svg" />
+              <Icons.IconDatePickerComp />
             </Center>
             <Flex
               alignItems="center"
@@ -185,7 +197,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/color-picker.svg" />
+              <Icons.IconColorPickerComp />
             </Center>
             <Flex
               alignItems="center"
@@ -201,7 +213,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/uploader.svg" />
+              <Icons.IconUploaderComp />
             </Center>
             <Flex
               alignItems="center"
@@ -217,7 +229,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/pagination.svg" />
+              <Icons.IconPagination />
             </Center>
             <Flex
               alignItems="center"
@@ -233,7 +245,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/progress-bar.svg" />
+              <Icons.IconProgressBar />
             </Center>
             <Flex
               alignItems="center"
@@ -249,7 +261,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/search.svg" />
+              <Icons.IconSearchComp />
             </Center>
             <Flex
               alignItems="center"
@@ -265,7 +277,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/select.svg" />
+              <Icons.IconSelectComp />
             </Center>
             <Flex
               alignItems="center"
@@ -281,7 +293,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/label.svg" />
+              <Icons.IconLabelComp />
             </Center>
             <Flex
               alignItems="center"
@@ -295,16 +307,26 @@ export default function Page() {
               </Text>
             </Flex>
           </Card>
-        </Flex>
+        </Grid>
       </VStack>
       <VStack gap="16px" overflow="visible" py="30px">
         <Text color="$title" typography="h6">
           Layout
         </Text>
-        <Flex alignItems="center" flexWrap="wrap" gap="20px" overflow="visible">
+        <Grid
+          gap={['10px', null, null, null, '20px']}
+          gridTemplateColumns={[
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
+            null,
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
+          ]}
+          overflow="visible"
+        >
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/footer.svg" />
+              <Icons.IconFooterComp />
             </Center>
             <Flex
               alignItems="center"
@@ -320,7 +342,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/tooltip.svg" />
+              <Icons.IconTooltipComp />
             </Center>
             <Flex
               alignItems="center"
@@ -336,7 +358,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/tab.svg" />
+              <Icons.IconTabComp />
             </Center>
             <Flex
               alignItems="center"
@@ -352,7 +374,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/menu.svg" />
+              <Icons.IconMenuComp />
             </Center>
             <Flex
               alignItems="center"
@@ -368,7 +390,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/header.svg" />
+              <Icons.IconHeaderComp />
             </Center>
             <Flex
               alignItems="center"
@@ -384,7 +406,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/confirm.svg" />
+              <Icons.IconConfirmComp />
             </Center>
             <Flex
               alignItems="center"
@@ -400,7 +422,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/snackbar.svg" />
+              <Icons.IconSnackbarComp />
             </Center>
             <Flex
               alignItems="center"
@@ -416,7 +438,7 @@ export default function Page() {
           </Card>
           <Card>
             <Center h="140px">
-              <Image src="/images/components/layout/bottom-sheet.svg" />
+              <Icons.IconBottomSheetComp />
             </Center>
             <Flex
               alignItems="center"
@@ -430,16 +452,26 @@ export default function Page() {
               </Text>
             </Flex>
           </Card>
-        </Flex>
+        </Grid>
       </VStack>
       <VStack gap="16px" overflow="visible" py="30px">
         <Text color="$title" typography="h6">
           Theme
         </Text>
-        <Flex alignItems="center" flexWrap="wrap" gap="20px" overflow="visible">
+        <Grid
+          gap={['10px', null, null, null, '20px']}
+          gridTemplateColumns={[
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
+            null,
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
+          ]}
+          overflow="visible"
+        >
           <Card>
             <Center h="140px">
-              <Image src="/images/components/theme/theme-button.svg" />
+              <Icons.IconThemeButtonComp />
             </Center>
             <Flex
               alignItems="center"
@@ -453,7 +485,7 @@ export default function Page() {
               </Text>
             </Flex>
           </Card>
-        </Flex>
+        </Grid>
       </VStack>
     </VStack>
   )
