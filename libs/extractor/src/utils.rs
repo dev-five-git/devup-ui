@@ -308,7 +308,7 @@ mod tests {
         let builder = oxc_ast::AstBuilder::new(&allocator);
         assert_eq!(
             jsx_expression_to_number(
-                &builder
+                builder
                     .alloc_jsx_attribute(
                         SPAN,
                         JSXAttributeName::Identifier(
@@ -327,7 +327,7 @@ mod tests {
 
         assert_eq!(
             jsx_expression_to_number(
-                &builder
+                builder
                     .alloc_jsx_attribute(
                         SPAN,
                         JSXAttributeName::Identifier(
@@ -344,9 +344,9 @@ mod tests {
                                     SPAN,
                                     Vec::new_in(&allocator)
                                 )),
-                                Vec::new_in(&allocator).into(),
+                                Vec::new_in(&allocator),
                             ),
-                            Vec::new_in(&allocator).into(),
+                            Vec::new_in(&allocator),
                             Some(builder.alloc_jsx_closing_element(
                                 SPAN,
                                 JSXElementName::Identifier(

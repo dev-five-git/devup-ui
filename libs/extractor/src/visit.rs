@@ -13,8 +13,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXElement, JSXElementName, Program, PropertyKey, Statement,
-    VariableDeclarator, WithClause,
+    ImportOrExportKind, JSXAttributeValue, JSXElement, JSXElementName, Program, PropertyKey,
+    Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -96,8 +96,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 Some(format!(
                     "{}.{}",
-                    ident.name.to_string(),
-                    member.property.name.to_string()
+                    ident.name,
+                    member.property.name
                 ))
             } else {
                 None
@@ -109,7 +109,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if call.arguments.is_empty() {
                     *it = Expression::StringLiteral(self.ast.alloc_string_literal(
                         SPAN,
-                        self.ast.atom(&"".to_string()),
+                        self.ast.atom(""),
                         None,
                     ));
                 } else if call.arguments.len() == 1 {
@@ -210,7 +210,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             {
                 let mut tag = Expression::StringLiteral(self.ast.alloc_string_literal(
                     SPAN,
-                    self.ast.atom(&kind.to_tag().unwrap_or("div")),
+                    self.ast.atom(kind.to_tag().unwrap_or("div")),
                     None,
                 ));
                 let mut props_styles = vec![];
@@ -345,14 +345,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.imports.insert(
                                 format!(
                                     "{}.{}",
-                                    import_default_specifier.local.to_string(),
-                                    kind.to_string()
+                                    import_default_specifier.local,
+                                    kind
                                 ),
                                 kind,
                             );
                         }
                         self.css_imports.insert(
-                            format!("{}.{}", import_default_specifier.local.to_string(), "css"),
+                            format!("{}.{}", import_default_specifier.local, "css"),
                             it.source.value.to_string(),
                         );
                     }
@@ -363,14 +363,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             self.imports.insert(
                                 format!(
                                     "{}.{}",
-                                    import_namespace_specifier.local.to_string(),
-                                    kind.to_string()
+                                    import_namespace_specifier.local,
+                                    kind
                                 ),
                                 kind,
                             );
                         }
                         self.css_imports.insert(
-                            format!("{}.{}", import_namespace_specifier.local.to_string(), "css"),
+                            format!("{}.{}", import_namespace_specifier.local, "css"),
                             it.source.value.to_string(),
                         );
                     }
@@ -399,6 +399,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             // extract ExtractStyleProp and remain style and class name, just extract
             let mut duplicate_set = HashSet::new();
             let mut style_order = None;
+            let mut style_vars = None;
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
@@ -412,6 +413,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if name == "styleOrder" {
                         style_order =
                             jsx_expression_to_number(attr.value.as_ref().unwrap()).map(|n| n as u8);
+                        continue;
+                    }
+                    if name == "styleVars" {
+                        if let Some(value) = attr.value.as_ref()
+                            && let JSXAttributeValue::ExpressionContainer(expr) = value
+                        {
+                            style_vars =
+                                Some(expr.expression.to_expression().clone_in(self.ast.allocator));
+                        }
                         continue;
                     }
 
@@ -438,7 +448,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
-            modify_props(&self.ast, attrs, &mut props_styles, style_order);
+            modify_props(&self.ast, attrs, &mut props_styles, style_order, style_vars);
 
             props_styles
                 .iter()

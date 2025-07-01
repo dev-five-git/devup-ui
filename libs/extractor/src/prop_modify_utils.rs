@@ -1,13 +1,16 @@
+use crate::ExtractStyleProp;
 use crate::gen_class_name::{
     apply_class_name_attribute, gen_class_names, merge_expression_for_class_name,
 };
 use crate::gen_style::{apply_style_attribute, gen_styles};
-use crate::ExtractStyleProp;
-use oxc_allocator::CloneIn;
+use oxc_allocator::{CloneIn, Vec};
+use oxc_ast::AstBuilder;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
-use oxc_ast::ast::{Expression, JSXAttributeItem, ObjectPropertyKind, PropertyKey, PropertyKind};
-use oxc_ast::AstBuilder;
+use oxc_ast::ast::{
+    Expression, JSXAttribute, JSXAttributeItem, JSXAttributeValue, JSXExpression,
+    ObjectPropertyKind, PropertyKey, PropertyKind, TemplateElementValue,
+};
 use oxc_span::SPAN;
 
 /// modify object props
@@ -120,6 +123,7 @@ pub fn modify_props<'a>(
     props: &mut oxc_allocator::Vec<JSXAttributeItem<'a>>,
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
+    style_vars: Option<Expression<'a>>,
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -163,19 +167,140 @@ pub fn modify_props<'a>(
 
     // should modify style prop
     if let Some(ex) = gen_styles(ast_builder, styles) {
-        let mut attr = if let Some(style_prop) = style_prop {
-            style_prop
-        } else {
+        let mut attr = style_prop.unwrap_or_else(|| {
             ast_builder.alloc_jsx_attribute(
                 SPAN,
                 Identifier(ast_builder.alloc_jsx_identifier(SPAN, "style")),
                 None,
             )
-        };
+        });
         apply_style_attribute(ast_builder, &mut attr, ex);
+        if let Some(mut style_vars) = style_vars {
+            merge_style_vars(ast_builder, &mut attr, &mut style_vars);
+        }
         props.push(Attribute(attr));
-    } else if let Some(style_prop) = style_prop {
+    } else if let Some(mut style_prop) = style_prop {
         // re add class name prop if not modified
+
+        if let Some(mut style_vars) = style_vars {
+            merge_style_vars(ast_builder, &mut style_prop, &mut style_vars);
+        }
         props.push(Attribute(style_prop))
+    } else if let Some(mut style_vars) = style_vars {
+        let mut attr = style_prop.unwrap_or_else(|| {
+            ast_builder.alloc_jsx_attribute(
+                SPAN,
+                Identifier(ast_builder.alloc_jsx_identifier(SPAN, "style")),
+                None,
+            )
+        });
+        merge_style_vars(ast_builder, &mut attr, &mut style_vars);
+        props.push(Attribute(attr));
+    }
+}
+
+/// Priority: dynamic style, style, styleVars
+fn merge_style_vars<'a>(
+    ast_builder: &AstBuilder<'a>,
+    style_prop: &mut JSXAttribute<'a>,
+    style_vars: &mut Expression<'a>,
+) {
+    convert_style_vars(ast_builder, style_vars);
+    if let Some(ref mut value) = style_prop.value {
+        if let JSXAttributeValue::ExpressionContainer(container) = value {
+            style_prop.value = Some(JSXAttributeValue::ExpressionContainer(
+                ast_builder.alloc_jsx_expression_container(
+                    SPAN,
+                    JSXExpression::ObjectExpression(
+                        ast_builder.alloc_object_expression(
+                            SPAN,
+                            Vec::from_array_in(
+                                [
+                                    ObjectPropertyKind::SpreadProperty(
+                                        ast_builder.alloc_spread_element(
+                                            SPAN,
+                                            style_vars.clone_in(ast_builder.allocator),
+                                        ),
+                                    ),
+                                    ObjectPropertyKind::SpreadProperty(
+                                        ast_builder.alloc_spread_element(
+                                            SPAN,
+                                            container
+                                                .expression
+                                                .clone_in(ast_builder.allocator)
+                                                .into_expression(),
+                                        ),
+                                    ),
+                                ],
+                                ast_builder.allocator,
+                            ),
+                        ),
+                    ),
+                ),
+            ));
+        }
+    } else {
+        style_prop.value = Some(JSXAttributeValue::ExpressionContainer(
+            ast_builder.alloc_jsx_expression_container(
+                SPAN,
+                style_vars.clone_in(ast_builder.allocator).into(),
+            ),
+        ));
+    }
+}
+
+pub fn convert_style_vars<'a>(ast_builder: &AstBuilder<'a>, style_vars: &mut Expression<'a>) {
+    if let Expression::ObjectExpression(obj) = style_vars {
+        for idx in (0..obj.properties.len()).rev() {
+            let mut prop = obj.properties.remove(idx);
+
+            if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
+                let name = match &prop.key {
+                    PropertyKey::StaticIdentifier(ident) => ident.name,
+                    PropertyKey::StringLiteral(ident) => ident.value,
+                    etc => {
+                        obj.properties.insert(
+                            idx,
+                            ObjectPropertyKind::ObjectProperty(ast_builder.alloc_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
+                                    SPAN,
+                                    Vec::from_array_in(
+                                        [ast_builder.template_element(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: ast_builder.atom("--"),
+                                                cooked: None,
+                                            },
+                                            false,
+                                        )],
+                                        ast_builder.allocator,
+                                    ),
+                                    Vec::from_array_in(
+                                        [etc.to_expression().clone_in(ast_builder.allocator)],
+                                        ast_builder.allocator,
+                                    ),
+                                )),
+                                prop.value.clone_in(ast_builder.allocator),
+                                false,
+                                false,
+                                true,
+                            )),
+                        );
+                        continue;
+                    }
+                };
+
+                if !name.starts_with("--") {
+                    prop.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                        SPAN,
+                        ast_builder.atom(&format!("--{name}")),
+                        None,
+                    ));
+                }
+            }
+            obj.properties.insert(idx, prop);
+        }
     }
 }

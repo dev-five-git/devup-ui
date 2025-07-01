@@ -204,7 +204,7 @@ impl StyleSheet {
                         .join("");
                     css.push_str(
                         if let Some(break_point) = break_point {
-                            format!("\n@media (min-width:{}px){{{}}}", break_point, inner_css)
+                            format!("\n@media (min-width:{break_point}px){{{inner_css}}}")
                         } else {
                             inner_css
                         }
@@ -220,8 +220,7 @@ impl StyleSheet {
                     css.push_str(
                         if let Some(break_point) = break_point {
                             format!(
-                                "\n@media (min-width:{}px) and {}{{{}}}",
-                                break_point, media, inner_css
+                                "\n@media (min-width:{break_point}px) and {media}{{{inner_css}}}"
                             )
                         } else {
                             format!("\n@media {}{{{}}}", media, inner_css.as_str())

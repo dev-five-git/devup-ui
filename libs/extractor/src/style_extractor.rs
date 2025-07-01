@@ -95,7 +95,7 @@ pub fn extract_style_from_expression<'a>(
 
                                 match extract_style_from_expression(
                                     ast_builder,
-                                    Some(&name),
+                                    Some(name),
                                     &mut prop.value,
                                     0,
                                     None,
