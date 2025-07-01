@@ -1,6 +1,6 @@
 import { Center, Flex, Grid, Text, VStack } from '@devup-ui/react'
 
-import * as Icons from '@/components/icons/components/componentIcons'
+import * as Icons from '@/components/icons/components'
 
 import Card from '../Card'
 
