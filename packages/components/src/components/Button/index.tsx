@@ -27,10 +27,7 @@ export function Button({
   variant = 'default',
   className = '',
   type = 'button',
-  colors = {
-    primary: 'var(--primary)',
-    error: 'var(--error)',
-  },
+  colors,
   isError = false,
   children,
   size = 'm',
@@ -42,15 +39,15 @@ export function Button({
     <DevupButton
       _active={{
         bg: isPrimary
-          ? `color-mix(in srgb, var(--p, var(--primary, --fallback-white)) 100%, #000 30%);`
+          ? `color-mix(in srgb, var(--primary, #FFF) 100%, #000 30%);`
           : isError
-            ? 'var(--e, var(--error, --fallback-black))'
-            : `color-mix(in srgb, var(--p, var(--primary, --fallback-black)) 20%, #FFF 80%);`,
+            ? 'var(--error, #000)'
+            : `color-mix(in srgb, var(--primary, #000) 20%, #FFF 80%);`,
         border:
           !isPrimary &&
           (isError
-            ? '1px solid var(--e, var(--error, --fallback-black))'
-            : `1px solid var(--p, var(--primary, --fallback-black))`),
+            ? '1px solid var(--error, #000)'
+            : `1px solid var(--primary, #000)`),
         color: !isPrimary && isError && '#000',
       }}
       _disabled={{
@@ -62,19 +59,15 @@ export function Button({
       _focusVisible={{
         outline: '2px solid',
         outlineColor:
-          !isPrimary && isError
-            ? 'var(--e, var(--error, --fallback-black))'
-            : '$primaryFocus',
+          !isPrimary && isError ? 'var(--error, #000)' : '$primaryFocus',
       }}
       _hover={{
-        borderColor: isError
-          ? 'var(--e, var(--error, --fallback-black))'
-          : `var(--p, var(--primary, --fallback-black))`,
+        borderColor: isError ? 'var(--error, #000)' : `var(--primary, #000)`,
         bg: isPrimary
-          ? `color-mix(in srgb, var(--p, var(--primary, --fallback-white)) 100%, #000 15%)`
+          ? `color-mix(in srgb, var(--primary, #FFF) 100%, #000 15%)`
           : isError
-            ? '1px solid var(--e, var(--error, --fallback-black))'
-            : `color-mix(in srgb, var(--p, var(--primary, --fallback-black)) 10%, #FFF 90%)`,
+            ? '1px solid var(--error, #000)'
+            : `color-mix(in srgb, var(--primary, #000) 10%, #FFF 90%)`,
       }}
       _themeDark={{
         _disabled: {
@@ -85,54 +78,43 @@ export function Button({
         },
         _active: {
           bg: isPrimary
-            ? `color-mix(in srgb, var(--p, var(--primary, --fallback-black)) 100%, #FFF 30%);`
+            ? `color-mix(in srgb, var(--primary, #000) 100%, #FFF 30%);`
             : isError
-              ? 'var(--e, var(--error, --fallback-black))'
-              : 'var(--p, var(--primary, --fallback-white))',
+              ? 'var(--error, #000)'
+              : 'var(--primary, #FFF)',
           border:
             !isPrimary &&
             (isError
-              ? '1px solid var(--e, var(--error, --fallback-black))'
-              : `1px solid var(--p, var(--primary, --fallback-white))`),
+              ? '1px solid var(--error, #000)'
+              : `1px solid var(--primary, #FFF)`),
           color: !isPrimary && isError && '#FFF',
         },
         _hover: {
           bg: isPrimary
-            ? `color-mix(in srgb, var(--p, var(--primary, --fallback-black)) 100%, #FFF 15%);`
+            ? `color-mix(in srgb, var(--primary, #000) 100%, #FFF 15%);`
             : isError
               ? '$inputBg'
-              : `color-mix(in srgb, var(--p, var(--primary, --fallback-white)) 20%, #000 80%);`,
+              : `color-mix(in srgb, var(--primary, #FFF) 20%, #000 80%);`,
         },
         _focusVisible: {
           outlineColor: isPrimary
-            ? `var(--p, var(--primary, --fallback-white))`
+            ? `var(--primary, #FFF)`
             : isError
-              ? 'var(--e, var(--error, --fallback-black))'
+              ? 'var(--error, #000)'
               : '$primaryFocus',
         },
       }}
-      bg={isPrimary ? 'var(--p, var(--primary, --fallback-black))' : '$inputBg'}
+      bg={isPrimary ? 'var(--primary, #000)' : '$inputBg'}
       border={isPrimary ? 'none' : '1px solid $border'}
       borderRadius={isPrimary ? '8px' : '10px'}
       className={className}
-      color={
-        isPrimary
-          ? '#FFF'
-          : isError
-            ? 'var(--e, var(--error, --fallback-black))'
-            : '$text'
-      }
+      color={isPrimary ? '#FFF' : isError ? 'var(--error, #000)' : '$text'}
       cursor="pointer"
       outlineOffset="2px"
       px="40px"
       py="12px"
       styleOrder={1}
-      styleVars={{
-        '--p': colors.primary ?? 'var(--primary)',
-        '--e': colors.error ?? 'var(--error)',
-        '--fallback-white': '#FFF',
-        '--fallback-black': '#000',
-      }}
+      styleVars={colors && { primary: colors.primary, error: colors.error }}
       transition=".25s"
       type={type}
       typography={
