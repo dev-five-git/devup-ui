@@ -1,7 +1,7 @@
 import { setTheme } from '@devup-ui/react'
-import { Decorator } from '@storybook/react'
+import { Decorator } from '@storybook/react-vite'
 import { useEffect } from 'react'
-const preview: import('@storybook/react').Preview = {
+const preview: import('@storybook/react-vite').Preview = {
   parameters: {
     layout: 'fullscreen',
     controls: {
@@ -11,6 +11,8 @@ const preview: import('@storybook/react').Preview = {
       },
     },
   },
+
+  tags: ['autodocs']
 }
 
 export default preview
