@@ -6,8 +6,8 @@ use oxc_ast::AstBuilder;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, JSXAttributeItem, JSXAttributeValue, JSXExpression, ObjectPropertyKind,
-    PropertyKey, PropertyKind, TemplateElementValue,
+    Expression, JSXAttributeItem, JSXAttributeValue, JSXExpression, LogicalOperator,
+    ObjectPropertyKind, PropertyKey, PropertyKind, TemplateElementValue,
 };
 use oxc_span::SPAN;
 
@@ -21,6 +21,7 @@ pub fn modify_prop_object<'a>(
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
+    let mut spread_props = vec![];
     for idx in (0..props.len()).rev() {
         let prop = props.remove(idx);
         match prop {
@@ -40,14 +41,20 @@ pub fn modify_prop_object<'a>(
                 }
                 props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
             }
-            _ => {
-                props.insert(idx, prop);
+            ObjectPropertyKind::SpreadProperty(spread) => {
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                props.insert(idx, ObjectPropertyKind::SpreadProperty(spread));
             }
         }
     }
 
-    if let Some(ex) = get_class_name_expression(ast_builder, &class_name_prop, styles, style_order)
-    {
+    if let Some(ex) = get_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+    ) {
         props.push(ObjectPropertyKind::ObjectProperty(
             ast_builder.alloc_object_property(
                 SPAN,
@@ -60,7 +67,9 @@ pub fn modify_prop_object<'a>(
             ),
         ));
     }
-    if let Some(ex) = get_style_expression(ast_builder, &style_prop, styles, &style_vars) {
+    if let Some(ex) =
+        get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
+    {
         props.push(ObjectPropertyKind::ObjectProperty(
             ast_builder.alloc_object_property(
                 SPAN,
@@ -84,6 +93,7 @@ pub fn modify_props<'a>(
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
+    let mut spread_props = vec![];
     for idx in (0..props.len()).rev() {
         let prop = props.remove(idx);
         match prop {
@@ -125,13 +135,19 @@ pub fn modify_props<'a>(
                 }
                 props.insert(idx, Attribute(attr));
             }
-            _ => {
-                props.insert(idx, prop);
+            JSXAttributeItem::SpreadAttribute(spread) => {
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                props.insert(idx, JSXAttributeItem::SpreadAttribute(spread));
             }
         }
     }
-    if let Some(ex) = get_class_name_expression(ast_builder, &class_name_prop, styles, style_order)
-    {
+    if let Some(ex) = get_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+    ) {
         props.push(Attribute(ast_builder.alloc_jsx_attribute(
             SPAN,
             Identifier(ast_builder.alloc_jsx_identifier(SPAN, "className")),
@@ -144,7 +160,9 @@ pub fn modify_props<'a>(
             }),
         )));
     }
-    if let Some(ex) = get_style_expression(ast_builder, &style_prop, styles, &style_vars) {
+    if let Some(ex) =
+        get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
+    {
         props.push(Attribute(ast_builder.alloc_jsx_attribute(
             SPAN,
             Identifier(ast_builder.alloc_jsx_identifier(SPAN, "style")),
@@ -160,16 +178,30 @@ pub fn get_class_name_expression<'a>(
     class_name_prop: &Option<Expression<'a>>,
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
+    spread_props: &[Expression<'a>],
 ) -> Option<Expression<'a>> {
     // should modify class name prop
     merge_string_expressions(
         ast_builder,
         [
-            class_name_prop.clone_in(ast_builder.allocator),
+            class_name_prop
+                .as_ref()
+                .map(|class_name| convert_class_name(ast_builder, class_name)),
             gen_class_names(ast_builder, styles, style_order),
         ]
         .into_iter()
         .flatten()
+        .chain(spread_props.iter().map(|ex| {
+            convert_class_name(
+                ast_builder,
+                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                    SPAN,
+                    ex.clone_in(ast_builder.allocator),
+                    ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
+                    true,
+                )),
+            )
+        }))
         .collect::<Vec<_>>()
         .as_slice(),
     )
@@ -180,6 +212,7 @@ pub fn get_style_expression<'a>(
     style_prop: &Option<Expression<'a>>,
     styles: &[ExtractStyleProp<'a>],
     style_vars: &Option<Expression<'a>>,
+    spread_props: &[Expression<'a>],
 ) -> Option<Expression<'a>> {
     merge_object_expressions(
         ast_builder,
@@ -192,6 +225,14 @@ pub fn get_style_expression<'a>(
         ]
         .into_iter()
         .flatten()
+        .chain(spread_props.iter().map(|ex| {
+            Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                SPAN,
+                ex.clone_in(ast_builder.allocator),
+                ast_builder.identifier_name(SPAN, ast_builder.atom("style")),
+                true,
+            ))
+        }))
         .collect::<Vec<_>>()
         .as_slice(),
     )
@@ -210,9 +251,14 @@ fn merge_string_expressions<'a>(
 
     let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
+    let mut prev_str = false;
     for ex in expressions {
-        string_literals.push("".to_string());
+        if !prev_str {
+            string_literals.push("".to_string());
+            prev_str = false;
+        }
         if let Expression::StringLiteral(literal) = ex {
+            prev_str = true;
             if !string_literals.is_empty() {
                 string_literals
                     .last_mut()
@@ -273,12 +319,14 @@ fn merge_string_expressions<'a>(
                         let trimmed = s.trim();
                         if trimmed.is_empty() {
                             "".to_string()
-                        } else if idx > 0 && idx == string_literals.len() - 1 {
-                            if string_literals.len() == other_expressions.len() {
-                                format!(" {trimmed} ")
+                        } else if idx == string_literals.len() - 1 {
+                            let prefix = if idx == 0 { "" } else { " " };
+                            let suffix = if string_literals.len() == other_expressions.len() {
+                                " "
                             } else {
-                                format!(" {trimmed}")
-                            }
+                                ""
+                            };
+                            format!("{prefix}{trimmed}{suffix}")
                         } else if idx == string_literals.len() - 1 {
                             trimmed.to_string()
                         } else {
@@ -331,6 +379,35 @@ fn merge_object_expressions<'a>(
             ),
         ),
     ))
+}
+
+pub fn convert_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name: &Expression<'a>,
+) -> Expression<'a> {
+    if matches!(
+        class_name,
+        Expression::StringLiteral(_)
+            | Expression::TemplateLiteral(_)
+            | Expression::NumericLiteral(_)
+    ) {
+        return class_name.clone_in(ast_builder.allocator);
+    }
+
+    // wrap ( and ?? ''
+    Expression::LogicalExpression(
+        ast_builder.alloc_logical_expression(
+            SPAN,
+            Expression::ParenthesizedExpression(
+                ast_builder.alloc_parenthesized_expression(
+                    SPAN,
+                    class_name.clone_in(ast_builder.allocator),
+                ),
+            ),
+            LogicalOperator::Coalesce,
+            Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None)),
+        ),
+    )
 }
 
 pub fn convert_style_vars<'a>(
