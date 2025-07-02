@@ -2,7 +2,7 @@ use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::{
-    Expression, JSXAttribute, JSXAttributeValue, JSXExpression, ObjectPropertyKind, PropertyKey,
+    Expression, ObjectPropertyKind, PropertyKey,
     PropertyKind, TemplateElement, TemplateElementValue,
 };
 use oxc_span::SPAN;
@@ -213,53 +213,4 @@ pub fn merge_expression_for_class_name<'a>(
             None,
         )))
     }
-}
-
-pub fn apply_class_name_attribute<'a>(
-    ast_builder: &AstBuilder<'a>,
-    class_prop: &mut JSXAttribute<'a>,
-    expression: Expression<'a>,
-) {
-    if let Some(ref value) = class_prop.value {
-        if let Some(ret) = match value {
-            JSXAttributeValue::StringLiteral(str) => merge_expression_for_class_name(
-                ast_builder,
-                vec![
-                    Expression::StringLiteral(str.clone_in(ast_builder.allocator)),
-                    expression,
-                ],
-            ),
-            JSXAttributeValue::ExpressionContainer(container) => match container.expression {
-                JSXExpression::EmptyExpression(_) => Some(expression),
-                _ => merge_expression_for_class_name(
-                    ast_builder,
-                    vec![
-                        container
-                            .expression
-                            .clone_in(ast_builder.allocator)
-                            .into_expression(),
-                        expression,
-                    ],
-                ),
-            },
-            _ => None,
-        } {
-            class_prop.value = match ret {
-                Expression::StringLiteral(literal) => Some(JSXAttributeValue::StringLiteral(
-                    literal.clone_in(ast_builder.allocator),
-                )),
-                _ => Some(JSXAttributeValue::ExpressionContainer(
-                    ast_builder.alloc_jsx_expression_container(SPAN, JSXExpression::from(ret)),
-                )),
-            }
-        }
-    } else {
-        class_prop.value = Some(if let Expression::StringLiteral(literal) = expression {
-            JSXAttributeValue::StringLiteral(literal.clone_in(ast_builder.allocator))
-        } else {
-            JSXAttributeValue::ExpressionContainer(
-                ast_builder.alloc_jsx_expression_container(SPAN, JSXExpression::from(expression)),
-            )
-        });
-    };
 }

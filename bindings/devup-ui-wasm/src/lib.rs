@@ -201,20 +201,20 @@ pub fn get_theme_interface(
             color_interface_name,
             color_keys
                 .into_iter()
-                .map(|key| format!("${}:null;", key))
+                .map(|key| format!("${key}:null;"))
                 .collect::<Vec<String>>()
                 .join(""),
             typography_interface_name,
             typography_keys
                 .into_iter()
-                .map(|key| format!("{}:null;", key))
+                .map(|key| format!("{key}:null;"))
                 .collect::<Vec<String>>()
                 .join(""),
             theme_interface_name,
             theme_keys
                 .into_iter()
                 // key to pascal
-                .map(|key| format!("{}:null;", key))
+                .map(|key| format!("{key}:null;"))
                 .collect::<Vec<String>>()
                 .join("")
         )

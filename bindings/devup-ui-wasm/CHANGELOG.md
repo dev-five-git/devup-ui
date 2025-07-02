@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.6
+
+### Patch Changes
+
+- 4e4bcf1: Apply optimize_value to dynamic value, remove semicolon on optimize_value
+- 2dd81f5: Implement styleVars
+
 ## 1.0.5
 
 ### Patch Changes

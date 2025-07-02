@@ -185,7 +185,7 @@ impl Theme {
                     );
                 }
                 for (prop, value) in theme_properties.0.iter() {
-                    theme_declaration.push_str(format!("--{}:{};", prop, value).as_str());
+                    theme_declaration.push_str(format!("--{prop}:{value};").as_str());
                 }
                 theme_declaration.push_str("}\n");
             }
@@ -199,23 +199,23 @@ impl Theme {
                         "{}{}{}{}{}",
                         t.font_family
                             .clone()
-                            .map(|v| format!("font-family:{};", v))
+                            .map(|v| format!("font-family:{v};"))
                             .unwrap_or("".to_string()),
                         t.font_size
                             .clone()
-                            .map(|v| format!("font-size:{};", v))
+                            .map(|v| format!("font-size:{v};"))
                             .unwrap_or("".to_string()),
                         t.font_weight
                             .clone()
-                            .map(|v| format!("font-weight:{};", v))
+                            .map(|v| format!("font-weight:{v};"))
                             .unwrap_or("".to_string()),
                         t.line_height
                             .clone()
-                            .map(|v| format!("line-height:{};", v))
+                            .map(|v| format!("line-height:{v};"))
                             .unwrap_or("".to_string()),
                         t.letter_spacing
                             .clone()
-                            .map(|v| format!("letter-spacing:{}", v))
+                            .map(|v| format!("letter-spacing:{v}"))
                             .unwrap_or("".to_string())
                     );
                     if css_content.is_empty() {
@@ -237,7 +237,7 @@ impl Theme {
             } else if let Some(media) = self
                 .breakpoints
                 .get(level as usize)
-                .map(|v| format!("(min-width:{}px)", v))
+                .map(|v| format!("(min-width:{v}px)"))
             {
                 css.push_str(format!("\n@media {}{{{}}}", media, css_vec.join("")).as_str());
             }

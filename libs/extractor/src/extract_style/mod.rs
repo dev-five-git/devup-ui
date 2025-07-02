@@ -158,7 +158,7 @@ impl ExtractDynamicStyle {
         Self {
             property: short_to_long(property),
             level,
-            identifier: identifier.to_string(),
+            identifier: optimize_value(identifier),
             selector,
             style_order: None,
         }
@@ -220,7 +220,7 @@ impl ExtractStyleValue {
             ExtractStyleValue::Dynamic(style) => style.extract(),
             ExtractStyleValue::Css(css) => css.extract(),
             ExtractStyleValue::Typography(typo) => {
-                StyleProperty::ClassName(format!("typo-{}", typo))
+                StyleProperty::ClassName(format!("typo-{typo}"))
             }
         }
     }

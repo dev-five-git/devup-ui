@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import { jsx as e } from \"react/jsx-runtime\";\nimport { Box as o } from \"@devup-ui/core\";\ne(o, { styleVars: { c: \"yellow\" } })\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {},
+    code: "import { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", { style: { \"--c\": \"yellow\" } });\n",
+}

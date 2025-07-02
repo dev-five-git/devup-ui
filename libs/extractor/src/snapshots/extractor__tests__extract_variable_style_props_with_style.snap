@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0\" style={{\n\t...{ key: value },\n\t\"--d1\": a\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0\" style={{\n\t...{ \"--d1\": a },\n\t...{ key: value }\n}} />;\n",
 }
