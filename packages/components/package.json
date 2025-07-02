@@ -56,7 +56,6 @@
     "vitest": "^3.2.4",
     "typescript": "^5.8.3",
     "@types/react": "^19",
-    "@storybook/addon-essentials": "^8.6",
     "@storybook/addon-links": "^9.0.15",
     "@storybook/addon-onboarding": "^9.0.15",
     "@storybook/react-vite": "^9.0.15",
