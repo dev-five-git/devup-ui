@@ -275,14 +275,14 @@ fn merge_string_expressions<'a>(
                             "".to_string()
                         } else if idx > 0 && idx == string_literals.len() - 1 {
                             if string_literals.len() == other_expressions.len() {
-                                format!(" {} ", trimmed)
+                                format!(" {trimmed} ")
                             } else {
-                                format!(" {}", trimmed)
+                                format!(" {trimmed}")
                             }
                         } else if idx == string_literals.len() - 1 {
                             trimmed.to_string()
                         } else {
-                            format!("{} ", trimmed)
+                            format!("{trimmed} ")
                         }
                     }),
                     cooked: None,
@@ -322,7 +322,7 @@ fn merge_object_expressions<'a>(
         ast_builder.alloc_object_expression(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
-                expressions.into_iter().map(|ex| {
+                expressions.iter().map(|ex| {
                     ObjectPropertyKind::SpreadProperty(
                         ast_builder.alloc_spread_element(SPAN, ex.clone_in(ast_builder.allocator)),
                     )
