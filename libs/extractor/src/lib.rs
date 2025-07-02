@@ -1904,25 +1904,6 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
     #[test]
     #[serial]
-    fn support_transpile_cjs22() {
-        reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.js",
-                r#"import { jsx as e } from "react/jsx-runtime";
-    import { Box as o } from "@devup-ui/core";
-    e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
-    "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_file: None
-                }
-            )
-            .unwrap()
-        ));
-    }
-    #[test]
-    #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract(

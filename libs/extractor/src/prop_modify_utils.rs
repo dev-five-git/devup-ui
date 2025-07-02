@@ -251,9 +251,14 @@ fn merge_string_expressions<'a>(
 
     let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
+    let mut prev_str = false;
     for ex in expressions {
-        string_literals.push("".to_string());
+        if !prev_str {
+            string_literals.push("".to_string());
+            prev_str = false;
+        }
         if let Expression::StringLiteral(literal) = ex {
+            prev_str = true;
             if !string_literals.is_empty() {
                 string_literals
                     .last_mut()
@@ -314,12 +319,14 @@ fn merge_string_expressions<'a>(
                         let trimmed = s.trim();
                         if trimmed.is_empty() {
                             "".to_string()
-                        } else if idx > 0 && idx == string_literals.len() - 1 {
-                            if string_literals.len() == other_expressions.len() {
-                                format!(" {trimmed} ")
+                        } else if idx == string_literals.len() - 1 {
+                            let prefix = if idx == 0 { "" } else { " " };
+                            let suffix = if string_literals.len() == other_expressions.len() {
+                                " "
                             } else {
-                                format!(" {trimmed}")
-                            }
+                                ""
+                            };
+                            format!("{prefix}{trimmed}{suffix}")
                         } else if idx == string_literals.len() - 1 {
                             trimmed.to_string()
                         } else {

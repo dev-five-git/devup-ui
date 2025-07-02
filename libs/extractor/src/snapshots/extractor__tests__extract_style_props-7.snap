@@ -1,8 +1,0 @@
----
-source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import * as B from '@devup-ui/core'\n        <B.Flex padding={('-1')}/>\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
----
-ToBTreeSet {
-    styles: {},
-    code: "import * as B from \"@devup-ui/core\";\n<B.Flex padding={\"-1\"} />;\n",
-}
