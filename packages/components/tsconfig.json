@@ -22,5 +22,6 @@
     "noEmit": true,
     "baseUrl": ".",
     "jsx": "react-jsx"
-  }
+  },
+  "include": ["src/**/*", ".storybook/**/*"]
 }

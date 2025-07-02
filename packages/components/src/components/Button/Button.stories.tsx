@@ -1,10 +1,18 @@
+import { Meta } from '@storybook/react-vite'
+
 import { Button } from './index'
 
 // More on how to set up stories at: https://storybook.js.org/docs/writing-stories#default-export
-export default {
+const meta: Meta<typeof Button> = {
   title: 'Devfive/Button',
   component: Button,
-  tags: ['autodocs'],
+  decorators: [
+    (Story) => (
+      <div style={{ padding: '10px' }}>
+        <Story />
+      </div>
+    ),
+  ],
 }
 
 export const Default = {
@@ -20,3 +28,5 @@ export const Default = {
     size: 'm',
   },
 }
+
+export default meta

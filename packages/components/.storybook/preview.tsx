@@ -11,8 +11,6 @@ const preview: import('@storybook/react-vite').Preview = {
       },
     },
   },
-
-  tags: ['autodocs']
 }
 
 export default preview
