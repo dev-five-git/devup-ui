@@ -12,5 +12,11 @@ export const Default = {
     children: 'Button Text',
     variant: 'default',
     disabled: false,
+    colors: {
+      primary: 'var(--primary)',
+      error: 'var(--error)',
+    },
+    isError: false,
+    size: 'm',
   },
 }

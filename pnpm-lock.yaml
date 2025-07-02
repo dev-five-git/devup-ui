@@ -335,8 +335,11 @@ importers:
         specifier: ^3.2
         version: 3.2.7(react@19.1.0)(storybook@8.6.14(prettier@3.6.0))
       '@devup-ui/react':
+        specifier: ^1.0.5
+        version: 1.0.5(csstype@3.1.3)(react@19.1.0)
+      '@devup-ui/vite-plugin':
         specifier: ^0.1
-        version: 0.1.34(csstype@3.1.3)(react@19.1.0)
+        version: 0.1.64(@devup-ui/wasm@1.0.5)(vite@6.3.5(@types/node@24.0.7)(jiti@2.4.2)(terser@5.43.1))
       '@storybook/addon-essentials':
         specifier: ^8.6
         version: 8.6.14(@types/react@19.1.8)(storybook@8.6.14(prettier@3.6.0))
@@ -1128,11 +1131,20 @@ packages:
     peerDependencies:
       storybook: ^8.2.0 || ^8.3.0-0 || ^8.4.0-0 || ^8.5.0-0 || ^8.6.0-0
 
-  '@devup-ui/react@0.1.34':
-    resolution: {integrity: sha512-iHtQCRToW9ZOH9Fp1vDAcAvu95Oaywv69V5Wq4cFx5kawGja+aklILwTnh4c3sqvT30uSuHnnjecBwZJv0U5jg==}
+  '@devup-ui/react@1.0.5':
+    resolution: {integrity: sha512-dzzkGD6f3UU+WAU4bTar4LwAU443Ouu/8VkP9JnjVeMaPk5j7iCwpXNGvSVBQGQMqTRV6GhmaOCWYW+RH1O9HQ==}
     peerDependencies:
       csstype: '*'
       react: '*'
+
+  '@devup-ui/vite-plugin@0.1.64':
+    resolution: {integrity: sha512-3GiZoFSoF2QXgRJNrqA6aQvipvroI5q9L99ZGRLFA0V8CWEEp8f4QlvPdSxAdm1Y317py96zfouq/TOoblVMrw==}
+    peerDependencies:
+      '@devup-ui/wasm': '*'
+      vite: ^6
+
+  '@devup-ui/wasm@1.0.5':
+    resolution: {integrity: sha512-wNvDD14oIPDBIh0MPGZbdEBFsPx071wIlJjXjfP4fRpZ/o+Z/Zs8+PKWeEMaAm71qcVhOpRi8qeykjlzcnE0OA==}
 
   '@emnapi/core@1.4.3':
     resolution: {integrity: sha512-4m62DuCE07lw01soJwPiBGC0nAww0Q+RY70VZ+n49yDIO13yyinhbWCeNnaob0lakDtWQzSdtNWzJeOJt2ma+g==}
@@ -6469,10 +6481,17 @@ snapshots:
       - '@chromatic-com/playwright'
       - react
 
-  '@devup-ui/react@0.1.34(csstype@3.1.3)(react@19.1.0)':
+  '@devup-ui/react@1.0.5(csstype@3.1.3)(react@19.1.0)':
     dependencies:
       csstype: 3.1.3
       react: 19.1.0
+
+  '@devup-ui/vite-plugin@0.1.64(@devup-ui/wasm@1.0.5)(vite@6.3.5(@types/node@24.0.7)(jiti@2.4.2)(terser@5.43.1))':
+    dependencies:
+      '@devup-ui/wasm': 1.0.5
+      vite: 6.3.5(@types/node@24.0.7)(jiti@2.4.2)(terser@5.43.1)
+
+  '@devup-ui/wasm@1.0.5': {}
 
   '@emnapi/core@1.4.3':
     dependencies:
