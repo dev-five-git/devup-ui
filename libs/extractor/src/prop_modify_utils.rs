@@ -205,40 +205,98 @@ fn merge_string_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator));
+        return Some(expressions.first().unwrap().clone_in(ast_builder.allocator));
     }
 
-    let mut string_literals = vec![];
+    let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
     for ex in expressions {
+        string_literals.push("".to_string());
         if let Expression::StringLiteral(literal) = ex {
-            string_literals.push(literal.value.trim());
+            if !string_literals.is_empty() {
+                string_literals
+                    .last_mut()
+                    .unwrap()
+                    .push_str(&format!(" {}", literal.value.trim()));
+            } else {
+                string_literals.push(literal.value.trim().to_string());
+            }
+        } else if let Expression::TemplateLiteral(template) = ex {
+            if !string_literals.is_empty() {
+                string_literals.last_mut().unwrap().push_str(&format!(
+                    " {}",
+                    template
+                        .quasis
+                        .iter()
+                        .map(|q| q.value.raw.trim())
+                        .filter(|q| !q.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            } else {
+                string_literals.push(
+                    template
+                        .quasis
+                        .iter()
+                        .map(|q| q.value.raw.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
         } else {
-            other_expressions.push(ex);
+            other_expressions.push(ex.clone_in(ast_builder.allocator));
         }
     }
     if other_expressions.is_empty() {
-        return Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
-            SPAN,
-            ast_builder.atom(&string_literals.join(" ")),
-            None,
-        )));
+        return Some(Expression::StringLiteral(
+            ast_builder.alloc_string_literal(
+                SPAN,
+                ast_builder.atom(
+                    &string_literals
+                        .iter()
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                ),
+                None,
+            ),
+        ));
     }
+    let literals = oxc_allocator::Vec::from_iter_in(
+        string_literals.iter().enumerate().map(|(idx, s)| {
+            ast_builder.template_element(
+                SPAN,
+                TemplateElementValue {
+                    raw: ast_builder.atom(&{
+                        let trimmed = s.trim();
+                        if trimmed.is_empty() {
+                            "".to_string()
+                        } else if idx > 0 && idx == string_literals.len() - 1 {
+                            if string_literals.len() == other_expressions.len() {
+                                format!(" {trimmed} ")
+                            } else {
+                                format!(" {trimmed}")
+                            }
+                        } else if idx == string_literals.len() - 1 {
+                            trimmed.to_string()
+                        } else {
+                            format!("{trimmed} ")
+                        }
+                    }),
+                    cooked: None,
+                },
+                false,
+            )
+        }),
+        ast_builder.allocator,
+    );
 
     Some(Expression::TemplateLiteral(
         ast_builder.alloc_template_literal(
             SPAN,
-            oxc_allocator::Vec::from_iter_in(
-                [ast_builder.template_element(
-                    SPAN,
-                    TemplateElementValue {
-                        raw: ast_builder.atom(&format!("{} ", string_literals.join(" "))),
-                        cooked: None,
-                    },
-                    false,
-                )],
-                ast_builder.allocator,
-            ),
+            literals,
             oxc_allocator::Vec::from_iter_in(
                 other_expressions
                     .into_iter()
@@ -264,7 +322,7 @@ fn merge_object_expressions<'a>(
         ast_builder.alloc_object_expression(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
-                expressions.into_iter().map(|ex| {
+                expressions.iter().map(|ex| {
                     ObjectPropertyKind::SpreadProperty(
                         ast_builder.alloc_spread_element(SPAN, ex.clone_in(ast_builder.allocator)),
                     )

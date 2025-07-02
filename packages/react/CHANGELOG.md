@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.6
+
+### Patch Changes
+
+- 6182ae8: Fix styleVars type
+
 ## 1.0.5
 
 ### Patch Changes
