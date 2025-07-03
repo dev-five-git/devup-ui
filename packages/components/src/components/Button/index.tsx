@@ -1,4 +1,4 @@
-import { Button as DevupButton, css } from '@devup-ui/react'
+import { Box, Button as DevupButton, Center, css } from '@devup-ui/react'
 import clsx from 'clsx'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -6,9 +6,15 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   colors?: {
     primary?: string
     error?: string
+    text?: string
+    border?: string
+    inputBg?: string
+    primaryFocus?: string
   }
   isError?: boolean
   size?: 'sm' | 'md'
+  icon?: React.ReactNode
+  ellipsis?: boolean
 }
 
 const variants = {
@@ -56,15 +62,27 @@ const variants = {
       borderColor: `var(--primary, #000)`,
       bg: `color-mix(in srgb, var(--primary, #000) 10%, #FFF 90%)`,
     },
-    bg: '$inputBg',
-    border: '1px solid $border',
+    bg: 'var(--inputBg, #FFF)',
+    border: '1px solid var(--border, #000)',
     borderRadius: '10px',
-    color: '$text',
+    color: 'var(--text, #000)',
+    typography: 'buttonxs',
+    _themeDark: {
+      _hover: {
+        borderColor: `var(--primary, #000)`,
+        bg: `color-mix(in srgb, var(--primary, #FFF) 10%, var(--inputBg, #000) 90%)`,
+      },
+      _active: {
+        bg: 'var(--primary, #000)',
+        color: 'var(--text, #FFF)',
+      },
+    },
   }),
 }
 
 const errorClassNames = css({
   styleOrder: 3,
+  color: 'var(--error, #000)',
   _active: {
     bg: 'var(--error, #000)',
     border: '1px solid var(--error, #000)',
@@ -74,41 +92,43 @@ const errorClassNames = css({
     outlineColor: 'var(--error, #000)',
   },
   _hover: {
+    bg: 'inherit',
     border: '1px solid var(--error, #000)',
   },
   _themeDark: {
     _active: {
       bg: 'var(--error, #000)',
       border: '1px solid var(--error, #000)',
-      color: '#000',
+      color: '#FFF',
     },
     _hover: {
-      bg: '$inputBg',
+      bg: 'var(--inputBg, #000)',
+      borderColor: 'var(--error, #000)',
+    },
+    _focusVisible: {
+      outlineColor: 'var(--error, #000)',
     },
   },
+  typography: 'inputBold',
 })
 
-/**
- * Button
- * ## Design Token
- * ### Color
- * - inputDisabledBackground
- * - inputDisabled
- * - inputBackground
- * - primaryHover
- * - text
- * - border
- *
- * @constructor
- */
+const buttonTextEllipsis = css({
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+})
+
 export function Button({
   variant = 'default',
-  className = '',
   type = 'button',
   colors,
   isError = false,
   children,
   size = 'md',
+  className = '',
+  style,
+  icon,
+  ellipsis = false,
   ...props
 }: ButtonProps): React.ReactElement {
   const isPrimary = variant === 'primary'
@@ -122,7 +142,7 @@ export function Button({
       }}
       _focusVisible={{
         outline: '2px solid',
-        outlineColor: '$primaryFocus',
+        outlineColor: 'var(--primaryFocus, #000)',
       }}
       _themeDark={{
         _disabled: {
@@ -132,21 +152,31 @@ export function Button({
           borderColor: 'transparent',
         },
         _focusVisible: {
-          outlineColor: '$primaryFocus',
+          outlineColor: 'var(--primaryFocus, #FFF)',
         },
       }}
+      boxSizing="border-box"
       className={clsx(
         variants[variant],
         isError && variant === 'default' && errorClassNames,
         className,
       )}
-      color={isError ? 'var(--error, #000)' : '$text'}
+      color="var(--text, #000)"
       cursor="pointer"
       outlineOffset="2px"
+      pos="relative"
       px="40px"
       py="12px"
+      style={style}
       styleOrder={1}
-      styleVars={{ primary: colors?.primary, error: colors?.error }}
+      styleVars={{
+        primary: colors?.primary,
+        error: colors?.error,
+        text: colors?.text,
+        border: colors?.border,
+        inputBg: colors?.inputBg,
+        primaryFocus: colors?.primaryFocus,
+      }}
       transition=".25s"
       type={type}
       typography={
@@ -155,13 +185,31 @@ export function Button({
               sm: 'buttonS',
               md: 'buttonM',
             }[size]
-          : isError
-            ? 'inputBold'
-            : 'buttonxs'
+          : undefined
       }
       {...props}
     >
-      {children}
+      <Box maxW="100%" mx="auto" pos="relative" w="fit-content">
+        {icon && (
+          <Center
+            boxSize="24px"
+            left="4px"
+            pos="absolute"
+            role="presentation"
+            top="50%"
+            transform="translate(-100%, -50%)"
+          >
+            {icon}
+          </Center>
+        )}
+        <Box
+          className={clsx(ellipsis && buttonTextEllipsis)}
+          minH="1em"
+          transform={!!icon && 'translateX(8px)'}
+        >
+          {children}
+        </Box>
+      </Box>
     </DevupButton>
   )
 }
