@@ -75,6 +75,8 @@ pub fn extract_style_from_expression<'a>(
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
+    println!("name: {:?}, selector: {:?}", name, selector);
+
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
@@ -273,13 +275,9 @@ pub fn extract_style_from_expression<'a>(
                         level,
                         Some(
                             &if let Some(selector) = selector {
-                                format!(
-                                    "{}{}",
-                                    selector.to_string().split("&").collect::<Vec<_>>()[0],
-                                    name
-                                )
+                                name.replace("&", &selector.to_string())
                             } else {
-                                name
+                                name.to_string()
                             }
                             .as_str()
                             .into(),

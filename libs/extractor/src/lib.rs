@@ -1355,6 +1355,170 @@ import clsx from 'clsx'
 
     #[test]
     #[serial]
+    fn extract_nested_selector() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          _placeholder: {
+            color: "red"
+          }
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          selectors: {
+            "&::placeholder, &:active": {
+              color: "blue"
+            }
+          },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          selectors: {
+            "&::placeholder": {
+              color: "red"
+            },
+            "&::placeholder, &:active": {
+              color: "blue"
+            }
+          },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box _hover={{
+          selectors: {
+            "&::placeholder": {
+              _active: {
+                color: "red",
+              }
+            },
+          },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box 
+          selectors={{
+            "&::placeholder": {
+              _active: {
+                color: "red",
+              }
+            },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box 
+          selectors={{
+            "&::placeholder": {
+              selectors: {
+                "&:active": {
+                  selectors: {
+                    "&:hover": {
+                      color: "red",
+                    }
+                  }
+                }
+              }
+            },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box 
+          _placeholder={{
+            _active: {
+              _hover: {
+                color: "blue",
+              },
+              color: "red",
+            },
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn extract_conditional_selector() {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -2792,6 +2956,37 @@ import {Button} from '@devup/ui'
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box _themeDark={{ display:"none" }} _themeLight={{ display: "flex" }} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn nested_theme_props() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+    <Box _themeDark={{
+      selectors: {
+        "&:hover": {
+          color: "red",
+        }
+      },
+      _active: {
+        color: "blue",
+        _placeholder: {
+          color: "green",
+        },
+      },
+    }} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
