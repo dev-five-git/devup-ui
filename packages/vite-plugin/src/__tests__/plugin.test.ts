@@ -437,5 +437,29 @@ describe('devupUIPlugin', () => {
       ;(plugin as any).generateBundle({}, bundle)
       expect(bundle['devup-ui.css'].source).toBe('no')
     })
+
+    it('should define process.env.DEVUP_UI_DEFAULT_THEME', () => {
+      vi.mocked(getDefaultTheme).mockReturnValue('defaultTheme')
+      const plugin = DevupUI({
+        package: libPackage,
+        cssFile,
+        devupPath,
+        interfacePath,
+      })
+      expect((plugin as any).config().define).toEqual({
+        'process.env.DEVUP_UI_DEFAULT_THEME': '"defaultTheme"',
+      })
+    })
+
+    it('should undefine process.env.DEVUP_UI_DEFAULT_THEME', () => {
+      vi.mocked(getDefaultTheme).mockReturnValue(undefined)
+      const plugin = DevupUI({
+        package: libPackage,
+        cssFile,
+        devupPath,
+        interfacePath,
+      })
+      expect((plugin as any).config().define).toStrictEqual({})
+    })
   })
 })

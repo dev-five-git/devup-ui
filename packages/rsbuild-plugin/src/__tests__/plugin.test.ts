@@ -129,7 +129,10 @@ describe('DevupUIRsbuildPlugin', () => {
 const App = () => <Box></Box>`,
         resourcePath: 'src/App.tsx',
       }),
-    ).resolves.toBe('<div></div>')
+    ).resolves.toEqual({
+      code: '<div></div>',
+      map: undefined,
+    })
   })
   it('should transform with include', async () => {
     const plugin = DevupUIRsbuildPlugin({
@@ -157,7 +160,10 @@ const App = () => <Box></Box>`,
 const App = () => <Box></Box>`,
       resourcePath: 'src/App.tsx',
     })
-    expect(ret).toBe('<div></div>')
+    expect(ret).toEqual({
+      code: '<div></div>',
+      map: undefined,
+    })
     expect(writeFile).toHaveBeenCalledWith(
       resolve('.df', 'devup-ui.css'),
       expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),

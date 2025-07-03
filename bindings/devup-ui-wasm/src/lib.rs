@@ -14,6 +14,7 @@ static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
 pub struct Output {
     code: String,
     styles: HashSet<ExtractStyleValue>,
+    map: Option<String>,
 }
 #[wasm_bindgen]
 extern "C" {
@@ -29,6 +30,11 @@ impl Output {
     #[wasm_bindgen(getter)]
     pub fn code(&self) -> String {
         self.code.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn map(&self) -> Option<String> {
+        self.map.clone()
     }
 
     /// Get the css
@@ -141,6 +147,7 @@ pub fn code_extract(
         Ok(output) => Ok(Output {
             code: output.code,
             styles: output.styles,
+            map: output.map,
         }),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }

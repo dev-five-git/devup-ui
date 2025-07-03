@@ -25,7 +25,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     const id = this.resourcePath
 
     try {
-      const { code, css } = codeExtract(
+      const { code, css, map } = codeExtract(
         id,
         source.toString(),
         libPackage,
@@ -41,10 +41,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(classMapFile, exportClassMap()),
         ])
           .catch(console.error)
-          .finally(() => callback(null, code))
+          .finally(() => callback(null, code, map))
         return
       }
-      callback(null, code)
+      callback(null, code, map)
     } catch (error) {
       callback(error as Error)
     }
