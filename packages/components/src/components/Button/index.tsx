@@ -22,7 +22,7 @@ const variants = {
   primary: css({
     styleOrder: 2,
     _active: {
-      bg: `color-mix(in srgb, var(--primary, #FFF) 100%, #000 30%)`,
+      bg: `color-mix(in srgb, var(--primary, #674DC7) 100%, #000 30%)`,
     },
     _disabled: {
       color: '#D6D7DE',
@@ -30,11 +30,11 @@ const variants = {
       cursor: 'not-allowed',
     },
     _hover: {
-      bg: `color-mix(in srgb, var(--primary, #FFF) 100%, #000 15%)`,
+      bg: `color-mix(in srgb, var(--primary, #674DC7) 100%, #000 15%)`,
     },
     _themeDark: {
       _active: {
-        bg: `color-mix(in srgb, var(--primary, #000) 100%, #FFF 30%);`,
+        bg: `color-mix(in srgb, var(--primary, #8163E1) 100%, #FFF 30%);`,
       },
       _disabled: {
         color: '#373737',
@@ -43,34 +43,34 @@ const variants = {
         borderColor: 'transparent',
       },
       _hover: {
-        bg: `color-mix(in srgb, var(--primary, #000) 100%, #FFF 15%);`,
-        outlineColor: `var(--primary, #FFF)`,
+        bg: `color-mix(in srgb, var(--primary, #8163E1) 100%, #FFF 15%);`,
+        outlineColor: `var(--primary, #674DC7)`,
       },
     },
     border: 'none',
     borderRadius: '8px',
-    bg: 'var(--primary, #000)',
+    bg: 'var(--primary, #8163E1)',
     color: 'var(--white, #FFF)',
   }),
   default: css({
     styleOrder: 2,
     _active: {
-      bg: `color-mix(in srgb, var(--primary, #000) 20%, #FFF 80%)`,
-      border: `1px solid var(--primary, #000)`,
+      bg: `color-mix(in srgb, var(--primary, #8163E1) 20%, #FFF 80%)`,
+      border: `1px solid var(--primary, #8163E1)`,
       color: '#000',
     },
     _hover: {
-      borderColor: `var(--primary, #000)`,
-      bg: `color-mix(in srgb, var(--primary, #000) 10%, #FFF 90%)`,
+      borderColor: `var(--primary, #8163E1)`,
+      bg: `color-mix(in srgb, var(--primary, #8163E1) 10%, #FFF 90%)`,
     },
     _disabled: {
       color: '#D6D7DE',
       bgColor: '#F0F0F3',
       cursor: 'not-allowed',
-      borderColor: 'var(--border, #000)',
+      borderColor: 'var(--border, #E4E4E4)',
     },
     bg: 'var(--inputBg, #FFF)',
-    border: '1px solid var(--border, #000)',
+    border: '1px solid var(--border, #E4E4E4)',
     typography: 'buttonxs',
     borderRadius: '10px',
     _themeDark: {
@@ -81,12 +81,12 @@ const variants = {
         borderColor: 'transparent',
       },
       _hover: {
-        borderColor: `var(--primary, #000)`,
-        bg: `color-mix(in srgb, var(--primary, #FFF) 10%, var(--inputBg, #000) 90%)`,
+        borderColor: `var(--primary, #8163E1)`,
+        bg: `color-mix(in srgb, var(--primary, #674DC7) 10%, var(--inputBg, #2E2E2E) 90%)`,
       },
       _active: {
-        bg: 'var(--primary, #000)',
-        color: 'var(--text, #FFF)',
+        bg: 'var(--primary, #8163E1)',
+        color: 'var(--text, #F6F6F6)',
       },
     },
   }),
@@ -94,24 +94,24 @@ const variants = {
 
 const errorClassNames = css({
   styleOrder: 3,
-  color: 'var(--error, #000)',
+  color: 'var(--error, #D52B2E)',
   _active: {
-    bg: 'var(--error, #000)',
-    border: '1px solid var(--error, #000)',
+    bg: 'var(--error, #D52B2E)',
+    border: '1px solid var(--error, #D52B2E)',
     color: '#000',
   },
   _focusVisible: {
-    outlineColor: 'var(--error, #000)',
+    outlineColor: 'var(--error, #D52B2E)',
   },
   _hover: {
     bg: 'inherit',
-    border: '1px solid var(--error, #000)',
+    border: '1px solid var(--error, #D52B2E)',
   },
   _disabled: {
     color: '#D6D7DE',
     bgColor: '#F0F0F3',
     cursor: 'not-allowed',
-    borderColor: 'var(--border, #000)',
+    borderColor: 'var(--border, #E4E4E4)',
   },
   _themeDark: {
     _disabled: {
@@ -121,16 +121,16 @@ const errorClassNames = css({
       borderColor: 'transparent',
     },
     _active: {
-      bg: 'var(--error, #000)',
-      border: '1px solid var(--error, #000)',
+      bg: 'var(--error, #FF5B5E)',
+      border: '1px solid var(--error, #FF5B5E)',
       color: '#FFF',
     },
     _hover: {
-      bg: 'var(--inputBg, #000)',
-      borderColor: 'var(--error, #000)',
+      bg: 'var(--inputBg, #2E2E2E)',
+      borderColor: 'var(--error, #FF5B5E)',
     },
     _focusVisible: {
-      outlineColor: 'var(--error, #000)',
+      outlineColor: 'var(--error, #FF5B5E)',
     },
   },
   typography: 'inputBold',
@@ -165,7 +165,7 @@ export function Button({
       }}
       _focusVisible={{
         outline: '2px solid',
-        outlineColor: 'var(--primaryFocus, #000)',
+        outlineColor: 'var(--primaryFocus, #9385D3)',
       }}
       _themeDark={{
         _disabled: {
@@ -175,7 +175,7 @@ export function Button({
           borderColor: 'transparent',
         },
         _focusVisible: {
-          outlineColor: 'var(--primaryFocus, #FFF)',
+          outlineColor: 'var(--primaryFocus, #927CE4)',
         },
       }}
       aria-disabled={props.disabled}
@@ -186,7 +186,7 @@ export function Button({
         isError && variant === 'default' && errorClassNames,
         className,
       )}
-      color="var(--text, #000)"
+      color="var(--text, #272727)"
       cursor="pointer"
       outlineOffset="2px"
       pos="relative"
