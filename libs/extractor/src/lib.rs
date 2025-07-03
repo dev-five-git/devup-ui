@@ -1351,6 +1351,40 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import {Center} from '@devup-ui/core'
+    <Center
+      _active={
+        variant !== 'disabled' && {
+          boxShadow: 'none',
+          transform: 'scale(0.95)',
+        }
+      }
+      _hover={
+        variant !== 'disabled' && {
+          boxShadow: [
+            '0px 1px 3px 0px rgba(0, 0, 0, 0.25)',
+            null,
+            '0px 0px 15px 0px rgba(0, 0, 0, 0.25)',
+          ],
+        }
+      }
+      {...props}
+    >
+      {children}
+    </Center>
+        ",
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
