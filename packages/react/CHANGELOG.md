@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.7
+
+### Patch Changes
+
+- f6d3f0a: Support nested selector
+
 ## 1.0.6
 
 ### Patch Changes
