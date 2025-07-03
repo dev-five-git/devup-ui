@@ -1,7 +1,10 @@
 import { css } from '@devup-ui/react'
-import { Meta } from '@storybook/react-vite'
+import { Meta, StoryObj } from '@storybook/react-vite'
+import { useState } from 'react'
 
 import { Button } from './index'
+
+type Story = StoryObj<typeof meta>
 
 // More on how to set up stories at: https://storybook.js.org/docs/writing-stories#default-export
 const meta: Meta<typeof Button> = {
@@ -16,15 +19,16 @@ const meta: Meta<typeof Button> = {
   ],
 }
 
-export const Default = {
+export const Default: Story = {
   args: {
     children: 'Button Text',
   },
 }
 
-export const WithIcon = {
+export const WithIcon: Story = {
   args: {
     children: 'Button text',
+    disabled: true,
     icon: (
       <svg
         className={css({ color: '$text' })}
@@ -43,6 +47,64 @@ export const WithIcon = {
       </svg>
     ),
   },
+}
+
+export const WithForm: Story = {
+  args: {
+    children: 'Button text',
+    type: 'submit',
+  },
+  decorators: [
+    (Story, { args }: { args: Story['args'] }) => {
+      const [submitted, setSubmitted] = useState<{ text?: string }>({})
+      const [value, setValue] = useState('')
+      const [error, setError] = useState('')
+
+      return (
+        <>
+          <div>{submitted.text}</div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.target as HTMLFormElement)
+              const data = Object.fromEntries(formData)
+
+              setSubmitted({
+                text: data.text as string,
+              })
+            }}
+          >
+            <input
+              className={css({
+                display: 'block',
+                mb: '10px',
+              })}
+              minLength={3}
+              name="text"
+              onChange={(e) => {
+                setValue(e.target.value)
+                setError(
+                  !/[0-9]/.test(e.target.value) && e.target.value.length >= 3
+                    ? 'Include one or more numbers.'
+                    : '',
+                )
+              }}
+              placeholder="Include one or more numbers."
+              required
+              type="text"
+            />
+            <Story
+              args={{
+                ...args,
+                disabled: value.length < 3,
+                isError: !!error,
+              }}
+            />
+          </form>
+        </>
+      )
+    },
+  ],
 }
 
 export default meta
