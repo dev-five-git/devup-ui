@@ -275,7 +275,7 @@ pub fn extract_style_from_expression<'a>(
                             &if let Some(selector) = selector {
                                 name.replace("&", &selector.to_string())
                             } else {
-                                name.to_string()
+                                name
                             }
                             .as_str()
                             .into(),
