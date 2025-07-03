@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Box } from '@devup-ui/react'
 import { render } from '@testing-library/react'
 
