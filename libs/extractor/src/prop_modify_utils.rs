@@ -318,8 +318,12 @@ fn merge_string_expressions<'a>(
                     raw: ast_builder.atom(&{
                         let trimmed = s.trim();
                         if trimmed.is_empty() {
-                            "".to_string()
-                        } else if idx == string_literals.len() - 1 {
+                            if idx == 0 {
+                                "".to_string()
+                            } else {
+                                " ".to_string()
+                            }
+                        } else {
                             let prefix = if idx == 0 { "" } else { " " };
                             let suffix = if string_literals.len() == other_expressions.len() {
                                 " "
@@ -327,10 +331,6 @@ fn merge_string_expressions<'a>(
                                 ""
                             };
                             format!("{prefix}{trimmed}{suffix}")
-                        } else if idx == string_literals.len() - 1 {
-                            trimmed.to_string()
-                        } else {
-                            format!("{trimmed} ")
                         }
                     }),
                     cooked: None,
