@@ -273,11 +273,7 @@ pub fn extract_style_from_expression<'a>(
                         level,
                         Some(
                             &if let Some(selector) = selector {
-                                format!(
-                                    "{}{}",
-                                    selector.to_string().split("&").collect::<Vec<_>>()[0],
-                                    name
-                                )
+                                name.replace("&", &selector.to_string())
                             } else {
                                 name
                             }
