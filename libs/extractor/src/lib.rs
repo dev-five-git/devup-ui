@@ -604,6 +604,39 @@ mod tests {
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box, Button as DevupButton, Center, css } from '@devup-ui/core'
+import clsx from 'clsx'
+
+<DevupButton
+      boxSizing="border-box"
+      className={clsx(
+        variants[variant],
+        isError && variant === 'default' && errorClassNames,
+        className,
+      )}
+      typography={
+        isPrimary
+          ? {
+              sm: 'buttonS',
+              md: 'buttonM',
+            }[size]
+          : undefined
+      }
+      {...props}
+    />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]

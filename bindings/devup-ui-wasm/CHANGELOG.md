@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.9
+
+### Patch Changes
+
+- 43dcfa5: Fix classname issue
+
 ## 1.0.8
 
 ### Patch Changes
