@@ -75,8 +75,6 @@ pub fn extract_style_from_expression<'a>(
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
-    println!("name: {:?}, selector: {:?}", name, selector);
-
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
