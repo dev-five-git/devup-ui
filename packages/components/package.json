@@ -16,14 +16,11 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.4",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "lint": "eslint",
     "build": "tsc && vite build",
-    "test": "node ../cli/dist/index.js test --100",
-    "test:s": "node ../cli/dist/index.js test --100 -s",
-    "lint": "node ../cli/dist/index.js lint",
-    "package": "pnpm pack --pack-destination \"../../dist\"",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },

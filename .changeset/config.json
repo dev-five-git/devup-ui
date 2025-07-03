@@ -10,6 +10,7 @@
   "ignore": [
     "*-example",
     "*-benchmark",
-    "landing"
+    "landing",
+    "@devup-ui/components"
   ]
 }
