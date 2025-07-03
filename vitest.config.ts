@@ -5,25 +5,35 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**'],
-      exclude: ['packages/*/src/types', 'packages/*/src/**/__tests__'],
+      exclude: [
+        'packages/*/src/types',
+        'packages/*/src/**/__tests__',
+        'packages/components/src/components/**/*.stories.{ts,tsx}',
+      ],
     },
     projects: [
       {
         test: {
           name: 'node',
           include: ['packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
-          exclude: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
+          exclude: [
+            'packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}',
+            'packages/components/src/**/__tests__/**/*.test.{ts,tsx}',
+          ],
           globals: true,
+          environment: 'node',
         },
       },
+
       {
         test: {
-          include: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           name: 'happy-dom',
+          include: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           environment: 'happy-dom',
           globals: true,
         },
       },
+      'packages/components',
     ],
   },
 })

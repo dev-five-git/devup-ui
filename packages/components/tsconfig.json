@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "types": ["vite/client", "vitest/importMeta", "vitest/globals"],
+    "types": ["vite/client", "vitest/importMeta", "vitest/globals", "@testing-library/jest-dom"],
     "strict": true,
     "target": "ESNext",
     "declaration": true,
@@ -23,5 +23,5 @@
     "baseUrl": ".",
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*", ".storybook/**/*"]
+  "include": ["src/**/*", ".storybook/**/*", "./setupTests.ts"]
 }
