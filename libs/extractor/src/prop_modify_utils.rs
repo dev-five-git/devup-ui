@@ -294,16 +294,6 @@ fn merge_string_expressions<'a>(
             other_expressions.push(ex.clone_in(ast_builder.allocator));
         }
     }
-    println!(
-        "string_literals: {} {:?}",
-        string_literals.len(),
-        string_literals
-    );
-    println!(
-        "other_expressions: {} {:?}",
-        other_expressions.len(),
-        other_expressions
-    );
     if other_expressions.is_empty() {
         return Some(Expression::StringLiteral(
             ast_builder.alloc_string_literal(
