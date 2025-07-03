@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.10
+
+### Patch Changes
+
+- f6d3f0a: Support nested selector
+- 373fb4e: Fix className issue (multiple selectors)
+
 ## 1.0.9
 
 ### Patch Changes
