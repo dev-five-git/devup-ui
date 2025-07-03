@@ -325,7 +325,7 @@ fn merge_string_expressions<'a>(
                             }
                         } else {
                             let prefix = if idx == 0 { "" } else { " " };
-                            let suffix = if string_literals.len() == other_expressions.len() {
+                            let suffix = if string_literals.len() <= other_expressions.len() {
                                 " "
                             } else {
                                 ""
