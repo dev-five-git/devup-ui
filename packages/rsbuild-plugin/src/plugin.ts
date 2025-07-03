@@ -53,12 +53,11 @@ export const DevupUIRsbuildPlugin = ({
             : resourcePath.includes('node_modules')
         )
           return code
-        const { code: retCode, css } = codeExtract(
-          resourcePath,
-          code,
-          libPackage,
-          cssFile,
-        )
+        const {
+          code: retCode,
+          css,
+          map,
+        } = codeExtract(resourcePath, code, libPackage, cssFile)
 
         if (css && globalCss.length < css.length) {
           globalCss = css
@@ -66,7 +65,10 @@ export const DevupUIRsbuildPlugin = ({
             encoding: 'utf-8',
           })
         }
-        return retCode
+        return {
+          code: retCode,
+          map,
+        }
       },
     )
   },

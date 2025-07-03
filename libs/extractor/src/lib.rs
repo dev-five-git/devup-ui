@@ -11,11 +11,12 @@ use crate::visit::DevupVisitor;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
-use oxc_codegen::Codegen;
+use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
 use std::collections::{BTreeMap, HashSet};
 use std::error::Error;
+use std::path::PathBuf;
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
@@ -80,6 +81,8 @@ pub struct ExtractOutput {
 
     // output source
     pub code: String,
+
+    pub map: Option<String>,
 }
 
 pub struct ExtractOption {
@@ -98,6 +101,7 @@ pub fn extract(
         return Ok(ExtractOutput {
             styles: HashSet::new(),
             code: code.to_string(),
+            map: None,
         });
     }
     let allocator = Allocator::default();
@@ -113,16 +117,22 @@ pub fn extract(
     let mut visitor = DevupVisitor::new(
         &allocator,
         &option.package,
-        option
+        &option
             .css_file
-            .unwrap_or(format!("{}/devup-ui.css", option.package))
-            .as_str(),
+            .unwrap_or(format!("{}/devup-ui.css", option.package)),
     );
     visitor.visit_program(&mut program);
+    let result = Codegen::new()
+        .with_options(CodegenOptions {
+            source_map_path: Some(PathBuf::from(filename)),
+            ..Default::default()
+        })
+        .build(&program);
 
     Ok(ExtractOutput {
         styles: visitor.styles,
-        code: Codegen::new().build(&program).code,
+        code: result.code,
+        map: result.map.map(|m| m.to_json_string()),
     })
 }
 

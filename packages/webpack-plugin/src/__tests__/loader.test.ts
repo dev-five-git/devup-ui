@@ -37,6 +37,7 @@ describe('devupUILoader', () => {
       code: 'code',
       css: 'css',
       free: vi.fn(),
+      map: undefined,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -48,7 +49,7 @@ describe('devupUILoader', () => {
       'cssFile',
     )
     await vi.waitFor(() => {
-      expect(t.async()).toHaveBeenCalledWith(null, 'code')
+      expect(t.async()).toHaveBeenCalledWith(null, 'code', undefined)
     })
     expect(writeFile).toHaveBeenCalledWith('cssFile', '/* index.tsx 0 */')
     expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
@@ -72,6 +73,7 @@ describe('devupUILoader', () => {
       code: 'code',
       css: undefined,
       free: vi.fn(),
+      map: undefined,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -82,7 +84,7 @@ describe('devupUILoader', () => {
       'package',
       'cssFile',
     )
-    expect(t.async()).toHaveBeenCalledWith(null, 'code')
+    expect(t.async()).toHaveBeenCalledWith(null, 'code', undefined)
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })
@@ -123,6 +125,7 @@ describe('devupUILoader', () => {
       code: 'code',
       css: 'css',
       free: vi.fn(),
+      map: undefined,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
