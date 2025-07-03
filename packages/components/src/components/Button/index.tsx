@@ -10,6 +10,7 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
     border?: string
     inputBg?: string
     primaryFocus?: string
+    white?: string
   }
   isError?: boolean
   size?: 'sm' | 'md'
@@ -46,10 +47,10 @@ const variants = {
         outlineColor: `var(--primary, #FFF)`,
       },
     },
-    bg: 'var(--primary, #000)',
     border: 'none',
     borderRadius: '8px',
-    color: '#FFF',
+    bg: 'var(--primary, #000)',
+    color: 'var(--white, #FFF)',
   }),
   default: css({
     styleOrder: 2,
@@ -62,12 +63,23 @@ const variants = {
       borderColor: `var(--primary, #000)`,
       bg: `color-mix(in srgb, var(--primary, #000) 10%, #FFF 90%)`,
     },
+    _disabled: {
+      color: '#D6D7DE',
+      bgColor: '#F0F0F3',
+      cursor: 'not-allowed',
+      borderColor: 'var(--border, #000)',
+    },
     bg: 'var(--inputBg, #FFF)',
     border: '1px solid var(--border, #000)',
-    borderRadius: '10px',
-    color: 'var(--text, #000)',
     typography: 'buttonxs',
+    borderRadius: '10px',
     _themeDark: {
+      _disabled: {
+        color: '#373737',
+        bgColor: '#47474A',
+        cursor: 'not-allowed',
+        borderColor: 'transparent',
+      },
       _hover: {
         borderColor: `var(--primary, #000)`,
         bg: `color-mix(in srgb, var(--primary, #FFF) 10%, var(--inputBg, #000) 90%)`,
@@ -95,7 +107,19 @@ const errorClassNames = css({
     bg: 'inherit',
     border: '1px solid var(--error, #000)',
   },
+  _disabled: {
+    color: '#D6D7DE',
+    bgColor: '#F0F0F3',
+    cursor: 'not-allowed',
+    borderColor: 'var(--border, #000)',
+  },
   _themeDark: {
+    _disabled: {
+      color: '#373737',
+      bgColor: '#47474A',
+      cursor: 'not-allowed',
+      borderColor: 'transparent',
+    },
     _active: {
       bg: 'var(--error, #000)',
       border: '1px solid var(--error, #000)',
@@ -125,8 +149,7 @@ export function Button({
   isError = false,
   children,
   size = 'md',
-  className = '',
-  style,
+  className,
   icon,
   ellipsis = false,
   ...props
@@ -155,6 +178,8 @@ export function Button({
           outlineColor: 'var(--primaryFocus, #FFF)',
         },
       }}
+      aria-disabled={props.disabled}
+      aria-label="button"
       boxSizing="border-box"
       className={clsx(
         variants[variant],
@@ -167,7 +192,6 @@ export function Button({
       pos="relative"
       px="40px"
       py="12px"
-      style={style}
       styleOrder={1}
       styleVars={{
         primary: colors?.primary,
@@ -176,6 +200,7 @@ export function Button({
         border: colors?.border,
         inputBg: colors?.inputBg,
         primaryFocus: colors?.primaryFocus,
+        white: colors?.white,
       }}
       transition=".25s"
       type={type}
@@ -196,6 +221,11 @@ export function Button({
             left="4px"
             pos="absolute"
             role="presentation"
+            selectors={{
+              '&>svg': {
+                color: 'inherit',
+              },
+            }}
             top="50%"
             transform="translate(-100%, -50%)"
           >
@@ -204,6 +234,7 @@ export function Button({
         )}
         <Box
           className={clsx(ellipsis && buttonTextEllipsis)}
+          lineHeight="1em"
           minH="1em"
           transform={!!icon && 'translateX(8px)'}
         >
