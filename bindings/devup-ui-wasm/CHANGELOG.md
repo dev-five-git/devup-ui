@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.8
+
+### Patch Changes
+
+- 940cd56: Feat auto insertion className, style props
+
 ## 1.0.7
 
 ### Patch Changes
