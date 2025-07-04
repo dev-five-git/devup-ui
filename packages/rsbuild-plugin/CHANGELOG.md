@@ -1,5 +1,15 @@
 # @devup-ui/rsbuild-plugin
 
+## 1.0.7
+
+### Patch Changes
+
+- c27d60b: Support source map
+- Updated dependencies [c27d60b]
+- Updated dependencies [8885c6c]
+- Updated dependencies [2ec5918]
+  - @devup-ui/wasm@1.0.11
+
 ## 1.0.6
 
 ### Patch Changes
