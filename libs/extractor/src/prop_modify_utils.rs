@@ -404,7 +404,7 @@ pub fn convert_class_name<'a>(
                     class_name.clone_in(ast_builder.allocator),
                 ),
             ),
-            LogicalOperator::Coalesce,
+            LogicalOperator::Or,
             Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None)),
         ),
     )
