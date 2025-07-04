@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "pnpm -F @devup-ui/* lint",
+    "pretest": "pnpm -F @devup-ui/vite-plugin build",
     "test": "cargo tarpaulin --out xml --out stdout --out html && vitest test --coverage --run && pnpm -r test",
     "build": "pnpm -F @devup-ui/* build",
     "dev": "pnpm -r dev",
@@ -20,7 +21,8 @@
     "@types/node": "^24.0.7",
     "happy-dom": "^18.0.1",
     "@testing-library/react": "^16.3.0",
-    "@testing-library/jest-dom": "^6.6.3"
+    "@testing-library/jest-dom": "^6.6.3",
+    "@devup-ui/vite-plugin": "workspace:*"
   },
   "author": "devfive",
   "packageManager": "pnpm@10.12.4",

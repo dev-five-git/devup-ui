@@ -14,6 +14,9 @@ importers:
       '@changesets/cli':
         specifier: ^2.29.5
         version: 2.29.5
+      '@devup-ui/vite-plugin':
+        specifier: workspace:*
+        version: link:packages/vite-plugin
       '@testing-library/jest-dom':
         specifier: ^6.6.3
         version: 6.6.3
@@ -4909,10 +4912,6 @@ packages:
     resolution: {integrity: sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ==}
     engines: {node: '>=8'}
 
-  strip-indent@4.0.0:
-    resolution: {integrity: sha512-mnVSV2l+Zv6BLpSD/8V87CW/y9EmmbYzGCIavsnsI6/nwn26DwffM/yztm30Z/I2DY9wdS3vXVCMnHDgZaVNoA==}
-    engines: {node: '>=12'}
-
   strip-json-comments@3.1.1:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
@@ -7397,7 +7396,7 @@ snapshots:
   '@testing-library/jest-dom@6.6.3':
     dependencies:
       '@adobe/css-tools': 4.4.3
-      aria-query: 5.3.2
+      aria-query: 5.3.0
       chalk: 3.0.0
       css.escape: 1.5.1
       dom-accessibility-api: 0.6.3
@@ -8669,6 +8668,11 @@ snapshots:
       deep-eql: 5.0.2
       loupe: 3.1.4
       pathval: 2.0.1
+
+  chalk@3.0.0:
+    dependencies:
+      ansi-styles: 4.3.0
+      supports-color: 7.2.0
 
   chalk@3.0.0:
     dependencies:
@@ -11096,10 +11100,6 @@ snapshots:
   strip-bom@3.0.0: {}
 
   strip-indent@3.0.0:
-    dependencies:
-      min-indent: 1.0.1
-
-  strip-indent@4.0.0:
     dependencies:
       min-indent: 1.0.1
 

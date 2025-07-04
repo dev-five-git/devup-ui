@@ -1,3 +1,4 @@
+import { DevupUI } from '@devup-ui/vite-plugin'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
@@ -31,7 +32,10 @@ export default defineConfig({
           include: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           environment: 'happy-dom',
           globals: true,
+          css: true,
+          setupFiles: ['@testing-library/jest-dom/vitest'],
         },
+        plugins: [DevupUI()],
       },
       'packages/components',
     ],

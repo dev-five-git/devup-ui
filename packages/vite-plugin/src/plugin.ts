@@ -70,6 +70,11 @@ export function DevupUI({
   } catch (error) {
     console.error(error)
   }
+  const theme = getDefaultTheme()
+  const define: Record<string, string> = {}
+  if (theme) {
+    define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
+  }
   return {
     name: 'devup-ui',
     config() {
@@ -151,12 +156,11 @@ export function DevupUI({
       }
       if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
 
-      const { code: retCode, css } = codeExtract(
-        fileName,
-        code,
-        libPackage,
-        cssFile,
-      )
+      const {
+        code: retCode,
+        css,
+        map,
+      } = codeExtract(fileName, code, libPackage, cssFile)
 
       if (css && globalCss.length < css.length) {
         globalCss = css
@@ -166,6 +170,7 @@ export function DevupUI({
       }
       return {
         code: retCode,
+        map,
       }
     },
     async generateBundle(_options, bundle) {
