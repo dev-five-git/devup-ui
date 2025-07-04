@@ -1,5 +1,13 @@
 # @devup-ui/wasm
 
+## 1.0.11
+
+### Patch Changes
+
+- c27d60b: Support source map
+- 8885c6c: Refactor classname
+- 2ec5918: Fix or issue
+
 ## 1.0.10
 
 ### Patch Changes
