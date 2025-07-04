@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", {\n\t...props,\n\tclassName: `a d0 ${props?.className ?? \"\"}`,\n\tstyle: {\n\t\t...{ \"--d1\": variable },\n\t\t...{ color: \"blue\" },\n\t\t...props?.style\n\t}\n});\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", {\n\t...props,\n\tclassName: `a d0 ${props?.className || \"\"}`,\n\tstyle: {\n\t\t...{ \"--d1\": variable },\n\t\t...{ color: \"blue\" },\n\t\t...props?.style\n\t}\n});\n",
 }
