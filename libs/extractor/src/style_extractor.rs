@@ -430,29 +430,35 @@ pub fn extract_style_from_expression<'a>(
                     if typo {
                         ExtractResult::Extract {
                             styles: Some(vec![ExtractStyleProp::Expression {
-                                expression: ast_builder.expression_template_literal(
+                                expression: ast_builder.expression_conditional(
                                     SPAN,
-                                    ast_builder.vec_from_array([
-                                        ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom("typo-"),
-                                                cooked: None,
-                                            },
-                                            false,
-                                        ),
-                                        ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom(""),
-                                                cooked: None,
-                                            },
-                                            true,
-                                        ),
-                                    ]),
-                                    ast_builder.vec_from_array([
-                                        expression.clone_in(ast_builder.allocator)
-                                    ]),
+                                    ast_builder
+                                        .expression_identifier(SPAN, identifier.name.as_str()),
+                                    ast_builder.expression_template_literal(
+                                        SPAN,
+                                        ast_builder.vec_from_array([
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom("typo-"),
+                                                    cooked: None,
+                                                },
+                                                false,
+                                            ),
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom(""),
+                                                    cooked: None,
+                                                },
+                                                true,
+                                            ),
+                                        ]),
+                                        ast_builder.vec_from_array([
+                                            expression.clone_in(ast_builder.allocator)
+                                        ]),
+                                    ),
+                                    ast_builder.expression_string_literal(SPAN, "", None),
                                 ),
                                 styles: vec![],
                             }]),
@@ -516,31 +522,20 @@ pub fn extract_style_from_expression<'a>(
                     },
                     LogicalOperator::Coalesce => ExtractResult::Extract {
                         styles: Some(vec![ExtractStyleProp::Conditional {
-                            condition: Expression::LogicalExpression(
-                                ast_builder.alloc_logical_expression(
+                            condition: ast_builder.expression_logical(
+                                SPAN,
+                                ast_builder.expression_binary(
                                     SPAN,
-                                    Expression::BinaryExpression(
-                                        ast_builder.alloc_binary_expression(
-                                            SPAN,
-                                            logical.left.clone_in(ast_builder.allocator),
-                                            BinaryOperator::StrictInequality,
-                                            Expression::NullLiteral(
-                                                ast_builder.alloc_null_literal(SPAN),
-                                            ),
-                                        ),
-                                    ),
-                                    LogicalOperator::And,
-                                    Expression::BinaryExpression(
-                                        ast_builder.alloc_binary_expression(
-                                            SPAN,
-                                            logical.left.clone_in(ast_builder.allocator),
-                                            BinaryOperator::StrictInequality,
-                                            Expression::Identifier(
-                                                ast_builder
-                                                    .alloc_identifier_reference(SPAN, "undefined"),
-                                            ),
-                                        ),
-                                    ),
+                                    logical.left.clone_in(ast_builder.allocator),
+                                    BinaryOperator::StrictInequality,
+                                    ast_builder.expression_null_literal(SPAN),
+                                ),
+                                LogicalOperator::And,
+                                ast_builder.expression_binary(
+                                    SPAN,
+                                    logical.left.clone_in(ast_builder.allocator),
+                                    BinaryOperator::StrictInequality,
+                                    ast_builder.expression_identifier(SPAN, "undefined"),
                                 ),
                             ),
                             consequent: None,

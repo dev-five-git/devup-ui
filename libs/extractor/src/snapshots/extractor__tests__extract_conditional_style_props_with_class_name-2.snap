@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={[1, 0.5, ...some][a]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={[1, 0.5][a]} className=\"ab\" />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -33,15 +33,6 @@ ToBTreeSet {
                 style_order: None,
             },
         ),
-        Dynamic(
-            ExtractDynamicStyle {
-                property: "opacity",
-                level: 0,
-                identifier: "some[a]",
-                selector: None,
-                style_order: None,
-            },
-        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 ${{\n\t\"0\": \"d1\",\n\t\"1\": \"d2\",\n\t\"2\": \"d3\"\n}[a] || \"\"}`} style={{ \"--d4\": some[a] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`ab d0 ${{\n\t\"0\": \"d1\",\n\t\"1\": \"d2\"\n}[a] || \"\"}`} />;\n",
 }

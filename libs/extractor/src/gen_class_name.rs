@@ -1,9 +1,10 @@
+use crate::prop_modify_utils::convert_class_name;
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::{
-    Expression, ObjectPropertyKind, PropertyKey,
-    PropertyKind, TemplateElement, TemplateElementValue,
+    Expression, PropertyKey, PropertyKind, TemplateElement,
+    TemplateElementValue,
 };
 use oxc_span::SPAN;
 
@@ -34,14 +35,14 @@ fn gen_class_name<'a>(
             }
             let target = st.extract();
 
-            Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
+            Some(ast_builder.expression_string_literal(
                 SPAN,
                 ast_builder.atom(match &target {
                     StyleProperty::ClassName(cls) => cls,
                     StyleProperty::Variable { class_name, .. } => class_name,
                 }),
                 None,
-            )))
+            ))
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
@@ -58,59 +59,60 @@ fn gen_class_name<'a>(
             let consequent = consequent
                 .as_mut()
                 .and_then(|ref mut con| gen_class_name(ast_builder, con.as_mut(), style_order))
-                .unwrap_or_else(|| {
-                    Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
-                });
+                .unwrap_or_else(|| ast_builder.expression_string_literal(SPAN, "", None));
 
             let alternate = alternate
                 .as_mut()
                 .and_then(|ref mut alt| gen_class_name(ast_builder, alt, style_order))
-                .unwrap_or_else(|| {
-                    Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None))
-                });
+                .unwrap_or_else(|| ast_builder.expression_string_literal(SPAN, "", None));
             if is_same_expression(&consequent, &alternate) {
                 Some(consequent)
             } else {
-                Some(Expression::ConditionalExpression(
-                    ast_builder.alloc_conditional_expression(
-                        SPAN,
-                        condition.clone_in(ast_builder.allocator),
-                        consequent,
-                        alternate,
-                    ),
+                Some(ast_builder.expression_conditional(
+                    SPAN,
+                    condition.clone_in(ast_builder.allocator),
+                    consequent,
+                    alternate,
                 ))
             }
         }
         ExtractStyleProp::Expression { expression, .. } => {
             Some(expression.clone_in(ast_builder.allocator))
         }
-        ExtractStyleProp::MemberExpression { map, expression } => Some(
-            Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
-                SPAN,
-                Expression::ObjectExpression(ast_builder.alloc_object_expression(
+        // direct select
+        ExtractStyleProp::MemberExpression { map, expression } => {
+            let exp =
+                Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
                     SPAN,
-                    ast_builder.vec_from_iter(map.iter_mut().filter_map(|(key, value)| {
-                        gen_class_name(ast_builder, value.as_mut(), style_order).map(|expr| {
-                            ObjectPropertyKind::ObjectProperty(ast_builder.alloc_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                    ast_builder.expression_object(
+                        SPAN,
+                        ast_builder.vec_from_iter(map.iter_mut().filter_map(|(key, value)| {
+                            gen_class_name(ast_builder, value.as_mut(), style_order).map(|expr| {
+                                ast_builder.object_property_kind_object_property(
                                     SPAN,
-                                    ast_builder.atom(key),
-                                    None,
-                                )),
-                                expr,
-                                false,
-                                false,
-                                false,
-                            ))
-                        })
-                    })),
-                )),
-                expression.clone_in(ast_builder.allocator),
-                false,
-            )),
-        ),
+                                    PropertyKind::Init,
+                                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                                        SPAN,
+                                        ast_builder.atom(key),
+                                        None,
+                                    )),
+                                    expr,
+                                    false,
+                                    false,
+                                    false,
+                                )
+                            })
+                        })),
+                    ),
+                    expression.clone_in(ast_builder.allocator),
+                    false,
+                ));
+            if let Expression::Identifier(_) = &expression {
+                Some(convert_class_name(ast_builder, &exp))
+            } else {
+                Some(exp)
+            }
+        }
     }
 }
 fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
@@ -196,21 +198,15 @@ pub fn merge_expression_for_class_name<'a>(
                 }
             }
 
-            Some(Expression::TemplateLiteral(
-                ast_builder.alloc_template_literal(
-                    SPAN,
-                    qu,
-                    oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
-                ),
+            Some(ast_builder.expression_template_literal(
+                SPAN,
+                qu,
+                oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
             ))
         }
     } else if class_name.is_empty() {
         None
     } else {
-        Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
-            SPAN,
-            ast_builder.atom(&class_name),
-            None,
-        )))
+        Some(ast_builder.expression_string_literal(SPAN, ast_builder.atom(&class_name), None))
     }
 }
