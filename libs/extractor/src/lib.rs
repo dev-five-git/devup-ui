@@ -1954,6 +1954,26 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box as DevupButton} from '@devup-ui/core'
+        <DevupButton
+      boxSizing="border-box"
+      className={className}
+      typography={typography}
+    >
+    </DevupButton>
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -2493,6 +2513,44 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[1]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_conditional_style_props_with_class_name() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box as DevupButton} from '@devup-ui/core'
+        <DevupButton
+      className={className}
+      typography={typography}
+    >
+    </DevupButton>
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={[1, 0.5][a]} className="ab" />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

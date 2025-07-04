@@ -19,11 +19,9 @@ pub fn gen_styles<'a>(
     if properties.is_empty() {
         return None;
     }
-    Some(Expression::ObjectExpression(
-        ast_builder.alloc_object_expression(
-            SPAN,
-            oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
-        ),
+    Some(ast_builder.expression_object(
+        SPAN,
+        oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
     ))
 }
 fn gen_style<'a>(
@@ -39,23 +37,18 @@ fn gen_style<'a>(
                 identifier,
                 ..
             } => {
-                properties.push(ObjectPropertyKind::ObjectProperty(
-                    ast_builder.alloc_object_property(
+                properties.push(ast_builder.object_property_kind_object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                         SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                            SPAN,
-                            ast_builder.atom(&variable_name),
-                            None,
-                        )),
-                        Expression::Identifier(
-                            ast_builder
-                                .alloc_identifier_reference(SPAN, ast_builder.atom(&identifier)),
-                        ),
-                        false,
-                        false,
-                        false,
-                    ),
+                        ast_builder.atom(&variable_name),
+                        None,
+                    )),
+                    ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
+                    false,
+                    false,
+                    false,
                 ));
             }
         },
@@ -79,26 +72,19 @@ fn gen_style<'a>(
             (None, Some(c)) => {
                 gen_style(ast_builder, c).into_iter().for_each(|p| {
                     if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ObjectPropertyKind::ObjectProperty(
-                            ast_builder.alloc_object_property(
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            p.key.clone_in(ast_builder.allocator),
+                            ast_builder.expression_conditional(
                                 SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                Expression::ConditionalExpression(
-                                    ast_builder.alloc_conditional_expression(
-                                        SPAN,
-                                        condition.clone_in(ast_builder.allocator),
-                                        Expression::Identifier(
-                                            ast_builder
-                                                .alloc_identifier_reference(SPAN, "undefined"),
-                                        ),
-                                        p.value.clone_in(ast_builder.allocator),
-                                    ),
-                                ),
-                                false,
-                                false,
-                                false,
+                                condition.clone_in(ast_builder.allocator),
+                                ast_builder.expression_identifier(SPAN, "undefined"),
+                                p.value.clone_in(ast_builder.allocator),
                             ),
+                            false,
+                            false,
+                            false,
                         ))
                     }
                 });
@@ -106,26 +92,19 @@ fn gen_style<'a>(
             (Some(c), None) => {
                 gen_style(ast_builder, c).into_iter().for_each(|p| {
                     if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ObjectPropertyKind::ObjectProperty(
-                            ast_builder.alloc_object_property(
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            p.key.clone_in(ast_builder.allocator),
+                            ast_builder.expression_conditional(
                                 SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                Expression::ConditionalExpression(
-                                    ast_builder.alloc_conditional_expression(
-                                        SPAN,
-                                        condition.clone_in(ast_builder.allocator),
-                                        p.value.clone_in(ast_builder.allocator),
-                                        Expression::Identifier(
-                                            ast_builder
-                                                .alloc_identifier_reference(SPAN, "undefined"),
-                                        ),
-                                    ),
-                                ),
-                                false,
-                                false,
-                                false,
+                                condition.clone_in(ast_builder.allocator),
+                                p.value.clone_in(ast_builder.allocator),
+                                ast_builder.expression_identifier(SPAN, "undefined"),
                             ),
+                            false,
+                            false,
+                            false,
                         ))
                     }
                 });
@@ -146,23 +125,19 @@ fn gen_style<'a>(
                         {
                             if p.key.name() == q.key.name() {
                                 found = true;
-                                properties.push(ObjectPropertyKind::ObjectProperty(
-                                    ast_builder.alloc_object_property(
+                                properties.push(ast_builder.object_property_kind_object_property(
+                                    SPAN,
+                                    PropertyKind::Init,
+                                    p.key.clone_in(ast_builder.allocator),
+                                    ast_builder.expression_conditional(
                                         SPAN,
-                                        PropertyKind::Init,
-                                        p.key.clone_in(ast_builder.allocator),
-                                        Expression::ConditionalExpression(
-                                            ast_builder.alloc_conditional_expression(
-                                                SPAN,
-                                                condition.clone_in(ast_builder.allocator),
-                                                p.value.clone_in(ast_builder.allocator),
-                                                q.value.clone_in(ast_builder.allocator),
-                                            ),
-                                        ),
-                                        false,
-                                        false,
-                                        false,
+                                        condition.clone_in(ast_builder.allocator),
+                                        p.value.clone_in(ast_builder.allocator),
+                                        q.value.clone_in(ast_builder.allocator),
                                     ),
+                                    false,
+                                    false,
+                                    false,
                                 ));
                                 break;
                             }
@@ -170,16 +145,14 @@ fn gen_style<'a>(
                     }
                     if !found {
                         if let ObjectPropertyKind::ObjectProperty(p) = p {
-                            properties.push(ObjectPropertyKind::ObjectProperty(
-                                ast_builder.alloc_object_property(
-                                    SPAN,
-                                    PropertyKind::Init,
-                                    p.key.clone_in(ast_builder.allocator),
-                                    p.value.clone_in(ast_builder.allocator),
-                                    false,
-                                    false,
-                                    false,
-                                ),
+                            properties.push(ast_builder.object_property_kind_object_property(
+                                SPAN,
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                p.value.clone_in(ast_builder.allocator),
+                                false,
+                                false,
+                                false,
                             ));
                         }
                     }
@@ -199,16 +172,14 @@ fn gen_style<'a>(
                         }
                     }
                     if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
-                        properties.push(ObjectPropertyKind::ObjectProperty(
-                            ast_builder.alloc_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                q.key.clone_in(ast_builder.allocator),
-                                q.value.clone_in(ast_builder.allocator),
-                                false,
-                                false,
-                                false,
-                            ),
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            q.key.clone_in(ast_builder.allocator),
+                            q.value.clone_in(ast_builder.allocator),
+                            false,
+                            false,
+                            false,
                         ));
                     }
                 }
@@ -222,25 +193,18 @@ fn gen_style<'a>(
                     ..
                 } = style.extract()
                 {
-                    properties.push(ObjectPropertyKind::ObjectProperty(
-                        ast_builder.alloc_object_property(
+                    properties.push(ast_builder.object_property_kind_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                             SPAN,
-                            PropertyKind::Init,
-                            PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                                SPAN,
-                                ast_builder.atom(&variable_name),
-                                None,
-                            )),
-                            Expression::Identifier(
-                                ast_builder.alloc_identifier_reference(
-                                    SPAN,
-                                    ast_builder.atom(&identifier),
-                                ),
-                            ),
-                            false,
-                            false,
-                            false,
-                        ),
+                            ast_builder.atom(&variable_name),
+                            None,
+                        )),
+                        ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
+                        false,
+                        false,
+                        true,
                     ));
                 }
             }
@@ -264,72 +228,55 @@ fn gen_style<'a>(
             }
 
             for (key, value) in tmp_map {
-                properties.push(ObjectPropertyKind::ObjectProperty(
-                    ast_builder.alloc_object_property(
+                properties.push(ast_builder.object_property_kind_object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                         SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                            SPAN,
-                            ast_builder.atom(&key),
-                            None,
-                        )),
-                        if value.len() == 1 {
-                            // do not create object expression when property is single
-                            Expression::Identifier(
-                                ast_builder.alloc_identifier_reference(
+                        ast_builder.atom(&key),
+                        None,
+                    )),
+                    if value.len() == 1 {
+                        // do not create object expression when property is single
+                        ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
+                    } else {
+                        Expression::ComputedMemberExpression(
+                            ast_builder.alloc_computed_member_expression(
+                                SPAN,
+                                ast_builder.expression_object(
                                     SPAN,
-                                    ast_builder.atom(&value[0].1),
-                                ),
-                            )
-                        } else {
-                            Expression::ComputedMemberExpression(
-                                ast_builder.alloc_computed_member_expression(
-                                    SPAN,
-                                    Expression::ObjectExpression(
-                                        ast_builder.alloc_object_expression(
-                                            SPAN,
-                                            oxc_allocator::Vec::from_iter_in(
-                                                value
-                                                    .into_iter()
-                                                    .map(|(k, v)| {
-                                                        ObjectPropertyKind::ObjectProperty(
-                                                            ast_builder.alloc_object_property(
-                                                                SPAN,
-                                                                PropertyKind::Init,
-                                                                PropertyKey::StaticIdentifier(
-                                                                    ast_builder
-                                                                        .alloc_identifier_name(
-                                                                            SPAN,
-                                                                            ast_builder.atom(&k),
-                                                                        ),
-                                                                ),
-                                                                Expression::Identifier(
-                                                                    ast_builder
-                                                                        .alloc_identifier_reference(
-                                                                            SPAN,
-                                                                            ast_builder.atom(&v),
-                                                                        ),
-                                                                ),
-                                                                false,
-                                                                false,
-                                                                false,
-                                                            ),
-                                                        )
-                                                    })
-                                                    .collect::<Vec<_>>(),
-                                                ast_builder.allocator,
-                                            ),
-                                        ),
+                                    oxc_allocator::Vec::from_iter_in(
+                                        value
+                                            .into_iter()
+                                            .map(|(k, v)| {
+                                                ast_builder.object_property_kind_object_property(
+                                                    SPAN,
+                                                    PropertyKind::Init,
+                                                    ast_builder.property_key_static_identifier(
+                                                        SPAN,
+                                                        ast_builder.atom(&k),
+                                                    ),
+                                                    ast_builder.expression_identifier(
+                                                        SPAN,
+                                                        ast_builder.atom(&v),
+                                                    ),
+                                                    false,
+                                                    false,
+                                                    false,
+                                                )
+                                            })
+                                            .collect::<Vec<_>>(),
+                                        ast_builder.allocator,
                                     ),
-                                    expression.clone_in(ast_builder.allocator),
-                                    false,
                                 ),
-                            )
-                        },
-                        false,
-                        false,
-                        false,
-                    ),
+                                expression.clone_in(ast_builder.allocator),
+                                false,
+                            ),
+                        )
+                    },
+                    false,
+                    false,
+                    false,
                 ));
             }
         }
