@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Button > should disable 1`] = `
+<div>
+  <button
+    aria-disabled="true"
+    aria-label="button"
+    class="d16 d17 d18 d19 d20 d21 d1 d2 d3 d22 d23 typo-buttonxs d24 d25 d26 d27 d28 d7 d8 d9 d10 d69 d70 d71 d72 d73 d74 d75 d76 d77 d78 d79 d80 d81 d82 d83 d84 d85 d86  "
+    disabled=""
+    type="button"
+  >
+    <div
+      class="d65 d66 d67 d68"
+    >
+      <div
+        class=" d62 d63 "
+      >
+        Click me
+      </div>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`Button > should render 1`] = `
+<div>
+  <button
+    aria-label="button"
+    class="d16 d17 d18 d19 d20 d21 d1 d2 d3 d22 d23 typo-buttonxs d24 d25 d26 d27 d28 d7 d8 d9 d10 d69 d70 d71 d72 d73 d74 d75 d76 d77 d78 d79 d80 d81 d82 d83 d84 d85 d86  "
+    type="button"
+  >
+    <div
+      class="d65 d66 d67 d68"
+    >
+      <div
+        class=" d62 d63 "
+      >
+        Click me
+      </div>
+    </div>
+  </button>
+</div>
+`;
