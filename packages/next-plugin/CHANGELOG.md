@@ -1,5 +1,12 @@
 # @devup-ui/next-plugin
 
+## 1.0.12
+
+### Patch Changes
+
+- Updated dependencies [afb22a3]
+  - @devup-ui/webpack-plugin@1.0.12
+
 ## 1.0.11
 
 ### Patch Changes
