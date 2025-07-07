@@ -41,10 +41,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(classMapFile, exportClassMap()),
         ])
           .catch(console.error)
-          .finally(() => callback(null, code, map))
+          .finally(() => callback(null, code, map ? JSON.parse(map) : null))
         return
       }
-      callback(null, code, map)
+      callback(null, code, map ? JSON.parse(map) : null)
     } catch (error) {
       callback(error as Error)
     }
