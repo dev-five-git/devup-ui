@@ -6,8 +6,10 @@ import { ThemeScript } from '../ThemeScript'
 
 describe('ThemeScript', () => {
   it('should apply ThemeScript', () => {
+    vi.stubEnv('DEVUP_UI_DEFAULT_THEME', undefined)
     const { container } = render(<ThemeScript />)
     expect(container).toMatchSnapshot()
+    vi.unstubAllEnvs()
   })
   it('should apply ThemeScript with theme', () => {
     const { container } = render(

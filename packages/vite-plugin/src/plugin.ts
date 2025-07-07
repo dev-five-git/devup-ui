@@ -78,6 +78,11 @@ export function DevupUI({
   return {
     name: 'devup-ui',
     config() {
+      const theme = getDefaultTheme()
+      const define: Record<string, string> = {}
+      if (theme) {
+        define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
+      }
       const ret: Omit<UserConfig, 'plugins'> = {
         server: {
           watch: {

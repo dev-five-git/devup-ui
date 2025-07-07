@@ -6,7 +6,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**'],
-      exclude: ['packages/*/src/types', 'packages/*/src/**/__tests__'],
+      exclude: [
+        'packages/*/src/types',
+        'packages/*/src/**/__tests__',
+        '**/*.stories.{ts,tsx}',
+      ],
+      cleanOnRerun: true,
+      reporter: ['text', 'json', 'html'],
     },
     projects: [
       {
@@ -15,19 +21,26 @@ export default defineConfig({
           include: ['packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
           exclude: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           globals: true,
+          environment: 'node',
         },
       },
+
       {
         test: {
-          include: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           name: 'happy-dom',
+          include: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           environment: 'happy-dom',
           globals: true,
           css: true,
           setupFiles: ['@testing-library/jest-dom/vitest'],
         },
-        plugins: [DevupUI()],
+        plugins: [
+          DevupUI({
+            debug: true,
+          }),
+        ],
       },
     ],
+    cache: false,
   },
 })
