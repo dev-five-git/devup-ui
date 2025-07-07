@@ -12,6 +12,8 @@ public/search.json
 !.yarn/releases
 !.yarn/versions
 
+public/storybook
+
 # testing
 /coverage
 
