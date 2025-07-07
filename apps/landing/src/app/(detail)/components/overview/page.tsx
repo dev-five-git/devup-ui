@@ -72,7 +72,7 @@ export default function Page() {
                 py="12px"
               >
                 <Text color="$text" textAlign="right" typography="buttonSmid">
-                  Text Box
+                  Text box
                 </Text>
               </Flex>
             </Card>
