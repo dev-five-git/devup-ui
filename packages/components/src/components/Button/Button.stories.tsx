@@ -22,6 +22,7 @@ const meta: Meta<typeof Button> = {
 export const Default: Story = {
   args: {
     children: 'Button Text',
+    disabled: false,
   },
 }
 
