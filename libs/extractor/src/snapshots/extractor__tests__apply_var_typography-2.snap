@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Text} from '@de
 ---
 ToBTreeSet {
     styles: {},
-    code: "<span className={bo ? `typo-${a}` : `typo-${b}`} />;\n",
+    code: "<span className={bo ? a ? `typo-${a}` : \"\" : b ? `typo-${b}` : \"\"} />;\n",
 }

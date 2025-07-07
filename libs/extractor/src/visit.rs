@@ -13,7 +13,7 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, JSXElementName, Program, PropertyKey,
+    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey,
     Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
@@ -103,11 +103,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 && self.css_imports.contains_key(&css_import_key)
             {
                 if call.arguments.is_empty() {
-                    *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                        SPAN,
-                        self.ast.atom(""),
-                        None,
-                    ));
+                    *it = self
+                        .ast
+                        .expression_string_literal(SPAN, self.ast.atom(""), None);
                 } else if call.arguments.len() == 1 {
                     if let ExtractResult::Extract {
                         styles: Some(mut styles),
@@ -133,18 +131,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if let Some(cls) = class_name {
                             *it = cls;
                         } else {
-                            *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                                SPAN,
-                                self.ast.atom(""),
-                                None,
-                            ));
+                            *it = self
+                                .ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None);
                         }
                     } else {
-                        *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                            SPAN,
-                            self.ast.atom(""),
-                            None,
-                        ));
+                        *it = self
+                            .ast
+                            .expression_string_literal(SPAN, self.ast.atom(""), None);
                     }
                 }
             }
@@ -164,11 +158,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 });
 
                 if let StyleProperty::ClassName(cls) = css.extract() {
-                    *it = Expression::StringLiteral(self.ast.alloc_string_literal(
-                        SPAN,
-                        self.ast.atom(&cls),
-                        None,
-                    ));
+                    *it = self
+                        .ast
+                        .expression_string_literal(SPAN, self.ast.atom(&cls), None);
                 }
                 self.styles.insert(css);
             }
@@ -204,11 +196,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Some(kind) = element_kind
                 && it.arguments.len() > 1
             {
-                let mut tag = Expression::StringLiteral(self.ast.alloc_string_literal(
+                let mut tag = self.ast.expression_string_literal(
                     SPAN,
                     self.ast.atom(kind.to_tag().unwrap_or("div")),
                     None,
-                ));
+                );
                 let mut props_styles = vec![];
                 let mut style_order = None;
                 let mut style_vars = None;
@@ -381,11 +373,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut opening_element.attributes;
-            let mut tag_name = Expression::StringLiteral(self.ast.alloc_string_literal(
-                SPAN,
-                kind.to_tag().unwrap_or("div"),
-                None,
-            ));
+            let mut tag_name =
+                self.ast
+                    .expression_string_literal(SPAN, kind.to_tag().unwrap_or("div"), None);
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
@@ -453,9 +443,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
                 _ => None,
             } {
-                let ident = JSXElementName::Identifier(
-                    self.ast.alloc_jsx_identifier(SPAN, self.ast.atom(tag)),
-                );
+                let ident = self
+                    .ast
+                    .jsx_element_name_identifier(SPAN, self.ast.atom(tag));
 
                 if let Some(el) = &mut elem.closing_element {
                     el.name = ident.clone_in(self.ast.allocator);

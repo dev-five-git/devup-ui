@@ -232,7 +232,6 @@ pub fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use oxc_allocator::Vec;
-    use oxc_ast::ast::{JSXAttributeName, JSXElementName};
 
     use super::*;
 
@@ -309,14 +308,10 @@ mod tests {
         assert_eq!(
             jsx_expression_to_number(
                 builder
-                    .alloc_jsx_attribute(
+                    .jsx_attribute(
                         SPAN,
-                        JSXAttributeName::Identifier(
-                            builder.alloc_jsx_identifier(SPAN, "styleOrder")
-                        ),
-                        Some(JSXAttributeValue::StringLiteral(
-                            builder.alloc_string_literal(SPAN, "1", None),
-                        )),
+                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
+                        Some(builder.jsx_attribute_value_string_literal(SPAN, "1", None)),
                     )
                     .value
                     .as_ref()
@@ -328,18 +323,14 @@ mod tests {
         assert_eq!(
             jsx_expression_to_number(
                 builder
-                    .alloc_jsx_attribute(
+                    .jsx_attribute(
                         SPAN,
-                        JSXAttributeName::Identifier(
-                            builder.alloc_jsx_identifier(SPAN, "styleOrder")
-                        ),
-                        Some(JSXAttributeValue::Element(builder.alloc_jsx_element(
+                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
+                        Some(builder.jsx_attribute_value_element(
                             SPAN,
-                            builder.alloc_jsx_opening_element(
+                            builder.jsx_opening_element(
                                 SPAN,
-                                JSXElementName::Identifier(
-                                    builder.alloc_jsx_identifier(SPAN, "div")
-                                ),
+                                builder.jsx_element_name_identifier(SPAN, "div"),
                                 Some(builder.ts_type_parameter_instantiation(
                                     SPAN,
                                     Vec::new_in(&allocator)
@@ -347,13 +338,11 @@ mod tests {
                                 Vec::new_in(&allocator),
                             ),
                             Vec::new_in(&allocator),
-                            Some(builder.alloc_jsx_closing_element(
+                            Some(builder.jsx_closing_element(
                                 SPAN,
-                                JSXElementName::Identifier(
-                                    builder.alloc_jsx_identifier(SPAN, "div")
-                                )
+                                builder.jsx_element_name_identifier(SPAN, "div"),
                             )),
-                        )))
+                        ))
                     )
                     .value
                     .as_ref()

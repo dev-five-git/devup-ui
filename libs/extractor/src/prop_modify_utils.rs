@@ -55,31 +55,27 @@ pub fn modify_prop_object<'a>(
         style_order,
         &spread_props,
     ) {
-        props.push(ObjectPropertyKind::ObjectProperty(
-            ast_builder.alloc_object_property(
-                SPAN,
-                PropertyKind::Init,
-                PropertyKey::StaticIdentifier(ast_builder.alloc_identifier_name(SPAN, "className")),
-                ex,
-                false,
-                false,
-                false,
-            ),
+        props.push(ast_builder.object_property_kind_object_property(
+            SPAN,
+            PropertyKind::Init,
+            ast_builder.property_key_static_identifier(SPAN, "className"),
+            ex,
+            false,
+            false,
+            false,
         ));
     }
     if let Some(ex) =
         get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
     {
-        props.push(ObjectPropertyKind::ObjectProperty(
-            ast_builder.alloc_object_property(
-                SPAN,
-                PropertyKind::Init,
-                PropertyKey::StaticIdentifier(ast_builder.alloc_identifier_name(SPAN, "style")),
-                ex,
-                false,
-                false,
-                false,
-            ),
+        props.push(ast_builder.object_property_kind_object_property(
+            SPAN,
+            PropertyKind::Init,
+            ast_builder.property_key_static_identifier(SPAN, "style"),
+            ex,
+            false,
+            false,
+            false,
         ));
     }
 }
@@ -116,11 +112,7 @@ pub fn modify_props<'a>(
                             }
                         }
                         JSXAttributeValue::StringLiteral(literal) => {
-                            Some(Expression::StringLiteral(ast_builder.alloc_string_literal(
-                                SPAN,
-                                literal.value,
-                                None,
-                            )))
+                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None))
                         }
                         _ => None,
                     };
@@ -148,28 +140,24 @@ pub fn modify_props<'a>(
         style_order,
         &spread_props,
     ) {
-        props.push(Attribute(ast_builder.alloc_jsx_attribute(
+        props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
-            Identifier(ast_builder.alloc_jsx_identifier(SPAN, "className")),
+            ast_builder.jsx_attribute_name_identifier(SPAN, "className"),
             Some(if let Expression::StringLiteral(literal) = ex {
                 JSXAttributeValue::StringLiteral(literal)
             } else {
-                JSXAttributeValue::ExpressionContainer(
-                    ast_builder.alloc_jsx_expression_container(SPAN, ex.into()),
-                )
+                ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())
             }),
-        )));
+        ));
     }
     if let Some(ex) =
         get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
     {
-        props.push(Attribute(ast_builder.alloc_jsx_attribute(
+        props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
-            Identifier(ast_builder.alloc_jsx_identifier(SPAN, "style")),
-            Some(JSXAttributeValue::ExpressionContainer(
-                ast_builder.alloc_jsx_expression_container(SPAN, ex.into()),
-            )),
-        )));
+            ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
+            Some(ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())),
+        ));
     }
 }
 
@@ -251,100 +239,73 @@ fn merge_string_expressions<'a>(
 
     let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
-    let mut prev_str = false;
-    for ex in expressions {
-        if !prev_str {
-            string_literals.push("".to_string());
-            prev_str = false;
-        }
+    let mut prev_str = String::new();
+    for (idx, ex) in expressions.iter().enumerate() {
         if let Expression::StringLiteral(literal) = ex {
-            prev_str = true;
-            if !string_literals.is_empty() {
-                string_literals
-                    .last_mut()
-                    .unwrap()
-                    .push_str(&format!(" {}", literal.value.trim()));
-            } else {
-                string_literals.push(literal.value.trim().to_string());
+            if !prev_str.trim().is_empty() {
+                prev_str.push(' ');
             }
+            prev_str.push_str(literal.value.trim());
         } else if let Expression::TemplateLiteral(template) = ex {
-            if !string_literals.is_empty() {
-                string_literals.last_mut().unwrap().push_str(&format!(
-                    " {}",
-                    template
-                        .quasis
-                        .iter()
-                        .map(|q| q.value.raw.trim())
-                        .filter(|q| !q.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                ));
-            } else {
-                string_literals.push(
-                    template
-                        .quasis
-                        .iter()
-                        .map(|q| q.value.raw.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                );
+            for (idx, q) in template.quasis.iter().enumerate() {
+                if idx == 0 {
+                    if !prev_str.trim().is_empty() {
+                        prev_str.push(' ');
+                    }
+                    prev_str.push_str(&q.value.raw);
+                } else {
+                    if !prev_str.trim().is_empty() {
+                        string_literals.push(prev_str.clone());
+                    }
+                    if q.tail {
+                        prev_str = format!("{} ", q.value.raw);
+                    } else {
+                        string_literals.push(q.value.raw.into());
+                        prev_str = String::new();
+                    }
+                }
             }
             other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
         } else {
+            if !prev_str.ends_with(' ') {
+                string_literals.push(format!("{}{}", prev_str, if idx > 0 { " " } else { "" }));
+            } else if idx > 0 {
+                string_literals.push(" ".to_string());
+            } else {
+                string_literals.push("".to_string());
+            }
             other_expressions.push(ex.clone_in(ast_builder.allocator));
+            prev_str = " ".to_string();
         }
     }
+    if !prev_str.is_empty() {
+        string_literals.push(prev_str.trim_end().to_string());
+    }
     if other_expressions.is_empty() {
-        return Some(Expression::StringLiteral(
-            ast_builder.alloc_string_literal(
-                SPAN,
-                ast_builder.atom(
-                    &string_literals
-                        .iter()
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                ),
-                None,
-            ),
+        return Some(ast_builder.expression_string_literal(
+            SPAN,
+            ast_builder.atom(string_literals.join("").trim()),
+            None,
         ));
     }
-    let literals = oxc_allocator::Vec::from_iter_in(
-        string_literals.iter().enumerate().map(|(idx, s)| {
-            ast_builder.template_element(
-                SPAN,
-                TemplateElementValue {
-                    raw: ast_builder.atom(&{
-                        let trimmed = s.trim();
-                        if trimmed.is_empty() {
-                            if idx == 0 {
-                                "".to_string()
-                            } else {
-                                " ".to_string()
-                            }
-                        } else {
-                            let prefix = if idx == 0 { "" } else { " " };
-                            let suffix = if string_literals.len() <= other_expressions.len() {
-                                " "
-                            } else {
-                                ""
-                            };
-                            format!("{prefix}{trimmed}{suffix}")
-                        }
-                    }),
-                    cooked: None,
-                },
-                false,
-            )
-        }),
-        ast_builder.allocator,
-    );
 
-    Some(Expression::TemplateLiteral(
-        ast_builder.alloc_template_literal(
+    Some(
+        ast_builder.expression_template_literal(
             SPAN,
-            literals,
+            oxc_allocator::Vec::from_iter_in(
+                string_literals.iter().enumerate().map(|(idx, s)| {
+                    let tail = idx == string_literals.len() - 1;
+                    ast_builder.template_element(
+                        SPAN,
+                        TemplateElementValue {
+                            raw: ast_builder.atom(s),
+                            cooked: None,
+                        },
+                        tail,
+                    )
+                }),
+                ast_builder.allocator,
+            ),
             oxc_allocator::Vec::from_iter_in(
                 other_expressions
                     .into_iter()
@@ -352,7 +313,7 @@ fn merge_string_expressions<'a>(
                 ast_builder.allocator,
             ),
         ),
-    ))
+    )
 }
 
 /// merge expressions to object expression
@@ -366,17 +327,14 @@ fn merge_object_expressions<'a>(
     if expressions.len() == 1 {
         return Some(expressions[0].clone_in(ast_builder.allocator));
     }
-    Some(Expression::ObjectExpression(
-        ast_builder.alloc_object_expression(
-            SPAN,
-            oxc_allocator::Vec::from_iter_in(
-                expressions.iter().map(|ex| {
-                    ObjectPropertyKind::SpreadProperty(
-                        ast_builder.alloc_spread_element(SPAN, ex.clone_in(ast_builder.allocator)),
-                    )
-                }),
-                ast_builder.allocator,
-            ),
+    Some(ast_builder.expression_object(
+        SPAN,
+        oxc_allocator::Vec::from_iter_in(
+            expressions.iter().map(|ex| {
+                ast_builder
+                    .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator))
+            }),
+            ast_builder.allocator,
         ),
     ))
 }
@@ -395,18 +353,11 @@ pub fn convert_class_name<'a>(
     }
 
     // wrap ( and ?? ''
-    Expression::LogicalExpression(
-        ast_builder.alloc_logical_expression(
-            SPAN,
-            Expression::ParenthesizedExpression(
-                ast_builder.alloc_parenthesized_expression(
-                    SPAN,
-                    class_name.clone_in(ast_builder.allocator),
-                ),
-            ),
-            LogicalOperator::Or,
-            Expression::StringLiteral(ast_builder.alloc_string_literal(SPAN, "", None)),
-        ),
+    ast_builder.expression_logical(
+        SPAN,
+        ast_builder.expression_parenthesized(SPAN, class_name.clone_in(ast_builder.allocator)),
+        LogicalOperator::Or,
+        ast_builder.expression_string_literal(SPAN, "", None),
     )
 }
 
@@ -426,7 +377,7 @@ pub fn convert_style_vars<'a>(
                     etc => {
                         obj.properties.insert(
                             idx,
-                            ObjectPropertyKind::ObjectProperty(ast_builder.alloc_object_property(
+                            ast_builder.object_property_kind_object_property(
                                 SPAN,
                                 PropertyKind::Init,
                                 PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
@@ -451,7 +402,7 @@ pub fn convert_style_vars<'a>(
                                 false,
                                 false,
                                 true,
-                            )),
+                            ),
                         );
                         continue;
                     }
