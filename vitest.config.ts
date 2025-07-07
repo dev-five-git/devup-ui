@@ -9,18 +9,18 @@ export default defineConfig({
       exclude: [
         'packages/*/src/types',
         'packages/*/src/**/__tests__',
-        'packages/components/src/components/**/*.stories.{ts,tsx}',
+        '**/*.stories.{ts,tsx}',
       ],
+      reportOnFailure: true,
+      cleanOnRerun: true,
+      reporter: ['text', 'json', 'html'],
     },
     projects: [
       {
         test: {
           name: 'node',
           include: ['packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
-          exclude: [
-            'packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}',
-            'packages/components/src/**/__tests__/**/*.test.{ts,tsx}',
-          ],
+          exclude: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           globals: true,
           environment: 'node',
         },
@@ -35,9 +35,12 @@ export default defineConfig({
           css: true,
           setupFiles: ['@testing-library/jest-dom/vitest'],
         },
-        plugins: [DevupUI()],
+        plugins: [
+          DevupUI({
+            debug: true,
+          }),
+        ],
       },
-      'packages/components',
     ],
   },
 })
