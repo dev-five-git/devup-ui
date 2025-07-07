@@ -31,6 +31,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         libPackage,
         relative(dirname(this.resourcePath), cssFile).replaceAll('\\', '/'),
       )
+      const sourceMap = map ? JSON.parse(map) : null
       if (css && watch) {
         const content = `${this.resourcePath} ${Date.now()}`
         if (this._compiler) (this._compiler as any).__DEVUP_CACHE = content
@@ -41,10 +42,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(classMapFile, exportClassMap()),
         ])
           .catch(console.error)
-          .finally(() => callback(null, code, map ? JSON.parse(map) : null))
+          .finally(() => callback(null, code, sourceMap))
         return
       }
-      callback(null, code, map ? JSON.parse(map) : null)
+      callback(null, code, sourceMap)
     } catch (error) {
       callback(error as Error)
     }
