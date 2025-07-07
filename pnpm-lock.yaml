@@ -44,6 +44,9 @@ importers:
 
   apps/landing:
     dependencies:
+      '@devup-ui/components':
+        specifier: workspace:*
+        version: link:../../packages/components
       '@devup-ui/react':
         specifier: workspace:*
         version: link:../../packages/react
