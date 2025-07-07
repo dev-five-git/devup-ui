@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.12
+
+### Patch Changes
+
+- afb22a3: Fix sourcemap issue
+- Updated dependencies [e73fe8d]
+  - @devup-ui/wasm@1.0.12
+
 ## 1.0.11
 
 ### Patch Changes

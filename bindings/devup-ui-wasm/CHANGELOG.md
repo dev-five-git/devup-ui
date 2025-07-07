@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.12
+
+### Patch Changes
+
+- e73fe8d: Fix className
+
 ## 1.0.11
 
 ### Patch Changes
