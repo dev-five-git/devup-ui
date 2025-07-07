@@ -45,7 +45,7 @@ jobs:
         run: |
           pnpm -F landing build
           pnpm -F components build-storybook
-          mv -r ./packages/components/storybook-static ./apps/landing/public/storybook
+          mv ./packages/components/storybook-static ./apps/landing/public/storybook
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
