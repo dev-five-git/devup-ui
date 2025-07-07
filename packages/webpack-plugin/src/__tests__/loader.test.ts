@@ -37,7 +37,7 @@ describe('devupUILoader', () => {
       code: 'code',
       css: 'css',
       free: vi.fn(),
-      map: undefined,
+      map: '{}',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -49,7 +49,7 @@ describe('devupUILoader', () => {
       'cssFile',
     )
     await vi.waitFor(() => {
-      expect(t.async()).toHaveBeenCalledWith(null, 'code', undefined)
+      expect(t.async()).toHaveBeenCalledWith(null, 'code', {})
     })
     expect(writeFile).toHaveBeenCalledWith('cssFile', '/* index.tsx 0 */')
     expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
@@ -84,7 +84,7 @@ describe('devupUILoader', () => {
       'package',
       'cssFile',
     )
-    expect(t.async()).toHaveBeenCalledWith(null, 'code', undefined)
+    expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })
