@@ -233,7 +233,12 @@ fn merge_string_expressions<'a>(
     if expressions.is_empty() {
         return None;
     }
-    if expressions.len() == 1 {
+    if expressions.len() == 1
+        && !matches!(
+            expressions.first().unwrap(),
+            Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+        )
+    {
         return Some(expressions.first().unwrap().clone_in(ast_builder.allocator));
     }
 
@@ -241,41 +246,70 @@ fn merge_string_expressions<'a>(
     let mut other_expressions = vec![];
     let mut prev_str = String::new();
     for (idx, ex) in expressions.iter().enumerate() {
-        if let Expression::StringLiteral(literal) = ex {
-            if !prev_str.trim().is_empty() {
-                prev_str.push(' ');
+        match ex {
+            Expression::StringLiteral(literal) => {
+                prev_str.push_str(
+                    format!(
+                        "{}{}",
+                        if prev_str.trim().is_empty() && other_expressions.is_empty() {
+                            ""
+                        } else {
+                            " "
+                        },
+                        literal.value.trim()
+                    )
+                    .as_str(),
+                );
             }
-            prev_str.push_str(literal.value.trim());
-        } else if let Expression::TemplateLiteral(template) = ex {
-            for (idx, q) in template.quasis.iter().enumerate() {
-                if idx == 0 {
-                    if !prev_str.trim().is_empty() {
-                        prev_str.push(' ');
-                    }
-                    prev_str.push_str(&q.value.raw);
-                } else {
-                    if !prev_str.trim().is_empty() {
-                        string_literals.push(prev_str.clone());
-                    }
-                    if q.tail {
-                        prev_str = format!("{} ", q.value.raw);
+            Expression::TemplateLiteral(template) => {
+                for (idx, q) in template.quasis.iter().enumerate() {
+                    if !prev_str.is_empty() {
+                        string_literals.push(format!(
+                            "{}{}{}{}",
+                            prev_str.trim(),
+                            if !prev_str.trim().is_empty() { " " } else { "" },
+                            q.value.raw.trim(),
+                            if idx == template.quasis.len() - 1 {
+                                ""
+                            } else {
+                                " "
+                            }
+                        ));
+                        prev_str = String::new();
+                    } else if q.tail {
+                        prev_str = q.value.raw.trim().to_string();
                     } else {
-                        string_literals.push(q.value.raw.into());
+                        string_literals.push(format!(
+                            "{}{}{}",
+                            if idx == 0
+                                && other_expressions.is_empty()
+                                && string_literals.is_empty()
+                            {
+                                ""
+                            } else {
+                                " "
+                            },
+                            q.value.raw.trim(),
+                            if q.value.raw.trim().is_empty() || !q.value.raw.ends_with(' ') {
+                                ""
+                            } else {
+                                " "
+                            }
+                        ));
                         prev_str = String::new();
                     }
                 }
+                other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
             }
-            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
-        } else {
-            if !prev_str.ends_with(' ') {
-                string_literals.push(format!("{}{}", prev_str, if idx > 0 { " " } else { "" }));
-            } else if idx > 0 {
-                string_literals.push(" ".to_string());
-            } else {
-                string_literals.push("".to_string());
+            ex => {
+                string_literals.push(format!(
+                    "{}{}",
+                    prev_str.trim(),
+                    if idx > 0 { " " } else { "" }
+                ));
+                other_expressions.push(ex.clone_in(ast_builder.allocator));
+                prev_str = String::new();
             }
-            other_expressions.push(ex.clone_in(ast_builder.allocator));
-            prev_str = " ".to_string();
         }
     }
     if !prev_str.is_empty() {

@@ -2673,6 +2673,66 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
     }
 
+    //     #[test]
+    //     #[serial]
+    //     fn props_multi_expression_1() {
+    //         assert_debug_snapshot!(ToBTreeSet::from(
+    //             extract(
+    //                 "test.tsx",
+    //                 r#"import {Box as C} from '@devup-ui/core'
+    //         <C padding={1}
+    //       _hover={{
+    //         borderColor: true ? 'blue' : ``,
+    //       }}
+    //  className={variable} />
+    //         "#,
+    //                 ExtractOption {
+    //                     package: "@devup-ui/core".to_string(),
+    //                     css_file: None
+    //                 }
+    //             )
+    //             .unwrap()
+    //         ));
+    //     }
+    #[test]
+    #[serial]
+    fn props_multi_expression() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {
+  Box,
+  Button as DevupButton,
+  Center,
+  css,
+} from '@devup-ui/core'
+
+<DevupButton
+    border={
+    {
+        primary: 'none',
+        default: '1px solid var(--border, #E4E4E4)',
+    }[variant]
+    }
+    className={className}
+    px={
+    {
+        false: { sm: '12px', md: '16px', lg: '20px' }[size],
+        true: { sm: '24px', md: '28px', lg: '32px' }[size],
+    }[(!!icon).toString()]
+    }
+/>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
     #[test]
     #[serial]
     fn props_direct_object_select() {
@@ -3153,6 +3213,40 @@ import {Button} from '@devup/ui'
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
     <Box m={`${1} ${2}`} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+    <Box className={`  ${1} ${2}  `} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+    <Box className={`  ${1} ${2}  `}
+    _hover={{bg:"red"}}
+    _themeDark={{ _hover:{bg:"black"} }}
+    
+     />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
