@@ -18,7 +18,7 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
     primaryFocus?: string
   }
   typography?: keyof DevupThemeTypography
-  isError?: boolean
+  danger?: boolean
   size?: 'sm' | 'md' | 'lg'
   icon?: React.ReactNode
   ellipsis?: boolean
@@ -34,7 +34,7 @@ export function Button({
   variant = 'default',
   type = 'button',
   colors,
-  isError = false,
+  danger = false,
   children,
   size = 'md',
   className,
@@ -55,11 +55,11 @@ export function Button({
             bg: {
               true: 'var(--error, #D52B2E)',
               false: `color-mix(in srgb, var(--primary, #8163E1) 20%, #FFF 80%)`,
-            }[isError.toString()],
+            }[danger.toString()],
             border: {
               true: '1px solid var(--error, #D52B2E)',
               false: '1px solid var(--primary, #8163E1)',
-            }[isError.toString()],
+            }[danger.toString()],
             color: '#000',
           },
         }[variant]
@@ -86,7 +86,7 @@ export function Button({
           default: {
             true: 'var(--error, #FF5B5E)',
             false: 'var(--primaryFocus, #9385D3)',
-          }[isError.toString()],
+          }[danger.toString()],
         }[variant],
       }}
       _hover={
@@ -98,9 +98,9 @@ export function Button({
             borderColor: {
               true: 'var(--error, #D52B2E)',
               false: 'var(--primary, #8163E1)',
-            }[isError.toString()],
+            }[danger.toString()],
             bg:
-              !isError &&
+              !danger &&
               `color-mix(in srgb, var(--primary, #8163E1) 10%, #FFF 90%)`,
           },
         }[variant]
@@ -114,7 +114,7 @@ export function Button({
             bg: {
               true: 'var(--error, #FF5B5E)',
               false: 'var(--primary, #8163E1)',
-            }[isError.toString()],
+            }[danger.toString()],
             color: 'var(--text, #F6F6F6)',
           },
         }[variant],
@@ -139,9 +139,9 @@ export function Button({
             borderColor: {
               true: 'var(--error, #FF5B5E)',
               false: 'var(--primary, #8163E1)',
-            }[isError.toString()],
+            }[danger.toString()],
             bg:
-              !isError &&
+              !danger &&
               `color-mix(in srgb, var(--primary, #674DC7) 10%, var(--inputBackground, #2E2E2E) 90%)`,
           },
         }[variant],
@@ -151,7 +151,7 @@ export function Button({
             default: {
               true: 'var(--error, #D52B2E)',
               false: 'var(--primaryFocus, #927CE4)',
-            }[isError.toString()],
+            }[danger.toString()],
           }[variant],
         },
         bg: {
@@ -187,7 +187,7 @@ export function Button({
           default: {
             true: 'var(--error, #D52B2E)',
             false: 'var(--text, #272727)',
-          }[isError.toString()],
+          }[danger.toString()],
         }[variant]
       }
       cursor="pointer"

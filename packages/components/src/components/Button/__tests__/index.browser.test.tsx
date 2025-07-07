@@ -23,17 +23,17 @@ describe('Button', () => {
     expect(container.querySelector('button')).toHaveAttribute('disabled')
   })
 
-  it('should render error style when isError is true and variant is default', () => {
-    const { container } = render(<Button isError>Click me</Button>)
+  it('should render error style when danger is true and variant is default', () => {
+    const { container } = render(<Button danger>Click me</Button>)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('button')).toHaveStyle({
       color: 'var(--error, #D52B2E)',
     })
   })
 
-  it('should render primary background color when isError is true and variant is primary', () => {
+  it('should render primary background color when danger is true and variant is primary', () => {
     const { container } = render(
-      <Button isError variant="primary">
+      <Button danger variant="primary">
         Click me
       </Button>,
     )
@@ -43,7 +43,7 @@ describe('Button', () => {
     })
   })
 
-  it('should not render error color when isError is false and variant is default', async () => {
+  it('should not render error color when danger is false and variant is default', async () => {
     const { getByTestId } = render(
       <Button data-testid="button">Click me</Button>,
     )

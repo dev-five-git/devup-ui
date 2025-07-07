@@ -98,7 +98,7 @@ export const WithForm: Story = {
               args={{
                 ...args,
                 disabled: value.length < 3,
-                isError: !!error,
+                danger: !!error,
               }}
             />
           </form>
