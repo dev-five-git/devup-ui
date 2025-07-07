@@ -226,25 +226,6 @@ exports[`Button > should not render error color when danger is false and variant
 </button>
 `;
 
-exports[`Button > should not render error color when isError is false and variant is default 1`] = `
-<button
-  aria-label="button"
-  class=" outline-0-2px solid-17005923944751620165-1 boxSizing-0-border-box--1 cursor-0-pointer--1 fontWeight-0-700--1 outlineOffset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-#000-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 backgroundColor-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 borderColor-0-var(--border,#E4E4E4)-14172363753176421546-1 outlineColor-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 borderColor-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 backgroundColor-0-#47474A-878116160589243838-1 borderColor-0-transparent-878116160589243838-1 borderColor-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outlineColor-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 borderRadius-0-10px--1 color-0-var(--text,#272727)--1 fontSize-0-14px--1 fontSize-4-15px--1 letterSpacing-0--0.02em--1 letterSpacing-4--0.03em--1 px-0-16px--1 py-0-10px--1  "
-  data-testid="button"
-  type="button"
->
-  <div
-    class="maxWidth-0-100%--255 mx-0-auto--255 position-0-relative--255 width-0-fit-content--255"
-  >
-    <div
-      class=" lineHeight-0-1.2--255 minHeight-0-1.2em--255 "
-    >
-      Click me
-    </div>
-  </div>
-</button>
-`;
-
 exports[`Button > should render 1`] = `
 <div>
   <button
@@ -305,26 +286,6 @@ exports[`Button > should render error style when danger is true and variant is d
 </div>
 `;
 
-exports[`Button > should render error style when isError is true and variant is default 1`] = `
-<div>
-  <button
-    aria-label="button"
-    class=" outline-0-2px solid-17005923944751620165-1 boxSizing-0-border-box--1 cursor-0-pointer--1 fontWeight-0-700--1 outlineOffset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-#000-15425828959012638752-1 background-0-var(--error,#D52B2E)-15425828959012638752-1 border-0-1px solid var(--error,#D52B2E)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 backgroundColor-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 borderColor-0-var(--border,#E4E4E4)-14172363753176421546-1 outlineColor-0-var(--error,#FF5B5E)-17005923944751620165-1 borderColor-0-var(--error,#D52B2E)-8380715471663921674-1  color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--error,#FF5B5E)-2922352740838246662-1 color-0-#373737-878116160589243838-1 backgroundColor-0-#47474A-878116160589243838-1 borderColor-0-transparent-878116160589243838-1 borderColor-0-var(--error,#FF5B5E)-6232724021015440856-1  outlineColor-0-var(--error,#D52B2E)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 borderRadius-0-10px--1 color-0-var(--error,#D52B2E)--1 fontSize-0-14px--1 fontSize-4-15px--1 letterSpacing-0--0.02em--1 letterSpacing-4--0.03em--1 px-0-16px--1 py-0-10px--1  "
-    type="button"
-  >
-    <div
-      class="maxWidth-0-100%--255 mx-0-auto--255 position-0-relative--255 width-0-fit-content--255"
-    >
-      <div
-        class=" lineHeight-0-1.2--255 minHeight-0-1.2em--255 "
-      >
-        Click me
-      </div>
-    </div>
-  </button>
-</div>
-`;
-
 exports[`Button > should render icon when icon is provided 1`] = `
 <div>
   <button
@@ -365,26 +326,6 @@ exports[`Button > should render icon when icon is provided 1`] = `
 `;
 
 exports[`Button > should render primary background color when danger is true and variant is primary 1`] = `
-<div>
-  <button
-    aria-label="button"
-    class=" outline-0-2px solid-17005923944751620165-1 boxSizing-0-border-box--1 cursor-0-pointer--1 fontWeight-0-700--1 outlineOffset-0-2px--1 position-0-relative--1 transition-0-.25s--1 background-0-color-mix(in srgb,var(--primary,#674DC7) 100%,#000 30%)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 backgroundColor-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 outlineColor-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 100%,#000 15%)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 100%,#FFF 30%)-2922352740838246662-1 color-0-#373737-878116160589243838-1 backgroundColor-0-#47474A-878116160589243838-1 borderColor-0-transparent-878116160589243838-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 100%,#FFF 15%)-6232724021015440856-1 outlineColor-0-var(--primary,#674DC7)-6232724021015440856-1 outlineColor-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--primary,#8163E1)-6667598448774358329-1 background-0-var(--primary,#8163E1)--1 border-0-none--1 borderRadius-0-8px--1 color-0-#FFF--1 fontSize-0-15px--1 fontSize-4-16px--1 letterSpacing-0-0--1 letterSpacing-4--0.01em--1 px-0-16px--1 py-0-10px--1  "
-    type="button"
-  >
-    <div
-      class="maxWidth-0-100%--255 mx-0-auto--255 position-0-relative--255 width-0-fit-content--255"
-    >
-      <div
-        class=" lineHeight-0-1.2--255 minHeight-0-1.2em--255 "
-      >
-        Click me
-      </div>
-    </div>
-  </button>
-</div>
-`;
-
-exports[`Button > should render primary background color when isError is true and variant is primary 1`] = `
 <div>
   <button
     aria-label="button"

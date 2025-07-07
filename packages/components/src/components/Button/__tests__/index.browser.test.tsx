@@ -44,10 +44,8 @@ describe('Button', () => {
   })
 
   it('should not render error color when danger is false and variant is default', async () => {
-    const { getByTestId } = render(
-      <Button data-testid="button">Click me</Button>,
-    )
-    const button = getByTestId('button')
+    const { container } = render(<Button data-testid="button">Click me</Button>)
+    const button = container.querySelector('button')
     expect(button).toHaveStyle({
       color: 'var(--text, #272727)',
     })

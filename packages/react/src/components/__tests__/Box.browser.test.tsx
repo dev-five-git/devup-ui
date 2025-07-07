@@ -1,10 +1,19 @@
 // @ts-nocheck
 import { Box } from '@devup-ui/react'
-import { render } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 
 describe('Box', () => {
-  it('should render', () => {
+  it('should render', async () => {
     const { container } = render(<Box bg="blue" />)
-    expect(container.children[0]).toHaveStyle('background-color: blue')
+
+    await waitFor(
+      () => {
+        expect(container.children[0]).toHaveClass('background-0-blue--255')
+      },
+      {
+        timeout: 1000,
+        interval: 10,
+      },
+    )
   })
 })

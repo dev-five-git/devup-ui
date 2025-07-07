@@ -11,7 +11,6 @@ export default defineConfig({
         'packages/*/src/**/__tests__',
         '**/*.stories.{ts,tsx}',
       ],
-      reportOnFailure: true,
       cleanOnRerun: true,
       reporter: ['text', 'json', 'html'],
     },
@@ -42,5 +41,6 @@ export default defineConfig({
         ],
       },
     ],
+    cache: false,
   },
 })
