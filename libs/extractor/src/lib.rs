@@ -2285,6 +2285,40 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import { VStack } from '@devup-ui/core'
+
+export default function Card({
+  children,
+  className,
+  ...props
+}) {
+  return (
+    <VStack
+      _active={{
+        boxShadow: 'none',
+        transform: 'scale(0.95)',
+      }}
+      className={className}
+      {...props}
+    >
+      {children}
+    </VStack>
+  )
+}
+
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
