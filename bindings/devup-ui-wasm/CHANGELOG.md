@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.13
+
+### Patch Changes
+
+- 2e1c60d: Refactor className logic
+
 ## 1.0.12
 
 ### Patch Changes
