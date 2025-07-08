@@ -133,6 +133,8 @@ pub fn modify_props<'a>(
             }
         }
     }
+    println!("class_name_prop: {:?}", class_name_prop);
+    println!("style_prop: {:?}", style_prop);
     if let Some(ex) = get_class_name_expression(
         ast_builder,
         &class_name_prop,
@@ -179,17 +181,26 @@ pub fn get_class_name_expression<'a>(
         ]
         .into_iter()
         .flatten()
-        .chain(spread_props.iter().map(|ex| {
-            convert_class_name(
-                ast_builder,
-                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
-                    SPAN,
-                    ex.clone_in(ast_builder.allocator),
-                    ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
-                    true,
-                )),
-            )
-        }))
+        .chain(if class_name_prop.is_some() {
+            vec![]
+        } else {
+            spread_props
+                .iter()
+                .map(|ex| {
+                    convert_class_name(
+                        ast_builder,
+                        &Expression::StaticMemberExpression(
+                            ast_builder.alloc_static_member_expression(
+                                SPAN,
+                                ex.clone_in(ast_builder.allocator),
+                                ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
+                                true,
+                            ),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>()
         .as_slice(),
     )
@@ -245,76 +256,67 @@ fn merge_string_expressions<'a>(
     let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
     let mut prev_str = String::new();
-    for (idx, ex) in expressions.iter().enumerate() {
+    for ex in expressions.iter() {
         match ex {
             Expression::StringLiteral(literal) => {
-                prev_str.push_str(
-                    format!(
-                        "{}{}",
-                        if prev_str.trim().is_empty() && other_expressions.is_empty() {
-                            ""
-                        } else {
-                            " "
-                        },
-                        literal.value.trim()
-                    )
-                    .as_str(),
+                let target_prev = prev_str.trim();
+                let target = literal.value.trim();
+                prev_str = format!(
+                    "{}{}{}",
+                    target_prev,
+                    if target_prev.is_empty() { "" } else { " " },
+                    target
                 );
             }
             Expression::TemplateLiteral(template) => {
                 for (idx, q) in template.quasis.iter().enumerate() {
-                    if !prev_str.is_empty() {
+                    let target_prev = prev_str.trim();
+                    let target = q.value.raw.trim();
+                    if idx < template.quasis.len() - 1 {
                         string_literals.push(format!(
-                            "{}{}{}{}",
-                            prev_str.trim(),
-                            if !prev_str.trim().is_empty() { " " } else { "" },
-                            q.value.raw.trim(),
-                            if idx == template.quasis.len() - 1 {
-                                ""
-                            } else {
+                            "{}{}{}{}{}",
+                            if !other_expressions.is_empty() || idx > 0 {
                                 " "
-                            }
-                        ));
-                        prev_str = String::new();
-                    } else if q.tail {
-                        prev_str = q.value.raw.trim().to_string();
-                    } else {
-                        string_literals.push(format!(
-                            "{}{}{}",
-                            if idx == 0
-                                && other_expressions.is_empty()
-                                && string_literals.is_empty()
-                            {
-                                ""
                             } else {
-                                " "
+                                ""
                             },
-                            q.value.raw.trim(),
-                            if q.value.raw.trim().is_empty() || !q.value.raw.ends_with(' ') {
-                                ""
-                            } else {
+                            target_prev,
+                            if !target_prev.is_empty() { " " } else { "" },
+                            target,
+                            if !target.is_empty() && !target.ends_with("typo-") {
                                 " "
+                            } else {
+                                ""
                             }
                         ));
-                        prev_str = String::new();
+                    } else {
+                        prev_str = q.value.raw.trim().to_string();
                     }
                 }
                 other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
             }
             ex => {
+                let target_prev = prev_str.trim();
                 string_literals.push(format!(
-                    "{}{}",
-                    prev_str.trim(),
-                    if idx > 0 { " " } else { "" }
+                    "{}{}{}",
+                    if !other_expressions.is_empty() {
+                        " "
+                    } else {
+                        ""
+                    },
+                    target_prev,
+                    if !target_prev.is_empty() { " " } else { "" }
                 ));
                 other_expressions.push(ex.clone_in(ast_builder.allocator));
                 prev_str = String::new();
             }
         }
     }
-    if !prev_str.is_empty() {
-        string_literals.push(prev_str.trim_end().to_string());
-    }
+    string_literals.push(format!(
+        "{}{}",
+        if !prev_str.trim().is_empty() { " " } else { "" },
+        prev_str.trim(),
+    ));
     if other_expressions.is_empty() {
         return Some(ast_builder.expression_string_literal(
             SPAN,
