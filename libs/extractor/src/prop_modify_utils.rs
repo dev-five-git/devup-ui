@@ -133,6 +133,8 @@ pub fn modify_props<'a>(
             }
         }
     }
+    println!("class_name_prop: {:?}", class_name_prop);
+    println!("style_prop: {:?}", style_prop);
     if let Some(ex) = get_class_name_expression(
         ast_builder,
         &class_name_prop,
@@ -179,17 +181,26 @@ pub fn get_class_name_expression<'a>(
         ]
         .into_iter()
         .flatten()
-        .chain(spread_props.iter().map(|ex| {
-            convert_class_name(
-                ast_builder,
-                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
-                    SPAN,
-                    ex.clone_in(ast_builder.allocator),
-                    ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
-                    true,
-                )),
-            )
-        }))
+        .chain(if class_name_prop.is_some() {
+            vec![]
+        } else {
+            spread_props
+                .iter()
+                .map(|ex| {
+                    convert_class_name(
+                        ast_builder,
+                        &Expression::StaticMemberExpression(
+                            ast_builder.alloc_static_member_expression(
+                                SPAN,
+                                ex.clone_in(ast_builder.allocator),
+                                ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
+                                true,
+                            ),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>()
         .as_slice(),
     )
