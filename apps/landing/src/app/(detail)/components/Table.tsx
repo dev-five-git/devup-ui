@@ -19,6 +19,7 @@ export function Table({
       selectors={{
         '& th, & td': {
           border: 'none',
+          minWidth: '200px',
         },
       }}
       {...props}

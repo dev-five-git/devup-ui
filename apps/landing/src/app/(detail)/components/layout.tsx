@@ -14,7 +14,12 @@ export default function Layout({
             <LeftMenu />
           </Box>
         </Box>
-        <Box className="markdown-body" overflow="hidden" px="60px" py="40px">
+        <Box
+          className="markdown-body"
+          overflow="hidden"
+          px={['16px', null, '60px']}
+          py={['24px', null, '40px']}
+        >
           {children}
         </Box>
         <Box display={['none', null, null, null, null, 'initial']}>

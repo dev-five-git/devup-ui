@@ -16,6 +16,8 @@ export default function MdxCard({ children }: { children: React.ReactNode }) {
         border: '1px solid $border',
         bg: '$containerBackground',
         maxWidth: '100%',
+        minWidth: '300px',
+        flexShrink: 0,
         cursor: 'default',
         marginBottom: '20px',
         _lastChild: {
