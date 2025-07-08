@@ -1,0 +1,65 @@
+import { Td, Th, Tr, Table } from '../Table'
+
+
+###### API
+`Button` props extends the button HTML attributes. 
+<div style={{ overflow: 'auto', width: '100%' }}>
+<Table style={{width: '100%'}}>
+<Tr>
+<Th>Property</Th>
+<Th>Description</Th>
+<Th>Type</Th>
+<Th>Default</Th>
+</Tr>
+<Tr>
+<Td>variant</Td>
+<Td>The variant of the button</Td>
+<Td>`'primary' | 'default'`</Td>
+<Td>`'default'`</Td>
+</Tr>
+<Tr>
+<Td>colors</Td>
+<Td>The color variables of the button, i.e. `var(--primary)`</Td>
+<Td>
+```
+{ 
+   primary?: string
+   error?: string
+   text?: string
+   border?: string
+   inputBackground?: string
+   primaryFocus?: string
+}
+```
+</Td>
+<Td>`undefined`</Td>
+</Tr>
+<Tr>
+<Td>danger</Td>
+<Td>Signals that it should be used with caution. It is often used in a delete button or to show the error status.</Td>
+<Td>`boolean`</Td>
+<Td>`false`</Td>
+</Tr>
+<Tr>
+<Td>size</Td>
+<Td>The size of the button</Td>
+<Td>`'sm' | 'md' | 'lg'`</Td>
+<Td>`'md'`</Td>
+</Tr>
+<Tr>
+<Td>icon</Td>
+<Td>Icon of the button passed in as a form of ReactNode</Td>
+<Td>`React.ReactNode`</Td>
+<Td>`undefined`</Td>
+</Tr>
+<Tr>
+<Td>ellipsis</Td>
+<Td>
+Whether the button text should be truncated with an ellipsis. The
+button should have a width to be able to truncate the text.
+</Td>
+<Td>`boolean`</Td>
+<Td>`false`</Td>
+</Tr>
+</Table>
+</div>

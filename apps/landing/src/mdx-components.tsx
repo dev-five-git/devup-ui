@@ -1,4 +1,4 @@
-import { Text } from '@devup-ui/react'
+import { Box, Text } from '@devup-ui/react'
 import type { MDXComponents } from 'mdx/types'
 
 import { Code } from './components/Code'
@@ -45,6 +45,9 @@ const _components = {
         {children}
       </Text>
     )
+  },
+  pre({ children }: { children: React.ReactNode }) {
+    return <Box as="pre">{children}</Box>
   },
 }
 

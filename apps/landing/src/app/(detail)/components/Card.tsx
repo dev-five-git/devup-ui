@@ -1,6 +1,10 @@
 import { VStack } from '@devup-ui/react'
 
-export default function Card({ children }: { children: React.ReactNode }) {
+export default function Card({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
   return (
     <VStack
       _active={{
@@ -13,8 +17,11 @@ export default function Card({ children }: { children: React.ReactNode }) {
       bg="$containerBackground"
       border="1px solid $border"
       borderRadius="10px"
+      className={className}
       cursor="pointer"
+      styleOrder={1}
       transition="all 0.2s ease"
+      {...props}
     >
       {children}
     </VStack>
