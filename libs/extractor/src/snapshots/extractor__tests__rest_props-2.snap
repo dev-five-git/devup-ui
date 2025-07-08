@@ -1,0 +1,57 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import { VStack } from '@devup-ui/core'\n\nexport default function Card({\n  children,\n  className,\n  ...props\n}) {\n  return (\n    <VStack\n      _active={{\n        boxShadow: 'none',\n        transform: 'scale(0.95)',\n      }}\n      className={className}\n      {...props}\n    >\n      {children}\n    </VStack>\n  )\n}\n\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "boxShadow",
+                value: "none",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flexDirection",
+                value: "column",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "transform",
+                value: "scale(0.95)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\nexport default function Card({ children, className,...props }) {\n\treturn <div {...props} className={`${className || \"\"} d0 d1 d2 d3`} style={props?.style}>\n      {children}\n    </div>;\n}\n",
+}

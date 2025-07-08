@@ -20,5 +20,5 @@ ToBTreeSet {
             "buttonS",
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\n<button {...props} className={`${clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className) || \"\"} d0 ${isPrimary ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[size] || \"\" : \"\"} ${props?.className || \"\"}`} style={props?.style} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\n<button {...props} className={`${clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className) || \"\"} d0 ${isPrimary ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[size] || \"\" : \"\"}`} style={props?.style} />;\n",
 }
