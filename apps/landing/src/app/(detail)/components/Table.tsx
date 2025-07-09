@@ -1,100 +1,62 @@
-import { Box, css } from '@devup-ui/react'
-import clsx from 'clsx'
+import { Box } from '@devup-ui/react'
 
-export function Table({
-  children,
-  className,
-  ...props
-}: React.ComponentProps<'table'>) {
+export function Table(props: React.ComponentProps<'table'>) {
   return (
     <Box
       as="table"
-      className={clsx(
-        css({
-          border: 'none',
-          styleOrder: 1,
-        }),
-        className,
-      )}
+      border="none"
       selectors={{
         '& th, & td': {
           border: 'none',
           minWidth: '200px',
         },
       }}
+      styleOrder={1}
       {...props}
-    >
-      {children}
-    </Box>
+    />
   )
 }
 
-export function Tr({ children, ...props }: React.ComponentProps<'tr'>) {
+export function Tr(props: React.ComponentProps<'tr'>) {
   return (
     <Box
       as="tr"
-      className={css({
-        borderTop: '1px solid $border',
-        borderBottom: '1px solid $border',
-      })}
+      borderBottom="1px solid $border"
+      borderTop="1px solid $border"
       {...props}
-    >
-      {children}
-    </Box>
+    />
   )
 }
 
-export function Td({
-  children,
-  className,
-  ...props
-}: React.ComponentProps<'td'>) {
+export function Td(props: React.ComponentProps<'td'>) {
   return (
     <Box
       as="td"
-      className={clsx(
-        css({
-          border: 'none',
-          py: '14px',
-          px: '20px',
-          width: 'fit-content',
-          styleOrder: 1,
-        }),
-        className,
-      )}
+      border="none"
+      px="20px"
+      py="14px"
+      styleOrder={1}
+      width="fit-content"
       {...props}
-    >
-      {children}
-    </Box>
+    />
   )
 }
 
-export function Th({
-  children,
-  className,
-  ...props
-}: React.ComponentProps<'th'>) {
+export function Th(props: React.ComponentProps<'th'>) {
   return (
     <Box
       as="th"
+      bg="$cardBg"
       border="none"
-      className={clsx(
-        css({
-          py: '14px',
-          px: '20px',
-          color: '$captionBold',
-          typography: 'bodyBold',
-          borderTop: '1px solid $border',
-          borderBottom: '1px solid $border',
-          bg: '$cardBg',
-          textAlign: 'left',
-          styleOrder: 1,
-        }),
-        className,
-      )}
+      borderBottom="1px solid $border"
+      borderTop="1px solid $border"
+      color="$captionBold"
+      px="20px"
+      py="14px"
+      styleOrder={1}
+      textAlign="left"
+      typography="bodyBold"
       {...props}
-    >
-      {children}
-    </Box>
+    />
   )
 }
