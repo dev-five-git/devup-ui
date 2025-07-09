@@ -60,10 +60,21 @@ export function MobMenu() {
           })}
           href="/storybook/index.html"
         >
-          <Flex alignItems="center" py="10px">
+          <Flex alignItems="center" gap="4px" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
               Storybook
             </Text>
+            <Box
+              _groupActive={{
+                bg: '$primary',
+              }}
+              bg="$text"
+              boxSize="20px"
+              maskImage="url(/outlink.svg)"
+              maskPosition="center"
+              maskRepeat="no-repeat"
+              maskSize="contain"
+            />
           </Flex>
         </Link>
         <Box h="100px" />
