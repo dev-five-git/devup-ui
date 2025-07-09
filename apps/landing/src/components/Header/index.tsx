@@ -113,6 +113,36 @@ export function Header() {
             <Menu keyword="team">Team</Menu>
           </Link>
         </Flex>
+        <Flex alignItems="center" px="24px">
+          <Link
+            className={css({
+              textDecoration: 'none',
+              display: 'flex',
+              gap: '4px',
+              alignItems: 'center',
+            })}
+            href="/storybook/index.html"
+            role="group"
+          >
+            <Menu keyword="team">Storybook</Menu>
+            <Box
+              _groupActive={{
+                opacity: '1',
+                bg: '$primary',
+              }}
+              _groupHover={{
+                opacity: '1',
+              }}
+              bg="$text"
+              boxSize="24px"
+              maskImage="url(/outlink.svg)"
+              maskPosition="center"
+              maskRepeat="no-repeat"
+              maskSize="contain"
+              opacity="0.6"
+            />
+          </Link>
+        </Flex>
         <HeaderInputWrap>
           <HeaderInput readOnly />
         </HeaderInputWrap>
