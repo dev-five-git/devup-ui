@@ -83,19 +83,17 @@ Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를
 모든 문법적 경우의 수를 고려하여 전처리기를 개발합니다.
 
 ```typescript
-// Before
-<Box bg={"red"}/>
-// After
-<Box className={"d0"}/>
+const before = <Box bg={"red"}/>
+
+const after = <div className="d0"/>
 ```
 
 변수 사용도 완전히 지원합니다.
 
 ```typescript
-// Before
-<Box bg={colorVariable}/>
-// After
-<Box className={"d0"} style={{
+const before = <Box bg={colorVariable}/>
+
+const after = <div className="d0" style={{
     "--d0": colorVariable
 }}/>
 ```
@@ -103,10 +101,9 @@ Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를
 다양한 표현식과 반응형도 모두 지원합니다.
 
 ```typescript
-// Before
-<Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
-// After
-<Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+
+const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
     "--d2": variable
 }}/>
 ```
@@ -141,9 +138,8 @@ Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를
 
 ```typescript
 // Responsive with Selector
-<Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{bg: ["red", "blue"]}}/>
 
 // Same
-<Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
-
+const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```

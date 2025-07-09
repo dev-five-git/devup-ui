@@ -83,19 +83,17 @@ Devup UI eliminates the performance degradation of the browser through the CSS i
 We develop a preprocessor that considers all grammatical cases.
 
 ```typescript
-// Before
-<Box bg={"red"}/>
-// After
-<Box className={"d0"}/>
+const before = <Box bg={"red"}/>
+
+const after = <div className="d0"/>
 ```
 
 Variables are fully supported.
 
 ```typescript
-// Before
-<Box bg={colorVariable}/>
-// After
-<Box className={"d0"} style={{
+const before = <Box bg={colorVariable}/>
+
+const after = <div className="d0" style={{
     "--d0": colorVariable
 }}/>
 ```
@@ -103,10 +101,9 @@ Variables are fully supported.
 Various expressions and responsiveness are also fully supported.
 
 ```typescript
-// Before
-<Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
-// After
-<Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+
+const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
     "--d2": variable
 }}/>
 ```
@@ -141,9 +138,8 @@ You can use responsive and pseudo selector.
 
 ```typescript
 // Responsive with Selector
-<Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{bg: ["red", "blue"]}}/>
 
-// Another way
-<Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
-
+// Same
+const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```
