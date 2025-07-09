@@ -124,7 +124,7 @@ export function Header() {
             href="/storybook/index.html"
             role="group"
           >
-            <Menu keyword="team">Storybook</Menu>
+            <Menu keyword="storybook">Storybook</Menu>
             <Box
               _groupActive={{
                 opacity: '1',
