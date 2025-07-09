@@ -8,7 +8,7 @@ import { Box, css } from '@devup-ui/react'
 export function Variants() {
   return (
     <>
-      <Box display="flex" gap="12px" marginBottom="16px">
+      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
         <Button
           className={css({ height: 'min-content' })}
           size="sm"
@@ -31,7 +31,7 @@ export function Variants() {
           Primary lg
         </Button>
       </Box>
-      <Box display="flex" gap="12px" marginBottom="16px">
+      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
         <Button className={css({ height: 'min-content' })} size="sm">
           Default sm
         </Button>

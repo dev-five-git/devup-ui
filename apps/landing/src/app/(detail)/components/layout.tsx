@@ -17,6 +17,7 @@ export default function Layout({
         <Box
           className="markdown-body"
           flex={1}
+          overflow="auto"
           px={['16px', '30px', '60px']}
           py={['24px', '40px']}
           w="100%"
