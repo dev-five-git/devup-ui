@@ -28,28 +28,36 @@ import MdxCardFooter from '../MdxCardFooter'
     </div>
     <MdxCardFooter>
     ```ts
-    <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-      <Button size="sm" style={{ height: 'min-content' }} variant="primary">
+    <Box 
+      display="flex"
+      gap="12px"
+      marginBottom="16px"
+    >
+      <Button size="sm" className={css({ height: 'min-content' })} variant="primary">
         Primary sm
       </Button>
-      <Button size="md" style={{ height: 'min-content' }} variant="primary">
+      <Button size="md" className={css({ height: 'min-content' })} variant="primary">
         Primary md
       </Button>
-      <Button size="lg" style={{ height: 'min-content' }} variant="primary">
+      <Button size="lg" className={css({ height: 'min-content' })} variant="primary">
         Primary lg
       </Button>
-    </div>
-    <div style={{ display: 'flex', gap: '12px' }}>
-      <Button size="sm" style={{ height: 'min-content' }}>
+    </Box>
+    <Box 
+      display="flex"
+      gap="12px"
+      marginBottom="16px"
+    >
+      <Button size="sm" className={css({ height: 'min-content' })}>
         Default sm
       </Button>
-      <Button size="md" style={{ height: 'min-content' }}>
+      <Button size="md" className={css({ height: 'min-content' })}>
         Default md
       </Button>
-      <Button size="lg" style={{ height: 'min-content' }}>
+      <Button size="lg" className={css({ height: 'min-content' })}>
         Default lg
       </Button>
-    </div>
+    </Box>
     ```
     </MdxCardFooter>
     </MdxCard>
@@ -72,13 +80,13 @@ import MdxCardFooter from '../MdxCardFooter'
             </div>
             <MdxCardFooter>
               ```ts
-              <Button danger size="sm" style={{ height: 'min-content' }}>
+              <Button danger size="sm" className={css({ height: 'min-content' })}>
                 Danger sm
               </Button>
-              <Button danger size="md" style={{ height: 'min-content' }}>
+              <Button danger size="md" className={css({ height: 'min-content' })}>
                 Danger md
               </Button>
-              <Button danger size="lg" style={{ height: 'min-content' }}>
+              <Button danger size="lg" className={css({ height: 'min-content' })}>
                 Danger lg
               </Button>
               ```
@@ -102,8 +110,12 @@ import MdxCardFooter from '../MdxCardFooter'
             </div>
             <MdxCardFooter>
               ```ts
-              <Button disabled variant="primary" style={{ height: 'min-content' }}>Primary disabled</Button>
-              <Button disabled style={{ height: 'min-content' }}>Default disabled</Button>
+              <Button disabled variant="primary" className={css({ height: 'min-content' })}>
+                Primary disabled
+              </Button>
+              <Button disabled className={css({ height: 'min-content' })}>
+                Default disabled
+              </Button>
               ```
             </MdxCardFooter>
           </MdxCard>
@@ -193,7 +205,7 @@ import MdxCardFooter from '../MdxCardFooter'
                     />
                   </svg>
                 }
-                style={{ height: 'min-content' }}
+                className={css({ height: 'min-content' })}
               >
                 With icon
               </Button>
@@ -213,13 +225,13 @@ import MdxCardFooter from '../MdxCardFooter'
                   </svg>
                 }
                 variant="primary"
-                style={{ height: 'min-content' }}
+                className={css({ height: 'min-content' })}
               >
                 Add
               </Button>
               <Button
                 icon={<IconDelete />}
-                style={{ height: 'min-content' }}
+                className={css({ height: 'min-content' })}
                 danger
               >
                 Delete
@@ -329,22 +341,24 @@ import MdxCardFooter from '../MdxCardFooter'
                 </div>
               </div>
               <br />
-              **Icon**
+              **Colors**
 
             <br/>
-              Pass in an svg icon component into `icon` prop. If props like `stroke` and `fill` have `"currentColor"` value, the svg icon will follow the text color of the button.
+              Pass in an object containing color tokens into `colors` prop. You can change color of border, background, danger color and more using `primary`, `error`, `text`, and so on.
             </div>
             <MdxCardFooter>
               ```ts
-              <div
-                style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}
+              <Box
+                display="flex"
+                gap="12px"
+                marginBottom="16px"
               >
                 <Button
                   colors={{ 
                     primary: 'orange',
                     text: 'chocolate',
                   }}
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Default
                 </Button>
@@ -354,7 +368,7 @@ import MdxCardFooter from '../MdxCardFooter'
                     text: 'chocolate',
                   }}
                   variant="primary"
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Primary
                 </Button>
@@ -364,20 +378,22 @@ import MdxCardFooter from '../MdxCardFooter'
                     text: 'chocolate',
                   }}
                   danger
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Danger
                 </Button>
-              </div>
-              <div
-                style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}
+              </Box>
+              <Box
+                display="flex"
+                gap="12px"
+                marginBottom="16px"
               >
                 <Button
                   colors={{ 
                     primary: 'darkgreen',
                     text: 'darkseagreen',
                   }}
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Default
                 </Button>
@@ -387,7 +403,7 @@ import MdxCardFooter from '../MdxCardFooter'
                     text: 'darkseagreen',
                   }}
                   variant="primary"
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Primary
                 </Button>
@@ -397,19 +413,21 @@ import MdxCardFooter from '../MdxCardFooter'
                     text: 'darkseagreen',
                   }}
                   danger
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Danger
                 </Button>
-              </div>
-              <div
-                style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}
+              </Box>
+              <Box
+                display="flex"
+                gap="12px"
+                marginBottom="16px"
               >
                 <Button
                   colors={{ 
                     primary: 'steelblue',
                   }}
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Default
                 </Button>
@@ -418,7 +436,7 @@ import MdxCardFooter from '../MdxCardFooter'
                     primary: 'steelblue',
                   }}
                   variant="primary"
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Primary
                 </Button>
@@ -427,11 +445,11 @@ import MdxCardFooter from '../MdxCardFooter'
                     error: 'steelblue',
                   }}
                   danger
-                  style={{ height: 'min-content' }}
+                  className={css({ height: 'min-content' })}
                 >
                   Danger
                 </Button>
-              </div>
+              </Box>
               ```
             </MdxCardFooter>
           </MdxCard>
