@@ -1,8 +1,40 @@
-import { css } from '@devup-ui/react'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { Box, css, VStack } from '@devup-ui/react'
+import ReactMarkdown from 'react-markdown'
+
+import { Code } from '@/components/Code'
+import { _components } from '@/mdx-components'
 
 import Card from './Card'
+import MdxCardFooter from './MdxCardFooter'
 
-export default function MdxCard({ children }: { children: React.ReactNode }) {
+export default async function MdxCard({
+  src,
+  demo,
+}: {
+  children: React.ReactNode
+  src: string
+  demo: React.ReactNode
+}) {
+  const content = await readFile(
+    join(
+      process.cwd(),
+      'src/app/(detail)/components',
+      src ?? 'button/demo/Variants.tsx',
+    ),
+    {
+      encoding: 'utf-8',
+    },
+  )
+  // extract comment
+  const comment = content.match(/\/\*\*[\s\S]*?\*\//)?.[0]
+  const code = content.replace('\n' + comment!, '')
+  const normalizedComment = comment
+    ?.replace(/\/\*\*|\*\//g, '')
+    ?.replace(/^\s*\*\s*/gm, '')
+
   return (
     <Card
       className={css({
@@ -23,9 +55,20 @@ export default function MdxCard({ children }: { children: React.ReactNode }) {
         _lastChild: {
           marginBottom: '0',
         },
+        typography: 'bodyReg',
+        color: '$text',
+        whiteSpace: 'pre-wrap',
       })}
     >
-      {children}
+      <VStack gap="30px" px="24px" py="32px">
+        <Box>{demo}</Box>
+        <ReactMarkdown components={_components}>
+          {normalizedComment ?? ''}
+        </ReactMarkdown>
+      </VStack>
+      <MdxCardFooter>
+        <Code language="tsx" value={code} />
+      </MdxCardFooter>
     </Card>
   )
 }

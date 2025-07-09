@@ -3,7 +3,7 @@ import type { MDXComponents } from 'mdx/types'
 
 import { Code } from './components/Code'
 
-const _components = {
+export const _components = {
   code({ node, inline, className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || '')
     return !inline && match ? (
@@ -41,7 +41,7 @@ const _components = {
   },
   p({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="p" color="$text" typography="bodyReg">
+      <Text as="p" color="$text" m="0" typography="bodyReg">
         {children}
       </Text>
     )

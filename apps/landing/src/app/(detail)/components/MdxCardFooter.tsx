@@ -44,10 +44,9 @@ export default function MdxCardFooter({
         {isOpen && (
           <Box
             borderTop="1px solid $border"
-            maxW="100%"
             overflow="auto"
             px="24px"
-            py="32px"
+            py="16px"
           >
             {children}
           </Box>
