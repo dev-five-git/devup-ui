@@ -7,7 +7,7 @@ import IconDelete from '../IconDelete'
  * **Icon**
  * Pass in an svg icon component into `icon` prop. If props like `stroke` and `fill` have `"currentColor"` value, the svg icon will follow the text color of the button.
  */
-export function Icon() {
+export default function Icon() {
   return (
     <Box w="100%">
       <Flex flexWrap="wrap" gap="12px" mb="16px">
