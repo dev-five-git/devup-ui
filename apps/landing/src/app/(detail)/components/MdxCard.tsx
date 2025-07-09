@@ -14,7 +14,6 @@ export default async function MdxCard({
   src,
   demo,
 }: {
-  children: React.ReactNode
   src: string
   demo: React.ReactNode
 }) {
