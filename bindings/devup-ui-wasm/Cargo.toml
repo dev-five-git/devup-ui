@@ -3,6 +3,10 @@ name = "devup-ui-wasm"
 version = "0.1.0"
 authors = ["owjs3901 <owjs3901@naver.com>"]
 edition = "2024"
+description = "Devup UI WASM bindings"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+documentation = "https://devup-ui.com"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
