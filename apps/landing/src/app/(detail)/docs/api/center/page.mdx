@@ -13,18 +13,20 @@ It has a `display: flex` style with `justify-content: center` and `align-items: 
 
 ## How to use
 
-````jsx
-// Before
-<Center>
+````typescript
+const before = (
+  <Center>
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
-</Center>
+  </Center>
+)
 
-// After, It has 3 classes on default
-<div className="d3 d4 d5">
+const after = (
+  <div className="d3 d4 d5">
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
-</div>```
+  </div>
+)
 ````

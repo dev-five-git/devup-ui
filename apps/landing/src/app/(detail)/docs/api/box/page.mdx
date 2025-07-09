@@ -14,20 +14,16 @@ It is just a `div` with some styles.
 
 ## How to use
 
-```jsx
-// Before
-<Box bg={"red"} />
+```typescript
+const before = <Box bg={"red"} />
 
-// After
-<div className="d0" />
+const after = <div className="d0" />
 ```
 
 You can use the `as` prop to change the element type.
 
-```jsx
-// Before
-<Box as={"span"} />
+```typescript
+const before = <Box as={"span"} />
 
-// After
-<span className="d0" />
+const after = <span className="d0" />
 ```

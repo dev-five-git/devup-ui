@@ -82,8 +82,12 @@ export function Header() {
           </Suspense>
         </Box>
       </Flex>
-      <Flex alignItems="center" display={['none', null, 'flex']} gap="10px">
-        <Flex alignItems="center" px="24px">
+      <Flex
+        alignItems="center"
+        display={['none', null, 'flex']}
+        gap={[null, null, '4px', '10px']}
+      >
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -93,7 +97,7 @@ export function Header() {
             <Menu keyword="docs">Docs</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px="24px">
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -103,7 +107,7 @@ export function Header() {
             <Menu keyword="components">Components</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px="24px">
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
@@ -111,6 +115,36 @@ export function Header() {
             href="/team"
           >
             <Menu keyword="team">Team</Menu>
+          </Link>
+        </Flex>
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+              display: 'flex',
+              gap: '4px',
+              alignItems: 'center',
+            })}
+            href="/storybook/index.html"
+            role="group"
+          >
+            <Menu keyword="storybook">Storybook</Menu>
+            <Box
+              _groupActive={{
+                opacity: '1',
+                bg: '$primary',
+              }}
+              _groupHover={{
+                opacity: '1',
+              }}
+              bg="$text"
+              boxSize="24px"
+              maskImage="url(/outlink.svg)"
+              maskPosition="center"
+              maskRepeat="no-repeat"
+              maskSize="contain"
+              opacity="0.6"
+            />
           </Link>
         </Flex>
         <HeaderInputWrap>

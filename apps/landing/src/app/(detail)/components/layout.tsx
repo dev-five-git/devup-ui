@@ -8,13 +8,20 @@ export default function Layout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
-      <Flex maxW="1920px" minH="calc(100vh - 500px)" mx="auto" w="100%">
+      <Flex maxW="1920px" minH="calc(100vh - 500px)" mx="auto">
         <Box display={['none', null, 'initial']} p="20px 16px" w="220px">
           <Box pos="sticky" top={['70px', null, '90px']}>
             <LeftMenu />
           </Box>
         </Box>
-        <Box className="markdown-body" flex={1}>
+        <Box
+          className="markdown-body"
+          flex={1}
+          overflow="auto"
+          px={['16px', '30px', '60px']}
+          py={['24px', '40px']}
+          w="100%"
+        >
           {children}
         </Box>
         <Box display={['none', null, null, null, null, 'initial']}>

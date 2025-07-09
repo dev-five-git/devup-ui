@@ -1,5 +1,7 @@
+import { Box } from '@devup-ui/react'
 import SyntaxHighlighter from 'react-syntax-highlighter'
-import Light from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-dark-reasonable'
+import Dark from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-dark'
+import Light from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-light'
 
 export const Code = ({
   language,
@@ -9,8 +11,26 @@ export const Code = ({
   value: string
 }) => {
   return (
-    <SyntaxHighlighter language={language} style={Light}>
-      {value}
-    </SyntaxHighlighter>
+    <>
+      <Box
+        _themeDark={{
+          display: 'none',
+        }}
+      >
+        <SyntaxHighlighter language={language} showLineNumbers style={Light}>
+          {value}
+        </SyntaxHighlighter>
+      </Box>
+      <Box
+        _themeDark={{
+          display: 'block',
+        }}
+        display="none"
+      >
+        <SyntaxHighlighter language={language} showLineNumbers style={Dark}>
+          {value}
+        </SyntaxHighlighter>
+      </Box>
+    </>
   )
 }

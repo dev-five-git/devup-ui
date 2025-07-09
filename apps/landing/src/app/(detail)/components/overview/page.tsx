@@ -7,7 +7,7 @@ import Card from '../Card'
 
 export default function Page() {
   return (
-    <VStack gap="16px" px={['16px', '30px', '60px']} py={['24px', '40px']}>
+    <VStack gap="16px">
       <Text color="$primary" typography="captionBold">
         Overview
       </Text>

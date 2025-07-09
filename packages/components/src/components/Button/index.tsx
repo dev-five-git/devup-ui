@@ -60,7 +60,7 @@ export function Button({
               true: '1px solid var(--error, #D52B2E)',
               false: '1px solid var(--primary, #8163E1)',
             }[danger.toString()],
-            color: '#000',
+            color: 'var(--text, #272727)',
           },
         }[variant]
       }

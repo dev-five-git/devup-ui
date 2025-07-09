@@ -1,9 +1,9 @@
-import { Text } from '@devup-ui/react'
+import { Box, Text } from '@devup-ui/react'
 import type { MDXComponents } from 'mdx/types'
 
 import { Code } from './components/Code'
 
-const _components = {
+export const _components = {
   code({ node, inline, className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || '')
     return !inline && match ? (
@@ -41,7 +41,87 @@ const _components = {
   },
   p({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="p" color="$text" typography="bodyReg">
+      <Text as="p" color="$text" m="0" typography="bodyReg">
+        {children}
+      </Text>
+    )
+  },
+  pre({ children }: { children: React.ReactNode }) {
+    return <Box as="pre">{children}</Box>
+  },
+  table({ children }: { children: React.ReactNode }) {
+    return (
+      <Box
+        as="table"
+        border="none"
+        maxW="100%"
+        minW="600px"
+        selectors={{
+          '& thead, & tbody': {
+            border: 'none',
+          },
+        }}
+        typography="bodyBold"
+      >
+        {children}
+      </Box>
+    )
+  },
+  thead({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="thead"
+        bg="$cardBg"
+        border="none"
+        color="$captionBold"
+        m="0"
+        textAlign="left"
+        typography="bodyReg"
+      >
+        {children}
+      </Text>
+    )
+  },
+  th({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="th"
+        border="none"
+        color="$captionBold"
+        m="0"
+        px="20px"
+        py="14px"
+      >
+        {children}
+      </Text>
+    )
+  },
+  tr({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="tr"
+        borderBottom="1px solid $border"
+        borderTop="1px solid $border"
+        color="$text"
+        m="0"
+        typography="body"
+      >
+        {children}
+      </Text>
+    )
+  },
+  td({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="td"
+        border="none"
+        color="$text"
+        m="0"
+        px="20px"
+        py="14px"
+        typography="body"
+        whiteSpace="pre-wrap"
+      >
         {children}
       </Text>
     )

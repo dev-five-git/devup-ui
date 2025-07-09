@@ -14,18 +14,20 @@ It has a `display: flex` style with `flex-direction: column`.
 
 ## How to use
 
-```jsx
-// Before
-<VStack>
+```typescript
+const before = (
+  <VStack>
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
-</VStack>
+  </VStack>
+)
 
-// After, it has 2 classes on default
-<div className="d3 d4">
+const after = (
+  <div className="d3 d4">
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
-</div>
+  </div>
+)
 ```

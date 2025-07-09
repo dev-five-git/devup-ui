@@ -14,19 +14,21 @@ It has a `display: grid` style by default.
 
 ## How to use
 
-````jsx
-// Before
-<Grid>
+````typescript
+const before = (
+  <Grid>
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
     <Box bg="blue" w={25} h={25} />
-</Grid>
+  </Grid>
+)
 
-// After, It has a class on default
-<div className="d3">
+const after = (
+  <div className="d3">
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
     <div className="d0 d1 d2"></div>
-</div>
+  </div>
+)
     ```
 ````

@@ -8,45 +8,43 @@ export function LeftMenu() {
       <MenuItem to="/components/overview">Overview</MenuItem>
       <MenuItem
         subMenu={[
-          { to: '/components/form/button', children: 'Button' },
-          { to: '/components/form/text-box', children: 'Text box' },
-          { to: '/components/form/text-area', children: 'Text area' },
-          { to: '/components/form/dropdown', children: 'Dropdown' },
-          { to: '/components/form/radio', children: 'Radio' },
-          { to: '/components/form/checkbox', children: 'Checkbox' },
-          { to: '/components/form/stepper', children: 'Stepper' },
-          { to: '/components/form/toggle', children: 'Toggle' },
-          { to: '/components/form/slider', children: 'Slider' },
-          { to: '/components/form/date-picker', children: 'Date picker' },
-          { to: '/components/form/color-picker', children: 'Color picker' },
-          { to: '/components/form/uploader', children: 'Uploader' },
-          { to: '/components/form/pagination', children: 'Pagination' },
-          { to: '/components/form/progress-bar', children: 'Progress Bar' },
-          { to: '/components/form/search', children: 'Search' },
-          { to: '/components/form/select', children: 'Select' },
-          { to: '/components/form/label', children: 'Label' },
+          { to: '/components/button', children: 'Button' },
+          { to: '/components/text-box', children: 'Text box' },
+          { to: '/components/text-area', children: 'Text area' },
+          { to: '/components/dropdown', children: 'Dropdown' },
+          { to: '/components/radio', children: 'Radio' },
+          { to: '/components/checkbox', children: 'Checkbox' },
+          { to: '/components/stepper', children: 'Stepper' },
+          { to: '/components/toggle', children: 'Toggle' },
+          { to: '/components/slider', children: 'Slider' },
+          { to: '/components/date-picker', children: 'Date picker' },
+          { to: '/components/color-picker', children: 'Color picker' },
+          { to: '/components/uploader', children: 'Uploader' },
+          { to: '/components/pagination', children: 'Pagination' },
+          { to: '/components/progress-bar', children: 'Progress Bar' },
+          { to: '/components/search', children: 'Search' },
+          { to: '/components/select', children: 'Select' },
+          { to: '/components/label', children: 'Label' },
         ]}
       >
         Form
       </MenuItem>
       <MenuItem
         subMenu={[
-          { to: '/components/layout/footer', children: 'Footer' },
-          { to: '/components/layout/tooltip', children: 'Tooltip' },
-          { to: '/components/layout/tab', children: 'Tab' },
-          { to: '/components/layout/menu', children: 'Menu' },
-          { to: '/components/layout/header', children: 'Header' },
-          { to: '/components/layout/confirm', children: 'Confirm' },
-          { to: '/components/layout/snackbar', children: 'Snackbar' },
-          { to: '/components/layout/bottom-sheet', children: 'Bottom sheet' },
+          { to: '/components/footer', children: 'Footer' },
+          { to: '/components/tooltip', children: 'Tooltip' },
+          { to: '/components/tab', children: 'Tab' },
+          { to: '/components/menu', children: 'Menu' },
+          { to: '/components/header', children: 'Header' },
+          { to: '/components/confirm', children: 'Confirm' },
+          { to: '/components/snackbar', children: 'Snackbar' },
+          { to: '/components/bottom-sheet', children: 'Bottom sheet' },
         ]}
       >
         Layout
       </MenuItem>
       <MenuItem
-        subMenu={[
-          { to: '/components/theme/theme-button', children: 'Theme Button' },
-        ]}
+        subMenu={[{ to: '/components/theme-button', children: 'Theme Button' }]}
       >
         Theme
       </MenuItem>

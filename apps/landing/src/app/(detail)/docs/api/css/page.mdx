@@ -17,26 +17,31 @@ export const metadata = {
 You can use `css` as a tag function to create a css string. Pass in a string of css properties as an argument, ans it will be converted
 into a class list.
 
-```jsx
-// Before
-<any className={css`
-    color: red;
-`}/>
+```typescript
+const before = (
+  <div
+    className={css`
+      color: red;
+    `}
+  />
+)
 
-// After
-<any className="d0"/>
+const after = <any className="d0"/>
+
 ```
 
 ### CSS Object
 
 You can also use the css function by passing in a css object as an argument.
 
-```jsx
-// Before
-<any className={css({
-    color: "red"
-})}/>
+```typescript
+const before = (
+  <any
+    className={css({
+      color: 'red',
+    })}
+  />
+)
 
-// After
-<any className="d0" />
+const after = <any className="d0" />
 ```

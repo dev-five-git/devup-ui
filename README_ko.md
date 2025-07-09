@@ -82,31 +82,28 @@ Devup UI는 런타임이 필요 없는 CSS in JS 전처리기입니다.
 Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를 원천적으로 제거합니다.
 모든 문법적 경우의 수를 고려하여 전처리기를 개발합니다.
 
-```jsx
-// Before
-<Box bg={"red"}/>
-// After
-<Box className={"d0"}/>
+```typescript
+const before = <Box bg={"red"}/>
+
+const after = <div className="d0"/>
 ```
 
 변수 사용도 완전히 지원합니다.
 
-```jsx
-// Before
-<Box bg={colorVariable}/>
-// After
-<Box className={"d0"} style={{
+```typescript
+const before = <Box bg={colorVariable}/>
+
+const after = <div className="d0" style={{
     "--d0": colorVariable
 }}/>
 ```
 
 다양한 표현식과 반응형도 모두 지원합니다.
 
-```jsx
-// Before
-<Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
-// After
-<Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+```typescript
+const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+
+const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
     "--d2": variable
 }}/>
 ```
@@ -130,7 +127,7 @@ Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를
 }
 ```
 
-```jsx
+```typescript
 // Type Safe
 <Text color="$text"/>
 ```
@@ -139,11 +136,10 @@ Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를
 
 물론 동시 사용도 가능합니다.
 
-```jsx
+```typescript
 // Responsive with Selector
-<Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{bg: ["red", "blue"]}}/>
 
 // Same
-<Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
-
+const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```

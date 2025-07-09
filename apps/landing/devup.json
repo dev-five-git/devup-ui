@@ -31,7 +31,7 @@
                 "footerText": "#51575F",
                 "menuHover": "#F6F4FF",
                 "menuActive": "#EAE8FC",
-                "captionBold": "#878594",
+                "captionBold": "#7C7B8E",
                 "search": "#9C50FF",
                 "kakaoButton": "#DE9800",
                 "kakaoButtonHover": "#C98900",
@@ -67,7 +67,7 @@
                 "footerText": "#FFFFFF",
                 "menuHover": "#3C404B",
                 "menuActive": "#283259",
-                "captionBold": "#878594",
+                "captionBold": "#9C9BA9",
                 "search": "#6FA4FF",
                 "kakaoButton": "#A3740D",
                 "kakaoButtonHover": "#C98900",
@@ -525,6 +525,14 @@
                 "fontWeight": 800,
                 "fontSize": "12px",
                 "lineHeight": 1.4,
+                "letterSpacing": "-0.03em"
+            },
+            "bodyBold": {
+                "fontFamily": "Pretendard",
+                "fontStyle": "normal",
+                "fontWeight": 700,
+                "fontSize": "16px",
+                "lineHeight": 1.5,
                 "letterSpacing": "-0.03em"
             }
         }
