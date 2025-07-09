@@ -19,29 +19,30 @@ We develop a preprocessor that considers all grammatical cases.
 
 ## How it works
 
-```jsx
-<Box bg={"red"}/>
+```typescript
+const before = <Box bg={"red"} />
 
-<Box className={"d0"}/>
+const after = <div className="d0" />
 ```
 
 ## Responsive
 
 Devup UI supports responsive design.
 
-```jsx
-<Box bg={["red", "blue"]}/>
+```typescript
+const before = <Box bg={["red", "blue"]} />
 
-<Box className={"d0 d1"}/>
+const after = <div className="d0 d1" />
 ```
 
 ## Variables
 
 Devup UI supports variables.
 
-```jsx
-<Box bg={colorVariable}/>
-<Box className={"d0"} style={{
+```typescript
+const before = <Box bg={colorVariable} />
+
+const after = <div className="d0" style={{
     "--d0": colorVariable
 }}/>
 ```
@@ -65,7 +66,7 @@ Devup UI supports theme.
 }
 ```
 
-```jsx
+```typescript
 <Text color="$text"/>
 ```
 
@@ -73,9 +74,10 @@ Devup UI supports theme.
 
 Devup UI supports expressions.
 
-```jsx
-<Box bg={a > b ? "yellow" : variable}/>
-<Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+```typescript
+const before = <Box bg={a > b ? "yellow" : variable}/>
+
+const after = <Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
     "--d2": variable
 }}/>
 ```
@@ -84,9 +86,9 @@ Devup UI supports expressions.
 
 Devup UI supports pseudo selector.
 
-```jsx
-<Box _hover={{ bg: "red" }}/>
+```typescript
+const before = <Box _hover={{ bg: "red" }}/>
 
-<Box className={"d0"} />
+const after = <Box className={"d0"}/>
 ```
 

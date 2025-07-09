@@ -12,10 +12,12 @@ The `group` selector is used to apply styles to a group of elements. It is used 
 
 ## How to use
 
-```jsx
-<div role="group">
-  <Box _groupHover={{ bg: 'red' }} />
-  <Box _groupHover={{ bg: 'red' }} />
-  <Box _groupHover={{ bg: 'red' }} />
-</div>
+```typescript
+const group = (
+  <div role="group">
+    <Box _groupHover={{ bg: 'red' }} />
+    <Box _groupHover={{ bg: 'red' }} />
+    <Box _groupHover={{ bg: 'red' }} />
+  </div>
+)
 ```

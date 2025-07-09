@@ -46,12 +46,12 @@ export default async function MdxCard({
         borderRadius: '10px',
         border: '1px solid $border',
         bg: '$containerBackground',
-        maxWidth: '100%',
+        maxW: '100%',
         flexShrink: 0,
         cursor: 'default',
-        marginBottom: '20px',
+        mb: '20px',
         _lastChild: {
-          marginBottom: '0',
+          mb: '0',
         },
         typography: 'bodyReg',
         color: '$text',
@@ -65,7 +65,7 @@ export default async function MdxCard({
         </ReactMarkdown>
       </VStack>
       <MdxCardFooter>
-        <Code language="tsx" value={code} />
+        <Code language="typescript" value={code} />
       </MdxCardFooter>
     </Card>
   )

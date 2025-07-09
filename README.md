@@ -82,7 +82,7 @@ Devup UI is a CSS in JS preprocessor that does not require runtime.
 Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
 We develop a preprocessor that considers all grammatical cases.
 
-```jsx
+```typescript
 // Before
 <Box bg={"red"}/>
 // After
@@ -91,7 +91,7 @@ We develop a preprocessor that considers all grammatical cases.
 
 Variables are fully supported.
 
-```jsx
+```typescript
 // Before
 <Box bg={colorVariable}/>
 // After
@@ -102,7 +102,7 @@ Variables are fully supported.
 
 Various expressions and responsiveness are also fully supported.
 
-```jsx
+```typescript
 // Before
 <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
 // After
@@ -130,7 +130,7 @@ Support Theme with Typing
 }
 ```
 
-```jsx
+```typescript
 // Type Safe
 <Text color="$text"/>
 ```
@@ -139,7 +139,7 @@ Support Responsive And Pseudo Selector
 
 You can use responsive and pseudo selector.
 
-```jsx
+```typescript
 // Responsive with Selector
 <Box _hover={{bg: ["red", "blue"]}}/>
 
