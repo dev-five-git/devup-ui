@@ -49,6 +49,74 @@ export const _components = {
   pre({ children }: { children: React.ReactNode }) {
     return <Box as="pre">{children}</Box>
   },
+  table({ children }: { children: React.ReactNode }) {
+    return (
+      <Box
+        as="table"
+        border="none"
+        maxW="100%"
+        minW="600px"
+        selectors={{
+          '& thead, & tbody': {
+            border: 'none',
+          },
+        }}
+        typography="bodyBold"
+      >
+        {children}
+      </Box>
+    )
+  },
+  thead({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="thead"
+        bg="$cardBg"
+        border="none"
+        color="$captionBold"
+        m="0"
+        textAlign="left"
+        typography="bodyReg"
+      >
+        {children}
+      </Text>
+    )
+  },
+  th({ children }: { children: React.ReactNode }) {
+    return (
+      <Text as="th" border="none" color="$captionBold" m="0">
+        {children}
+      </Text>
+    )
+  },
+  tr({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="tr"
+        borderBottom="1px solid $border"
+        borderTop="1px solid $border"
+        color="$text"
+        m="0"
+        typography="body"
+      >
+        {children}
+      </Text>
+    )
+  },
+  td({ children }: { children: React.ReactNode }) {
+    return (
+      <Text
+        as="td"
+        border="none"
+        color="$text"
+        m="0"
+        typography="body"
+        whiteSpace="pre-wrap"
+      >
+        {children}
+      </Text>
+    )
+  },
 }
 
 export function useMDXComponents(components: MDXComponents): MDXComponents {
