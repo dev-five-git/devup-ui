@@ -60,7 +60,7 @@ export default async function MdxCard({
     >
       <VStack gap="30px" px="24px" py="32px">
         <Box>{demo}</Box>
-        <ReactMarkdown components={_components}>
+        <ReactMarkdown components={_components as any}>
           {normalizedComment ?? ''}
         </ReactMarkdown>
       </VStack>

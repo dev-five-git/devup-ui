@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "rollup-plugin-preserve-directives": "^0.4.0",
-    "vite": "^7.0.0",
+    "vite": "^7.0.3",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
     "typescript": "^5.8.3",
