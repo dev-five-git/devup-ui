@@ -84,7 +84,14 @@ export const _components = {
   },
   th({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="th" border="none" color="$captionBold" m="0">
+      <Text
+        as="th"
+        border="none"
+        color="$captionBold"
+        m="0"
+        px="20px"
+        py="14px"
+      >
         {children}
       </Text>
     )
@@ -110,6 +117,8 @@ export const _components = {
         border="none"
         color="$text"
         m="0"
+        px="20px"
+        py="14px"
         typography="body"
         whiteSpace="pre-wrap"
       >
