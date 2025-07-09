@@ -78,7 +78,7 @@ importers:
         specifier: ^19.1.0
         version: 19.1.0(react@19.1.0)
       react-markdown:
-        specifier: 10.1.0
+        specifier: ^10.1.0
         version: 10.1.0(@types/react@19.1.8)(react@19.1.0)
       react-syntax-highlighter:
         specifier: ^15.6.1
