@@ -1,84 +1,15 @@
-import { Box, css, Text, VStack } from '@devup-ui/react'
+import { VStack } from '@devup-ui/react'
+
+import { CustomCode } from '@/components/mdx/components/CustomCode'
+import { CustomH4 } from '@/components/mdx/components/CustomH4'
+import { CustomH6 } from '@/components/mdx/components/CustomH6'
+import { CustomParagraph } from '@/components/mdx/components/CustomParagraph'
+import { CustomPre } from '@/components/mdx/components/CustomPre'
+import { CustomStrong } from '@/components/mdx/components/CustomStrong'
 
 import Api from './Api.mdx'
 import Button from './Button.mdx'
 import Examples from './Examples.mdx'
-
-function CustomParagraph({ children }: { children: React.ReactNode }) {
-  return (
-    <Text as="p" color="$text" lineHeight="1" m="0" typography="bodyReg">
-      {children}
-    </Text>
-  )
-}
-
-function CustomPre({ children }: { children: React.ReactNode }) {
-  return (
-    <Box
-      as="pre"
-      className={css({
-        margin: '0',
-        w: '100%',
-        whiteSpace: 'pre-wrap',
-        lineBreak: 'anywhere',
-        bg: 'transparent',
-        overflow: 'auto',
-      })}
-      selectors={{
-        '& pre': {
-          margin: '0',
-          w: '100%',
-          whiteSpace: 'pre-wrap',
-          lineBreak: 'anywhere',
-          bg: 'transparent',
-          overflow: 'auto',
-        },
-        '& pre, & code, & span, & p': {
-          margin: '0',
-          w: '100%',
-          whiteSpace: 'pre-wrap',
-          lineBreak: 'anywhere',
-          bg: 'transparent',
-          overflow: 'auto',
-        },
-      }}
-    >
-      {children}
-    </Box>
-  )
-}
-
-function CustomCode({ children }: { children: string }) {
-  return (
-    <Box as="code" color="$primary" whiteSpace="pre-wrap">
-      {children.replaceAll('<br>', '\n')}
-    </Box>
-  )
-}
-
-function CustomH4({ children }: { children: React.ReactNode }) {
-  return (
-    <Text as="h4" color="$title" m="0" typography="h4">
-      {children}
-    </Text>
-  )
-}
-
-function CustomH6({ children }: { children: React.ReactNode }) {
-  return (
-    <Text as="h6" color="$title" m="0" typography="h6">
-      {children}
-    </Text>
-  )
-}
-
-function CustomStrong({ children }: { children: React.ReactNode }) {
-  return (
-    <Text as="strong" color="$primary" m="0" typography="captionBold">
-      {children}
-    </Text>
-  )
-}
 
 export default function Page() {
   return (
