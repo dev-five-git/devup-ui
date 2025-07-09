@@ -1,5 +1,5 @@
 import { Button } from '@devup-ui/components'
-import { Box, css } from '@devup-ui/react'
+import { Box, css, Flex } from '@devup-ui/react'
 
 /**
  * **Disabled**
@@ -7,8 +7,8 @@ import { Box, css } from '@devup-ui/react'
  */
 export function Disabled() {
   return (
-    <Box width="100%">
-      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
+    <Box w="100%">
+      <Flex flexWrap="wrap" gap="12px" mb="16px">
         <Button
           className={css({ height: 'min-content' })}
           disabled
@@ -19,7 +19,7 @@ export function Disabled() {
         <Button className={css({ height: 'min-content' })} disabled>
           Default disabled
         </Button>
-      </Box>
+      </Flex>
     </Box>
   )
 }

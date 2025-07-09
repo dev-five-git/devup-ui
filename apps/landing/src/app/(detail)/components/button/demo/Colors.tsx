@@ -1,5 +1,5 @@
 import { Button } from '@devup-ui/components'
-import { Box, css } from '@devup-ui/react'
+import { Box, css, Flex } from '@devup-ui/react'
 
 /**
  * **Colors**
@@ -7,10 +7,10 @@ import { Box, css } from '@devup-ui/react'
  */
 export function Colors() {
   return (
-    <Box width="100%">
-      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
+    <Box w="100%">
+      <Flex flexWrap="wrap" gap="12px" mb="16px">
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'orange',
             text: 'chocolate',
@@ -19,7 +19,7 @@ export function Colors() {
           Default
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'orange',
             text: 'chocolate',
@@ -29,7 +29,7 @@ export function Colors() {
           Primary
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             error: 'orange',
             text: 'chocolate',
@@ -38,10 +38,10 @@ export function Colors() {
         >
           Danger
         </Button>
-      </Box>
-      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
+      </Flex>
+      <Flex flexWrap="wrap" gap="12px" mb="16px">
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'darkgreen',
             text: 'darkseagreen',
@@ -50,7 +50,7 @@ export function Colors() {
           Default
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'darkgreen',
             text: 'darkseagreen',
@@ -60,7 +60,7 @@ export function Colors() {
           Primary
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             error: 'darkgreen',
             text: 'darkseagreen',
@@ -69,10 +69,10 @@ export function Colors() {
         >
           Danger
         </Button>
-      </Box>
-      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
+      </Flex>
+      <Flex flexWrap="wrap" gap="12px" mb="16px">
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'steelblue',
           }}
@@ -80,7 +80,7 @@ export function Colors() {
           Default
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             primary: 'steelblue',
           }}
@@ -89,7 +89,7 @@ export function Colors() {
           Primary
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           colors={{
             error: 'steelblue',
           }}
@@ -97,7 +97,7 @@ export function Colors() {
         >
           Danger
         </Button>
-      </Box>
+      </Flex>
     </Box>
   )
 }

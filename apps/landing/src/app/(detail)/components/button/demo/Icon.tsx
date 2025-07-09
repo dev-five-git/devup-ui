@@ -1,5 +1,5 @@
 import { Button } from '@devup-ui/components'
-import { Box, css } from '@devup-ui/react'
+import { Box, css, Flex } from '@devup-ui/react'
 
 import IconDelete from '../IconDelete'
 
@@ -9,10 +9,10 @@ import IconDelete from '../IconDelete'
  */
 export function Icon() {
   return (
-    <Box width="100%">
-      <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">
+    <Box w="100%">
+      <Flex flexWrap="wrap" gap="12px" mb="16px">
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           icon={
             <svg
               fill="none"
@@ -34,7 +34,7 @@ export function Icon() {
         </Button>
 
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           icon={
             <svg
               fill="none"
@@ -54,13 +54,13 @@ export function Icon() {
           Add
         </Button>
         <Button
-          className={css({ height: 'min-content' })}
+          className={css({ h: 'min-content' })}
           danger
           icon={<IconDelete />}
         >
           Delete
         </Button>
-      </Box>
+      </Flex>
     </Box>
   )
 }
