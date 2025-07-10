@@ -5,7 +5,7 @@ import { Box, css, Flex } from '@devup-ui/react'
  * **Colors**
  * Pass in an object containing color tokens into `colors` prop. You can change color of border, background, danger color and more using `primary`, `error`, `text`, and so on.
  */
-export function Colors() {
+export default function Colors() {
   return (
     <Box w="100%">
       <Flex flexWrap="wrap" gap="12px" mb="16px">

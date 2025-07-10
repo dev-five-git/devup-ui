@@ -5,7 +5,7 @@ import { Box, css } from '@devup-ui/react'
  * **Danger**
  * Use `danger` prop to signal caution.
  */
-export function Danger() {
+export default function Danger() {
   return (
     <Box w="100%">
       <Box display="flex" flexWrap="wrap" gap="12px" marginBottom="16px">

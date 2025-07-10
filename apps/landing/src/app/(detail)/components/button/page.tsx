@@ -6,17 +6,16 @@ import { CustomH6 } from '@/components/mdx/components/CustomH6'
 import { CustomParagraph } from '@/components/mdx/components/CustomParagraph'
 import { CustomPre } from '@/components/mdx/components/CustomPre'
 import { CustomStrong } from '@/components/mdx/components/CustomStrong'
+import { getDemos } from '@/utils/get-demos'
 
 import MdxCard from '../MdxCard'
 import Api from './Api.mdx'
 import Button from './Button.mdx'
-import { Colors } from './demo/Colors'
-import { Danger } from './demo/Danger'
-import { Disabled } from './demo/Disabled'
-import { Icon } from './demo/Icon'
-import { Variants } from './demo/Variants'
 
-export default function Page() {
+export default async function Page() {
+  const c = await getDemos(__dirname.split(/[\\/]/).pop()!)
+  const m = Math.ceil(c.length / 2)
+
   return (
     <VStack gap="16px" maxW="100%" overflow="hidden">
       <Button
@@ -34,13 +33,14 @@ export default function Page() {
         </Text>
         <Flex flexWrap="wrap" gap="16px">
           <Box flex="1" minW="300px" w="calc(50% - 8px)">
-            <MdxCard demo={<Variants />} src="button/demo/Variants.tsx" />
-            <MdxCard demo={<Danger />} src="button/demo/Danger.tsx" />
-            <MdxCard demo={<Disabled />} src="button/demo/Disabled.tsx" />
+            {c.slice(0, m).map(([Demo, src]) => (
+              <MdxCard key={src} demo={<Demo />} src={src} />
+            ))}
           </Box>
           <Box flex="1" minW="300px" w="calc(50% - 8px)">
-            <MdxCard demo={<Icon />} src="button/demo/Icon.tsx" />
-            <MdxCard demo={<Colors />} src="button/demo/Colors.tsx" />
+            {c.slice(m).map(([Demo, src]) => (
+              <MdxCard key={src} demo={<Demo />} src={src} />
+            ))}
           </Box>
         </Flex>
       </VStack>
