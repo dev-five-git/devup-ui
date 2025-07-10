@@ -1,4 +1,5 @@
 import { Box, Flex, Text, VStack } from '@devup-ui/react'
+import { Metadata } from 'next'
 
 import { CustomCode } from '@/components/mdx/components/CustomCode'
 import { CustomH4 } from '@/components/mdx/components/CustomH4'
@@ -15,6 +16,21 @@ import { Danger } from './demo/Danger'
 import { Disabled } from './demo/Disabled'
 import { Icon } from './demo/Icon'
 import { Variants } from './demo/Variants'
+
+export const metadata: Metadata = {
+  title: 'Devup UI - Button',
+  description: 'Button component',
+  alternates: {
+    canonical: '/components/button',
+  },
+  openGraph: {
+    title: 'Devup UI - Button',
+    description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
+    url: '/components/button',
+    siteName: 'Devup UI',
+    images: ['https://devup-ui.com/components-og/button.webp'],
+  },
+}
 
 export default function Page() {
   return (
