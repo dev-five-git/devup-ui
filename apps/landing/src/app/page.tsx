@@ -1,4 +1,13 @@
-import { Box, css, Flex, Grid, Image, Text, VStack } from '@devup-ui/react'
+import {
+  Box,
+  Center,
+  css,
+  Flex,
+  Grid,
+  Image,
+  Text,
+  VStack,
+} from '@devup-ui/react'
 import { Metadata } from 'next'
 import Link from 'next/link'
 
@@ -6,6 +15,8 @@ import { CodeBoard } from '../components/CodeBoard'
 import { Container } from '../components/Container'
 import { Discord } from '../components/Discord'
 import { FeatureCard } from './FeatureCard'
+import SponsorButton from './SponsorButton'
+import StarButton from './StarButton'
 
 export const metadata: Metadata = {
   alternates: {
@@ -83,45 +94,57 @@ export default function HomePage() {
               optimal performance.
             </Text>
           </VStack>
-          <Link
-            className={css({
-              textDecoration: 'none',
-            })}
-            href="/docs/overview"
-          >
-            <Flex
-              _active={{
-                bg: '$negativeBase',
-              }}
-              _hover={{
-                bg: '$title',
-              }}
-              alignItems="center"
-              bg="$text"
-              borderRadius="100px"
-              gap="20px"
-              p="16px 40px"
-              role="group"
-            >
-              <Box
-                _groupActive={{
-                  bg: '$third',
-                }}
-                _groupHover={{
-                  bg: '$primary',
-                }}
-                bg="$secondary"
-                borderRadius="100%"
-                boxSize="10px"
-              />
-              <Flex alignItems="center" gap="10px">
-                <Text color="$base" typography="buttonL">
-                  Get started
-                </Text>
-                <Image bg="$base" boxSize="24px" maskImage="url(/arrow.svg)" />
-              </Flex>
+          <VStack gap="30px">
+            <Flex gap="20px">
+              <StarButton />
+              <SponsorButton />
             </Flex>
-          </Link>
+            <Center gap="16px">
+              <Link
+                className={css({
+                  textDecoration: 'none',
+                })}
+                href="/docs/overview"
+              >
+                <Flex
+                  _active={{
+                    bg: '$negativeBase',
+                  }}
+                  _hover={{
+                    bg: '$title',
+                  }}
+                  alignItems="center"
+                  bg="$text"
+                  borderRadius="100px"
+                  gap="20px"
+                  p="16px 40px"
+                  role="group"
+                >
+                  <Box
+                    _groupActive={{
+                      bg: '$third',
+                    }}
+                    _groupHover={{
+                      bg: '$primary',
+                    }}
+                    bg="$secondary"
+                    borderRadius="100%"
+                    boxSize="10px"
+                  />
+                  <Flex alignItems="center" gap="10px">
+                    <Text color="$base" typography="buttonL">
+                      Get started
+                    </Text>
+                    <Image
+                      bg="$base"
+                      boxSize="24px"
+                      maskImage="url(/arrow.svg)"
+                    />
+                  </Flex>
+                </Flex>
+              </Link>
+            </Center>
+          </VStack>
         </VStack>
         <Box maxW="1224px" mx="auto" pb="100px" pt="80px" px={3}>
           <CodeBoard />
