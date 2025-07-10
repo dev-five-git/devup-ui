@@ -30,6 +30,10 @@ export default async function MdxCard({
   // extract comment
   const comment = content.match(/\/\*\*[\s\S]*?\*\//)?.[0]
   const code = content.replace('\n' + comment!, '')
+  const normalizedCode = code
+    .split('\n')
+    .map((line) => line.replaceAll('  ', '    '))
+    .join('\n')
   const normalizedComment = comment
     ?.replace(/\/\*\*|\*\//g, '')
     ?.replace(/^\s*\*\s*/gm, '')
@@ -64,8 +68,8 @@ export default async function MdxCard({
           {normalizedComment ?? ''}
         </ReactMarkdown>
       </VStack>
-      <MdxCardFooter>
-        <Code language="typescript" value={code} />
+      <MdxCardFooter code={normalizedCode}>
+        <Code language="typescript" value={normalizedCode} />
       </MdxCardFooter>
     </Card>
   )

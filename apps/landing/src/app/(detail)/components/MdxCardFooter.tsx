@@ -1,16 +1,27 @@
 'use client'
 
-import { Box, Center, Flex, Text, VStack } from '@devup-ui/react'
+import { Box, Center, Flex, Image, Text, VStack } from '@devup-ui/react'
 import { useState } from 'react'
 
 import IconCode from '@/components/icons/IconCode'
 
 export default function MdxCardFooter({
+  code,
   children,
 }: {
+  code: string
   children: React.ReactNode
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard
+      .writeText(code)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false))
+  }
+
   return (
     <VStack justifyContent="flex-end" maxH="600px" maxW="100%">
       <Flex
@@ -41,7 +52,46 @@ export default function MdxCardFooter({
         </Center>
       </Flex>
       {isOpen && (
-        <Box borderTop="1px solid $border" overflow="auto" px="24px" py="16px">
+        <Box
+          borderTop="1px solid $border"
+          h="100%"
+          overflow="auto"
+          pos="relative"
+          px="24px"
+          py="16px"
+        >
+          <Center
+            _active={{
+              borderColor: '$primary',
+              bg: '$menuActive',
+            }}
+            _hover={{
+              borderColor: '$primary',
+              bg: '$menuHover',
+            }}
+            bg="$containerBackground"
+            border="1px solid transparent"
+            borderRadius="4px"
+            boxShadow="0 2px 6px 0 $shadow"
+            cursor="pointer"
+            gap="8px"
+            onClick={handleCopy}
+            p="8px"
+            pos="absolute"
+            right="24px"
+            top="16px"
+            transition="all 0.125s ease-in-out"
+          >
+            <Image
+              aspectRatio="1"
+              boxSize="20px"
+              src={copied ? '/icons/copied.svg' : '/icons/copy-code.svg'}
+            />
+            <Text color="$captionBold" typography="caption">
+              Copy
+            </Text>
+          </Center>
+
           {children}
         </Box>
       )}
