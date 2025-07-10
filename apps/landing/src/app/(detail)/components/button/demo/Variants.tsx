@@ -5,7 +5,7 @@ import { css, Flex } from '@devup-ui/react'
  * **Variant & Size**
  * `Button` components has `default` and `primary` variants. `Size` prop determines the paddings of the button.
  */
-export function Variants() {
+export default function Variants() {
   return (
     <>
       <Flex flexWrap="wrap" gap="12px" mb="16px">
