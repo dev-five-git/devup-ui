@@ -20,7 +20,7 @@ export default async function MdxCard({
   const content = await readFile(
     join(
       process.cwd(),
-      'src/app/(detail)/components',
+      'src/app/(detail)/components/[component]',
       src ?? 'button/demo/Variants.tsx',
     ),
     {
