@@ -10,6 +10,11 @@ export const Code = ({
   language: string
   value: string
 }) => {
+  const normalizedValue = value
+    .split('\n')
+    .map((line) => line.replaceAll('  ', '    '))
+    .join('\n')
+
   return (
     <>
       <Box
@@ -18,7 +23,7 @@ export const Code = ({
         }}
       >
         <SyntaxHighlighter language={language} showLineNumbers style={Light}>
-          {value}
+          {normalizedValue}
         </SyntaxHighlighter>
       </Box>
       <Box
