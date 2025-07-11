@@ -35,7 +35,16 @@
                 "search": "#9C50FF",
                 "kakaoButton": "#DE9800",
                 "kakaoButtonHover": "#C98900",
-                "kakaoButtonActive": "#B77D00"
+                "kakaoButtonActive": "#B77D00",
+                "imageBorder": "#C8C7D1",
+                "imageDropdown": "#ECECEC",
+                "imagePlaceholder": "#999999",
+                "imageDate": "#C9C9C9",
+                "imageDateNone": "#F2F2F2",
+                "imageProgress": "#DADADA",
+                "imageMenuBg": "#FBFBFB",
+                "imageMenuSelect": "#EDECF7",
+                "starBg": "#F7F8FF"
             },
             "dark": {
                 "primary": "#6670F9",
@@ -71,7 +80,16 @@
                 "search": "#6FA4FF",
                 "kakaoButton": "#A3740D",
                 "kakaoButtonHover": "#C98900",
-                "kakaoButtonActive": "#E09900"
+                "kakaoButtonActive": "#E09900",
+                "imageBorder": "#4D4C53",
+                "imageDropdown": "#3A3A3A",
+                "imagePlaceholder": "#4C4C4C",
+                "imageDate": "#636363",
+                "imageDateNone": "#343333",
+                "imageProgress": "#444444",
+                "imageMenuBg": "#262626",
+                "imageMenuSelect": "#3F3F3F",
+                "starBg": "#232323"
             }
         },
         "typography": {

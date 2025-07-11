@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
@@ -10,9 +11,13 @@ export async function getDemos(
     'app',
     '(detail)',
     'components',
+    '[component]',
     dir,
     'demo',
   )
+  if (!existsSync(dirPath)) {
+    return []
+  }
   const demos = await readdir(dirPath)
 
   return Promise.all(

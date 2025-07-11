@@ -9,16 +9,16 @@ export function LeftMenu() {
       <MenuItem
         subMenu={[
           { to: '/components/button', children: 'Button' },
-          { to: '/components/text-box', children: 'Text box' },
-          { to: '/components/text-area', children: 'Text area' },
+          { to: '/components/textbox', children: 'Textbox' },
+          { to: '/components/textarea', children: 'Textarea' },
           { to: '/components/dropdown', children: 'Dropdown' },
           { to: '/components/radio', children: 'Radio' },
           { to: '/components/checkbox', children: 'Checkbox' },
           { to: '/components/stepper', children: 'Stepper' },
           { to: '/components/toggle', children: 'Toggle' },
           { to: '/components/slider', children: 'Slider' },
-          { to: '/components/date-picker', children: 'Date picker' },
-          { to: '/components/color-picker', children: 'Color picker' },
+          { to: '/components/date-picker', children: 'Date Picker' },
+          { to: '/components/color-picker', children: 'Color Picker' },
           { to: '/components/uploader', children: 'Uploader' },
           { to: '/components/pagination', children: 'Pagination' },
           { to: '/components/progress-bar', children: 'Progress Bar' },
@@ -38,7 +38,7 @@ export function LeftMenu() {
           { to: '/components/header', children: 'Header' },
           { to: '/components/confirm', children: 'Confirm' },
           { to: '/components/snackbar', children: 'Snackbar' },
-          { to: '/components/bottom-sheet', children: 'Bottom sheet' },
+          { to: '/components/bottom-sheet', children: 'Bottom Sheet' },
         ]}
       >
         Layout
