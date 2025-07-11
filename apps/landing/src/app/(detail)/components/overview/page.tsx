@@ -17,7 +17,7 @@ export default function Page() {
       <Text color="$text" typography="bodyReg">
         Devup UI is a library of components that can be used to build web
         applications. It is built with React and TypeScript and is designed to
-        be used with the Devup UI framework.
+        be used with the Devup framework.
       </Text>
       <VStack gap="16px" overflow="visible" py="30px">
         <Text color="$title" typography="h6">
