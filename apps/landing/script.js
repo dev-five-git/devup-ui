@@ -9,7 +9,7 @@ for await (const file of files) {
       encoding: 'utf-8',
     }).then((content) => {
       const titleIndex = content.toString().indexOf('#')
-      if (content.trim().length === 0) {
+      if (content.trim().length === 0 || titleIndex === -1) {
         return null
       }
       const fileName = file.split(/[/\\]/).pop()
