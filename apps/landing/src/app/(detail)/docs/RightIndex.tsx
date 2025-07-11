@@ -40,7 +40,7 @@ function IndexMenu({
 
 export function RightIndex() {
   const pathname = usePathname()
-  const editUrl = `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/docs${pathname.split('docs')[1]}/page.mdx`
+  const editUrl = `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/components/${pathname.split('components')[1]}/`
   const [menus, setMenus] = useState<
     {
       text: string
@@ -50,7 +50,7 @@ export function RightIndex() {
   >([])
   useEffect(() => {
     const elements = document.querySelectorAll(
-      '.markdown-body h1, .markdown-body h2',
+      '.markdown-body h4, .markdown-body h6',
     )
     const menus = []
     for (let i = 0; i < elements.length; i++) {
@@ -58,7 +58,7 @@ export function RightIndex() {
       const text = element.textContent!
       menus.push({
         text,
-        sub: element.tagName === 'H2',
+        sub: element.tagName === 'H6',
         onClick: () => {
           element.scrollIntoView({ behavior: 'smooth' })
         },

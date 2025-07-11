@@ -16,15 +16,19 @@ export const generateMetadata = async ({
   params: Promise<{ component: string }>
 }) => {
   const { component } = await params
+  const pascalWithSpace = component
+    .split('-')
+    .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
+    .join(' ')
   return {
-    title: `Devup UI - ${component}`,
-    description: `${component} component`,
+    title: `Devup UI - ${pascalWithSpace}`,
+    description: `${pascalWithSpace} component`,
     alternates: {
       canonical: `/components/${component}`,
     },
     openGraph: {
-      title: `Devup UI - ${component}`,
-      description: `${component} component`,
+      title: `Devup UI - ${pascalWithSpace}`,
+      description: `${pascalWithSpace} component`,
       url: `/components/${component}`,
       siteName: 'Devup UI',
       images: [`/components-og/${component}.webp`],
@@ -39,8 +43,8 @@ export const generateStaticParams = async () => {
     'uploader',
     'toggle',
     'tooltip',
-    'text-area',
-    'text-box',
+    'textarea',
+    'textbox',
     'theme-button',
     'snackbar',
     'stepper',
@@ -84,7 +88,7 @@ export default async function Page({
       <Text as="strong" color="$primary" m="0" typography="captionBold">
         {componentName}
       </Text>
-      <Text color="$title" typography="h4">
+      <Text as="h4" color="$title" m="0" typography="h4">
         {componentName}
       </Text>
       <Index
@@ -97,7 +101,7 @@ export default async function Page({
         }}
       />
       <VStack gap="16px" py="30px">
-        <Text color="$title" typography="h6">
+        <Text as="h6" color="$title" m="0" typography="h6">
           Examples
         </Text>
         <Flex flexWrap="wrap" gap="16px">
