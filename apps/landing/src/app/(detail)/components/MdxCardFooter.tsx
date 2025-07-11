@@ -18,7 +18,12 @@ export default function MdxCardFooter({
   const handleCopy = () => {
     navigator.clipboard
       .writeText(code)
-      .then(() => setCopied(true))
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => {
+          setCopied(false)
+        }, 1000 * 5)
+      })
       .catch(() => setCopied(false))
   }
 
