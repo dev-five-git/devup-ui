@@ -59,6 +59,7 @@ export function MobMenu() {
             textDecoration: 'none',
           })}
           href="/storybook/index.html"
+          prefetch={false}
         >
           <Flex alignItems="center" gap="4px" py="10px">
             <Text color="$title" textAlign="right" typography="buttonM">
