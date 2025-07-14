@@ -1,10 +1,36 @@
+'use client'
+
+import './StarButton.css'
+
 import { Center, css, Flex, Image, Text } from '@devup-ui/react'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
-export default async function StarButton() {
-  const res = await fetch('https://api.github.com/repos/dev-five-git/devup-ui')
-  const data = await res.json()
-  const starCount = data.stargazers_count
+export default function StarButton() {
+  const [starCount, setStarCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    const abortController = new AbortController()
+    const fetchStarCount = async () => {
+      try {
+        const res = await fetch(
+          'https://api.github.com/repos/dev-five-git/devup-ui',
+          {
+            signal: abortController.signal,
+          },
+        )
+        const data = await res.json()
+        setStarCount(data.stargazers_count)
+      } catch (error) {
+        console.error(error)
+      }
+    }
+    fetchStarCount()
+
+    return () => {
+      abortController.abort()
+    }
+  }, [])
 
   return (
     <Link
@@ -58,9 +84,18 @@ export default async function StarButton() {
           h="100%"
           px="16px"
         >
-          <Text color="$primary" textAlign="center" typography="buttonLsemiB">
-            {starCount}
-          </Text>
+          {starCount === null ? (
+            <Image
+              alt="Loading"
+              animation="spin 1s linear infinite"
+              boxSize="20px"
+              src="/spinner.svg"
+            />
+          ) : (
+            <Text color="$primary" textAlign="center" typography="buttonLsemiB">
+              {starCount}
+            </Text>
+          )}
         </Center>
       </Flex>
     </Link>
