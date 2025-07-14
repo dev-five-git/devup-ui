@@ -3,7 +3,7 @@
 import { css, useTheme } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-export default function IconTextBoxComp({
+export default function IconTextboxComp({
   className,
   ...props
 }: SVGProps<SVGSVGElement>) {

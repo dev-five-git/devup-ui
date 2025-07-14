@@ -126,6 +126,7 @@ export function Header() {
               alignItems: 'center',
             })}
             href="/storybook/index.html"
+            prefetch={false}
             role="group"
           >
             <Menu keyword="storybook">Storybook</Menu>

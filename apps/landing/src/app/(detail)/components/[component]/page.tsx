@@ -6,6 +6,7 @@ import { CustomH6 } from '@/components/mdx/components/CustomH6'
 import { CustomParagraph } from '@/components/mdx/components/CustomParagraph'
 import { CustomPre } from '@/components/mdx/components/CustomPre'
 import { CustomStrong } from '@/components/mdx/components/CustomStrong'
+import { COMPONENT_GROUPS } from '@/constants'
 import { getDemos } from '@/utils/get-demos'
 
 import MdxCard from '../MdxCard'
@@ -37,35 +38,11 @@ export const generateMetadata = async ({
 }
 
 export const generateStaticParams = async () => {
-  return [
-    'button',
-    'input',
-    'uploader',
-    'toggle',
-    'tooltip',
-    'textarea',
-    'textbox',
-    'theme-button',
-    'snackbar',
-    'stepper',
-    'tab',
-    'search',
-    'select',
-    'slider',
-    'pagination',
-    'progress-bar',
-    'radio',
-    'header',
-    'label',
-    'menu',
-    'dropdown',
-    'footer',
-    'color-picker',
-    'confirm',
-    'date-picker',
-    'checkbox',
-    'bottom-sheet',
-  ].map((component) => ({ component }))
+  return Object.values(COMPONENT_GROUPS)
+    .flat()
+    .map((component) => ({
+      component,
+    }))
 }
 
 export default async function Page({
