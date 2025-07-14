@@ -3,7 +3,7 @@
 import { css, useTheme } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-export default function IconButtonComponent({
+export default function IconButtonComp({
   className,
   ...props
 }: SVGProps<SVGSVGElement>) {

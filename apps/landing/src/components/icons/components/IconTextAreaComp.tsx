@@ -3,7 +3,7 @@
 import { useTheme } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-export default function IconTextAreaComp({
+export default function IconTextareaComp({
   className,
   ...props
 }: {

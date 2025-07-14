@@ -3,7 +3,7 @@
 import { css, useTheme } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-export default function IconPagination({
+export default function IconPaginationComp({
   className,
   ...props
 }: SVGProps<SVGSVGElement>) {

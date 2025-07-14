@@ -3,7 +3,7 @@
 import { css, useTheme } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-export default function IconProgressBar({
+export default function IconProgressBarComp({
   className,
   ...props
 }: SVGProps<SVGSVGElement>) {

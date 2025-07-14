@@ -1,5 +1,7 @@
+import { SVGProps } from 'react'
+
 import IconBottomSheetComp from '@/components/icons/components/IconBottomSheetComp'
-import IconButtonComponent from '@/components/icons/components/IconButtonComponent'
+import IconButtonComp from '@/components/icons/components/IconButtonComp'
 import IconCheckboxComp from '@/components/icons/components/IconCheckboxComp'
 import IconColorPickerComp from '@/components/icons/components/IconColorPickerComp'
 import IconConfirmComp from '@/components/icons/components/IconConfirmComp'
@@ -9,8 +11,8 @@ import IconFooterComp from '@/components/icons/components/IconFooterComp'
 import IconHeaderComp from '@/components/icons/components/IconHeaderComp'
 import IconLabelComp from '@/components/icons/components/IconLabelComp'
 import IconMenuComp from '@/components/icons/components/IconMenuComp'
-import IconPagination from '@/components/icons/components/IconPagination'
-import IconProgressBar from '@/components/icons/components/IconProgressBar'
+import IconPaginationComp from '@/components/icons/components/IconPaginationComp'
+import IconProgressBarComp from '@/components/icons/components/IconProgressBarComp'
 import IconRadioComp from '@/components/icons/components/IconRadioComp'
 import IconSearchComp from '@/components/icons/components/IconSearchComp'
 import IconSelectComp from '@/components/icons/components/IconSelectComp'
@@ -18,16 +20,19 @@ import IconSliderComp from '@/components/icons/components/IconSliderComp'
 import IconSnackbarComp from '@/components/icons/components/IconSnackbarComp'
 import IconStepperComp from '@/components/icons/components/IconStepperComp'
 import IconTabComp from '@/components/icons/components/IconTabComp'
-import IconTextAreaComp from '@/components/icons/components/IconTextAreaComp'
-import IconTextBoxComp from '@/components/icons/components/IconTextBoxComp'
+import IconTextareaComp from '@/components/icons/components/IconTextareaComp'
+import IconTextboxComp from '@/components/icons/components/IconTextboxComp'
 import IconThemeButtonComp from '@/components/icons/components/IconThemeButtonComp'
 import IconToggleComp from '@/components/icons/components/IconToggleComp'
 import IconTooltipComp from '@/components/icons/components/IconTooltipComp'
 import IconUploaderComp from '@/components/icons/components/IconUploaderComp'
 
-export {
+export const Icons: Record<
+  string,
+  React.ComponentType<SVGProps<SVGSVGElement>>
+> = {
   IconBottomSheetComp,
-  IconButtonComponent,
+  IconButtonComp,
   IconCheckboxComp,
   IconColorPickerComp,
   IconConfirmComp,
@@ -37,8 +42,8 @@ export {
   IconHeaderComp,
   IconLabelComp,
   IconMenuComp,
-  IconPagination,
-  IconProgressBar,
+  IconPaginationComp,
+  IconProgressBarComp,
   IconRadioComp,
   IconSearchComp,
   IconSelectComp,
@@ -46,8 +51,8 @@ export {
   IconSnackbarComp,
   IconStepperComp,
   IconTabComp,
-  IconTextAreaComp,
-  IconTextBoxComp,
+  IconTextareaComp,
+  IconTextboxComp,
   IconThemeButtonComp,
   IconToggleComp,
   IconTooltipComp,
