@@ -13,16 +13,17 @@ export default function StarButton() {
     const abortController = new AbortController()
     const fetchStarCount = async () => {
       try {
-        const res = await fetch(
+        const data = await fetch(
           'https://api.github.com/repos/dev-five-git/devup-ui',
           {
             signal: abortController.signal,
           },
-        )
-        const data = await res.json()
+        ).then((res) => res.json())
         setStarCount(data.stargazers_count)
       } catch (error) {
         console.error(error)
+      } finally {
+        setStarCount((prev) => (typeof prev === 'number' ? prev : -1))
       }
     }
     fetchStarCount()
