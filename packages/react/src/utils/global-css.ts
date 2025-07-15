@@ -19,9 +19,9 @@ export function globalCss(
     | (Omit<GlobalCssProps, 'imports'> & {
         imports?: string[]
       }),
-): void
+): never
 
-export function globalCss(): void
+export function globalCss(): never
 
 export function globalCss(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -30,6 +30,6 @@ export function globalCss(
     | (Omit<GlobalCssProps, 'imports'> & {
         imports?: string[]
       }),
-): void {
+): never {
   throw new Error('Cannot run on the runtime')
 }

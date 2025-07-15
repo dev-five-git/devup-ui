@@ -11,6 +11,10 @@ pub fn css_to_style<'a>(
 ) -> Vec<ExtractStyleProp<'a>> {
     let mut styles = vec![];
     for s in css.split(";") {
+        let s = s.trim();
+        if s.is_empty() {
+            continue;
+        }
         let mut iter = s.split(":");
         let property = to_camel_case(iter.next().unwrap().trim());
         let value = iter.next().unwrap().trim();

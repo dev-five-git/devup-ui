@@ -4,9 +4,13 @@ expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { css } from \"@
 ---
 ToBTreeSet {
     styles: {
-        Css(
-            ExtractCss {
-                css: "background-color: red;",
+        Static(
+            ExtractStaticStyle {
+                property: "backgroundColor",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
             },
         ),
     },

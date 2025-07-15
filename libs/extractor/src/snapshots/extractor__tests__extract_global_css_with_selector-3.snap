@@ -12,6 +12,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "div:hover",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -27,6 +28,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "span:hover",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -42,6 +44,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "div",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -57,6 +60,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "span",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -72,6 +76,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "div",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -87,6 +92,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "span",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -102,6 +108,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "div:hover",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(
@@ -117,6 +124,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "span:hover",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(

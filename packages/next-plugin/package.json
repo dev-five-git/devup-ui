@@ -42,13 +42,15 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.3"
+    "next": "^15.3",
+    "browserslist": "latest"
   },
   "devDependencies": {
     "vite": "^7.0.3",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@types/webpack": "^5.28.5"
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",

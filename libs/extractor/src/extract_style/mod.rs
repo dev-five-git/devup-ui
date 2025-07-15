@@ -1,23 +1,22 @@
 use crate::StyleProperty;
 use crate::utils::convert_value;
 use css::{
-    StyleSelector, css_to_classname, optimize_value, sheet_to_classname, sheet_to_variable_name,
-    short_to_long,
+    StyleSelector, optimize_value, sheet_to_classname, sheet_to_variable_name, short_to_long,
 };
 use phf::phf_set;
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractStaticStyle {
     /// property
-    property: String,
+    pub property: String,
     /// fixed value
-    value: String,
+    pub value: String,
     /// responsive level
-    level: u8,
+    pub level: u8,
     /// selector
-    selector: Option<StyleSelector>,
+    pub selector: Option<StyleSelector>,
     /// None is inf, 0 is first, 1 is second, etc
-    style_order: Option<u8>,
+    pub style_order: Option<u8>,
 }
 
 static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
@@ -124,13 +123,14 @@ impl ExtractStyleProperty for ExtractStaticStyle {
 pub struct ExtractCss {
     /// css must be global css
     pub css: String,
+    pub file: String,
 }
 
-impl ExtractStyleProperty for ExtractCss {
-    /// hashing css code to class name
-    fn extract(&self) -> StyleProperty {
-        StyleProperty::ClassName(css_to_classname(self.css.as_str()))
-    }
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+pub struct ExtractImport {
+    /// import must be global css
+    pub url: String,
+    pub file: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -211,7 +211,7 @@ pub enum ExtractStyleValue {
     Typography(String),
     Dynamic(ExtractDynamicStyle),
     Css(ExtractCss),
-    Import(String),
+    Import(ExtractImport),
 }
 
 impl ExtractStyleValue {
@@ -219,10 +219,10 @@ impl ExtractStyleValue {
         match self {
             ExtractStyleValue::Static(style) => Some(style.extract()),
             ExtractStyleValue::Dynamic(style) => Some(style.extract()),
-            ExtractStyleValue::Css(css) => Some(css.extract()),
             ExtractStyleValue::Typography(typo) => {
                 Some(StyleProperty::ClassName(format!("typo-{typo}")))
             }
+            ExtractStyleValue::Css(_) => None,
             ExtractStyleValue::Import(_) => None,
         }
     }

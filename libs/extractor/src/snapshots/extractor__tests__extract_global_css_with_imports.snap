@@ -5,7 +5,10 @@ expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } fr
 ToBTreeSet {
     styles: {
         Import(
-            "@devup-ui/core/css/global.css",
+            ExtractImport {
+                url: "@devup-ui/core/css/global.css",
+                file: "test.tsx",
+            },
         ),
     },
     code: "import \"@devup-ui/core/devup-ui.css\";\n\"\";\n",

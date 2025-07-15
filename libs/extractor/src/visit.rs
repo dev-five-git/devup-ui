@@ -8,7 +8,7 @@ use crate::style_extractor::{
     ExtractResult, GlobalExtractResult, extract_global_style_from_expression,
     extract_style_from_expression, extract_style_from_jsx_attr,
 };
-use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
+use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::short_to_long;
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
@@ -34,20 +34,22 @@ use std::rc::Rc;
 
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
+    filename: String,
     imports: HashMap<String, ExportVariableKind>,
     import_object: Option<String>,
     jsx_imports: HashMap<String, String>,
     css_imports: HashMap<String, Rc<CssType>>,
     jsx_object: Option<String>,
     package: String,
-    css_file: String,
+    pub css_file: String,
     pub styles: HashSet<ExtractStyleValue>,
 }
 
 impl<'a> DevupVisitor<'a> {
-    pub fn new(allocator: &'a Allocator, package: &str, css_file: &str) -> Self {
+    pub fn new(allocator: &'a Allocator, filename: &str, package: &str, css_file: &str) -> Self {
         Self {
             ast: AstBuilder::new(allocator),
+            filename: filename.to_string(),
             imports: HashMap::new(),
             jsx_imports: HashMap::new(),
             package: package.to_string(),
@@ -126,9 +128,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 && let Some(css_type) = self.css_imports.get(&css_import_key)
             {
                 if call.arguments.len() != 1 {
-                    *it = self
-                        .ast
-                        .expression_string_literal(SPAN, self.ast.atom(""), None);
+                    *it = match css_type.as_ref() {
+                        CssType::Css => {
+                            self.ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                        }
+                        CssType::GlobalCss => {
+                            self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                        }
+                    };
                 } else {
                     *it = match css_type.as_ref() {
                         CssType::Css => {
@@ -157,20 +165,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 if let Some(cls) = class_name {
                                     cls
                                 } else {
-                                    self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                                    self.ast.expression_string_literal(
+                                        SPAN,
+                                        self.ast.atom(""),
+                                        None,
+                                    )
                                 }
                             } else {
-                                self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                                self.ast
+                                    .expression_string_literal(SPAN, self.ast.atom(""), None)
                             }
                         }
                         CssType::GlobalCss => {
                             let GlobalExtractResult {
                                 styles,
                                 style_order,
-                                imports,
                             } = extract_global_style_from_expression(
                                 &self.ast,
                                 call.arguments[0].to_expression_mut(),
+                                &self.filename,
                             );
                             self.styles.extend(
                                 styles
@@ -182,11 +195,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                         }
                                         ex.extract()
                                     }),
-                            );
-                            self.styles.extend(
-                                imports
-                                    .into_iter()
-                                    .map(|import| ExtractStyleValue::Import(import)),
                             );
                             self.ast
                                 .expression_string_literal(SPAN, self.ast.atom(""), None)
@@ -223,6 +231,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     CssType::GlobalCss => {
                         let css = ExtractStyleValue::Css(ExtractCss {
                             css: optimize_css_block(&css_str),
+                            file: self.filename.clone(),
                         });
 
                         *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));

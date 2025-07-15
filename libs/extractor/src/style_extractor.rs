@@ -9,7 +9,7 @@ use oxc_ast::ast::{
 use std::collections::BTreeMap;
 
 use crate::extract_style::ExtractStyleValue::{self, Dynamic, Static, Typography};
-use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
+use crate::extract_style::{ExtractDynamicStyle, ExtractImport, ExtractStaticStyle};
 use css::StyleSelector;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
@@ -40,7 +40,6 @@ pub enum ExtractResult<'a> {
 pub struct GlobalExtractResult<'a> {
     pub styles: Vec<ExtractStyleProp<'a>>,
     pub style_order: Option<u8>,
-    pub imports: Vec<String>,
 }
 
 pub fn extract_style_from_jsx_attr<'a>(
@@ -913,6 +912,7 @@ fn extract_style_from_member_expression<'a>(
 pub fn extract_global_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
+    file: &str,
 ) -> GlobalExtractResult<'a> {
     let mut styles = vec![];
 
@@ -937,18 +937,21 @@ pub fn extract_global_style_from_expression<'a>(
                     if let Expression::ArrayExpression(arr) = &o.value {
                         for p in arr.elements.iter() {
                             styles.push(ExtractStyleProp::Static(ExtractStyleValue::Import(
-                                if let ArrayExpressionElement::StringLiteral(s) = p {
-                                    s.value.trim().to_string()
-                                } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
-                                    t.quasis
-                                        .iter()
-                                        .map(|q| q.value.raw.as_str())
-                                        .collect::<Vec<_>>()
-                                        .join("")
-                                        .trim()
-                                        .to_string()
-                                } else {
-                                    continue;
+                                ExtractImport {
+                                    url: if let ArrayExpressionElement::StringLiteral(s) = p {
+                                        s.value.trim().to_string()
+                                    } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
+                                        t.quasis
+                                            .iter()
+                                            .map(|q| q.value.raw.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join("")
+                                            .trim()
+                                            .to_string()
+                                    } else {
+                                        continue;
+                                    },
+                                    file: file.to_string(),
                                 },
                             )));
                         }
@@ -964,7 +967,7 @@ pub fn extract_global_style_from_expression<'a>(
                     None,
                     &mut o.value,
                     0,
-                    Some(&StyleSelector::Global(name.clone())),
+                    Some(&StyleSelector::Global(name.clone(), file.to_string())),
                 ) {
                     styles.extend(_styles);
                 }
@@ -974,6 +977,5 @@ pub fn extract_global_style_from_expression<'a>(
     GlobalExtractResult {
         styles,
         style_order: None,
-        imports: vec![],
     }
 }

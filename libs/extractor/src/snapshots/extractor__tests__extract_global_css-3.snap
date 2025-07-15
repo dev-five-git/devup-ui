@@ -12,6 +12,7 @@ ToBTreeSet {
                 selector: Some(
                     Global(
                         "div",
+                        "test.tsx",
                     ),
                 ),
                 style_order: Some(

@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } fr
 ---
 ToBTreeSet {
     styles: {},
-    code: "(\"\");\n",
+    code: ";\n",
 }

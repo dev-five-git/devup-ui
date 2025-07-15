@@ -41,7 +41,8 @@ pub fn is_debug() -> bool {
 pub enum StyleSelector {
     Media(String),
     Selector(String),
-    Global(String),
+    // selector, file
+    Global(String, String),
 }
 
 impl PartialOrd for StyleSelector {
@@ -56,7 +57,7 @@ fn get_selector_order(selector: &str) -> u8 {
         selector
             .split('&')
             .next_back()
-            .map(|a| format!("{a}"))
+            .map(|a| a.to_string())
             .unwrap_or(selector.to_string())
     } else {
         selector.to_string()
@@ -76,7 +77,7 @@ impl Ord for StyleSelector {
             }
             (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
             (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
-            (StyleSelector::Global(a), StyleSelector::Global(b)) => {
+            (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
                 if a == b {
                     return Ordering::Equal;
                 }
@@ -105,8 +106,8 @@ impl Ord for StyleSelector {
                     (false, false) => a.cmp(b),
                 }
             }
-            (StyleSelector::Global(_), _) => Ordering::Less,
-            (_, StyleSelector::Global(_)) => Ordering::Greater,
+            (StyleSelector::Global(_, _), _) => Ordering::Less,
+            (_, StyleSelector::Global(_, _)) => Ordering::Greater,
         }
     }
 }
@@ -155,14 +156,12 @@ impl From<[&str; 2]> for StyleSelector {
 }
 impl From<(&StyleSelector, &str)> for StyleSelector {
     fn from(value: (&StyleSelector, &str)) -> Self {
-        if let StyleSelector::Global(_) = value.0 {
+        if let StyleSelector::Global(_, file) = value.0 {
             let post = to_kebab_case(value.1);
-            StyleSelector::Global(format!(
-                "{}{}{}",
-                value.0,
-                get_selector_separator(&post),
-                post
-            ))
+            StyleSelector::Global(
+                format!("{}{}{}", value.0, get_selector_separator(&post), post),
+                file.clone(),
+            )
         } else {
             StyleSelector::from([&value.0.to_string(), value.1])
         }
@@ -177,7 +176,7 @@ impl Display for StyleSelector {
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
                 StyleSelector::Media(value) => format!("@{value}"),
-                StyleSelector::Global(value) => format!("{value}"),
+                StyleSelector::Global(value, _) => format!("{value}"),
             }
         )
     }
@@ -188,7 +187,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
             StyleSelector::Media(_) => format!(".{class_name}"),
-            StyleSelector::Global(v) => format!("{v}"),
+            StyleSelector::Global(v, _) => v.to_string(),
         }
     } else {
         format!(".{class_name}")
@@ -479,21 +478,6 @@ pub fn sheet_to_classname(
         map.get(&key).map(|v| format!("d{v}")).unwrap_or_else(|| {
             let len = map.len();
             map.insert(key, len as i32);
-            format!("d{}", map.len() - 1)
-        })
-    }
-}
-
-pub fn css_to_classname(css: &str) -> String {
-    if *DEBUG.lock().unwrap() {
-        let mut hasher = DefaultHasher::new();
-        css.hash(&mut hasher);
-        format!("css-{}", hasher.finish())
-    } else {
-        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(css).map(|v| format!("d{v}")).unwrap_or_else(|| {
-            let len = map.len();
-            map.insert(css.to_string(), len as i32);
             format!("d{}", map.len() - 1)
         })
     }
@@ -837,34 +821,6 @@ mod tests {
         assert_eq!(
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None),
             "background-1-red-12448419602614487988-255"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_css_to_classname() {
-        set_debug(false);
-        reset_class_map();
-        assert_eq!(css_to_classname("background: red"), "d0");
-        assert_eq!(css_to_classname("background: blue"), "d1");
-    }
-    #[test]
-    #[serial]
-    fn test_debug_css_to_classname() {
-        set_debug(true);
-        assert_eq!(
-            css_to_classname("background: red"),
-            "css-10773204219957113694"
-        );
-        assert_eq!(
-            css_to_classname("background: blue"),
-            "css-1226995032436176700"
-        );
-        set_debug(true);
-        reset_class_map();
-        assert_eq!(
-            css_to_classname("background: red"),
-            "css-10773204219957113694"
         );
     }
 

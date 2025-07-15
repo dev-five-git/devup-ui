@@ -22,6 +22,10 @@ extern "C" {
     fn log(s: &JsValue);
     #[wasm_bindgen(js_namespace = console, js_name = log)]
     fn log_str(s: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = time)]
+    fn time(s: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = timeEnd)]
+    fn time_end(s: &str);
 }
 
 #[wasm_bindgen]
@@ -43,17 +47,17 @@ impl Output {
         let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
         let mut collected = false;
         for style in self.styles.iter() {
-            let (cls, variable) = match style.extract() {
-                Some(StyleProperty::ClassName(cls)) => (cls, None),
-                Some(StyleProperty::Variable {
-                    class_name,
-                    variable_name,
-                    ..
-                }) => (class_name, Some(variable_name)),
-                None => continue,
-            };
             match style {
                 ExtractStyleValue::Static(st) => {
+                    let (cls, _) = match style.extract() {
+                        Some(StyleProperty::ClassName(cls)) => (cls, None),
+                        Some(StyleProperty::Variable {
+                            class_name,
+                            variable_name,
+                            ..
+                        }) => (class_name, Some(variable_name)),
+                        None => continue,
+                    };
                     if sheet.add_property(
                         &cls,
                         st.property(),
@@ -66,6 +70,15 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
+                    let (cls, variable) = match style.extract() {
+                        Some(StyleProperty::ClassName(cls)) => (cls, None),
+                        Some(StyleProperty::Variable {
+                            class_name,
+                            variable_name,
+                            ..
+                        }) => (class_name, Some(variable_name)),
+                        None => continue,
+                    };
                     if sheet.add_property(
                         &cls,
                         dy.property(),
@@ -78,16 +91,17 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Css(cs) => {
-                    if sheet.add_css(&cls, &cs.css) {
+                    if sheet.add_css(&cs.file, &cs.css) {
                         collected = true;
                     }
                 }
                 ExtractStyleValue::Typography(_) => {}
                 ExtractStyleValue::Import(st) => {
-                    sheet.add_import(st);
+                    sheet.add_import(&st.file, &st.url);
                 }
             }
         }
+
         if !collected {
             return None;
         }
@@ -140,6 +154,9 @@ pub fn code_extract(
     package: &str,
     css_file: &str,
 ) -> Result<Output, JsValue> {
+    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+    sheet.rm_global_css(filename);
+
     match extract(
         filename,
         code,

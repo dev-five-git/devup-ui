@@ -7,6 +7,7 @@ ToBTreeSet {
         Css(
             ExtractCss {
                 css: "div{background-color:red;color:blue}",
+                file: "test.tsx",
             },
         ),
     },

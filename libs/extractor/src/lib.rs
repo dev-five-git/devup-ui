@@ -118,6 +118,7 @@ pub fn extract(
     }
     let mut visitor = DevupVisitor::new(
         &allocator,
+        filename,
         &option.package,
         &option
             .css_file
@@ -1743,8 +1744,8 @@ import clsx from 'clsx'
         margin-left: 10px;
         margin-right: 10px;
         `,{
-        margin-left: 20px;
-        margin-right: 20px;
+        marginLeft: '20px',
+        marginRight: '20px',
         }]} />
         ",
                 ExtractOption {
@@ -1923,9 +1924,12 @@ import clsx from 'clsx'
   background-color: red;
   color: blue;
 `,{
-  background-color: green;
-  color: yellow;
-}]
+  backgroundColor: "green",
+  color: "yellow"
+}, `
+  background-color: red;
+  color: blue;
+`]
 })}/>;
 "#,
                 ExtractOption {
