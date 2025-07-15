@@ -1,6 +1,5 @@
-import type { DevupThemeSelectorProps } from 'dist/types/props/selector'
-
 import type { DevupCommonProps } from '../types/props'
+import type { DevupThemeSelectorProps } from '../types/props/selector'
 import type { DevupSelectorProps } from '../types/props/selector'
 
 type GlobalCssProps = {
