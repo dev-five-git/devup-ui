@@ -16,6 +16,8 @@ StyleSheet {
         },
     },
     css: {},
+    global_css_files: {},
+    imports: {},
     theme: Theme {
         colors: {},
         breakpoints: [

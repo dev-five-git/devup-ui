@@ -35,7 +35,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ watch: true }),
     } as any)(Buffer.from('data'), '')
-    expect(callback).toBeCalledWith(null, 'get css')
+    expect(callback).toBeCalledWith(null, 'get css', '', undefined)
     expect(getCss).toBeCalledTimes(1)
     vi.mocked(getCss).mockReset()
     devupUICssLoader.bind({

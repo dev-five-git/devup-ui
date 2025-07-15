@@ -13,6 +13,15 @@ ToBTreeSet {
                 style_order: None,
             },
         ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 0,
+                identifier: "a",
+                selector: None,
+                style_order: None,
+            },
+        ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a !== null && a !== undefined ? \"\" : \"d0\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a !== null && a !== undefined ? \"d0\" : \"d2\"} style={{ \"--d1\": a }} />;\n",
 }

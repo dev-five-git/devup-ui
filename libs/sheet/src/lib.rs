@@ -1,13 +1,14 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{PropertyType, StyleSelector, convert_property, merge_selector};
+use css::property_type::PropertyType;
+use css::{merge_selector, style_selector::StyleSelector};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering::Equal;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 trait ExtractStyle {
     fn extract(&self) -> String;
@@ -48,7 +49,7 @@ impl Ord for StyleSheetProperty {
 
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
-        match convert_property(self.property.as_str()) {
+        match self.property.as_str().into() {
             PropertyType::Single(prop) => {
                 format!(
                     "{}{{{}:{}}}",
@@ -84,15 +85,14 @@ fn convert_theme_variable_value(value: &str) -> String {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Ord, PartialOrd)]
 pub struct StyleSheetCss {
-    pub class_name: String,
     pub css: String,
 }
 
 impl ExtractStyle for StyleSheetCss {
     fn extract(&self) -> String {
-        format!(".{}{{{}}}", self.class_name, self.css)
+        self.css.clone()
     }
 }
 
@@ -123,7 +123,12 @@ where
 pub struct StyleSheet {
     #[serde(deserialize_with = "deserialize_btree_map_u8")]
     pub properties: PropertyMap,
-    pub css: HashSet<StyleSheetCss>,
+    pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
+
+    #[serde(default)]
+    pub global_css_files: BTreeSet<String>,
+    #[serde(default)]
+    pub imports: BTreeMap<String, String>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -138,6 +143,11 @@ impl StyleSheet {
         selector: Option<&StyleSelector>,
         style_order: Option<u8>,
     ) -> bool {
+        // register global css file for cache
+        if let Some(StyleSelector::Global(_, file)) = selector {
+            self.global_css_files.insert(file.clone());
+        }
+
         self.properties
             .entry(style_order.unwrap_or(255))
             .or_default()
@@ -151,11 +161,38 @@ impl StyleSheet {
             })
     }
 
-    pub fn add_css(&mut self, class_name: &str, css: &str) -> bool {
-        self.css.insert(StyleSheetCss {
-            class_name: class_name.to_string(),
-            css: css.to_string(),
-        })
+    pub fn add_import(&mut self, file: &str, import: &str) {
+        self.global_css_files.insert(file.to_string());
+        self.imports.insert(file.to_string(), import.to_string());
+    }
+
+    pub fn add_css(&mut self, file: &str, css: &str) -> bool {
+        self.global_css_files.insert(file.to_string());
+        self.css
+            .entry(file.to_string())
+            .or_default()
+            .insert(StyleSheetCss {
+                css: css.to_string(),
+            })
+    }
+
+    pub fn rm_global_css(&mut self, file: &str) {
+        if !self.global_css_files.contains(file) {
+            return;
+        }
+        self.global_css_files.remove(file);
+        self.css.remove(file);
+        for (_, map) in self.properties.iter_mut() {
+            for (_, props) in map.iter_mut() {
+                props.retain(|prop| {
+                    if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
+                        f != file
+                    } else {
+                        true
+                    }
+                });
+            }
+        }
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -163,12 +200,28 @@ impl StyleSheet {
     }
 
     pub fn create_css(&self) -> String {
-        let mut css = self.theme.to_css();
+        let mut css = self
+            .imports
+            .iter()
+            .map(|(_, import)| format!("@import \"{}\";", import))
+            .collect::<Vec<String>>()
+            .join("");
+        css.push_str(&self.theme.to_css());
+
+        for (_, _css) in self.css.iter() {
+            for _css in _css.iter() {
+                css.push_str(&_css.extract());
+            }
+        }
 
         // order
         for (_, map) in self.properties.iter() {
             for (level, props) in map.iter() {
-                let (mut medias, mut sorted_props): (Vec<_>, Vec<_>) = props
+                let (mut global_props, rest): (Vec<_>, Vec<_>) = props
+                    .iter()
+                    .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
+                global_props.sort();
+                let (mut medias, mut sorted_props): (Vec<&StyleSheetProperty>, Vec<_>) = rest
                     .iter()
                     .partition(|prop| matches!(prop.selector, Some(StyleSelector::Media(_))));
                 sorted_props.sort();
@@ -196,6 +249,23 @@ impl StyleSheet {
                             .unwrap_or_else(|| self.theme.breakpoints.last().cloned().unwrap_or(0)),
                     )
                 };
+
+                if !global_props.is_empty() {
+                    let inner_css = global_props
+                        .into_iter()
+                        .map(ExtractStyle::extract)
+                        .collect::<Vec<String>>()
+                        .join("");
+                    css.push_str(
+                        if let Some(break_point) = break_point {
+                            format!("\n@media (min-width:{break_point}px){{{inner_css}}}")
+                        } else {
+                            inner_css
+                        }
+                        .as_str(),
+                    );
+                }
+
                 if !sorted_props.is_empty() {
                     let inner_css = sorted_props
                         .into_iter()
@@ -229,9 +299,6 @@ impl StyleSheet {
                     );
                 }
             }
-        }
-        for prop in self.css.iter() {
-            css.push_str(&prop.extract());
         }
         css
     }
@@ -347,7 +414,7 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
-        sheet.add_css("test", "display:flex;");
+        sheet.add_css("test.tsx", "div {display:flex;}");
         assert_debug_snapshot!(sheet.create_css());
 
         let mut sheet = StyleSheet::default();
@@ -467,6 +534,18 @@ mod tests {
     }
 
     #[test]
+    fn test_reset_global_css() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_css("test.tsx", "div {display:flex;}");
+        sheet.add_css("test2.tsx", "div {display:flex;}");
+        assert_debug_snapshot!(sheet.create_css());
+
+        sheet.rm_global_css("test.tsx");
+
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
     fn test_style_order_create_css() {
         let mut sheet = StyleSheet::default();
         sheet.add_property("test", "mx", 0, "40px", None, Some(1));
@@ -568,7 +647,7 @@ mod tests {
                     ]
                 }
             },
-            "css": [],
+            "css": {},
             "theme": {
                 "breakPoints": [
                     640,
@@ -620,5 +699,96 @@ mod tests {
             );
             assert!(sheet.is_err());
         }
+    }
+
+    #[test]
+    fn test_create_css_with_global_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background-color",
+            0,
+            "red",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            None,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "red",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            None,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+
+        sheet.add_property(
+            "test",
+            "background-color",
+            2,
+            "blue",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            None,
+        );
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "red",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            None,
+        );
+        assert_debug_snapshot!(sheet.create_css());
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background-color",
+            1,
+            "blue",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(0),
+        );
+        sheet.add_property(
+            "test",
+            "background-color",
+            0,
+            "red",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(255),
+        );
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_create_css_with_imports() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+        sheet.add_import("test2.tsx", "@devup-ui/core/css/global2.css");
+        sheet.add_import("test3.tsx", "@devup-ui/core/css/global3.css");
+        sheet.add_import("test4.tsx", "@devup-ui/core/css/global4.css");
+        assert_debug_snapshot!(sheet.create_css());
     }
 }

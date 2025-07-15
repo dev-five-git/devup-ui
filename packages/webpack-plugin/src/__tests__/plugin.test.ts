@@ -35,9 +35,9 @@ describe('devupUIPlugin', () => {
       expect(new DevupUIWebpackPlugin({}).options).toEqual({
         include: [],
         package: '@devup-ui/react',
-        cssFile: resolve('.df', 'devup-ui.css'),
+        cssFile: resolve('df', 'devup-ui.css'),
         devupPath: 'devup.json',
-        interfacePath: '.df',
+        interfacePath: 'df',
         watch: false,
         debug: false,
       })
@@ -84,7 +84,7 @@ describe('devupUIPlugin', () => {
         'DevupTheme',
       )
       expect(writeFileSync).toHaveBeenCalledWith(
-        join('.df', 'theme.d.ts'),
+        join('df', 'theme.d.ts'),
         'interfaceCode',
         {
           encoding: 'utf-8',
@@ -147,7 +147,7 @@ describe('devupUIPlugin', () => {
         hasErrors: () => false,
       })
       expect(writeFileSync).toHaveBeenCalledWith(
-        resolve('.df', 'devup-ui.css'),
+        resolve('df', 'devup-ui.css'),
         'css',
         {
           encoding: 'utf-8',
@@ -230,7 +230,7 @@ describe('devupUIPlugin', () => {
       plugin.apply(compiler)
 
       expect(writeFileSync).toHaveBeenCalledWith(
-        resolve('.df', 'devup-ui.css'),
+        resolve('df', 'devup-ui.css'),
         '',
         {
           encoding: 'utf-8',
@@ -356,7 +356,7 @@ describe('devupUIPlugin', () => {
     plugin.apply(compiler)
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      resolve('.df', 'devup-ui.css'),
+      resolve('df', 'devup-ui.css'),
       '',
       {
         encoding: 'utf-8',

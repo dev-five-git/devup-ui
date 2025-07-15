@@ -1,3 +1,4 @@
+import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'
 import type { DevupCommonProps } from '../index'
 
@@ -12,62 +13,68 @@ export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
         DevupSelectorProps
     }
 
-export interface DevupSelectorProps {
-  _active?: DevupCommonProps | false
-  _checked?: DevupCommonProps | false
-  _default?: DevupCommonProps | false
-  _disabled?: DevupCommonProps | false
-  _empty?: DevupCommonProps | false
-  _enabled?: DevupCommonProps | false
-  _first?: DevupCommonProps | false
-  _firstChild?: DevupCommonProps | false
-  _firstOfType?: DevupCommonProps | false
-  _focus?: DevupCommonProps | false
-  _focusVisible?: DevupCommonProps | false
-  _focusWithin?: DevupCommonProps | false
-  _hover?: DevupCommonProps | false
-  _invalid?: DevupCommonProps | false
-  _lastChild?: DevupCommonProps | false
-  _lastOfType?: DevupCommonProps | false
-  _link?: DevupCommonProps | false
-  _onlyChild?: DevupCommonProps | false
-  _optional?: DevupCommonProps | false
-  _readOnly?: DevupCommonProps | false
-  _print?: DevupCommonProps | false
+type SelectorProps = ResponsiveValue<
+  | (DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps)
+  | string
+  | false
+>
 
-  _groupActive?: DevupCommonProps | false
-  _groupChecked?: DevupCommonProps | false
-  _groupDefault?: DevupCommonProps | false
-  _groupDisabled?: DevupCommonProps | false
-  _groupEmpty?: DevupCommonProps | false
-  _groupEnabled?: DevupCommonProps | false
-  _groupFirst?: DevupCommonProps | false
-  _groupFirstChild?: DevupCommonProps | false
-  _groupFirstOfType?: DevupCommonProps | false
-  _groupFocus?: DevupCommonProps | false
-  _groupFocusVisible?: DevupCommonProps | false
-  _groupFocusWithin?: DevupCommonProps | false
-  _groupHover?: DevupCommonProps | false
-  _groupInvalid?: DevupCommonProps | false
-  _groupLastChild?: DevupCommonProps | false
-  _groupLastOfType?: DevupCommonProps | false
-  _groupLink?: DevupCommonProps | false
-  _groupOnlyChild?: DevupCommonProps | false
-  _groupOptional?: DevupCommonProps | false
-  _groupReadOnly?: DevupCommonProps | false
+export interface DevupSelectorProps {
+  _active?: SelectorProps
+  _checked?: SelectorProps
+  _default?: SelectorProps
+  _disabled?: SelectorProps
+  _empty?: SelectorProps
+  _enabled?: SelectorProps
+  _first?: SelectorProps
+  _firstChild?: SelectorProps
+  _firstOfType?: SelectorProps
+  _focus?: SelectorProps
+  _focusVisible?: SelectorProps
+  _focusWithin?: SelectorProps
+  _hover?: SelectorProps
+  _invalid?: SelectorProps
+  _lastChild?: SelectorProps
+  _lastOfType?: SelectorProps
+  _link?: SelectorProps
+  _onlyChild?: SelectorProps
+  _optional?: SelectorProps
+  _readOnly?: SelectorProps
+  _print?: SelectorProps
+
+  _groupActive?: SelectorProps
+  _groupChecked?: SelectorProps
+  _groupDefault?: SelectorProps
+  _groupDisabled?: SelectorProps
+  _groupEmpty?: SelectorProps
+  _groupEnabled?: SelectorProps
+  _groupFirst?: SelectorProps
+  _groupFirstChild?: SelectorProps
+  _groupFirstOfType?: SelectorProps
+  _groupFocus?: SelectorProps
+  _groupFocusVisible?: SelectorProps
+  _groupFocusWithin?: SelectorProps
+  _groupHover?: SelectorProps
+  _groupInvalid?: SelectorProps
+  _groupLastChild?: SelectorProps
+  _groupLastOfType?: SelectorProps
+  _groupLink?: SelectorProps
+  _groupOnlyChild?: SelectorProps
+  _groupOptional?: SelectorProps
+  _groupReadOnly?: SelectorProps
 
   // double separator
-  _placeholder?: DevupCommonProps | false
-  _before?: DevupCommonProps | false
-  _after?: DevupCommonProps | false
-  _highlight?: DevupCommonProps | false
-  _viewTransition?: DevupCommonProps | false
-  _viewTransitionGroup?: DevupCommonProps | false
-  _viewTransitionImagePair?: DevupCommonProps | false
-  _viewTransitionNew?: DevupCommonProps | false
-  _viewTransitionOld?: DevupCommonProps | false
+  _placeholder?: SelectorProps
+  _before?: SelectorProps
+  _after?: SelectorProps
+  _highlight?: SelectorProps
+  _viewTransition?: SelectorProps
+  _viewTransitionGroup?: SelectorProps
+  _viewTransitionImagePair?: SelectorProps
+  _viewTransitionNew?: SelectorProps
+  _viewTransitionOld?: SelectorProps
 
-  selectors?: Record<string, DevupCommonProps>
+  selectors?: Record<string, SelectorProps>
 
   styleOrder?: number
 }

@@ -1,7 +1,6 @@
-import './markdown.css'
 import 'sanitize.css'
 
-import { css, ThemeScript } from '@devup-ui/react'
+import { css, globalCss, ThemeScript } from '@devup-ui/react'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -24,6 +23,37 @@ export const metadata: Metadata = {
     url: 'https://devup-ui.com',
   },
 }
+
+globalCss({
+  imports: ['https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css'],
+  table: {
+    borderCollapse: 'collapse',
+    borderSpacing: 0,
+    border: '1px solid var(--text)',
+    color: 'var(--text, #2F2F2F)',
+    fontFamily: 'Pretendard',
+    fontSize: '16px',
+    fontStyle: 'normal',
+    fontWeight: 400,
+    lineHeight: '150%',
+    letterSpacing: '-0.48px',
+  },
+  code: {
+    fontFamily: 'D2Coding',
+    fontSize: ['13px', '15px'],
+    fontStyle: 'normal',
+    fontWeight: 700,
+    lineHeight: '1.5',
+    letterSpacing: '-0.03em',
+  },
+  'th, td': {
+    border: '1px solid var(--text)',
+    padding: '6px 13px',
+  },
+  pre: {
+    borderRadius: '10px',
+  },
+})
 
 export default function RootLayout({
   children,

@@ -6,7 +6,6 @@ node_modules
 target
 *.*.timestamp-*
 coverage
-.df
 build_rs_cov.profraw
 tsconfig.tsbuildinfo
 codecov

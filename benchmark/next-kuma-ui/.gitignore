@@ -5,7 +5,6 @@
 /.pnp
 .pnp.*
 .yarn/*
-.df
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases

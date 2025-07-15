@@ -82,7 +82,7 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
-        test: resolve('.df', 'devup-ui.css'),
+        test: resolve('df', 'devup-ui.css'),
       },
       expect.any(Function),
     )
@@ -165,7 +165,7 @@ const App = () => <Box></Box>`,
       map: undefined,
     })
     expect(writeFile).toHaveBeenCalledWith(
-      resolve('.df', 'devup-ui.css'),
+      resolve('df', 'devup-ui.css'),
       expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
       {
         encoding: 'utf-8',

@@ -46,6 +46,9 @@ function writeDataFiles(
     writeFileSync(options.cssFile, '', {
       encoding: 'utf-8',
     })
+  writeFileSync(join(options.interfacePath, '.gitignore'), '*', {
+    encoding: 'utf-8',
+  })
 }
 
 let globalCss = ''
@@ -53,7 +56,7 @@ let globalCss = ''
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
   devupPath = 'devup.json',
-  interfacePath = '.df',
+  interfacePath = 'df',
   cssFile = resolve(interfacePath, 'devup-ui.css'),
   extractCss = true,
   debug = false,

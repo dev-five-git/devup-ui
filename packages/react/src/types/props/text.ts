@@ -45,5 +45,3 @@ export interface DevupUiTextProps {
 
   typography?: Conditional<DevupThemeTypography>
 }
-
-// for skip type checking without .df

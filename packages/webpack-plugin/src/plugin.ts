@@ -35,7 +35,7 @@ export class DevupUIWebpackPlugin {
   constructor({
     package: libPackage = '@devup-ui/react',
     devupPath = 'devup.json',
-    interfacePath = '.df',
+    interfacePath = 'df',
     cssFile = resolve(interfacePath, 'devup-ui.css'),
     watch = false,
     debug = false,
@@ -72,6 +72,10 @@ export class DevupUIWebpackPlugin {
         },
       )
     }
+    writeFileSync(join(this.options.interfacePath, '.gitignore'), '*', {
+      encoding: 'utf-8',
+    })
+
     if (this.options.watch) {
       writeFileSync(this.options.cssFile, `/* ${Date.now()} */`, {
         encoding: 'utf-8',
@@ -153,7 +157,7 @@ export class DevupUIWebpackPlugin {
         test: /\.(tsx|ts|js|mjs|jsx)$/,
         exclude: new RegExp(
           this.options.include.length
-            ? `node_modules(?!(.*${this.options.include.join('|').replaceAll('/', '[\\/\\\\]')})([\\/\\\\]|$))`
+            ? `node_modules(?!.*(${this.options.include.join('|').replaceAll('/', '[\\/\\\\]')})([\\/\\\\]|$))`
             : 'node_modules',
         ),
         enforce: 'pre',

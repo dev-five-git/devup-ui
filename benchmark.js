@@ -20,8 +20,8 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
-  if (existsSync('./benchmark/next-devup-ui/.df'))
-    rmSync('./benchmark/next-devup-ui/.df', {
+  if (existsSync('./benchmark/next-devup-ui/df'))
+    rmSync('./benchmark/next-devup-ui/df', {
       recursive: true,
       force: true,
     })

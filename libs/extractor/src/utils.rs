@@ -7,13 +7,13 @@ use oxc_syntax::operator::UnaryOperator;
 use phf::phf_set;
 
 /// Convert a value to a pixel value
-pub fn convert_value(value: &str) -> String {
+pub(super) fn convert_value(value: &str) -> String {
     value
         .parse::<f64>()
         .map_or_else(|_| value.to_string(), |num| format!("{}px", num * 4.0))
 }
 
-pub fn expression_to_code(expression: &Expression) -> String {
+pub(super) fn expression_to_code(expression: &Expression) -> String {
     let allocator = Allocator::default();
     let mut parsed = Parser::new(&allocator, "", SourceType::d_ts()).parse();
     parsed.program.body.insert(
@@ -25,6 +25,26 @@ pub fn expression_to_code(expression: &Expression) -> String {
     );
     let code = Codegen::new().build(&parsed.program).code;
     code[0..code.len() - 2].to_string()
+}
+
+pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
+    match (a, b) {
+        (Expression::StringLiteral(a), Expression::StringLiteral(b)) => a.value == b.value,
+        (Expression::TemplateLiteral(a), Expression::TemplateLiteral(b)) => {
+            a.quasis.len() == b.quasis.len()
+                && a.expressions.len() == b.expressions.len()
+                && a.quasis
+                    .iter()
+                    .zip(b.quasis.iter())
+                    .all(|(a, b)| a.value.raw == b.value.raw && a.tail == b.tail)
+                && a.expressions
+                    .iter()
+                    .zip(b.expressions.iter())
+                    .all(|(a, b)| is_same_expression(a, b))
+        }
+        (Expression::Identifier(a), Expression::Identifier(b)) => a.name == b.name,
+        _ => false,
+    }
 }
 
 static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
@@ -158,14 +178,14 @@ static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
     "selectedOptions"
 };
 
-pub fn is_special_property(name: &str) -> bool {
+pub(super) fn is_special_property(name: &str) -> bool {
     name.starts_with("on")
         || name.starts_with("data-")
         || name.starts_with("aria-")
         || SPECIAL_PROPERTIES.contains(name)
 }
 
-pub fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
+pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
         JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
             &Expression::StringLiteral(sl.clone_in(&Allocator::default())),
@@ -177,7 +197,7 @@ pub fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     }
 }
 
-pub fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
+pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
     match expr {
         Expression::ParenthesizedExpression(parenthesized) => {
             get_number_by_literal_expression(&parenthesized.expression)
@@ -202,7 +222,7 @@ pub fn get_number_by_literal_expression(expr: &Expression) -> Option<f64> {
     }
 }
 
-pub fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
+pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
     get_number_by_literal_expression(expr)
         .map(|num| num.to_string())
         .or_else(|| match expr {

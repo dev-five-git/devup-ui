@@ -20,6 +20,17 @@ describe('plugin', () => {
       })
     })
 
+    it('should apply webpack plugin with dev', async () => {
+      const ret = DevupUI({})
+
+      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId', dev: true } as any)
+
+      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+        cssFile: resolve('df', 'devup-ui_tmpBuildId.css'),
+        watch: true,
+      })
+    })
+
     it('should apply webpack plugin with config', async () => {
       const ret = DevupUI(
         {},
@@ -78,9 +89,9 @@ describe('plugin', () => {
                 loader: '@devup-ui/webpack-plugin/loader',
                 options: {
                   package: '@devup-ui/react',
-                  cssFile: resolve('.df', 'devup-ui.css'),
-                  sheetFile: join('.df', 'sheet.json'),
-                  classMapFile: join('.df', 'classMap.json'),
+                  cssFile: resolve('df', 'devup-ui.css'),
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
                   watch: false,
                 },
               },
@@ -89,7 +100,7 @@ describe('plugin', () => {
         },
       })
     })
-    it('should apply turbo config with create .df', async () => {
+    it('should apply turbo config with create df', async () => {
       vi.stubEnv('TURBOPACK', '1')
       vi.mocked(existsSync).mockReturnValue(false)
       vi.mocked(mkdirSync).mockReturnValue('')
@@ -112,9 +123,9 @@ describe('plugin', () => {
                 loader: '@devup-ui/webpack-plugin/loader',
                 options: {
                   package: '@devup-ui/react',
-                  cssFile: resolve('.df', 'devup-ui.css'),
-                  sheetFile: join('.df', 'sheet.json'),
-                  classMapFile: join('.df', 'classMap.json'),
+                  cssFile: resolve('df', 'devup-ui.css'),
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
                   watch: false,
                 },
               },
@@ -122,9 +133,9 @@ describe('plugin', () => {
           },
         },
       })
-      expect(mkdirSync).toHaveBeenCalledWith('.df')
+      expect(mkdirSync).toHaveBeenCalledWith('df')
       expect(writeFileSync).toHaveBeenCalledWith(
-        resolve('.df', 'devup-ui.css'),
+        resolve('df', 'devup-ui.css'),
         '/* devup-ui */',
       )
     })

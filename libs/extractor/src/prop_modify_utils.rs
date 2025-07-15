@@ -133,8 +133,6 @@ pub fn modify_props<'a>(
             }
         }
     }
-    println!("class_name_prop: {:?}", class_name_prop);
-    println!("style_prop: {:?}", style_prop);
     if let Some(ex) = get_class_name_expression(
         ast_builder,
         &class_name_prop,
@@ -419,14 +417,24 @@ pub fn convert_style_vars<'a>(
                                 PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
                                     SPAN,
                                     oxc_allocator::Vec::from_array_in(
-                                        [ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom("--"),
-                                                cooked: None,
-                                            },
-                                            false,
-                                        )],
+                                        [
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom("--"),
+                                                    cooked: None,
+                                                },
+                                                false,
+                                            ),
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom(""),
+                                                    cooked: None,
+                                                },
+                                                true,
+                                            ),
+                                        ],
                                         ast_builder.allocator,
                                     ),
                                     oxc_allocator::Vec::from_array_in(

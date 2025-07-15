@@ -46,7 +46,7 @@ describe('devupUILoader', () => {
       'index.tsx',
       'code',
       'package',
-      'cssFile',
+      './cssFile',
     )
     await vi.waitFor(() => {
       expect(t.async()).toHaveBeenCalledWith(null, 'code', {})
@@ -82,7 +82,7 @@ describe('devupUILoader', () => {
       'index.tsx',
       'code',
       'package',
-      'cssFile',
+      './cssFile',
     )
     expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
@@ -134,7 +134,7 @@ describe('devupUILoader', () => {
       'index.tsx',
       'code',
       'package',
-      'cssFile',
+      './cssFile',
     )
   })
 })
