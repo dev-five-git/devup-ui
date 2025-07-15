@@ -50,6 +50,9 @@ importers:
       '@devup-ui/react':
         specifier: workspace:*
         version: link:../../packages/react
+      '@devup-ui/reset-css':
+        specifier: workspace:*
+        version: link:../../packages/reset-css
       '@mdx-js/loader':
         specifier: ^3.1.0
         version: 3.1.0(acorn@8.15.0)(webpack@5.99.9)
@@ -86,9 +89,6 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
-      sanitize.css:
-        specifier: ^13.0.0
-        version: 13.0.0
     devDependencies:
       '@devup-ui/next-plugin':
         specifier: workspace:*
@@ -435,6 +435,22 @@ importers:
       rollup-plugin-preserve-directives:
         specifier: ^0.4.0
         version: 0.4.0(rollup@4.44.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^6
+        version: 6.3.5(@types/node@24.0.12)(jiti@2.4.2)(terser@5.43.1)
+      vite-plugin-dts:
+        specifier: ^4.5.4
+        version: 4.5.4(@types/node@24.0.12)(rollup@4.44.0)(typescript@5.8.3)(vite@6.3.5(@types/node@24.0.12)(jiti@2.4.2)(terser@5.43.1))
+
+  packages/reset-css:
+    dependencies:
+      '@devup-ui/react':
+        specifier: workspace:*
+        version: link:../react
+    devDependencies:
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
@@ -4819,9 +4835,6 @@ packages:
 
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
-
-  sanitize.css@13.0.0:
-    resolution: {integrity: sha512-ZRwKbh/eQ6w9vmTjkuG0Ioi3HBwPFce0O+v//ve+aOq1oeCy7jMV2qzzAlpsNuqpqCBjjriM1lbtZbF/Q8jVyA==}
 
   scheduler@0.26.0:
     resolution: {integrity: sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA==}
@@ -11051,8 +11064,6 @@ snapshots:
       is-regex: 1.2.1
 
   safer-buffer@2.1.2: {}
-
-  sanitize.css@13.0.0: {}
 
   scheduler@0.26.0: {}
 

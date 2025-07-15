@@ -2531,7 +2531,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
             extract(
                 "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
-        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} />
+        <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

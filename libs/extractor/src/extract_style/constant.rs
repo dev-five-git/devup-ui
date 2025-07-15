@@ -18,5 +18,7 @@ pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "gridRow",
     "gridRowStart",
     "gridRowEnd",
-    "animationIterationCount"
+    "animationIterationCount",
+    "tabSize",
+    "MozTabSize"
 };

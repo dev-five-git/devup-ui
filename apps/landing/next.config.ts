@@ -15,6 +15,6 @@ export default withMDX(
       pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
       output: 'export',
     },
-    { include: ['@devup-ui/components'] },
+    { include: ['@devup-ui/components', '@devup-ui/reset-css'] },
   ),
 )
