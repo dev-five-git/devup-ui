@@ -199,16 +199,13 @@ impl StyleSheet {
     }
 
     pub fn create_css(&self) -> String {
-        let mut css = self.theme.to_css();
-
-        css.push_str(
-            &self
-                .imports
-                .iter()
-                .map(|(_, import)| format!("@import \"{}\";\n", import))
-                .collect::<Vec<String>>()
-                .join(""),
-        );
+        let mut css = self
+            .imports
+            .iter()
+            .map(|(_, import)| format!("@import \"{}\";", import))
+            .collect::<Vec<String>>()
+            .join("");
+        css.push_str(&self.theme.to_css());
 
         for (_, _css) in self.css.iter() {
             for _css in _css.iter() {

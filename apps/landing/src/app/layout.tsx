@@ -1,4 +1,3 @@
-import './markdown.css'
 import 'sanitize.css'
 
 import { css, globalCss, ThemeScript } from '@devup-ui/react'
@@ -25,59 +24,8 @@ export const metadata: Metadata = {
   },
 }
 
-// table {
-//     border-collapse: collapse;
-//     border-spacing: 0;
-//     border: 1px solid var(--text);
-//     color: var(--text, #2F2F2F);
-
-//     /* Desktop/bodyReg */
-//     font-family: Pretendard;
-//     font-size: 16px;
-//     font-style: normal;
-//     font-weight: 400;
-//     line-height: 150%; /* 24px */
-//     letter-spacing: -0.48px;
-// }
-
-// code {
-//     font-family: D2Coding;
-//     font-size: 13px;
-//     font-style: normal;
-//     font-weight: 700;
-//     line-height: 1.5;
-//     letter-spacing: -0.03em;
-// }
-
-// @media (min-width: 1280px) {
-//     code {
-//         font-size: 15px;
-//     }
-// }
-
-// th, td {
-//     border: 1px solid var(--text);
-//     padding: 6px 13px;
-// }
-
-// pre {
-//     border-radius: 10px;
-// }
-
-// console.log('wtf')
-
-// globalCss`
-//   body {
-//   }
-// `
-// globalCss({
-//   body: {
-//     // bg: 'red !important',
-//   },
-// })
-
 globalCss({
-  imports: ['http://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css'],
+  imports: ['https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css'],
   table: {
     borderCollapse: 'collapse',
     borderSpacing: 0,
@@ -91,7 +39,7 @@ globalCss({
     letterSpacing: '-0.48px',
   },
   code: {
-    fontFamily: 'D2Coding 궁서',
+    fontFamily: 'D2Coding',
     fontSize: ['13px', '15px'],
     fontStyle: 'normal',
     fontWeight: 700,
