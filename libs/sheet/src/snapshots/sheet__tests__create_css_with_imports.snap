@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: sheet.create_css()
+---
+"@import \"@devup-ui/core/css/global.css\";@import \"@devup-ui/core/css/global2.css\";@import \"@devup-ui/core/css/global3.css\";@import \"@devup-ui/core/css/global4.css\";"

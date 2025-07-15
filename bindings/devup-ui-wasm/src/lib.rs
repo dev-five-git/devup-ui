@@ -44,12 +44,13 @@ impl Output {
         let mut collected = false;
         for style in self.styles.iter() {
             let (cls, variable) = match style.extract() {
-                StyleProperty::ClassName(cls) => (cls, None),
-                StyleProperty::Variable {
+                Some(StyleProperty::ClassName(cls)) => (cls, None),
+                Some(StyleProperty::Variable {
                     class_name,
                     variable_name,
                     ..
-                } => (class_name, Some(variable_name)),
+                }) => (class_name, Some(variable_name)),
+                None => continue,
             };
             match style {
                 ExtractStyleValue::Static(st) => {
@@ -82,6 +83,9 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Typography(_) => {}
+                ExtractStyleValue::Import(st) => {
+                    sheet.add_import(st);
+                }
             }
         }
         if !collected {

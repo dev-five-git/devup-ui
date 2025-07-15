@@ -1,3 +1,4 @@
+use crate::css_utils::css_to_style;
 use crate::utils::{expression_to_code, get_number_by_literal_expression, is_special_property};
 use crate::{ExtractStyleProp, utils};
 use oxc_allocator::CloneIn;
@@ -7,7 +8,7 @@ use oxc_ast::ast::{
 };
 use std::collections::BTreeMap;
 
-use crate::extract_style::ExtractStyleValue::{Dynamic, Static, Typography};
+use crate::extract_style::ExtractStyleValue::{self, Dynamic, Static, Typography};
 use crate::extract_style::{ExtractDynamicStyle, ExtractStaticStyle};
 use css::StyleSelector;
 use oxc_ast::AstBuilder;
@@ -33,6 +34,13 @@ pub enum ExtractResult<'a> {
         style_order: Option<u8>,
         style_vars: Option<Expression<'a>>,
     },
+}
+
+#[derive(Debug)]
+pub struct GlobalExtractResult<'a> {
+    pub styles: Vec<ExtractStyleProp<'a>>,
+    pub style_order: Option<u8>,
+    pub imports: Vec<String>,
 }
 
 pub fn extract_style_from_jsx_attr<'a>(
@@ -300,7 +308,7 @@ pub fn extract_style_from_expression<'a>(
                 expression,
                 level,
                 Some(&if let Some(selector) = selector {
-                    [&selector.to_string(), new_selector].into()
+                    (selector, new_selector).into()
                 } else {
                     new_selector.into()
                 }),
@@ -309,22 +317,30 @@ pub fn extract_style_from_expression<'a>(
         typo = name == "typography";
     }
     if let Some(value) = utils::get_string_by_literal_expression(expression) {
-        name.map(|name| ExtractResult::Extract {
-            style_order: None,
-            style_vars: None,
-            tag: None,
-            styles: Some(vec![ExtractStyleProp::Static(if typo {
-                Typography(value.to_string())
-            } else {
-                Static(ExtractStaticStyle::new(
-                    name,
-                    &value,
-                    level,
-                    selector.cloned(),
-                ))
-            })]),
-        })
-        .unwrap_or(ExtractResult::Maintain)
+        if let Some(name) = name {
+            ExtractResult::Extract {
+                style_order: None,
+                style_vars: None,
+                tag: None,
+                styles: Some(vec![ExtractStyleProp::Static(if typo {
+                    Typography(value.to_string())
+                } else {
+                    Static(ExtractStaticStyle::new(
+                        name,
+                        &value,
+                        level,
+                        selector.cloned(),
+                    ))
+                })]),
+            }
+        } else {
+            ExtractResult::Extract {
+                style_order: None,
+                style_vars: None,
+                tag: None,
+                styles: Some(css_to_style(&value, level, &selector)),
+            }
+        }
     } else {
         match expression {
             Expression::UnaryExpression(_)
@@ -891,5 +907,73 @@ fn extract_style_from_member_expression<'a>(
         tag: None,
         style_order: None,
         style_vars: None,
+    }
+}
+
+pub fn extract_global_style_from_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    expression: &mut Expression<'a>,
+) -> GlobalExtractResult<'a> {
+    let mut styles = vec![];
+
+    if let Expression::ObjectExpression(obj) = expression {
+        for p in obj.properties.iter_mut() {
+            if let ObjectPropertyKind::ObjectProperty(o) = p {
+                let name = if let PropertyKey::StaticIdentifier(ident) = &o.key {
+                    ident.name.to_string()
+                } else if let PropertyKey::StringLiteral(s) = &o.key {
+                    s.value.to_string()
+                } else if let PropertyKey::TemplateLiteral(t) = &o.key {
+                    t.quasis
+                        .iter()
+                        .map(|q| q.value.raw.as_str())
+                        .collect::<Vec<_>>()
+                        .join("")
+                } else {
+                    continue;
+                };
+
+                if name == "imports" {
+                    if let Expression::ArrayExpression(arr) = &o.value {
+                        for p in arr.elements.iter() {
+                            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Import(
+                                if let ArrayExpressionElement::StringLiteral(s) = p {
+                                    s.value.trim().to_string()
+                                } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
+                                    t.quasis
+                                        .iter()
+                                        .map(|q| q.value.raw.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join("")
+                                        .trim()
+                                        .to_string()
+                                } else {
+                                    continue;
+                                },
+                            )));
+                        }
+                    }
+                    continue;
+                }
+
+                if let ExtractResult::Extract {
+                    styles: Some(_styles),
+                    ..
+                } = extract_style_from_expression(
+                    ast_builder,
+                    None,
+                    &mut o.value,
+                    0,
+                    Some(&StyleSelector::Global(name.clone())),
+                ) {
+                    styles.extend(_styles);
+                }
+            }
+        }
+    }
+    GlobalExtractResult {
+        styles,
+        style_order: None,
+        imports: vec![],
     }
 }

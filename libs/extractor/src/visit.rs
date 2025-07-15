@@ -1,9 +1,12 @@
 use crate::component::ExportVariableKind;
+use crate::css_type::CssType;
+use crate::css_utils::{css_to_style, optimize_css_block};
 use crate::extract_style::ExtractCss;
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
-    ExtractResult, extract_style_from_expression, extract_style_from_jsx_attr,
+    ExtractResult, GlobalExtractResult, extract_global_style_from_expression,
+    extract_style_from_expression, extract_style_from_jsx_attr,
 };
 use crate::{ExtractStyleProp, ExtractStyleValue, StyleProperty};
 use css::short_to_long;
@@ -13,13 +16,13 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey,
-    Statement, VariableDeclarator, WithClause,
+    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey, Statement,
+    VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
     walk_call_expression, walk_expression, walk_import_declaration, walk_jsx_element, walk_program,
-    walk_variable_declarator,
+    walk_variable_declarator, walk_variable_declarators,
 };
 use strum::IntoEnumIterator;
 
@@ -27,13 +30,14 @@ use crate::utils::jsx_expression_to_number;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
     imports: HashMap<String, ExportVariableKind>,
     import_object: Option<String>,
     jsx_imports: HashMap<String, String>,
-    css_imports: HashMap<String, String>,
+    css_imports: HashMap<String, Rc<CssType>>,
     jsx_object: Option<String>,
     package: String,
     css_file: String,
@@ -57,6 +61,25 @@ impl<'a> DevupVisitor<'a> {
 }
 
 impl<'a> VisitMut<'a> for DevupVisitor<'a> {
+    fn visit_variable_declarators(
+        &mut self,
+        it: &mut oxc_allocator::Vec<'a, VariableDeclarator<'a>>,
+    ) {
+        for v in it.iter() {
+            if let VariableDeclarator {
+                id,
+                init: Some(Expression::Identifier(ident)),
+                ..
+            } = v
+                && let Some(css_import_key) = self.css_imports.get(ident.name.as_str())
+                && let Some(name) = id.get_binding_identifier().map(|id| id.name.to_string())
+            {
+                self.css_imports.insert(name, css_import_key.clone());
+            }
+        }
+        walk_variable_declarators(self, it);
+    }
+
     fn visit_program(&mut self, it: &mut Program<'a>) {
         walk_program(self, it);
         if !self.styles.is_empty() {
@@ -100,51 +123,80 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if let Some(css_import_key) = css_import_key
-                && self.css_imports.contains_key(&css_import_key)
+                && let Some(css_type) = self.css_imports.get(&css_import_key)
             {
-                if call.arguments.is_empty() {
+                if call.arguments.len() != 1 {
                     *it = self
                         .ast
                         .expression_string_literal(SPAN, self.ast.atom(""), None);
-                } else if call.arguments.len() == 1 {
-                    if let ExtractResult::Extract {
-                        styles: Some(mut styles),
-                        style_order,
-                        ..
-                    } = extract_style_from_expression(
-                        &self.ast,
-                        None,
-                        call.arguments[0].to_expression_mut(),
-                        0,
-                        None,
-                    ) {
-                        // css can not reachable
-                        // ExtractResult::ExtractStyleWithChangeTag(styles, _)
-                        let class_name = gen_class_names(&self.ast, &mut styles, style_order);
+                } else {
+                    *it = match css_type.as_ref() {
+                        CssType::Css => {
+                            if let ExtractResult::Extract {
+                                styles: Some(mut styles),
+                                style_order,
+                                ..
+                            } = extract_style_from_expression(
+                                &self.ast,
+                                None,
+                                call.arguments[0].to_expression_mut(),
+                                0,
+                                None,
+                            ) {
+                                // css can not reachable
+                                // ExtractResult::ExtractStyleWithChangeTag(styles, _)
+                                let class_name =
+                                    gen_class_names(&self.ast, &mut styles, style_order);
 
-                        self.styles.extend(
-                            styles
-                                .into_iter()
-                                // already set style order
-                                .flat_map(|ex| ex.extract()),
-                        );
-                        if let Some(cls) = class_name {
-                            *it = cls;
-                        } else {
-                            *it = self
-                                .ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None);
+                                self.styles.extend(
+                                    styles
+                                        .into_iter()
+                                        // already set style order
+                                        .flat_map(|ex| ex.extract()),
+                                );
+                                if let Some(cls) = class_name {
+                                    cls
+                                } else {
+                                    self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                                }
+                            } else {
+                                self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                            }
                         }
-                    } else {
-                        *it = self
-                            .ast
-                            .expression_string_literal(SPAN, self.ast.atom(""), None);
+                        CssType::GlobalCss => {
+                            let GlobalExtractResult {
+                                styles,
+                                style_order,
+                                imports,
+                            } = extract_global_style_from_expression(
+                                &self.ast,
+                                call.arguments[0].to_expression_mut(),
+                            );
+                            self.styles.extend(
+                                styles
+                                    .into_iter()
+                                    // already set style order
+                                    .flat_map(|mut ex| {
+                                        if let ExtractStyleProp::Static(css) = &mut ex {
+                                            css.set_style_order(style_order.unwrap_or(0));
+                                        }
+                                        ex.extract()
+                                    }),
+                            );
+                            self.styles.extend(
+                                imports
+                                    .into_iter()
+                                    .map(|import| ExtractStyleValue::Import(import)),
+                            );
+                            self.ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                        }
                     }
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it {
             if let Expression::Identifier(ident) = &tag.tag
-                && self.css_imports.contains_key(ident.name.as_str())
+                && let Some(css_type) = self.css_imports.get(ident.name.as_str())
             {
                 let css_str = tag
                     .quasi
@@ -153,16 +205,30 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .map(|quasi| quasi.value.raw.as_str())
                     .collect::<Vec<&str>>()
                     .join("");
-                let css = ExtractStyleValue::Css(ExtractCss {
-                    css: css_str.trim().to_string(),
-                });
+                match css_type.as_ref() {
+                    CssType::Css => {
+                        let mut styles = css_to_style(&css_str, 0, &None);
+                        let class_name = gen_class_names(&self.ast, &mut styles, None);
 
-                if let StyleProperty::ClassName(cls) = css.extract() {
-                    *it = self
-                        .ast
-                        .expression_string_literal(SPAN, self.ast.atom(&cls), None);
+                        if let Some(cls) = class_name {
+                            *it = cls;
+                        }
+                        self.styles.extend(
+                            styles
+                                .into_iter()
+                                // already set style order
+                                .flat_map(|ex| ex.extract()),
+                        );
+                    }
+                    CssType::GlobalCss => {
+                        let css = ExtractStyleValue::Css(ExtractCss {
+                            css: optimize_css_block(&css_str),
+                        });
+
+                        *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));
+                        self.styles.insert(css);
+                    }
                 }
-                self.styles.insert(css);
             }
         }
     }
@@ -324,9 +390,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
-                        } else if import.imported.to_string() == "css" {
+                        } else if let Ok(kind) = CssType::try_from(import.imported.to_string()) {
                             self.css_imports
-                                .insert(import.local.to_string(), it.source.value.to_string());
+                                .insert(import.local.to_string(), Rc::new(kind));
                             specifiers.remove(i);
                         }
                     }
@@ -341,7 +407,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         self.css_imports.insert(
                             format!("{}.{}", import_default_specifier.local, "css"),
-                            it.source.value.to_string(),
+                            Rc::new(CssType::Css),
+                        );
+
+                        self.css_imports.insert(
+                            format!("{}.{}", import_default_specifier.local, "globalCss"),
+                            Rc::new(CssType::GlobalCss),
                         );
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(
@@ -355,7 +426,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         self.css_imports.insert(
                             format!("{}.{}", import_namespace_specifier.local, "css"),
-                            it.source.value.to_string(),
+                            Rc::new(CssType::Css),
+                        );
+                        self.css_imports.insert(
+                            format!("{}.{}", import_namespace_specifier.local, "globalCss"),
+                            Rc::new(CssType::GlobalCss),
                         );
                     }
                 }

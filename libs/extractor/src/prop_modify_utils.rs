@@ -133,8 +133,6 @@ pub fn modify_props<'a>(
             }
         }
     }
-    println!("class_name_prop: {:?}", class_name_prop);
-    println!("style_prop: {:?}", style_prop);
     if let Some(ex) = get_class_name_expression(
         ast_builder,
         &class_name_prop,

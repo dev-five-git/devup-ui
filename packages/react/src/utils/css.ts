@@ -1,4 +1,4 @@
-import { DevupCommonProps } from '../types/props'
+import type { DevupCommonProps } from '../types/props'
 import type {
   DevupSelectorProps,
   DevupThemeSelectorProps,

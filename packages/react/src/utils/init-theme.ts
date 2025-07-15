@@ -2,7 +2,7 @@
 
 import type { Conditional } from 'src/types/utils'
 
-import { DevupTheme } from '../types/theme'
+import type { DevupTheme } from '../types/theme'
 
 /**
  * Initialize the theme, if you can't use the `ThemeScript` component

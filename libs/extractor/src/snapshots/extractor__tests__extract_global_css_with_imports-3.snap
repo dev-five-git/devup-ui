@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\nglobalCss({\n  imports: [`@devup-ui/core/css/global3.css`, `@devup-ui/core/css/global4.css`]\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Import(
+            "@devup-ui/core/css/global3.css",
+        ),
+        Import(
+            "@devup-ui/core/css/global4.css",
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n\"\";\n",
+}

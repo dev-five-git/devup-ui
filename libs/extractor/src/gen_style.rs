@@ -30,28 +30,32 @@ fn gen_style<'a>(
 ) -> Vec<ObjectPropertyKind<'a>> {
     let mut properties = vec![];
     match style {
-        ExtractStyleProp::Static(st) => match st.extract() {
-            StyleProperty::ClassName(_) => {}
-            StyleProperty::Variable {
-                variable_name,
-                identifier,
-                ..
-            } => {
-                properties.push(ast_builder.object_property_kind_object_property(
-                    SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.atom(&variable_name),
-                        None,
-                    )),
-                    ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
-                    false,
-                    false,
-                    false,
-                ));
+        ExtractStyleProp::Static(st) => {
+            if let Some(ex) = st.extract() {
+                match ex {
+                    StyleProperty::ClassName(_) => {}
+                    StyleProperty::Variable {
+                        variable_name,
+                        identifier,
+                        ..
+                    } => {
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                                SPAN,
+                                ast_builder.atom(&variable_name),
+                                None,
+                            )),
+                            ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
+                            false,
+                            false,
+                            false,
+                        ));
+                    }
+                }
             }
-        },
+        }
         ExtractStyleProp::StaticArray(res) => {
             properties.append(
                 &mut res
@@ -187,11 +191,11 @@ fn gen_style<'a>(
         },
         ExtractStyleProp::Expression { styles, .. } => {
             for style in styles {
-                if let StyleProperty::Variable {
+                if let Some(StyleProperty::Variable {
                     variable_name,
                     identifier,
                     ..
-                } = style.extract()
+                }) = style.extract()
                 {
                     properties.push(ast_builder.object_property_kind_object_property(
                         SPAN,
@@ -213,11 +217,11 @@ fn gen_style<'a>(
             let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
             for (key, value) in map.iter() {
                 for style in value.extract() {
-                    if let StyleProperty::Variable {
+                    if let Some(StyleProperty::Variable {
                         variable_name,
                         identifier,
                         ..
-                    } = style.extract()
+                    }) = style.extract()
                     {
                         tmp_map
                             .entry(variable_name)

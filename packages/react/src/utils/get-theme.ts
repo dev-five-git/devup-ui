@@ -1,6 +1,6 @@
 'use client'
 
-import { DevupTheme } from '../types/theme'
+import type { DevupTheme } from '../types/theme'
 
 export function getTheme():
   | (keyof DevupTheme extends undefined ? string : keyof DevupTheme)

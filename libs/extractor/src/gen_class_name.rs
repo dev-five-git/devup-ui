@@ -2,10 +2,7 @@ use crate::prop_modify_utils::convert_class_name;
 use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
-use oxc_ast::ast::{
-    Expression, PropertyKey, PropertyKind, TemplateElement,
-    TemplateElementValue,
-};
+use oxc_ast::ast::{Expression, PropertyKey, PropertyKind, TemplateElement, TemplateElementValue};
 use oxc_span::SPAN;
 
 pub fn gen_class_names<'a>(
@@ -38,8 +35,9 @@ fn gen_class_name<'a>(
             Some(ast_builder.expression_string_literal(
                 SPAN,
                 ast_builder.atom(match &target {
-                    StyleProperty::ClassName(cls) => cls,
-                    StyleProperty::Variable { class_name, .. } => class_name,
+                    Some(StyleProperty::ClassName(cls)) => cls,
+                    Some(StyleProperty::Variable { class_name, .. }) => class_name,
+                    None => return None,
                 }),
                 None,
             ))
@@ -141,13 +139,10 @@ pub fn merge_expression_for_class_name<'a>(
     let mut class_names = vec![];
     let mut unknown_expr = vec![];
     for expr in expressions {
-        match expr {
-            Expression::StringLiteral(str) => {
-                class_names.push(str.value.to_string().trim().to_string())
-            }
-            _ => {
-                unknown_expr.push(expr);
-            }
+        if let Expression::StringLiteral(str) = &expr {
+            class_names.push(str.value.to_string().trim().to_string())
+        } else {
+            unknown_expr.push(expr);
         }
     }
     if unknown_expr.is_empty() && class_names.is_empty() {
@@ -175,26 +170,16 @@ pub fn merge_expression_for_class_name<'a>(
                         tail: false,
                         lone_surrogates: false,
                     });
-                } else if idx == unknown_expr.len() {
-                    qu.push(TemplateElement {
-                        span: SPAN,
-                        value: TemplateElementValue {
-                            raw: ast_builder.atom(""),
-                            cooked: None,
-                        },
-                        tail: true,
-                        lone_surrogates: false,
-                    });
                 } else {
-                    qu.push(TemplateElement {
-                        span: SPAN,
-                        value: TemplateElementValue {
-                            raw: ast_builder.atom(" "),
+                    let tail = idx == unknown_expr.len();
+                    qu.push(ast_builder.template_element(
+                        SPAN,
+                        TemplateElementValue {
+                            raw: ast_builder.atom(if tail { "" } else { " " }),
                             cooked: None,
                         },
-                        tail: false,
-                        lone_surrogates: false,
-                    });
+                        tail,
+                    ));
                 }
             }
 

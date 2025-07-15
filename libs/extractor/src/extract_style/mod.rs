@@ -122,7 +122,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
 }
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractCss {
-    /// css code
+    /// css must be global css
     pub css: String,
 }
 
@@ -211,17 +211,19 @@ pub enum ExtractStyleValue {
     Typography(String),
     Dynamic(ExtractDynamicStyle),
     Css(ExtractCss),
+    Import(String),
 }
 
 impl ExtractStyleValue {
-    pub fn extract(&self) -> StyleProperty {
+    pub fn extract(&self) -> Option<StyleProperty> {
         match self {
-            ExtractStyleValue::Static(style) => style.extract(),
-            ExtractStyleValue::Dynamic(style) => style.extract(),
-            ExtractStyleValue::Css(css) => css.extract(),
+            ExtractStyleValue::Static(style) => Some(style.extract()),
+            ExtractStyleValue::Dynamic(style) => Some(style.extract()),
+            ExtractStyleValue::Css(css) => Some(css.extract()),
             ExtractStyleValue::Typography(typo) => {
-                StyleProperty::ClassName(format!("typo-{typo}"))
+                Some(StyleProperty::ClassName(format!("typo-{typo}")))
             }
+            ExtractStyleValue::Import(_) => None,
         }
     }
     pub fn set_style_order(&mut self, order: u8) {

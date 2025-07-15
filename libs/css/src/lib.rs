@@ -21,7 +21,7 @@ static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     .into_iter()
     .enumerate()
     {
-        map.insert(format!("&:{selector}"), idx as u8);
+        map.insert(format!(":{selector}"), idx as u8);
     }
     map
 });
@@ -41,6 +41,7 @@ pub fn is_debug() -> bool {
 pub enum StyleSelector {
     Media(String),
     Selector(String),
+    Global(String),
 }
 
 impl PartialOrd for StyleSelector {
@@ -55,7 +56,7 @@ fn get_selector_order(selector: &str) -> u8 {
         selector
             .split('&')
             .next_back()
-            .map(|a| format!("&{a}"))
+            .map(|a| format!("{a}"))
             .unwrap_or(selector.to_string())
     } else {
         selector.to_string()
@@ -75,6 +76,37 @@ impl Ord for StyleSelector {
             }
             (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
             (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
+            (StyleSelector::Global(a), StyleSelector::Global(b)) => {
+                if a == b {
+                    return Ordering::Equal;
+                }
+                match (a.contains(":"), b.contains(":")) {
+                    (true, true) => {
+                        let a_order = a.split(":").next().unwrap();
+                        let b_order = b.split(":").next().unwrap();
+                        let mut a_order_value = 0;
+                        let mut b_order_value = 0;
+                        for (order, order_value) in SELECTOR_ORDER_MAP.iter() {
+                            if a_order.contains(order) {
+                                a_order_value = *order_value;
+                            }
+                            if b_order.contains(order) {
+                                b_order_value = *order_value;
+                            }
+                        }
+                        if a_order_value == b_order_value {
+                            a.cmp(b)
+                        } else {
+                            a_order_value.cmp(&b_order_value)
+                        }
+                    }
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    (false, false) => a.cmp(b),
+                }
+            }
+            (StyleSelector::Global(_), _) => Ordering::Less,
+            (_, StyleSelector::Global(_)) => Ordering::Greater,
         }
     }
 }
@@ -121,6 +153,21 @@ impl From<[&str; 2]> for StyleSelector {
         ))
     }
 }
+impl From<(&StyleSelector, &str)> for StyleSelector {
+    fn from(value: (&StyleSelector, &str)) -> Self {
+        if let StyleSelector::Global(_) = value.0 {
+            let post = to_kebab_case(value.1);
+            StyleSelector::Global(format!(
+                "{}{}{}",
+                value.0,
+                get_selector_separator(&post),
+                post
+            ))
+        } else {
+            StyleSelector::from([&value.0.to_string(), value.1])
+        }
+    }
+}
 
 impl Display for StyleSelector {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
@@ -130,6 +177,7 @@ impl Display for StyleSelector {
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
                 StyleSelector::Media(value) => format!("@{value}"),
+                StyleSelector::Global(value) => format!("{value}"),
             }
         )
     }
@@ -140,6 +188,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
             StyleSelector::Media(_) => format!(".{class_name}"),
+            StyleSelector::Global(v) => format!("{v}"),
         }
     } else {
         format!(".{class_name}")
@@ -468,13 +517,11 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
     } else {
         let key = format!("{}-{}-{}", property, level, selector.unwrap_or("").trim());
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(&key)
-            .map(|v| format!("--d{v}"))
-            .unwrap_or_else(|| {
-                let len = map.len();
-                map.insert(key, len as i32);
-                format!("--d{}", map.len() - 1)
-            })
+        map.get(&key).map(|v| format!("--d{v}")).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(key, len as i32);
+            format!("--d{}", map.len() - 1)
+        })
     }
 }
 
