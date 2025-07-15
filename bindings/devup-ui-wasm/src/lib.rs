@@ -1,5 +1,5 @@
-use css::{get_class_map, set_class_map};
-use extractor::extract_style::ExtractStyleValue;
+use css::class_map::{get_class_map, set_class_map};
+use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, StyleProperty, extract};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
@@ -112,12 +112,12 @@ impl Output {
 
 #[wasm_bindgen(js_name = "setDebug")]
 pub fn set_debug(debug: bool) {
-    css::set_debug(debug);
+    css::debug::set_debug(debug);
 }
 
 #[wasm_bindgen(js_name = "isDebug")]
 pub fn is_debug() {
-    css::is_debug();
+    css::debug::is_debug();
 }
 
 #[wasm_bindgen(js_name = "importSheet")]

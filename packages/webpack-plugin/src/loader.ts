@@ -25,15 +25,16 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     const id = this.resourcePath
 
     try {
-      const rel = relative(dirname(this.resourcePath), cssFile).replaceAll(
+      let rel = relative(dirname(this.resourcePath), cssFile).replaceAll(
         '\\',
         '/',
       )
+      if (!rel.startsWith('./')) rel = `./${rel}`
       const { code, css, map } = codeExtract(
         id,
         source.toString(),
         libPackage,
-        rel.startsWith('./') ? rel : `./${rel}`,
+        rel,
       )
       const sourceMap = map ? JSON.parse(map) : null
       if (css && watch) {

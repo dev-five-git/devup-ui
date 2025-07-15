@@ -20,7 +20,7 @@ export default defineConfig({
         '**/*.test-d.(tsx|ts|js|jsx)',
         'vite.config.ts',
       ],
-      include: ['**/src/**/*.(ts|tsx)', '.df/*.d.ts'],
+      include: ['**/src/**/*.(ts|tsx)', 'df/*.d.ts'],
       copyDtsFiles: true,
       compilerOptions: {
         isolatedModules: false,

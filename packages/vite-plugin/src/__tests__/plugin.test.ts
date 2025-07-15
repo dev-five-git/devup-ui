@@ -27,7 +27,7 @@ describe('devupUIPlugin', () => {
   console.error = vi.fn()
   it('should write data files', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -142,7 +142,7 @@ describe('devupUIPlugin', () => {
   })
   it('should transform code', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -190,7 +190,7 @@ describe('devupUIPlugin', () => {
   })
   it('should not extract code', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -230,7 +230,7 @@ describe('devupUIPlugin', () => {
   })
   it('should catch error', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -270,7 +270,7 @@ describe('devupUIPlugin', () => {
 
   it('should return true on apply', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -308,7 +308,7 @@ describe('devupUIPlugin', () => {
 
   it('should include', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     const plugin = DevupUI({
@@ -348,7 +348,7 @@ describe('devupUIPlugin', () => {
 
   describe('basic', () => {
     const devupPath = 'devup.json'
-    const interfacePath = '.df'
+    const interfacePath = 'df'
     const cssFile = join(_dirname, 'devup-ui.css')
     const libPackage = '@devup-ui/react'
     vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true)

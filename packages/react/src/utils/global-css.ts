@@ -1,16 +1,16 @@
-import type { DevupCommonProps } from '../types/props'
-import type {
-  DevupSelectorProps,
-  DevupThemeSelectorProps,
-} from '../types/props/selector'
+import type { DevupThemeSelectorProps } from 'dist/types/props/selector'
 
-type CssValue = DevupCommonProps | DevupSelectorProps | DevupThemeSelectorProps
+import type { DevupCommonProps } from '../types/props'
+import type { DevupSelectorProps } from '../types/props/selector'
 
 type GlobalCssProps = {
   [key in
     | keyof HTMLElementTagNameMap
     | keyof SVGElementTagNameMap
-    | (string & {})]?: CssValue
+    | (string & {})]?:
+    | DevupCommonProps
+    | DevupSelectorProps
+    | DevupThemeSelectorProps
 }
 
 export function globalCss(

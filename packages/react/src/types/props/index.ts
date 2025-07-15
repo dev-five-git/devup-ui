@@ -62,12 +62,12 @@ export interface DevupCommonProps
     DevupUiTransitionProps,
     DevupUiUiProps,
     DevupUiViewTransitionProps,
-    DevupSelectorProps,
-    DevupThemeSelectorProps,
     DevupUiSvgProps {}
 
 export interface DevupProps<T extends React.ElementType>
-  extends DevupCommonProps {
+  extends DevupCommonProps,
+    DevupSelectorProps,
+    DevupThemeSelectorProps {
   as?: T
   styleVars?: Record<string, string | undefined>
 }

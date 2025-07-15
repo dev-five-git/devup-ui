@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 // eslint-disable-next-line @typescript-eslint/no-unused-expressions
 globalCss`
   body {
-    background-color: #016 !important;
+    background-color: #040 !important;
     color: #248 !important;
   }
 `
@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        <Box color="#025">hello</Box>
+        <Box color="#FFF">hello</Box>
         {children}
       </body>
     </html>

@@ -1,186 +1,20 @@
-use once_cell::sync::Lazy;
-use phf::{phf_map, phf_set};
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+pub mod class_map;
+mod constant;
+pub mod debug;
+pub mod optimize_value;
+pub mod property_type;
+mod selector_separator;
+pub mod style_selector;
+pub mod utils;
+
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::Mutex;
 
-static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-    for (idx, selector) in [
-        "hover",
-        "focus-visible",
-        "focus",
-        "active",
-        "selected",
-        "disabled",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        map.insert(format!(":{selector}"), idx as u8);
-    }
-    map
-});
-
-static DEBUG: Mutex<bool> = Mutex::new(false);
-
-pub fn set_debug(value: bool) {
-    let mut debug = DEBUG.lock().unwrap();
-    *debug = value;
-}
-
-pub fn is_debug() -> bool {
-    *DEBUG.lock().unwrap()
-}
-
-#[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
-pub enum StyleSelector {
-    Media(String),
-    Selector(String),
-    // selector, file
-    Global(String, String),
-}
-
-impl PartialOrd for StyleSelector {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-fn get_selector_order(selector: &str) -> u8 {
-    // & count
-    let t = if selector.chars().filter(|c| c == &'&').count() == 1 {
-        selector
-            .split('&')
-            .next_back()
-            .map(|a| a.to_string())
-            .unwrap_or(selector.to_string())
-    } else {
-        selector.to_string()
-    };
-
-    *SELECTOR_ORDER_MAP
-        .get(&t)
-        .unwrap_or(if t.starts_with("&") { &0 } else { &99 })
-}
-
-impl Ord for StyleSelector {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (StyleSelector::Media(a), StyleSelector::Media(b)) => a.cmp(b),
-            (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
-                get_selector_order(a).cmp(&get_selector_order(b))
-            }
-            (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
-            (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
-            (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
-                if a == b {
-                    return Ordering::Equal;
-                }
-                match (a.contains(":"), b.contains(":")) {
-                    (true, true) => {
-                        let a_order = a.split(":").next().unwrap();
-                        let b_order = b.split(":").next().unwrap();
-                        let mut a_order_value = 0;
-                        let mut b_order_value = 0;
-                        for (order, order_value) in SELECTOR_ORDER_MAP.iter() {
-                            if a_order.contains(order) {
-                                a_order_value = *order_value;
-                            }
-                            if b_order.contains(order) {
-                                b_order_value = *order_value;
-                            }
-                        }
-                        if a_order_value == b_order_value {
-                            a.cmp(b)
-                        } else {
-                            a_order_value.cmp(&b_order_value)
-                        }
-                    }
-                    (true, false) => Ordering::Greater,
-                    (false, true) => Ordering::Less,
-                    (false, false) => a.cmp(b),
-                }
-            }
-            (StyleSelector::Global(_, _), _) => Ordering::Less,
-            (_, StyleSelector::Global(_, _)) => Ordering::Greater,
-        }
-    }
-}
-
-impl From<&str> for StyleSelector {
-    fn from(value: &str) -> Self {
-        if value.contains("&") {
-            StyleSelector::Selector(value.to_string())
-        } else if let Some(s) = value.strip_prefix("group") {
-            let post = to_kebab_case(s);
-            StyleSelector::Selector(format!(
-                "{}{}{} &",
-                "*[role=group]",
-                get_selector_separator(&post),
-                post
-            ))
-        } else if let Some(s) = value.strip_prefix("theme") {
-            // first character should lower case
-            StyleSelector::Selector(format!(
-                ":root[data-theme={}{}] &",
-                s.chars().next().unwrap().to_ascii_lowercase(),
-                &s[1..]
-            ))
-        } else if value == "print" {
-            StyleSelector::Media("print".to_string())
-        } else if value.ends_with(" ") {
-            StyleSelector::Selector(format!("{} &", value.trim()))
-        } else {
-            let post = to_kebab_case(value);
-
-            StyleSelector::Selector(format!("&{}{}", get_selector_separator(&post), post))
-        }
-    }
-}
-
-impl From<[&str; 2]> for StyleSelector {
-    fn from(value: [&str; 2]) -> Self {
-        let post = to_kebab_case(value[1]);
-        StyleSelector::Selector(format!(
-            "{}{}{}",
-            StyleSelector::from(value[0]),
-            get_selector_separator(&post),
-            post
-        ))
-    }
-}
-impl From<(&StyleSelector, &str)> for StyleSelector {
-    fn from(value: (&StyleSelector, &str)) -> Self {
-        if let StyleSelector::Global(_, file) = value.0 {
-            let post = to_kebab_case(value.1);
-            StyleSelector::Global(
-                format!("{}{}{}", value.0, get_selector_separator(&post), post),
-                file.clone(),
-            )
-        } else {
-            StyleSelector::from([&value.0.to_string(), value.1])
-        }
-    }
-}
-
-impl Display for StyleSelector {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                StyleSelector::Selector(value) => value.to_string(),
-                StyleSelector::Media(value) => format!("@{value}"),
-                StyleSelector::Global(value, _) => format!("{value}"),
-            }
-        )
-    }
-}
+use crate::class_map::GLOBAL_CLASS_MAP;
+use crate::constant::{COLOR_HASH, F_SPACE_RE, GLOBAL_STYLE_PROPERTY, ZERO_RE};
+use crate::debug::is_debug;
+use crate::optimize_value::optimize_value;
+use crate::style_selector::StyleSelector;
+use crate::utils::{to_camel_case, to_kebab_case};
 
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
@@ -194,189 +28,6 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     }
 }
 
-pub enum SelectorSeparator {
-    Single,
-    Double,
-    None,
-}
-impl Display for SelectorSeparator {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SelectorSeparator::Single => ":",
-                SelectorSeparator::Double => "::",
-                SelectorSeparator::None => "",
-            }
-        )
-    }
-}
-
-static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
-        "placeholder",
-        "before",
-        "after",
-        "highlight",
-        "view-transition",
-        "view-transition-group",
-        "view-transition-image-pair",
-        "view-transition-new",
-        "view-transition-old",
-};
-
-pub fn get_selector_separator(key: &str) -> SelectorSeparator {
-    if key.starts_with(":") || key.is_empty() || key.starts_with("[") {
-        SelectorSeparator::None
-    } else if DOUBLE_SEPARATOR.contains(key) {
-        SelectorSeparator::Double
-    } else {
-        SelectorSeparator::Single
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum PropertyType {
-    Single(String),
-    Multi(Vec<String>),
-}
-
-impl From<&str> for PropertyType {
-    fn from(value: &str) -> Self {
-        value.to_string().into()
-    }
-}
-
-impl From<String> for PropertyType {
-    fn from(value: String) -> Self {
-        PropertyType::Single(value)
-    }
-}
-
-impl From<[&str; 2]> for PropertyType {
-    fn from(value: [&str; 2]) -> Self {
-        PropertyType::Multi(value.iter().map(|v| v.to_string()).collect())
-    }
-}
-
-static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
-    "bg" => &["background"],
-    "bgAttachment" => &["background-attachment"],
-    "bgClip" => &["background-clip"],
-    "bgColor" => &["background-color"],
-    "bgImage" => &["background-image"],
-    "bgOrigin" => &["background-origin"],
-    "bgPosition" => &["background-position"],
-    "bgPositionX" => &["background-position-x"],
-    "bgPositionY" => &["background-position-y"],
-    "bgRepeat" => &["background-repeat"],
-    "bgSize" => &["background-size"],
-    "animationDir" => &["animation-direction"],
-    "flexDir" => &["flex-direction"],
-    "pos" => &["position"],
-    "m" => &["margin"],
-    "mt" => &["margin-top"],
-    "mr" => &["margin-right"],
-    "mb" => &["margin-bottom"],
-    "ml" => &["margin-left"],
-    "p" => &["padding"],
-    "pt" => &["padding-top"],
-    "pr" => &["padding-right"],
-    "pb" => &["padding-bottom"],
-    "pl" => &["padding-left"],
-    "w" => &["width"],
-    "h" => &["height"],
-    "minW" => &["min-width"],
-    "minH" => &["min-height"],
-    "maxW" => &["max-width"],
-    "maxH" => &["max-height"],
-    "mx" => &["margin-left", "margin-right"],
-    "my" => &["margin-top", "margin-bottom"],
-    "px" => &["padding-left", "padding-right"],
-    "py" => &["padding-top", "padding-bottom"],
-    "boxSize" => &["width", "height"],
-    "borderBottomRadius" => &["border-bottom-left-radius", "border-bottom-right-radius"],
-    "borderTopRadius" => &["border-top-left-radius", "border-top-right-radius"],
-    "borderLeftRadius" => &["border-top-left-radius", "border-bottom-left-radius"],
-    "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
-};
-
-static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-/// for test
-pub fn reset_class_map() {
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.clear();
-}
-
-pub fn set_class_map(map: HashMap<String, i32>) {
-    let mut global_map = GLOBAL_CLASS_MAP.lock().unwrap();
-    *global_map = map;
-}
-
-pub fn get_class_map() -> HashMap<String, i32> {
-    GLOBAL_CLASS_MAP.lock().unwrap().clone()
-}
-
-pub fn to_kebab_case(value: &str) -> String {
-    value
-        .chars()
-        .enumerate()
-        .map(|(i, c)| {
-            if c.is_uppercase() {
-                if i == 0 {
-                    c.to_ascii_lowercase().to_string()
-                } else {
-                    format!("-{}", c.to_ascii_lowercase())
-                }
-            } else {
-                c.to_string()
-            }
-        })
-        .collect()
-}
-
-pub fn to_camel_case(value: &str) -> String {
-    value
-        .split('-')
-        .enumerate()
-        .map(|(i, s)| {
-            if i == 0 {
-                s.to_string()
-            } else {
-                format!("{}{}", s[0..1].to_uppercase(), &s[1..])
-            }
-        })
-        .collect()
-}
-
-pub fn convert_property(property: &str) -> PropertyType {
-    GLOBAL_STYLE_PROPERTY
-        .get(property)
-        .cloned()
-        .map(|v| match v.len() {
-            1 => PropertyType::Single(v[0].to_string()),
-            _ => PropertyType::Multi(v.iter().map(|v| v.to_string()).collect()),
-        })
-        .unwrap_or_else(|| {
-            if (property.starts_with("Webkit")
-                && property.len() > 6
-                && property.chars().nth(6).unwrap().is_uppercase())
-                || (property.starts_with("Moz")
-                    && property.len() > 3
-                    && property.chars().nth(3).unwrap().is_uppercase())
-                || (property.starts_with("ms")
-                    && property.len() > 2
-                    && property.chars().nth(2).unwrap().is_uppercase())
-            {
-                PropertyType::Single(format!("-{}", to_kebab_case(property)))
-            } else {
-                to_kebab_case(property).into()
-            }
-        })
-}
-
 pub fn short_to_long(property: &str) -> String {
     GLOBAL_STYLE_PROPERTY
         .get(property)
@@ -387,61 +38,6 @@ pub fn short_to_long(property: &str) -> String {
         .unwrap_or_else(|| property.to_string())
 }
 
-static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
-static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
-static ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
-
-fn optimize_color(value: &str) -> String {
-    let mut ret = value.to_string().to_uppercase();
-
-    if ret.len() == 6 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] {
-            ret = format!("{}{}{}", ch[0], ch[2], ch[4]);
-        }
-    } else if ret.len() == 8 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
-            ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
-        }
-    }
-
-    format!("#{ret}")
-}
-
-pub fn optimize_value(value: &str) -> String {
-    let mut ret = value.trim().to_string();
-    if ret.contains(",") {
-        ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
-    }
-    if ret.contains("#") {
-        ret = COLOR_HASH
-            .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
-            .to_string();
-    }
-    if ret.contains("0") {
-        ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
-    }
-    // remove ; from dynamic value
-    for str_symbol in ["", "`", "\"", "'"] {
-        if ret.ends_with(&format!(";{str_symbol}")) {
-            ret = format!(
-                "{}{}",
-                ret[..ret.len() - str_symbol.len() - 1].trim_end_matches(';'),
-                str_symbol
-            );
-        } else if ret.ends_with(&format!(";{str_symbol})")) {
-            ret = format!(
-                "{}{})",
-                ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'),
-                str_symbol
-            );
-        }
-    }
-    ret
-}
-
 pub fn sheet_to_classname(
     property: &str,
     level: u8,
@@ -449,7 +45,7 @@ pub fn sheet_to_classname(
     selector: Option<&str>,
     style_order: Option<u8>,
 ) -> String {
-    if *DEBUG.lock().unwrap() {
+    if is_debug() {
         let selector = selector.unwrap_or("").trim();
         format!(
             "{}-{}-{}-{}-{}",
@@ -484,7 +80,7 @@ pub fn sheet_to_classname(
 }
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    if *DEBUG.lock().unwrap() {
+    if is_debug() {
         let selector = selector.unwrap_or("").trim();
         format!(
             "--{}-{}-{}",
@@ -511,17 +107,15 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        class_map::{get_class_map, reset_class_map, set_class_map},
+        debug::set_debug,
+    };
+
     use super::*;
     use serial_test::serial;
-
-    #[test]
-    #[serial]
-    fn test_set_debug() {
-        set_debug(true);
-        assert!(is_debug());
-        set_debug(false);
-        assert!(!is_debug());
-    }
 
     #[test]
     #[serial]
@@ -559,49 +153,6 @@ mod tests {
         assert_eq!(
             sheet_to_variable_name("background", 1, Some("hover")),
             "--background-1-12448419602614487988"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_optimize_value() {
-        assert_eq!(optimize_value("0px"), "0");
-        assert_eq!(optimize_value("0em"), "0");
-        assert_eq!(optimize_value("0rem"), "0");
-        assert_eq!(optimize_value("0vh"), "0");
-        assert_eq!(optimize_value("0vw"), "0");
-        assert_eq!(optimize_value("0%"), "0");
-        assert_eq!(optimize_value("0dvh"), "0");
-        assert_eq!(optimize_value("0dvw"), "0");
-        assert_eq!(optimize_value("0px 0px"), "0 0");
-        assert_eq!(optimize_value("0em 0em"), "0 0");
-        assert_eq!(optimize_value("0rem 0rem"), "0 0");
-        assert_eq!(optimize_value("0vh 0vh"), "0 0");
-        assert_eq!(optimize_value("0vw 0vw"), "0 0");
-        assert_eq!(optimize_value("-0vw -0vw"), "0 0");
-        assert_eq!(optimize_value("scale(0px)"), "scale(0)");
-        assert_eq!(optimize_value("scale(-0px)"), "scale(0)");
-        assert_eq!(optimize_value("scale(-0px);"), "scale(0)");
-        assert_eq!(optimize_value("red;"), "red");
-        assert_eq!(optimize_value("translate(0px)"), "translate(0)");
-        assert_eq!(optimize_value("translate(-0px,0px)"), "translate(0,0)");
-        assert_eq!(optimize_value("translate(-0px, 0px)"), "translate(0,0)");
-        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
-        assert_eq!(optimize_value("translate(0px, 0px)"), "translate(0,0)");
-        assert_eq!(optimize_value("translate(10px, 0px)"), "translate(10px,0)");
-        assert_eq!(optimize_value("\"red\""), "\"red\"");
-        assert_eq!(optimize_value("'red'"), "'red'");
-        assert_eq!(optimize_value("`red`"), "`red`");
-        assert_eq!(optimize_value("\"red;\""), "\"red\"");
-        assert_eq!(optimize_value("'red;'"), "'red'");
-        assert_eq!(optimize_value("`red;`"), "`red`");
-        assert_eq!(optimize_value("(\"red;\")"), "(\"red\")");
-        assert_eq!(optimize_value("(`red;`)"), "(`red`)");
-        assert_eq!(optimize_value("('red;')"), "('red')");
-        assert_eq!(optimize_value("('red') + 'blue;'"), "('red') + 'blue'");
-        assert_eq!(
-            optimize_value("translateX(0px) translateY(0px)"),
-            "translateX(0) translateY(0)"
         );
     }
 
@@ -825,275 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_property() {
-        assert_eq!(
-            convert_property("bg"),
-            PropertyType::Single("background".to_string())
-        );
-        assert_eq!(
-            convert_property("bgColor"),
-            PropertyType::Single("background-color".to_string())
-        );
-        assert_eq!(
-            convert_property("color"),
-            PropertyType::Single("color".to_string())
-        );
-        assert_eq!(
-            convert_property("m"),
-            PropertyType::Single("margin".to_string())
-        );
-        assert_eq!(
-            convert_property("mt"),
-            PropertyType::Single("margin-top".to_string())
-        );
-        assert_eq!(
-            convert_property("mr"),
-            PropertyType::Single("margin-right".to_string())
-        );
-        assert_eq!(
-            convert_property("mb"),
-            PropertyType::Single("margin-bottom".to_string())
-        );
-        assert_eq!(
-            convert_property("ml"),
-            PropertyType::Single("margin-left".to_string())
-        );
-        assert_eq!(
-            convert_property("p"),
-            PropertyType::Single("padding".to_string())
-        );
-        assert_eq!(
-            convert_property("pt"),
-            PropertyType::Single("padding-top".to_string())
-        );
-        assert_eq!(
-            convert_property("pr"),
-            PropertyType::Single("padding-right".to_string())
-        );
-        assert_eq!(
-            convert_property("pb"),
-            PropertyType::Single("padding-bottom".to_string())
-        );
-        assert_eq!(
-            convert_property("pl"),
-            PropertyType::Single("padding-left".to_string())
-        );
-        assert_eq!(
-            convert_property("w"),
-            PropertyType::Single("width".to_string())
-        );
-        assert_eq!(
-            convert_property("h"),
-            PropertyType::Single("height".to_string())
-        );
-        assert_eq!(
-            convert_property("minW"),
-            PropertyType::Single("min-width".to_string())
-        );
-        assert_eq!(
-            convert_property("minH"),
-            PropertyType::Single("min-height".to_string())
-        );
-        assert_eq!(
-            convert_property("maxW"),
-            PropertyType::Single("max-width".to_string())
-        );
-        assert_eq!(
-            convert_property("maxH"),
-            PropertyType::Single("max-height".to_string())
-        );
-        assert_eq!(
-            convert_property("mx"),
-            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
-        );
-        assert_eq!(
-            convert_property("my"),
-            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
-        );
-        assert_eq!(
-            convert_property("px"),
-            PropertyType::Multi(vec![
-                "padding-left".to_string(),
-                "padding-right".to_string()
-            ])
-        );
-        assert_eq!(
-            convert_property("py"),
-            PropertyType::Multi(vec![
-                "padding-top".to_string(),
-                "padding-bottom".to_string()
-            ])
-        );
-    }
-
-    #[test]
-    fn test_convert_vendor_property() {
-        assert_eq!(
-            convert_property("MozUserSelect"),
-            PropertyType::Single("-moz-user-select".to_string())
-        );
-        assert_eq!(
-            convert_property("msAccelerator"),
-            PropertyType::Single("-ms-accelerator".to_string())
-        );
-        assert_eq!(
-            convert_property("WebkitAlignContent"),
-            PropertyType::Single("-webkit-align-content".to_string())
-        );
-    }
-
-    #[test]
-    fn test_property_type_from() {
-        assert_eq!(
-            PropertyType::from("background"),
-            PropertyType::Single("background".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("background-color"),
-            PropertyType::Single("background-color".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("color"),
-            PropertyType::Single("color".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin"),
-            PropertyType::Single("margin".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-top"),
-            PropertyType::Single("margin-top".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-right"),
-            PropertyType::Single("margin-right".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-bottom"),
-            PropertyType::Single("margin-bottom".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-left"),
-            PropertyType::Single("margin-left".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding"),
-            PropertyType::Single("padding".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-top"),
-            PropertyType::Single("padding-top".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-right"),
-            PropertyType::Single("padding-right".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-bottom"),
-            PropertyType::Single("padding-bottom".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-left"),
-            PropertyType::Single("padding-left".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("width"),
-            PropertyType::Single("width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("height"),
-            PropertyType::Single("height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("min-width"),
-            PropertyType::Single("min-width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("min-height"),
-            PropertyType::Single("min-height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("max-width"),
-            PropertyType::Single("max-width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("max-height"),
-            PropertyType::Single("max-height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from(["margin-left", "margin-right"]),
-            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
-        );
-        assert_eq!(
-            PropertyType::from(["margin-top", "margin-bottom"]),
-            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_kebab_case() {
-        assert_eq!(to_kebab_case("backgroundColor"), "background-color");
-        assert_eq!(to_kebab_case("color"), "color");
-        assert_eq!(to_kebab_case("margin"), "margin");
-        assert_eq!(to_kebab_case("marginTop"), "margin-top");
-        assert_eq!(to_kebab_case("marginRight"), "margin-right");
-        assert_eq!(to_kebab_case("marginBottom"), "margin-bottom");
-        assert_eq!(to_kebab_case("marginLeft"), "margin-left");
-        assert_eq!(to_kebab_case("padding"), "padding");
-        assert_eq!(to_kebab_case("paddingTop"), "padding-top");
-        assert_eq!(to_kebab_case("paddingRight"), "padding-right");
-        assert_eq!(to_kebab_case("paddingBottom"), "padding-bottom");
-        assert_eq!(to_kebab_case("paddingLeft"), "padding-left");
-        assert_eq!(to_kebab_case("width"), "width");
-        assert_eq!(to_kebab_case("height"), "height");
-        assert_eq!(to_kebab_case("minWidth"), "min-width");
-        assert_eq!(to_kebab_case("minHeight"), "min-height");
-        assert_eq!(to_kebab_case("maxWidth"), "max-width");
-        assert_eq!(to_kebab_case("maxHeight"), "max-height");
-        assert_eq!(to_kebab_case("MaxHeight"), "max-height");
-        assert_eq!(to_kebab_case("Hover"), "hover");
-    }
-
-    #[test]
-    fn test_style_selector() {
-        assert_eq!(
-            StyleSelector::from("hover"),
-            StyleSelector::Selector("&:hover".to_string())
-        );
-        assert_eq!(
-            StyleSelector::from("focusVisible"),
-            StyleSelector::Selector("&:focus-visible".to_string())
-        );
-        assert_eq!(
-            StyleSelector::from("groupHover"),
-            StyleSelector::Selector("*[role=group]:hover &".to_string())
-        );
-        assert_eq!(
-            StyleSelector::from("groupFocusVisible"),
-            StyleSelector::Selector("*[role=group]:focus-visible &".to_string())
-        );
-        assert_eq!(
-            StyleSelector::from("group1"),
-            StyleSelector::Selector("*[role=group]:1 &".to_string())
-        );
-
-        assert_eq!(
-            StyleSelector::from(["themeDark", "placeholder"]),
-            StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string())
-        );
-
-        assert_eq!(
-            StyleSelector::from("themeLight"),
-            StyleSelector::Selector(":root[data-theme=light] &".to_string())
-        );
-
-        assert_eq!(
-            StyleSelector::from("*[aria=disabled='true'] &:hover"),
-            StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string())
-        );
-    }
-
-    #[test]
     fn test_merge_selector() {
         assert_eq!(merge_selector("cls", Some(&"hover".into())), ".cls:hover");
         assert_eq!(
@@ -1127,41 +409,6 @@ mod tests {
             merge_selector("cls", Some(&["themeDark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
         );
-    }
-    #[test]
-    fn test_get_selector_separator() {
-        assert!(matches!(
-            get_selector_separator("placeholder"),
-            SelectorSeparator::Double
-        ));
-        assert!(matches!(
-            get_selector_separator("before"),
-            SelectorSeparator::Double
-        ));
-        assert!(matches!(
-            get_selector_separator("after"),
-            SelectorSeparator::Double
-        ));
-
-        assert!(matches!(
-            get_selector_separator("hover"),
-            SelectorSeparator::Single
-        ));
-
-        assert!(matches!(
-            get_selector_separator(":hover"),
-            SelectorSeparator::None
-        ));
-
-        assert!(matches!(
-            get_selector_separator("::placeholder"),
-            SelectorSeparator::None
-        ));
-
-        assert!(matches!(
-            get_selector_separator("[aria-disabled='true']"),
-            SelectorSeparator::None
-        ));
     }
 
     #[test]

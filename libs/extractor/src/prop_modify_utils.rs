@@ -417,14 +417,24 @@ pub fn convert_style_vars<'a>(
                                 PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
                                     SPAN,
                                     oxc_allocator::Vec::from_array_in(
-                                        [ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom("--"),
-                                                cooked: None,
-                                            },
-                                            false,
-                                        )],
+                                        [
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom("--"),
+                                                    cooked: None,
+                                                },
+                                                false,
+                                            ),
+                                            ast_builder.template_element(
+                                                SPAN,
+                                                TemplateElementValue {
+                                                    raw: ast_builder.atom(""),
+                                                    cooked: None,
+                                                },
+                                                true,
+                                            ),
+                                        ],
                                         ast_builder.allocator,
                                     ),
                                     oxc_allocator::Vec::from_array_in(

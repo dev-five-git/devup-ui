@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { codeExtract } from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
@@ -20,7 +20,7 @@ export const DevupUIRsbuildPlugin = ({
   include = [],
   package: libPackage = '@devup-ui/react',
   extractCss = true,
-  interfacePath = '.df',
+  interfacePath = 'df',
   cssFile = resolve(interfacePath, 'devup-ui.css'),
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
   name: 'devup-ui-rsbuild-plugin',
@@ -28,6 +28,9 @@ export const DevupUIRsbuildPlugin = ({
   async setup(api) {
     if (!extractCss) return
     await mkdir(interfacePath, { recursive: true })
+    await writeFile(join(interfacePath, '.gitignore'), '*', {
+      encoding: 'utf-8',
+    })
     await writeFile(cssFile, '')
 
     api.transform(

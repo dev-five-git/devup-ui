@@ -29,7 +29,7 @@ export function DevupUI(
     config.turbopack.rules ??= {}
     const {
       package: libPackage = '@devup-ui/react',
-      interfacePath = '.df',
+      interfacePath = 'df',
       cssFile = resolve(interfacePath, 'devup-ui.css'),
     } = options
 
@@ -66,7 +66,7 @@ export function DevupUI(
   const { webpack } = config
   config.webpack = (config, _options) => {
     options.cssFile ??= resolve(
-      options.interfacePath ?? '.next/cache',
+      _options.dev ? (options.interfacePath ?? 'df') : '.next/cache',
       `devup-ui_${_options.buildId}.css`,
     )
     config.plugins.push(

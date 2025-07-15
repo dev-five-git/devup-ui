@@ -126,39 +126,36 @@ fn gen_style<'a>(
                             ObjectPropertyKind::ObjectProperty(p),
                             ObjectPropertyKind::ObjectProperty(q),
                         ) = (p, q)
+                            && p.key.name() == q.key.name()
                         {
-                            if p.key.name() == q.key.name() {
-                                found = true;
-                                properties.push(ast_builder.object_property_kind_object_property(
-                                    SPAN,
-                                    PropertyKind::Init,
-                                    p.key.clone_in(ast_builder.allocator),
-                                    ast_builder.expression_conditional(
-                                        SPAN,
-                                        condition.clone_in(ast_builder.allocator),
-                                        p.value.clone_in(ast_builder.allocator),
-                                        q.value.clone_in(ast_builder.allocator),
-                                    ),
-                                    false,
-                                    false,
-                                    false,
-                                ));
-                                break;
-                            }
-                        }
-                    }
-                    if !found {
-                        if let ObjectPropertyKind::ObjectProperty(p) = p {
+                            found = true;
                             properties.push(ast_builder.object_property_kind_object_property(
                                 SPAN,
                                 PropertyKind::Init,
                                 p.key.clone_in(ast_builder.allocator),
-                                p.value.clone_in(ast_builder.allocator),
+                                ast_builder.expression_conditional(
+                                    SPAN,
+                                    condition.clone_in(ast_builder.allocator),
+                                    p.value.clone_in(ast_builder.allocator),
+                                    q.value.clone_in(ast_builder.allocator),
+                                ),
                                 false,
                                 false,
                                 false,
                             ));
+                            break;
                         }
+                    }
+                    if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            p.key.clone_in(ast_builder.allocator),
+                            p.value.clone_in(ast_builder.allocator),
+                            false,
+                            false,
+                            false,
+                        ));
                     }
                 }
 

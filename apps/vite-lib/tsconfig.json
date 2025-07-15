@@ -26,7 +26,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".df/*.d.ts"
+    "df/*.d.ts"
   ],
   "exclude": [
     "node_modules"

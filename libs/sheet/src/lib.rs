@@ -1,7 +1,8 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{PropertyType, StyleSelector, convert_property, merge_selector};
+use css::property_type::PropertyType;
+use css::{merge_selector, style_selector::StyleSelector};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::de::Error;
@@ -48,7 +49,7 @@ impl Ord for StyleSheetProperty {
 
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
-        match convert_property(self.property.as_str()) {
+        match self.property.as_str().into() {
             PropertyType::Single(prop) => {
                 format!(
                     "{}{{{}:{}}}",

@@ -1,7 +1,7 @@
 use crate::component::ExportVariableKind;
 use crate::css_type::CssType;
 use crate::css_utils::{css_to_style, optimize_css_block};
-use crate::extract_style::ExtractCss;
+use crate::extract_style::extract_css::ExtractCss;
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::style_extractor::{
