@@ -2,8 +2,7 @@ use crate::{
     ExtractStyleProp,
     extract_style::{extract_import::ExtractImport, extract_style_value::ExtractStyleValue},
     extractor::{
-        ExtractResult, GlobalExtractResult,
-        extract_style_from_expression::extract_style_from_expression,
+        GlobalExtractResult, extract_style_from_expression::extract_style_from_expression,
     },
 };
 use css::style_selector::StyleSelector;
