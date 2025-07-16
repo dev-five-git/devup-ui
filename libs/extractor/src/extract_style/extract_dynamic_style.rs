@@ -3,7 +3,7 @@ use css::{
     style_selector::StyleSelector,
 };
 
-use crate::{StyleProperty, extract_style::ExtractStyleProperty};
+use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractDynamicStyle {

@@ -4,8 +4,9 @@ use css::{
 };
 
 use crate::{
-    StyleProperty,
-    extract_style::{ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES},
+    extract_style::{
+        ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty,
+    },
     utils::convert_value,
 };
 

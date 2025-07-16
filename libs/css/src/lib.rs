@@ -38,6 +38,20 @@ pub fn short_to_long(property: &str) -> String {
         .unwrap_or_else(|| property.to_string())
 }
 
+pub fn keyframes_to_keyframes_name(keyframes: &str) -> String {
+    if is_debug() {
+        format!("k-{keyframes}")
+    } else {
+        let key = format!("k-{keyframes}");
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key).map(|v| format!("k{v}")).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(key, len as i32);
+            format!("k{}", map.len() - 1)
+        })
+    }
+}
+
 pub fn sheet_to_classname(
     property: &str,
     level: u8,
@@ -418,5 +432,19 @@ mod tests {
         map.insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
         set_class_map(map);
         assert_eq!(get_class_map().len(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyframes_to_keyframes_name() {
+        reset_class_map();
+        set_debug(false);
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
+        assert_eq!(keyframes_to_keyframes_name("spin2"), "k1");
+        reset_class_map();
+        set_debug(true);
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k-spin");
+        assert_eq!(keyframes_to_keyframes_name("spin1"), "k-spin1");
     }
 }

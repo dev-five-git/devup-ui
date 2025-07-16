@@ -230,6 +230,7 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
                 get_string_by_literal_expression(&parenthesized.expression)
             }
             Expression::StringLiteral(str) => Some(str.value.into()),
+            Expression::BooleanLiteral(bool) => Some(bool.value.to_string()),
             Expression::TemplateLiteral(tmp) => {
                 let mut collect = vec![];
                 for (idx, q) in tmp.quasis.iter().enumerate() {
@@ -252,6 +253,7 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use oxc_allocator::Vec;
+    use oxc_ast::ast::NumberBase;
 
     use super::*;
 
@@ -370,5 +372,82 @@ mod tests {
             ),
             None
         );
+    }
+    #[test]
+    fn test_get_string_by_literal_expression() {
+        let allocator = Allocator::default();
+        let builder = oxc_ast::AstBuilder::new(&allocator);
+
+        let expr = builder.expression_string_literal(SPAN, "hello", None);
+        assert_eq!(
+            super::get_string_by_literal_expression(&expr),
+            Some("hello".to_string())
+        );
+
+        let expr = builder.expression_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal);
+        assert_eq!(
+            super::get_string_by_literal_expression(&expr),
+            Some("42".to_string())
+        );
+
+        let expr = builder.expression_boolean_literal(SPAN, true);
+        assert_eq!(
+            super::get_string_by_literal_expression(&expr),
+            Some("true".to_string())
+        );
+
+        let expr = builder.expression_template_literal(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(
+                vec![builder.template_element(
+                    SPAN,
+                    oxc_ast::ast::TemplateElementValue {
+                        cooked: Some("template".into()),
+                        raw: "template".into(),
+                    },
+                    true,
+                )],
+                &allocator,
+            ),
+            oxc_allocator::Vec::new_in(&allocator),
+        );
+        assert_eq!(
+            super::get_string_by_literal_expression(&expr),
+            Some("template".to_string())
+        );
+
+        let expr = builder.expression_template_literal(
+            SPAN,
+            oxc_allocator::Vec::from_iter_in(
+                vec![
+                    builder.template_element(
+                        SPAN,
+                        oxc_ast::ast::TemplateElementValue {
+                            cooked: Some("a".into()),
+                            raw: "a".into(),
+                        },
+                        false,
+                    ),
+                    builder.template_element(
+                        SPAN,
+                        oxc_ast::ast::TemplateElementValue {
+                            cooked: Some("b".into()),
+                            raw: "b".into(),
+                        },
+                        true,
+                    ),
+                ],
+                &allocator,
+            ),
+            oxc_allocator::Vec::from_iter_in(
+                vec![builder.expression_identifier(SPAN, builder.atom("x"))],
+                &allocator,
+            ),
+        );
+        assert_eq!(super::get_string_by_literal_expression(&expr), None);
+
+        // Identifier 등 기타 타입 - None 반환
+        let expr = builder.expression_identifier(SPAN, builder.atom("foo"));
+        assert_eq!(super::get_string_by_literal_expression(&expr), None);
     }
 }

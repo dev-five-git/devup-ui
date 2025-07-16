@@ -67,15 +67,6 @@ impl ExtractStyleProp<'_> {
     }
 }
 /// Style property for props
-pub enum StyleProperty {
-    ClassName(String),
-    Variable {
-        class_name: String,
-        variable_name: String,
-        identifier: String,
-    },
-}
-
 #[derive(Debug)]
 pub struct ExtractOutput {
     // used styles
@@ -4618,6 +4609,284 @@ globalCss({})
                 "test.tsx",
                 r#"import { globalCss } from "@devup-ui/core";
 globalCss()
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_keyframs() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  from: { opacity: 0 },
+  to: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  "0%": { opacity: 0 },
+  "50%": { opacity: 0.5 },
+  "100%": { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  "0": { opacity: 0 },
+  "50": { opacity: 0.5 },
+  "100": { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  ["0"]: { opacity: 0 },
+  ["50"]: { opacity: 0.5 },
+  ["100"]: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  [0]: { opacity: 0 },
+  [50]: { opacity: 0.5 },
+  [100]: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  0: { opacity: 0 },
+  50: { opacity: 0.5 },
+  100: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  [`0`]: { opacity: 0 },
+  [`50`]: { opacity: 0.5 },
+  [`100`]: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  [`0%`]: { opacity: 0 },
+  [`50%`]: { opacity: 0.5 },
+  [`100%`]: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+
+keyframes({
+  [`0`]: { opacity: 0 },
+  [`50`]: { opacity: 0.5 },
+  [`100`]: { opacity: 1 }
+});
+keyframes({
+  [`0%`]: { opacity: 0 },
+  [`50%`]: { opacity: 0.5 },
+  [`100%`]: { opacity: 1 }
+});
+keyframes({
+  [`1%`]: { opacity: 0 },
+  [`50%`]: { opacity: 0.5 },
+  [`100%`]: { opacity: 1 }
+});
+keyframes({
+  [`0%`]: { opacity: 1 },
+  [`50%`]: { opacity: 0.5 },
+  [`100%`]: { opacity: 1 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_keyframs_literal() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  from: `
+  background-color: red;
+  `,
+  to: `
+  background-color: blue;
+  `
+})
+
+keyframes`
+  from {
+    background-color: red;
+  }
+  to {
+    background-color: blue;
+  }
+`
+keyframes({
+  from: {
+    backgroundColor: "red"
+  },
+  to: {
+    backgroundColor: "blue"
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  "0%": `
+  background-color: red;
+  color: blue;
+  `,
+  "100%": `
+  background-color: blue;
+  color: red;
+  `
+})
+
+keyframes`
+  0% {
+    background-color: red;
+    color: blue;
+  }
+  100% {
+    background-color: blue;
+    color: red;
+  }
+`
+keyframes({
+  "0%": {
+    backgroundColor: "red",
+    color: "blue"
+  },
+  "100%": {
+    backgroundColor: "blue",
+    color: "red"
+  }
+})
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

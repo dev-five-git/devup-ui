@@ -1,10 +1,17 @@
 'use client'
 
-import './StarButton.css'
-
-import { Center, css, Flex, Image, Text } from '@devup-ui/react'
+import { Center, css, Flex, Image, keyframes, Text } from '@devup-ui/react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+
+const spin = keyframes({
+  '0%': {
+    transform: 'rotate(0deg)',
+  },
+  '100%': {
+    transform: 'rotate(360deg)',
+  },
+})
 
 export default function StarButton() {
   const [starCount, setStarCount] = useState<number | null>(null)
@@ -88,7 +95,8 @@ export default function StarButton() {
           {starCount === null ? (
             <Image
               alt="Loading"
-              animation="spin 1s linear infinite"
+              animation="1s linear infinite"
+              animationName={spin}
               boxSize="20px"
               src="/spinner.svg"
             />

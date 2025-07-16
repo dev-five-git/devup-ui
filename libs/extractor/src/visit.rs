@@ -1,6 +1,10 @@
 use crate::component::ExportVariableKind;
-use crate::css_utils::{css_to_style, optimize_css_block};
+use crate::css_utils::{css_to_style, keyframes_to_keyframes_style, optimize_css_block};
+use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
+use crate::extract_style::extract_keyframes::ExtractKeyframes;
+use crate::extractor::KeyframesExtractResult;
+use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
@@ -181,9 +185,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                         }
                         UtilType::Keyframes => {
-                            // TODO: implement keyframes
+                            let KeyframesExtractResult { keyframes } =
+                                extract_keyframes_from_expression(
+                                    &self.ast,
+                                    call.arguments[0].to_expression_mut(),
+                                );
+
+                            let name = keyframes.extract().to_string();
+                            self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                             self.ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                                .expression_string_literal(SPAN, self.ast.atom(&name), None)
                         }
                         UtilType::GlobalCss => {
                             let GlobalExtractResult {
@@ -237,7 +248,34 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         );
                     }
                     UtilType::Keyframes => {
-                        // TODO: implement keyframes
+                        let keyframes = ExtractKeyframes {
+                            keyframes: keyframes_to_keyframes_style(&css_str)
+                                .into_iter()
+                                .filter_map(|(k, v)| {
+                                    Some((
+                                        k,
+                                        v.into_iter()
+                                            .filter_map(|ex| {
+                                                if let crate::ExtractStyleProp::Static(
+                                                    crate::ExtractStyleValue::Static(st),
+                                                ) = ex
+                                                {
+                                                    Some(st)
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect(),
+                                    ))
+                                })
+                                .collect(),
+                        };
+                        let name = keyframes.extract().to_string();
+
+                        self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+                        *it = self
+                            .ast
+                            .expression_string_literal(SPAN, self.ast.atom(&name), None);
                     }
                     UtilType::GlobalCss => {
                         let css = ExtractStyleValue::Css(ExtractCss {
@@ -502,7 +540,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                     if let Some(at) = &mut attr.value {
                         let ExtractResult { styles, tag, .. } =
-                            extract_style_from_jsx(&self.ast, &name, at, None);
+                            extract_style_from_jsx(&self.ast, &name, at);
                         props_styles.extend(styles.into_iter().rev());
                         tag_name = tag.unwrap_or(tag_name);
                         continue;

@@ -1,4 +1,5 @@
-use crate::{ExtractStyleProp, StyleProperty};
+use crate::ExtractStyleProp;
+use crate::extract_style::style_property::StyleProperty;
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::{Expression, ObjectPropertyKind, PropertyKey, PropertyKind};

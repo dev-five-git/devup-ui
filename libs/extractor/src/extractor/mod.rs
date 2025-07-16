@@ -1,8 +1,9 @@
 use oxc_ast::ast::Expression;
 
-use crate::ExtractStyleProp;
+use crate::{ExtractStyleProp, extract_style::extract_keyframes::ExtractKeyframes};
 
 pub(super) mod extract_global_style_from_expression;
+pub(super) mod extract_keyframes_from_expression;
 pub(super) mod extract_style_from_expression;
 pub(super) mod extract_style_from_jsx;
 pub(super) mod extract_style_from_member_expression;
@@ -27,4 +28,9 @@ pub struct ExtractResult<'a> {
 pub struct GlobalExtractResult<'a> {
     pub styles: Vec<ExtractStyleProp<'a>>,
     pub style_order: Option<u8>,
+}
+
+#[derive(Debug)]
+pub struct KeyframesExtractResult {
+    pub keyframes: ExtractKeyframes,
 }

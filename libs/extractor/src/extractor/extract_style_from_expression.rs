@@ -136,6 +136,18 @@ pub fn extract_style_from_expression<'a>(
                 level,
                 None,
             ),
+            Expression::TemplateLiteral(tmp) => ExtractResult {
+                styles: css_to_style(
+                    &tmp.quasis
+                        .iter()
+                        .map(|q| q.value.raw.as_str())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    level,
+                    &selector,
+                ),
+                ..ExtractResult::default()
+            },
             _ => ExtractResult::default(),
         };
     }
