@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.14
+
+### Patch Changes
+
+- 132e8dd: Implement globalCss, Fix ?? operator issue
+- 946dbc2: Implement keyframe
+
 ## 1.0.13
 
 ### Patch Changes

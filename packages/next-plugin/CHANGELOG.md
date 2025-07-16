@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 1.0.14
+
+### Patch Changes
+
+- 132e8dd: Change temp dir
+- Updated dependencies [132e8dd]
+  - @devup-ui/webpack-plugin@1.0.14
+
 ## 1.0.13
 
 ### Patch Changes

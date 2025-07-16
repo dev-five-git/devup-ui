@@ -1,5 +1,14 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.14
+
+### Patch Changes
+
+- 132e8dd: Change temp dir
+- Updated dependencies [132e8dd]
+- Updated dependencies [946dbc2]
+  - @devup-ui/wasm@1.0.14
+
 ## 1.0.13
 
 ### Patch Changes
