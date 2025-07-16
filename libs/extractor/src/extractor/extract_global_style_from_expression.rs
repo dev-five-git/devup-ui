@@ -71,29 +71,6 @@ pub fn extract_global_style_from_expression<'a>(
                     )
                     .styles,
                 );
-
-                // if let ExtractResult::Extract {
-                //     styles: Some(_styles),
-                //     ..
-                // } = extract_style_from_expression(
-                //     ast_builder,
-                //     None,
-                //     &mut o.value,
-                //     0,
-                //     Some(&StyleSelector::Global(name.clone(), file.to_string())),
-                // ) {
-                //     styles.extend(
-                //         extract_style_from_expression(
-                //             ast_builder,
-                //             None,
-                //             &mut o.value,
-                //             0,
-                //             Some(&StyleSelector::Global(name.clone(), file.to_string())),
-                //         )
-                //         .styles
-                //         .iter()
-                //     );
-                // }
             }
         }
     }
