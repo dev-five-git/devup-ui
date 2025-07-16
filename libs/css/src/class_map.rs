@@ -22,9 +22,12 @@ pub fn get_class_map() -> HashMap<String, i32> {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
 
     #[test]
+    #[serial]
     fn test_set_and_get_class_map() {
         let mut test_map = HashMap::new();
         test_map.insert("test-key".to_string(), 42);
@@ -34,6 +37,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_reset_class_map() {
         let mut test_map = HashMap::new();
         test_map.insert("reset-key".to_string(), 1);
