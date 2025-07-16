@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use css::{style_selector::StyleSelector, utils::to_camel_case};
 
 use crate::{
@@ -28,6 +30,37 @@ pub fn css_to_style<'a>(
         })
         .flatten()
         .collect()
+}
+
+pub fn keyframes_to_keyframes_style<'a>(
+    keyframes: &str,
+) -> BTreeMap<String, Vec<ExtractStyleProp<'a>>> {
+    let mut map = BTreeMap::new();
+    let mut input = keyframes;
+
+    while let Some(start) = input.find('{') {
+        let key = input[..start].trim().to_string();
+        let rest = &input[start + 1..];
+        if let Some(end) = rest.find('}') {
+            let block = &rest[..end];
+            let mut styles = css_to_style(block, 0, &None)
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            styles.sort_by_key(|a| {
+                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
+                    a.property().to_string()
+                } else {
+                    "".to_string()
+                }
+            });
+            map.insert(key, styles);
+            input = &rest[end + 1..];
+        } else {
+            break;
+        }
+    }
+    map
 }
 
 pub fn optimize_css_block(css: &str) -> String {
@@ -142,5 +175,73 @@ mod tests {
         let mut expected_sorted = expected.clone();
         expected_sorted.sort();
         assert_eq!(result, expected_sorted);
+    }
+
+    #[rstest]
+    #[case(
+        "to {\nbackground-color:red;\n}\nfrom {\nbackground-color:blue;\n}",
+        vec![
+            ("to", vec![("backgroundColor", "red")]),
+            ("from", vec![("backgroundColor", "blue")]),
+        ],
+    )]
+    #[case(
+        "0% { opacity: 0; }\n100% { opacity: 1; }",
+        vec![
+            ("0%", vec![("opacity", "0")]),
+            ("100%", vec![("opacity", "1")]),
+        ],
+    )]
+    #[case(
+        "from { left: 0; }\nto { left: 100px; }",
+        vec![
+            ("from", vec![("left", "0")]),
+            ("to", vec![("left", "100px")]),
+        ],
+    )]
+    #[case(
+        "50% { color: red; background: blue; }",
+        vec![
+            ("50%", vec![("color", "red"), ("background", "blue")]),
+        ],
+    )]
+    #[case(
+        "",
+        vec![],
+    )]
+    #[case(
+        "50% { color: red        ; background: blue; }",
+        vec![
+            ("50%", vec![("color", "red"), ("background", "blue")]),
+        ],
+    )]
+    fn test_keyframes_to_keyframes_style(
+        #[case] input: &str,
+        #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
+    ) {
+        let styles = keyframes_to_keyframes_style(input);
+        for (expected_key, expected_styles) in styles.iter() {
+            let styles = expected_styles;
+            let mut result: Vec<(&str, &str)> = styles
+                .iter()
+                .filter_map(|prop| {
+                    if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) =
+                        prop
+                    {
+                        Some((st.property(), st.value()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            result.sort();
+            let mut expected_sorted = expected
+                .iter()
+                .find(|(k, _)| k == expected_key)
+                .map(|(_, v)| v.clone())
+                .unwrap();
+            expected_sorted.sort();
+            assert_eq!(result, expected_sorted);
+        }
     }
 }

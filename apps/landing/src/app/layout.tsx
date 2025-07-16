@@ -1,6 +1,5 @@
-import 'sanitize.css'
-
 import { css, globalCss, ThemeScript } from '@devup-ui/react'
+import { resetCss } from '@devup-ui/reset-css'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -23,6 +22,8 @@ export const metadata: Metadata = {
     url: 'https://devup-ui.com',
   },
 }
+
+resetCss()
 
 globalCss({
   imports: ['https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css'],

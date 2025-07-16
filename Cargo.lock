@@ -1290,6 +1290,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "css",
+ "extractor",
  "insta",
  "once_cell",
  "regex",

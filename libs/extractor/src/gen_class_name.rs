@@ -1,6 +1,7 @@
+use crate::ExtractStyleProp;
+use crate::extract_style::style_property::StyleProperty;
 use crate::prop_modify_utils::convert_class_name;
 use crate::utils::is_same_expression;
-use crate::{ExtractStyleProp, StyleProperty};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::{Expression, PropertyKey, PropertyKind, TemplateElementValue};

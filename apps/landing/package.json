@@ -13,6 +13,7 @@
   "dependencies": {
     "@devup-ui/components": "workspace:*",
     "@devup-ui/react": "workspace:*",
+    "@devup-ui/reset-css": "workspace:*",
     "@mdx-js/loader": "^3.1.0",
     "@mdx-js/react": "^3.1.0",
     "@next/mdx": "^15.3.5",
@@ -24,8 +25,7 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
-    "remark-gfm": "^4.0.1",
-    "sanitize.css": "^13.0.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:*",

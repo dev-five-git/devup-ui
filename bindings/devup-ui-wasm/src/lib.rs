@@ -1,6 +1,8 @@
 use css::class_map::{get_class_map, set_class_map};
+use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, StyleProperty, extract};
+use extractor::extract_style::style_property::StyleProperty;
+use extractor::{ExtractOption, extract};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
 use std::collections::HashSet;
@@ -86,6 +88,32 @@ impl Output {
                         &format!("var({})", variable.unwrap()),
                         dy.selector(),
                         dy.style_order(),
+                    ) {
+                        collected = true;
+                    }
+                }
+
+                ExtractStyleValue::Keyframes(keyframes) => {
+                    if sheet.add_keyframes(
+                        &keyframes.extract().to_string(),
+                        keyframes
+                            .keyframes
+                            .iter()
+                            .map(|(key, value)| {
+                                (
+                                    key.clone(),
+                                    value
+                                        .iter()
+                                        .map(|style| {
+                                            (
+                                                style.property().to_string(),
+                                                style.value().to_string(),
+                                            )
+                                        })
+                                        .collect::<Vec<(String, String)>>(),
+                                )
+                            })
+                            .collect(),
                     ) {
                         collected = true;
                     }

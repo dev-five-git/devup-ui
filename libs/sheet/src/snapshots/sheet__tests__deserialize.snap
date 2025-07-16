@@ -16,6 +16,7 @@ StyleSheet {
         },
     },
     css: {},
+    keyframes: {},
     global_css_files: {},
     imports: {},
     theme: Theme {

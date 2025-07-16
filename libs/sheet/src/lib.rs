@@ -22,6 +22,14 @@ pub struct StyleSheetProperty {
     pub value: String,
     pub selector: Option<StyleSelector>,
 }
+
+#[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StyleSheetKeyframes {
+    pub name: String,
+    pub keyframes: BTreeMap<String, BTreeSet<StyleSheetProperty>>,
+}
+
 impl PartialOrd for StyleSheetProperty {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -124,7 +132,8 @@ pub struct StyleSheet {
     #[serde(deserialize_with = "deserialize_btree_map_u8")]
     pub properties: PropertyMap,
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
-
+    #[serde(default)]
+    pub keyframes: BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>,
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
@@ -176,6 +185,20 @@ impl StyleSheet {
             })
     }
 
+    pub fn add_keyframes(
+        &mut self,
+        name: &str,
+        keyframes: BTreeMap<String, Vec<(String, String)>>,
+    ) -> bool {
+        let map = self.keyframes.entry(name.to_string()).or_default();
+        if map == &keyframes {
+            return false;
+        }
+        map.clear();
+        map.extend(keyframes);
+        true
+    }
+
     pub fn rm_global_css(&mut self, file: &str) {
         if !self.global_css_files.contains(file) {
             return;
@@ -207,6 +230,23 @@ impl StyleSheet {
             .collect::<Vec<String>>()
             .join("");
         css.push_str(&self.theme.to_css());
+
+        for (name, map) in self.keyframes.iter() {
+            css.push_str(&format!(
+                "@keyframes {name}{{{}}}",
+                map.iter()
+                    .map(|(key, props)| format!(
+                        "{key}{{{}}}",
+                        props
+                            .iter()
+                            .map(|(key, value)| format!("{key}:{value}"))
+                            .collect::<Vec<String>>()
+                            .join(";")
+                    ))
+                    .collect::<Vec<String>>()
+                    .join("")
+            ));
+        }
 
         for (_, _css) in self.css.iter() {
             for _css in _css.iter() {

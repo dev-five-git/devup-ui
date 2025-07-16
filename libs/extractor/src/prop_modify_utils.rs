@@ -222,14 +222,21 @@ pub fn get_style_expression<'a>(
         ]
         .into_iter()
         .flatten()
-        .chain(spread_props.iter().map(|ex| {
-            Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
-                SPAN,
-                ex.clone_in(ast_builder.allocator),
-                ast_builder.identifier_name(SPAN, ast_builder.atom("style")),
-                true,
-            ))
-        }))
+        .chain(if style_prop.is_some() {
+            vec![]
+        } else {
+            spread_props
+                .iter()
+                .map(|ex| {
+                    Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                        SPAN,
+                        ex.clone_in(ast_builder.allocator),
+                        ast_builder.identifier_name(SPAN, ast_builder.atom("style")),
+                        true,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>()
         .as_slice(),
     )
