@@ -1,5 +1,14 @@
 # @devup-ui/rsbuild-plugin
 
+## 1.0.10
+
+### Patch Changes
+
+- 132e8dd: Change temp dir
+- Updated dependencies [132e8dd]
+- Updated dependencies [946dbc2]
+  - @devup-ui/wasm@1.0.14
+
 ## 1.0.9
 
 ### Patch Changes
