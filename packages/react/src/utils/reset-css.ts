@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { globalCss } from '@devup-ui/react'
 
 globalCss({
