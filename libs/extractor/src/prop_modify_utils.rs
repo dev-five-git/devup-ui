@@ -19,7 +19,6 @@ pub fn modify_prop_object<'a>(
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
 ) {
-    println!("modify_prop_object: {:?}", props);
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
