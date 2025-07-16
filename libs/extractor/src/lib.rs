@@ -1,11 +1,11 @@
 mod component;
-mod css_type;
 mod css_utils;
 pub mod extract_style;
+mod extractor;
 mod gen_class_name;
 mod gen_style;
 mod prop_modify_utils;
-mod style_extractor;
+mod util_type;
 mod utils;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
@@ -4202,6 +4202,30 @@ globalCss({
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn extract_wrong_global_css() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+    [1]: {
+        bg: "red"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
     #[test]
     #[serial]
     fn extract_global_css_with_selector() {
@@ -4421,6 +4445,27 @@ globalCss({
                 r#"import { globalCss } from "@devup-ui/core";
 globalCss({
   imports: [`@devup-ui/core/css/global3.css`, `@devup-ui/core/css/global4.css`]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_global_css_with_wrong_imports() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  imports: [1, 2, "./test.css"]
 })
 "#,
                 ExtractOption {

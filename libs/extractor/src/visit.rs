@@ -1,13 +1,15 @@
 use crate::component::ExportVariableKind;
-use crate::css_type::CssType;
 use crate::css_utils::{css_to_style, optimize_css_block};
 use crate::extract_style::extract_css::ExtractCss;
+use crate::extractor::{
+    ExtractResult, GlobalExtractResult,
+    extract_global_style_from_expression::extract_global_style_from_expression,
+    extract_style_from_expression::extract_style_from_expression,
+    extract_style_from_jsx::extract_style_from_jsx,
+};
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
-use crate::style_extractor::{
-    ExtractResult, GlobalExtractResult, extract_global_style_from_expression,
-    extract_style_from_expression, extract_style_from_jsx_attr,
-};
+use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::short_to_long;
 use oxc_allocator::{Allocator, CloneIn};
@@ -26,7 +28,7 @@ use oxc_ast_visit::walk_mut::{
 };
 use strum::IntoEnumIterator;
 
-use crate::utils::jsx_expression_to_number;
+use crate::utils::{is_special_property, jsx_expression_to_number};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -38,7 +40,7 @@ pub struct DevupVisitor<'a> {
     imports: HashMap<String, ExportVariableKind>,
     import_object: Option<String>,
     jsx_imports: HashMap<String, String>,
-    css_imports: HashMap<String, Rc<CssType>>,
+    util_imports: HashMap<String, Rc<UtilType>>,
     jsx_object: Option<String>,
     package: String,
     pub css_file: String,
@@ -57,7 +59,7 @@ impl<'a> DevupVisitor<'a> {
             styles: HashSet::new(),
             import_object: None,
             jsx_object: None,
-            css_imports: HashMap::new(),
+            util_imports: HashMap::new(),
         }
     }
 }
@@ -73,10 +75,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 init: Some(Expression::Identifier(ident)),
                 ..
             } = v
-                && let Some(css_import_key) = self.css_imports.get(ident.name.as_str())
+                && let Some(css_import_key) = self.util_imports.get(ident.name.as_str())
                 && let Some(name) = id.get_binding_identifier().map(|id| id.name.to_string())
             {
-                self.css_imports.insert(name, css_import_key.clone());
+                self.util_imports.insert(name, css_import_key.clone());
             }
         }
         walk_variable_declarators(self, it);
@@ -114,7 +116,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_expression(self, it);
 
         if let Expression::CallExpression(call) = it {
-            let css_import_key = if let Expression::Identifier(ident) = &call.callee {
+            let util_import_key = if let Expression::Identifier(ident) = &call.callee {
                 Some(ident.name.to_string())
             } else if let Expression::StaticMemberExpression(member) = &call.callee
                 && let Expression::Identifier(ident) = &member.object
@@ -124,24 +126,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 None
             };
 
-            if let Some(css_import_key) = css_import_key
-                && let Some(css_type) = self.css_imports.get(&css_import_key)
+            if let Some(util_import_key) = util_import_key
+                && let Some(util_type) = self.util_imports.get(&util_import_key)
             {
                 if call.arguments.len() != 1 {
-                    *it = match css_type.as_ref() {
-                        CssType::Css => {
+                    *it = match util_type.as_ref() {
+                        UtilType::Css | UtilType::Keyframes => {
                             self.ast
                                 .expression_string_literal(SPAN, self.ast.atom(""), None)
                         }
-                        CssType::GlobalCss => {
+                        UtilType::GlobalCss => {
                             self.ast.expression_identifier(SPAN, self.ast.atom(""))
                         }
                     };
                 } else {
-                    *it = match css_type.as_ref() {
-                        CssType::Css => {
-                            if let ExtractResult::Extract {
-                                styles: Some(mut styles),
+                    *it = match util_type.as_ref() {
+                        UtilType::Css => {
+                            let ExtractResult {
+                                mut styles,
                                 style_order,
                                 ..
                             } = extract_style_from_expression(
@@ -150,7 +152,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 call.arguments[0].to_expression_mut(),
                                 0,
                                 None,
-                            ) {
+                            );
+
+                            if styles.is_empty() {
+                                self.ast
+                                    .expression_string_literal(SPAN, self.ast.atom(""), None)
+                            } else {
                                 // css can not reachable
                                 // ExtractResult::ExtractStyleWithChangeTag(styles, _)
                                 let class_name =
@@ -171,12 +178,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                         None,
                                     )
                                 }
-                            } else {
-                                self.ast
-                                    .expression_string_literal(SPAN, self.ast.atom(""), None)
                             }
                         }
-                        CssType::GlobalCss => {
+                        UtilType::Keyframes => {
+                            // TODO: implement keyframes
+                            self.ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                        }
+                        UtilType::GlobalCss => {
                             let GlobalExtractResult {
                                 styles,
                                 style_order,
@@ -196,15 +205,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                         ex.extract()
                                     }),
                             );
-                            self.ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                            self.ast.expression_identifier(SPAN, self.ast.atom(""))
                         }
                     }
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it {
             if let Expression::Identifier(ident) = &tag.tag
-                && let Some(css_type) = self.css_imports.get(ident.name.as_str())
+                && let Some(css_type) = self.util_imports.get(ident.name.as_str())
             {
                 let css_str = tag
                     .quasi
@@ -214,7 +222,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .collect::<Vec<&str>>()
                     .join("");
                 match css_type.as_ref() {
-                    CssType::Css => {
+                    UtilType::Css => {
                         let mut styles = css_to_style(&css_str, 0, &None);
                         let class_name = gen_class_names(&self.ast, &mut styles, None);
 
@@ -228,7 +236,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .flat_map(|ex| ex.extract()),
                         );
                     }
-                    CssType::GlobalCss => {
+                    UtilType::Keyframes => {
+                        // TODO: implement keyframes
+                    }
+                    UtilType::GlobalCss => {
                         let css = ExtractStyleValue::Css(ExtractCss {
                             css: optimize_css_block(&css_str),
                             file: self.filename.clone(),
@@ -277,42 +288,39 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     None,
                 );
                 let mut props_styles = vec![];
-                let mut style_order = None;
-                let mut style_vars = None;
-                if let ExtractResult::Extract {
+                let ExtractResult {
                     styles,
                     tag: _tag,
-                    style_order: _style_order,
-                    style_vars: _style_vars,
+                    style_order,
+                    style_vars,
                 } = extract_style_from_expression(
                     &self.ast,
                     None,
                     it.arguments[1].to_expression_mut(),
                     0,
                     None,
-                ) {
-                    style_order = _style_order;
-                    styles.into_iter().for_each(|mut ex| {
-                        props_styles.append(&mut ex);
-                    });
-                    if let Some(t) = _tag {
-                        tag = t;
-                    }
-                    style_vars = _style_vars;
+                );
+                props_styles.extend(styles);
+
+                if let Some(t) = _tag {
+                    tag = t;
                 }
 
-                for ex in kind.extract().into_iter().rev() {
-                    props_styles.push(ExtractStyleProp::Static(ex));
-                }
-
-                for style in props_styles.iter().rev() {
+                props_styles.extend(
+                    kind.extract()
+                        .into_iter()
+                        .rev()
+                        .map(|ex| ExtractStyleProp::Static(ex)),
+                );
+                props_styles.iter().rev().for_each(|style| {
                     self.styles.extend(style.extract().into_iter().map(|mut s| {
                         style_order.into_iter().for_each(|order| {
                             s.set_style_order(order);
                         });
                         s
-                    }));
-                }
+                    }))
+                });
+
                 if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
                     modify_prop_object(
                         &self.ast,
@@ -399,8 +407,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
-                        } else if let Ok(kind) = CssType::try_from(import.imported.to_string()) {
-                            self.css_imports
+                        } else if let Ok(kind) = UtilType::try_from(import.imported.to_string()) {
+                            self.util_imports
                                 .insert(import.local.to_string(), Rc::new(kind));
                             specifiers.remove(i);
                         }
@@ -414,14 +422,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 kind,
                             );
                         }
-                        self.css_imports.insert(
+                        self.util_imports.insert(
                             format!("{}.{}", import_default_specifier.local, "css"),
-                            Rc::new(CssType::Css),
+                            Rc::new(UtilType::Css),
                         );
 
-                        self.css_imports.insert(
+                        self.util_imports.insert(
                             format!("{}.{}", import_default_specifier.local, "globalCss"),
-                            Rc::new(CssType::GlobalCss),
+                            Rc::new(UtilType::GlobalCss),
                         );
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(
@@ -433,13 +441,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 kind,
                             );
                         }
-                        self.css_imports.insert(
+                        self.util_imports.insert(
                             format!("{}.{}", import_namespace_specifier.local, "css"),
-                            Rc::new(CssType::Css),
+                            Rc::new(UtilType::Css),
                         );
-                        self.css_imports.insert(
+                        self.util_imports.insert(
                             format!("{}.{}", import_namespace_specifier.local, "globalCss"),
-                            Rc::new(CssType::GlobalCss),
+                            Rc::new(UtilType::GlobalCss),
                         );
                     }
                 }
@@ -470,8 +478,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
                     && let Identifier(name) = &attr.name
+                    && let name = short_to_long(&name.name)
+                    && !is_special_property(&name)
                 {
-                    let name = short_to_long(&name.name);
                     if duplicate_set.contains(&name) {
                         continue;
                     }
@@ -492,18 +501,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
 
                     if let Some(at) = &mut attr.value {
-                        if let ExtractResult::Extract { styles, tag, .. } =
-                            extract_style_from_jsx_attr(&self.ast, &name, at, None)
-                        {
-                            styles.into_iter().for_each(|mut ex| {
-                                ex.reverse();
-                                props_styles.append(&mut ex);
-                            });
-                            if let Some(t) = tag {
-                                tag_name = t;
-                            }
-                            continue;
-                        }
+                        let ExtractResult { styles, tag, .. } =
+                            extract_style_from_jsx(&self.ast, &name, at, None);
+                        props_styles.extend(styles.into_iter().rev());
+                        tag_name = tag.unwrap_or(tag_name);
+                        continue;
                     }
                 }
                 attrs.insert(i, attr);
