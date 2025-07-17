@@ -60,7 +60,8 @@ pub fn css_to_style<'a>(
                 let sel = input[..start].trim().to_string();
                 if sel.starts_with("@media") {
                     Some(StyleSelector::Media {
-                        query: sel.replace(" ", "")["@media".len()..].to_string(),
+                        query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
+                            .to_string(),
                         selector: None,
                     })
                 } else {
@@ -268,11 +269,11 @@ mod tests {
         }",
         vec![
             ("border", "1px solid #000", Some(StyleSelector::Media {
-                query: "(min-width:768px)and(max-width:1024px)".to_string(),
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
             ("color", "#FFF", Some(StyleSelector::Media {
-                query: "(min-width:768px)and(max-width:1024px)".to_string(),
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::Media {
@@ -338,19 +339,19 @@ mod tests {
         }",
         vec![
             ("border", "1px solid #FFF", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
             ("color", "#FFF", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
             ("color", "#000", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
             ("border", "1px solid #FFF", Some(StyleSelector::Media {
@@ -392,11 +393,11 @@ mod tests {
                 selector: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
             ("color", "#000", Some(StyleSelector::Media {
-                query: "(max-width:768px)and(min-width:480px)".to_string(),
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
         ]

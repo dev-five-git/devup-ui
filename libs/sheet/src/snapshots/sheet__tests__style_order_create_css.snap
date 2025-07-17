@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: sheet.create_css()
 ---
-".test{margin-left:40px;margin-right:40px;}\n@media (min-width:480px){.test{margin-left:40px;margin-right:40px;}.test{margin-left:44px;margin-right:44px;}}\n@media (min-width:480px){.test{margin-left:50px;margin-right:50px;}}.test{margin-left:70px;margin-right:70px;}\n@media (min-width:480px){.test{margin-left:60px;margin-right:60px;}}"
+".test{margin-left:40px;margin-right:40px}@media(min-width:480px){.test{margin-left:40px;margin-right:40px}.test{margin-left:44px;margin-right:44px}}@media(min-width:480px){.test{margin-left:50px;margin-right:50px}}.test{margin-left:70px;margin-right:70px}@media(min-width:480px){.test{margin-left:60px;margin-right:60px}}"

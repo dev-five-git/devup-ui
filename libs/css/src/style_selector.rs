@@ -336,6 +336,7 @@ mod tests {
     #[case("&:selected", 4)]
     #[case("&:disabled", 5)]
     #[case("&:not-exist", 99)]
+    #[case("&:not-exist, &:hover", 0)]
     #[case(":root[data-theme=dark] &:hover", 0)]
     #[case(":root[data-theme=dark] &:focus-visible", 1)]
     #[case(":root[data-theme=dark] &:focus", 2)]
