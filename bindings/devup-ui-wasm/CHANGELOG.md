@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.16
+
+### Patch Changes
+
+- f6e14e1: Fix media query issue
+
 ## 1.0.15
 
 ### Patch Changes
