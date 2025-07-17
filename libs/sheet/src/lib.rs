@@ -71,9 +71,9 @@ impl ExtractStyle for StyleSheetProperty {
                 merge_selector(&self.class_name, self.selector.as_ref()),
                 multi
                     .into_iter()
-                    .map(|prop| format!("{}:{};", prop, convert_theme_variable_value(&self.value)))
+                    .map(|prop| format!("{}:{}", prop, convert_theme_variable_value(&self.value)))
                     .collect::<Vec<String>>()
-                    .join("")
+                    .join(";")
             ),
         }
     }
@@ -368,7 +368,7 @@ impl StyleSheet {
                         .join("");
                     css.push_str(
                         if let Some(break_point) = break_point {
-                            format!("\n@media (min-width:{break_point}px){{{inner_css}}}")
+                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
                         } else {
                             inner_css
                         }
@@ -384,7 +384,7 @@ impl StyleSheet {
                         .join("");
                     css.push_str(
                         if let Some(break_point) = break_point {
-                            format!("\n@media (min-width:{break_point}px){{{inner_css}}}")
+                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
                         } else {
                             inner_css
                         }
@@ -399,11 +399,17 @@ impl StyleSheet {
                         .join("");
                     css.push_str(
                         if let Some(break_point) = break_point {
-                            format!(
-                                "\n@media (min-width:{break_point}px) and {media}{{{inner_css}}}"
-                            )
+                            format!("@media(min-width:{break_point}px)and {media}{{{inner_css}}}")
                         } else {
-                            format!("\n@media {}{{{}}}", media, inner_css.as_str())
+                            format!(
+                                "@media{}{{{}}}",
+                                if media.starts_with("(") {
+                                    media.clone()
+                                } else {
+                                    format!(" {media}")
+                                },
+                                inner_css.as_str()
+                            )
                         }
                         .as_str(),
                     );
