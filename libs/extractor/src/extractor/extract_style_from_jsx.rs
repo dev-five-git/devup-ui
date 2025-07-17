@@ -20,7 +20,7 @@ pub fn extract_style_from_jsx<'a>(
                     Some(name),
                     expression.expression.to_expression_mut(),
                     0,
-                    None,
+                    &None,
                 )
             } else {
                 ExtractResult::default()
@@ -31,7 +31,7 @@ pub fn extract_style_from_jsx<'a>(
             Some(name),
             &mut Expression::StringLiteral(literal.clone_in(ast_builder.allocator)),
             0,
-            None,
+            &None,
         ),
         _ => ExtractResult::default(),
     }

@@ -66,7 +66,7 @@ pub fn extract_global_style_from_expression<'a>(
                         None,
                         &mut o.value,
                         0,
-                        Some(&StyleSelector::Global(name.clone(), file.to_string())),
+                        &Some(StyleSelector::Global(name.clone(), file.to_string())),
                     )
                     .styles,
                 );

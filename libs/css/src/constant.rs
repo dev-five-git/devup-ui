@@ -77,6 +77,9 @@ pub(super) static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
 };
 
 pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
+pub(super) static F_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
+pub(super) static DOT_ZERO_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+").unwrap());
+
 pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
 pub(super) static ZERO_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());

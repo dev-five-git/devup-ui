@@ -31,7 +31,7 @@ pub fn extract_style_from_expression<'a>(
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
-    selector: Option<&StyleSelector>,
+    selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
@@ -67,7 +67,7 @@ pub fn extract_style_from_expression<'a>(
                                     Some(name),
                                     &mut prop.value,
                                     0,
-                                    None,
+                                    &None,
                                 );
                                 props_styles.extend(styles);
                                 tag = _tag.or(tag);
@@ -84,7 +84,7 @@ pub fn extract_style_from_expression<'a>(
                                 None,
                                 &mut prop.argument,
                                 0,
-                                None,
+                                &None,
                             );
                             props_styles.extend(styles);
                             tag = _tag.or(tag);
@@ -110,7 +110,7 @@ pub fn extract_style_from_expression<'a>(
                             None,
                             &mut conditional.consequent,
                             level,
-                            None,
+                            &None,
                         )
                         .styles,
                     ))),
@@ -134,7 +134,7 @@ pub fn extract_style_from_expression<'a>(
                 None,
                 &mut parenthesized.expression,
                 level,
-                None,
+                &None,
             ),
             Expression::TemplateLiteral(tmp) => ExtractResult {
                 styles: css_to_style(
@@ -176,8 +176,8 @@ pub fn extract_style_from_expression<'a>(
                             None,
                             &mut o.value,
                             level,
-                            Some(
-                                &if let Some(selector) = selector {
+                            &Some(
+                                if let Some(selector) = selector {
                                     name.replace("&", &selector.to_string())
                                 } else {
                                     name
@@ -202,7 +202,7 @@ pub fn extract_style_from_expression<'a>(
                 None,
                 expression,
                 level,
-                Some(&if let Some(selector) = selector {
+                &Some(if let Some(selector) = selector {
                     (selector, new_selector).into()
                 } else {
                     new_selector.into()
@@ -221,7 +221,7 @@ pub fn extract_style_from_expression<'a>(
                         name,
                         &value,
                         level,
-                        selector.cloned(),
+                        selector.clone(),
                     ))
                 })],
                 ..ExtractResult::default()
@@ -243,7 +243,7 @@ pub fn extract_style_from_expression<'a>(
                         name.unwrap(),
                         level,
                         &expression_to_code(expression),
-                        selector.cloned(),
+                        selector.clone(),
                     ),
                 ))],
                 ..ExtractResult::default()
@@ -269,7 +269,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     &tmp.quasis[0].value.raw,
                                     level,
-                                    selector.cloned(),
+                                    selector.clone(),
                                 ))
                             })],
                             ..ExtractResult::default()
@@ -312,7 +312,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     &expression_to_code(expression),
-                                    selector.cloned(),
+                                    selector.clone(),
                                 ),
                             ))],
                             ..ExtractResult::default()
@@ -370,7 +370,7 @@ pub fn extract_style_from_expression<'a>(
                                     name,
                                     level,
                                     &identifier.name,
-                                    selector.cloned(),
+                                    selector.clone(),
                                 ),
                             ))],
                             ..ExtractResult::default()

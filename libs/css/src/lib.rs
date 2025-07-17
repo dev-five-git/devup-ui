@@ -20,7 +20,16 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
-            StyleSelector::Media(_) => format!(".{class_name}"),
+            StyleSelector::Media {
+                selector: s,
+                query: _,
+            } => {
+                if let Some(s) = s {
+                    s.replace("&", &format!(".{class_name}"))
+                } else {
+                    format!(".{class_name}")
+                }
+            }
             StyleSelector::Global(v, _) => v.to_string(),
         }
     } else {
@@ -211,9 +220,14 @@ mod tests {
             sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
         );
 
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None),
+        );
+
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-rgba(255,0,0,0.5)--255"), Some(&2));
+            assert_eq!(map.get("background-0-rgba(255,0,0,.5)--255"), Some(&2));
         }
         assert_eq!(
             sheet_to_classname("background", 0, Some("#fff"), None, None),
@@ -364,6 +378,16 @@ mod tests {
         assert_eq!(
             sheet_to_classname("test", 0, Some("0 0vw"), None, None),
             "d2"
+        );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("transition", 0, Some("all 0.3s ease-in-out"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("transition", 0, Some("all .3s ease-in-out"), None, None),
+            "d0"
         );
     }
 

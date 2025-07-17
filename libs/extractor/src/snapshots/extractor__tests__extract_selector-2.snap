@@ -18,7 +18,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "boxShadow",
-                value: "0 0 15px 0 rgba(0,0,0,0.25)",
+                value: "0 0 15px 0 rgba(0,0,0,.25)",
                 level: 2,
                 selector: Some(
                     Selector(
@@ -31,7 +31,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "boxShadow",
-                value: "0 1px 3px 0 rgba(0,0,0,0.25)",
+                value: "0 1px 3px 0 rgba(0,0,0,.25)",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -79,7 +79,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "transform",
-                value: "scale(0.95)",
+                value: "scale(.95)",
                 level: 0,
                 selector: Some(
                     Selector(

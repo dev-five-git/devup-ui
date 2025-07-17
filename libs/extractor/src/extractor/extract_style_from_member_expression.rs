@@ -25,7 +25,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
     name: Option<&str>,
     mem: &mut ComputedMemberExpression<'a>,
     level: u8,
-    selector: Option<&StyleSelector>,
+    selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
     let mut ret: Vec<ExtractStyleProp> = vec![];
@@ -71,7 +71,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                             false,
                                         ),
                                     )),
-                                    selector.cloned(),
+                                    selector.clone(),
                                 ),
                             ))]
                         })
@@ -99,7 +99,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                         false,
                                     ),
                                 )),
-                                selector.cloned(),
+                                selector.clone(),
                             ),
                         ))),
                     );
@@ -171,7 +171,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                     false,
                                 ),
                             )),
-                            selector.cloned(),
+                            selector.clone(),
                         ),
                     ))),
                 }
@@ -217,7 +217,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                 false,
                             ),
                         )),
-                        selector.cloned(),
+                        selector.clone(),
                     ),
                 )))
             }

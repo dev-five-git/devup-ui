@@ -18,7 +18,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "opacity",
-                value: "0.5",
+                value: ".5",
                 level: 0,
                 selector: None,
                 style_order: None,

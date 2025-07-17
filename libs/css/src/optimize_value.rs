@@ -1,4 +1,7 @@
-use crate::{COLOR_HASH, F_SPACE_RE, ZERO_RE};
+use crate::{
+    COLOR_HASH, F_SPACE_RE, ZERO_RE,
+    constant::{DOT_ZERO_RE, F_DOT_RE},
+};
 
 pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
@@ -11,6 +14,8 @@ pub fn optimize_value(value: &str) -> String {
             .to_string();
     }
     if ret.contains("0") {
+        ret = DOT_ZERO_RE.replace_all(&ret, "0").to_string();
+        ret = F_DOT_RE.replace_all(&ret, "${1}.${2}").to_string();
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
     }
     // remove ; from dynamic value
@@ -57,6 +62,17 @@ mod tests {
 
     #[rstest]
     #[case("0px", "0")]
+    #[case("0.0px", "0")]
+    #[case("0.0em", "0")]
+    #[case("0.0rem", "0")]
+    #[case("0.0vh", "0")]
+    #[case("0.0vw", "0")]
+    #[case("0.0%", "0")]
+    #[case("0.0dvh", "0")]
+    #[case("0.0dvw", "0")]
+    #[case("1.3s", "1.3s")]
+    #[case("0.3s", ".3s")]
+    #[case("0.3s ease-in-out", ".3s ease-in-out")]
     #[case("0em", "0")]
     #[case("0rem", "0")]
     #[case("0vh", "0")]
@@ -73,6 +89,7 @@ mod tests {
     #[case("scale(0px)", "scale(0)")]
     #[case("scale(-0px)", "scale(0)")]
     #[case("scale(-0px);", "scale(0)")]
+    #[case("rgba(255, 0, 0,    0.5)", "rgba(255,0,0,.5)")]
     #[case("red;", "red")]
     #[case("translate(0px)", "translate(0)")]
     #[case("translate(-0px,0px)", "translate(0,0)")]
