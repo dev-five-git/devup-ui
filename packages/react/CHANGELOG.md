@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.10
+
+### Patch Changes
+
+- d3fa982: Remove reset css
+
 ## 1.0.9
 
 ### Patch Changes
