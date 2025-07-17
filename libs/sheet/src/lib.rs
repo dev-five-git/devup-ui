@@ -80,6 +80,16 @@ impl ExtractStyle for StyleSheetProperty {
 }
 
 static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
+static INTERFACE_KEY_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
+
+fn convert_interface_key(key: &str) -> String {
+    if INTERFACE_KEY_RE.is_match(key) {
+        key.to_string()
+    } else {
+        format!("[`{}`]", key.replace("`", "\\`"))
+    }
+}
 
 fn convert_theme_variable_value(value: &str) -> String {
     if value.contains("$") {
@@ -222,6 +232,59 @@ impl StyleSheet {
         self.theme = theme;
     }
 
+    pub fn create_interface(
+        &self,
+        package_name: &str,
+        color_interface_name: &str,
+        typography_interface_name: &str,
+        theme_interface_name: &str,
+    ) -> String {
+        let mut color_keys = HashSet::new();
+        let mut typography_keys = HashSet::new();
+        let mut theme_keys = HashSet::new();
+        for color_theme in self.theme.colors.values() {
+            color_theme.0.keys().for_each(|key| {
+                color_keys.insert(key.clone());
+            });
+        }
+        self.theme.typography.keys().for_each(|key| {
+            typography_keys.insert(key.clone());
+        });
+
+        self.theme.colors.keys().for_each(|key| {
+            theme_keys.insert(key.clone());
+        });
+
+        if color_keys.is_empty() && typography_keys.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
+                package_name,
+                package_name,
+                color_interface_name,
+                color_keys
+                    .into_iter()
+                    .map(|key| format!("{}:null;", convert_interface_key(&format!("${}", key))))
+                    .collect::<Vec<String>>()
+                    .join(""),
+                typography_interface_name,
+                typography_keys
+                    .into_iter()
+                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
+                    .collect::<Vec<String>>()
+                    .join(""),
+                theme_interface_name,
+                theme_keys
+                    .into_iter()
+                    // key to pascal
+                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
+                    .collect::<Vec<String>>()
+                    .join("")
+            )
+        }
+    }
+
     pub fn create_css(&self) -> String {
         let mut css = self
             .imports
@@ -261,16 +324,23 @@ impl StyleSheet {
                     .iter()
                     .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
                 global_props.sort();
-                let (mut medias, mut sorted_props): (Vec<&StyleSheetProperty>, Vec<_>) = rest
-                    .iter()
-                    .partition(|prop| matches!(prop.selector, Some(StyleSelector::Media(_))));
+                let (mut medias, mut sorted_props): (Vec<&StyleSheetProperty>, Vec<_>) =
+                    rest.iter().partition(|prop| {
+                        matches!(
+                            prop.selector,
+                            Some(StyleSelector::Media {
+                                query: _,
+                                selector: _
+                            })
+                        )
+                    });
                 sorted_props.sort();
                 medias.sort();
                 let medias = {
                     let mut map = BTreeMap::new();
                     for prop in medias {
-                        if let Some(StyleSelector::Media(media)) = &prop.selector {
-                            map.entry(media).or_insert_with(Vec::new).push(prop);
+                        if let Some(StyleSelector::Media { query, .. }) = &prop.selector {
+                            map.entry(query).or_insert_with(Vec::new).push(prop);
                         }
                     }
                     map
@@ -346,6 +416,8 @@ impl StyleSheet {
 
 #[cfg(test)]
 mod tests {
+    use crate::theme::{ColorTheme, Typography};
+
     use super::*;
     use insta::assert_debug_snapshot;
 
@@ -830,5 +902,62 @@ mod tests {
         sheet.add_import("test3.tsx", "@devup-ui/core/css/global3.css");
         sheet.add_import("test4.tsx", "@devup-ui/core/css/global4.css");
         assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
+    fn test_get_theme_interface() {
+        let sheet = StyleSheet::default();
+        assert_eq!(
+            sheet.create_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            ""
+        );
+
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("dark", color_theme);
+        sheet.set_theme(theme);
+        assert_eq!(
+            sheet.create_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
+        );
+
+        // test wrong case
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("(primary)", "#000");
+        theme.add_color_theme("dark", color_theme);
+        theme.add_typography(
+            "prim``ary",
+            vec![Some(Typography::new(
+                Some("Arial".to_string()),
+                Some("16px".to_string()),
+                Some("400".to_string()),
+                Some("1.5".to_string()),
+                Some("0.5".to_string()),
+            ))],
+        );
+        sheet.set_theme(theme);
+        assert_eq!(
+            sheet.create_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
+        );
     }
 }

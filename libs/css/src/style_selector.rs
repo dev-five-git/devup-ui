@@ -9,7 +9,10 @@ use crate::{constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator,
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
-    Media(String),
+    Media {
+        query: String,
+        selector: Option<String>,
+    },
     Selector(String),
     // selector, file
     Global(String, String),
@@ -23,12 +26,36 @@ impl PartialOrd for StyleSelector {
 impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (StyleSelector::Media(a), StyleSelector::Media(b)) => a.cmp(b),
+            (
+                StyleSelector::Media {
+                    query: a,
+                    selector: aa,
+                },
+                StyleSelector::Media {
+                    query: b,
+                    selector: bb,
+                },
+            ) => {
+                let c = a.cmp(b);
+                if c == Ordering::Equal { aa.cmp(bb) } else { c }
+            }
             (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
                 get_selector_order(a).cmp(&get_selector_order(b))
             }
-            (StyleSelector::Media(_), StyleSelector::Selector(_)) => Ordering::Greater,
-            (StyleSelector::Selector(_), StyleSelector::Media(_)) => Ordering::Less,
+            (
+                StyleSelector::Media {
+                    selector: _,
+                    query: _,
+                },
+                StyleSelector::Selector(_),
+            ) => Ordering::Greater,
+            (
+                StyleSelector::Selector(_),
+                StyleSelector::Media {
+                    selector: _,
+                    query: _,
+                },
+            ) => Ordering::Less,
             (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
                 if a == b {
                     return Ordering::Equal;
@@ -84,7 +111,10 @@ impl From<&str> for StyleSelector {
                 &s[1..]
             ))
         } else if value == "print" {
-            StyleSelector::Media("print".to_string())
+            StyleSelector::Media {
+                query: "print".to_string(),
+                selector: None,
+            }
         } else {
             let post = to_kebab_case(value);
 
@@ -134,7 +164,13 @@ impl Display for StyleSelector {
             "{}",
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
-                StyleSelector::Media(value) => format!("@{value}"),
+                StyleSelector::Media { query, selector } => {
+                    if let Some(selector) = selector {
+                        format!("@{query} {selector}")
+                    } else {
+                        format!("@{query}")
+                    }
+                }
                 StyleSelector::Global(value, _) => format!("{value}"),
             }
         )
@@ -182,7 +218,12 @@ mod tests {
 
     #[rstest]
     #[case(StyleSelector::Selector("&:hover".to_string()), "&:hover")]
-    #[case(StyleSelector::Media("screen and (max-width: 600px)".to_string()), "@screen and (max-width: 600px)")]
+    #[case(StyleSelector::Media {
+            query: "screen and (max-width: 600px)".to_string(),
+            selector: None,
+        },
+        "@screen and (max-width: 600px)"
+    )]
     #[case(StyleSelector::Global(":root[data-theme=dark]".to_string(), "file.rs".to_string()), ":root[data-theme=dark]")]
     fn test_style_selector_display(#[case] selector: StyleSelector, #[case] expected: &str) {
         let output = format!("{selector}");
@@ -191,7 +232,10 @@ mod tests {
 
     #[rstest]
     #[case(
-        StyleSelector::Media("screen".to_string()),
+        StyleSelector::Media {
+            query: "screen".to_string(),
+            selector: None,
+        },
         StyleSelector::Selector("&:hover".to_string()),
         std::cmp::Ordering::Greater
     )]
@@ -201,8 +245,14 @@ mod tests {
         std::cmp::Ordering::Less
     )]
     #[case(
-        StyleSelector::Media("a".to_string()),
-        StyleSelector::Media("b".to_string()),
+        StyleSelector::Media {
+            query: "a".to_string(),
+            selector: None,
+        },
+        StyleSelector::Media {
+            query: "b".to_string(),
+            selector: None,
+        },
         std::cmp::Ordering::Less
     )]
     #[case(
@@ -217,7 +267,10 @@ mod tests {
     )]
     #[case(
         StyleSelector::Selector("&:hover".to_string()),
-        StyleSelector::Media("screen".to_string()),
+        StyleSelector::Media {
+            query: "screen".to_string(),
+            selector: None,
+        },
         std::cmp::Ordering::Less
     )]
     #[case(

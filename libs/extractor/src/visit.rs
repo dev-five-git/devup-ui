@@ -155,7 +155,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 None,
                                 call.arguments[0].to_expression_mut(),
                                 0,
-                                None,
+                                &None,
                             );
 
                             if styles.is_empty() {
@@ -239,6 +239,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                         if let Some(cls) = class_name {
                             *it = cls;
+                        } else {
+                            *it = self
+                                .ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None);
                         }
                         self.styles.extend(
                             styles
@@ -278,13 +282,15 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             .expression_string_literal(SPAN, self.ast.atom(&name), None);
                     }
                     UtilType::GlobalCss => {
-                        let css = ExtractStyleValue::Css(ExtractCss {
-                            css: optimize_css_block(&css_str),
-                            file: self.filename.clone(),
-                        });
-
+                        let optimized_css = optimize_css_block(&css_str);
+                        if !optimized_css.is_empty() {
+                            let css = ExtractStyleValue::Css(ExtractCss {
+                                css: optimized_css,
+                                file: self.filename.clone(),
+                            });
+                            self.styles.insert(css);
+                        }
                         *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));
-                        self.styles.insert(css);
                     }
                 }
             }
@@ -336,7 +342,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     None,
                     it.arguments[1].to_expression_mut(),
                     0,
-                    None,
+                    &None,
                 );
                 props_styles.extend(styles);
 

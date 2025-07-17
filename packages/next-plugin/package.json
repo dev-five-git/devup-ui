@@ -42,11 +42,11 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.3",
+    "next": "^15.4",
     "browserslist": "latest"
   },
   "devDependencies": {
-    "vite": "^7.0.3",
+    "vite": "^7.0.5",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
     "typescript": "^5.8.3",

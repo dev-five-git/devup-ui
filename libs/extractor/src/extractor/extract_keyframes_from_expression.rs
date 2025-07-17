@@ -39,7 +39,7 @@ pub fn extract_keyframes_from_expression<'a>(
                     name = format!("{num}%");
                 }
                 let mut styles =
-                    extract_style_from_expression(ast_builder, None, &mut o.value, 0, None)
+                    extract_style_from_expression(ast_builder, None, &mut o.value, 0, &None)
                         .styles
                         .into_iter()
                         .filter_map(|s| match s {

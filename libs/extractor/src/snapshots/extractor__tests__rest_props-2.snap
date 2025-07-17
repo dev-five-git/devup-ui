@@ -42,7 +42,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "transform",
-                value: "scale(0.95)",
+                value: "scale(.95)",
                 level: 0,
                 selector: Some(
                     Selector(
