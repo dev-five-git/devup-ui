@@ -1,5 +1,13 @@
 # @devup-ui/wasm
 
+## 1.0.15
+
+### Patch Changes
+
+- c9593ce: css util support media query
+  support devup json interface with wrong char
+  optimize zero value
+
 ## 1.0.14
 
 ### Patch Changes
