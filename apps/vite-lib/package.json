@@ -14,7 +14,7 @@
   "dependencies": {
     "react": "^19.1.0",
     "@devup-ui/react": "workspace:*",
-    "vite": "^7.0.3"
+    "vite": "^7.0.5"
   },
   "devDependencies": {
     "vite-plugin-dts": "^4.5.4",
