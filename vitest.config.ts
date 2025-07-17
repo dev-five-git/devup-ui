@@ -13,6 +13,9 @@ export default defineConfig({
       ],
       cleanOnRerun: true,
       reporter: ['text', 'json', 'html'],
+      thresholds: {
+        100: true,
+      },
     },
     projects: [
       {
@@ -24,7 +27,6 @@ export default defineConfig({
           environment: 'node',
         },
       },
-
       {
         test: {
           name: 'happy-dom',
