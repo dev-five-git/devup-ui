@@ -14,7 +14,7 @@ pub fn optimize_value(value: &str) -> String {
             .to_string();
     }
     if ret.contains("0") {
-        ret = DOT_ZERO_RE.replace_all(&ret, "0").to_string();
+        ret = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}").to_string();
         ret = F_DOT_RE.replace_all(&ret, "${1}.${2}").to_string();
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
     }
@@ -86,10 +86,13 @@ mod tests {
     #[case("0vh 0vh", "0 0")]
     #[case("0vw 0vw", "0 0")]
     #[case("-0vw -0vw", "0 0")]
+    #[case("-0.2em", "-.2em")]
+    #[case("-0.02em", "-.02em")]
     #[case("scale(0px)", "scale(0)")]
     #[case("scale(-0px)", "scale(0)")]
     #[case("scale(-0px);", "scale(0)")]
     #[case("rgba(255, 0, 0,    0.5)", "rgba(255,0,0,.5)")]
+    #[case("rgba(0.0,0.0,0.0,0.5)", "rgba(0,0,0,.5)")]
     #[case("red;", "red")]
     #[case("translate(0px)", "translate(0)")]
     #[case("translate(-0px,0px)", "translate(0,0)")]

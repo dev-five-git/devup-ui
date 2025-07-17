@@ -38,7 +38,6 @@ pub fn css_to_style<'a>(
 
     if input.contains('{') {
         while let Some(start) = input.find('{') {
-            println!("input: {}", input);
             let rest = &input[start + 1..];
 
             let end = if selector.is_none() {

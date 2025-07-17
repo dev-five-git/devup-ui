@@ -229,7 +229,6 @@ impl StyleSheet {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
-        println!("{:?}", theme);
         self.theme = theme;
     }
 
@@ -255,9 +254,6 @@ impl StyleSheet {
         self.theme.colors.keys().for_each(|key| {
             theme_keys.insert(key.clone());
         });
-        println!("{:?}", color_keys);
-        println!("{:?}", typography_keys);
-        println!("{:?}", theme_keys);
 
         if color_keys.is_empty() && typography_keys.is_empty() {
             String::new()
