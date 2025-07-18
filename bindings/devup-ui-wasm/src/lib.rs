@@ -313,7 +313,7 @@ mod tests {
         }"##,
             )
             .unwrap();
-            assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280]);
+            assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
             assert_debug_snapshot!(theme.to_css());
         }
         {

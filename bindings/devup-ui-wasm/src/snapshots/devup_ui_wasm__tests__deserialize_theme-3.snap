@@ -10,6 +10,7 @@ Theme {
         768,
         992,
         1280,
+        1600,
     ],
     typography: {
         "body": Typographies(
