@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.17
+
+### Patch Changes
+
+- 43729f0: Add default breakpoint
+
 ## 1.0.16
 
 ### Patch Changes
