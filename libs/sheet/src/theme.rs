@@ -96,14 +96,14 @@ pub struct Theme {
 }
 
 fn default_breakpoints() -> Vec<u16> {
-    vec![0, 480, 768, 992, 1280]
+    vec![0, 480, 768, 992, 1280, 1600]
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
             colors: Default::default(),
-            breakpoints: vec![0, 480, 768, 992, 1280],
+            breakpoints: default_breakpoints(),
             typography: BTreeMap::new(),
         }
     }
@@ -424,7 +424,7 @@ mod tests {
     fn update_breakpoints() {
         let mut theme = Theme::default();
         theme.update_breakpoints(vec![0, 480, 768, 992, 1280]);
-        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280]);
+        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
         theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600]);
         assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
         theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600, 1920]);
