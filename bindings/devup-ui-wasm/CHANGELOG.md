@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.18
+
+### Patch Changes
+
+- 469edf8: Fix optimize value
+
 ## 1.0.17
 
 ### Patch Changes
