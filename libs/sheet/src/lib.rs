@@ -215,8 +215,8 @@ impl StyleSheet {
         }
         self.global_css_files.remove(file);
         self.css.remove(file);
-        for (_, map) in self.properties.iter_mut() {
-            for (_, props) in map.iter_mut() {
+        for map in self.properties.values_mut() {
+            for props in map.values_mut() {
                 props.retain(|prop| {
                     if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
                         f != file
