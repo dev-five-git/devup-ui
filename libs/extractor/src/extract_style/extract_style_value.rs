@@ -85,12 +85,12 @@ mod tests {
             css: "".to_string(),
             file: "".to_string(),
         });
-        assert!(matches!(value.extract(), None));
+        assert!(value.extract().is_none());
 
         let value = ExtractStyleValue::Import(ExtractImport {
             url: "".to_string(),
             file: "".to_string(),
         });
-        assert!(matches!(value.extract(), None));
+        assert!(value.extract().is_none());
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::{Display, Error, Formatter};
+
 pub enum StyleProperty {
     ClassName(String),
     Variable {
@@ -6,11 +8,11 @@ pub enum StyleProperty {
         identifier: String,
     },
 }
-impl StyleProperty {
-    pub fn to_string(&self) -> String {
+impl Display for StyleProperty {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self {
-            StyleProperty::ClassName(name) => name.clone(),
-            StyleProperty::Variable { variable_name, .. } => format!("var({})", variable_name),
+            StyleProperty::ClassName(name) => write!(f, "{name}"),
+            StyleProperty::Variable { variable_name, .. } => write!(f, "var({variable_name})"),
         }
     }
 }

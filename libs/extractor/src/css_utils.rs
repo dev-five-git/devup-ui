@@ -25,7 +25,7 @@ pub fn css_to_style<'a>(
                 if s.is_empty() {
                     return None;
                 }
-                Some(format!("@media{}", s))
+                Some(format!("@media{s}"))
             })
             .collect::<Vec<_>>();
         if media_inputs.len() > 1 {
@@ -69,9 +69,9 @@ pub fn css_to_style<'a>(
                 }
             };
             let block = if block.contains('{') {
-                css_to_style(block, level, &sel)
+                css_to_style(block, level, sel)
             } else {
-                css_to_style_block(block, level, &sel)
+                css_to_style_block(block, level, sel)
             };
             let input_end = input.rfind('}').unwrap() + 1;
 
@@ -98,7 +98,7 @@ fn css_to_style_block<'a>(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStyleProp<'a>> {
     css.split(";")
-        .map(|s| {
+        .filter_map(|s| {
             let s = s.trim();
             if s.is_empty() {
                 None
@@ -111,7 +111,6 @@ fn css_to_style_block<'a>(
                 )))
             }
         })
-        .flatten()
         .collect()
 }
 
@@ -163,7 +162,7 @@ pub fn optimize_css_block(css: &str) -> String {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
-                format!("{}:{}", property, value)
+                format!("{property}:{value}")
             }
         })
         .collect::<Vec<String>>()

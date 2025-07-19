@@ -1,5 +1,10 @@
 packages:
-  - 'packages/*'
-  - 'apps/*'
-  - 'bindings/*'
-  - 'benchmark/*'
+  - packages/*
+  - apps/*
+  - bindings/*
+  - benchmark/*
+
+onlyBuiltDependencies:
+  - core-js
+  - esbuild
+  - sharp

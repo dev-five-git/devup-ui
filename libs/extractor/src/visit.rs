@@ -255,8 +255,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         let keyframes = ExtractKeyframes {
                             keyframes: keyframes_to_keyframes_style(&css_str)
                                 .into_iter()
-                                .filter_map(|(k, v)| {
-                                    Some((
+                                .map(|(k, v)| {
+                                    (
                                         k,
                                         v.into_iter()
                                             .filter_map(|ex| {
@@ -270,7 +270,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                                 }
                                             })
                                             .collect(),
-                                    ))
+                                    )
                                 })
                                 .collect(),
                         };
@@ -354,7 +354,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     kind.extract()
                         .into_iter()
                         .rev()
-                        .map(|ex| ExtractStyleProp::Static(ex)),
+                        .map(ExtractStyleProp::Static),
                 );
                 props_styles.iter().rev().for_each(|style| {
                     self.styles.extend(style.extract().into_iter().map(|mut s| {

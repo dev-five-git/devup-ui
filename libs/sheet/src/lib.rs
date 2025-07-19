@@ -265,7 +265,7 @@ impl StyleSheet {
                 color_interface_name,
                 color_keys
                     .into_iter()
-                    .map(|key| format!("{}:null;", convert_interface_key(&format!("${}", key))))
+                    .map(|key| format!("{}:null;", convert_interface_key(&format!("${key}"))))
                     .collect::<Vec<String>>()
                     .join(""),
                 typography_interface_name,
@@ -288,8 +288,8 @@ impl StyleSheet {
     pub fn create_css(&self) -> String {
         let mut css = self
             .imports
-            .iter()
-            .map(|(_, import)| format!("@import \"{}\";", import))
+            .values()
+            .map(|import| format!("@import \"{import}\";"))
             .collect::<Vec<String>>()
             .join("");
         css.push_str(&self.theme.to_css());
