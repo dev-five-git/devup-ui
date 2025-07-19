@@ -41,7 +41,6 @@ impl From<[&str; 2]> for PropertyType {
 }
 
 #[cfg(test)]
-
 mod tests {
 
     use super::*;

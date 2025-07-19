@@ -171,7 +171,7 @@ impl Display for StyleSelector {
                         format!("@{query}")
                     }
                 }
-                StyleSelector::Global(value, _) => format!("{value}"),
+                StyleSelector::Global(value, _) => value.to_string(),
             }
         )
     }
@@ -296,7 +296,7 @@ mod tests {
     #[case(
         StyleSelector::Global("div:hover".to_string(), "file2.rs".to_string()),
         StyleSelector::Global("span:hover".to_string(), "file1.rs".to_string()),
-        "div".cmp(&"span")
+        "div".cmp("span")
     )]
     #[case(
         StyleSelector::Global("div:hover".to_string(), "file2.rs".to_string()),
@@ -306,7 +306,7 @@ mod tests {
     #[case(
         StyleSelector::Global("div:".to_string(), "file2.rs".to_string()),
         StyleSelector::Global("span:".to_string(), "file1.rs".to_string()),
-        "div".cmp(&"span")
+        "div".cmp("span")
     )]
     // global selector always less than selector
     #[case(

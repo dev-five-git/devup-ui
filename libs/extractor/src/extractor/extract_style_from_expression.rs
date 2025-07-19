@@ -144,7 +144,7 @@ pub fn extract_style_from_expression<'a>(
                         .collect::<Vec<_>>()
                         .join(""),
                     level,
-                    &selector,
+                    selector,
                 ),
                 ..ExtractResult::default()
             },
@@ -228,7 +228,7 @@ pub fn extract_style_from_expression<'a>(
             }
         } else {
             ExtractResult {
-                styles: css_to_style(&value, level, &selector),
+                styles: css_to_style(&value, level, selector),
                 ..ExtractResult::default()
             }
         }

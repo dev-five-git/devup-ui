@@ -1,10 +1,11 @@
 use crate::{
     COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{DOT_ZERO_RE, F_DOT_RE},
+    constant::{DOT_ZERO_RE, F_DOT_RE, INNER_TRIM_RE, ZERO_PERCENT_FUNCTION},
 };
 
 pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
+    ret = INNER_TRIM_RE.replace_all(&ret, "(${1})").to_string();
     if ret.contains(",") {
         ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
     }
@@ -17,6 +18,31 @@ pub fn optimize_value(value: &str) -> String {
         ret = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}").to_string();
         ret = F_DOT_RE.replace_all(&ret, "${1}.${2}").to_string();
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
+
+        for f in ZERO_PERCENT_FUNCTION.iter() {
+            if ret.contains(f) {
+                let index = ret.find(f).unwrap() + f.len();
+                let mut zero_idx = vec![];
+                let mut depth = 0;
+                for i in index..ret.len() {
+                    if ret[i..i + 1].eq("(") {
+                        depth += 1;
+                    } else if ret[i..i + 1].eq(")") {
+                        depth -= 1;
+                    } else if ret[i..i + 1].eq("0")
+                        && !ret[i - 1..i].chars().next().unwrap().is_ascii_digit()
+                        && (ret.len() == i + 1
+                            || !ret[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
+                        && depth == 0
+                    {
+                        zero_idx.push(i);
+                    }
+                }
+                for i in zero_idx.iter().rev() {
+                    ret = ret[..*i].to_string() + "0%" + &ret[*i + 1..];
+                }
+            }
+        }
     }
     // remove ; from dynamic value
     for str_symbol in ["", "`", "\"", "'"] {
@@ -32,6 +58,27 @@ pub fn optimize_value(value: &str) -> String {
                 ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'),
                 str_symbol
             );
+        }
+    }
+
+    if ret.contains("(") || ret.contains(")") {
+        let mut depth = 0;
+        for i in 0..ret.len() {
+            if ret[i..i + 1].eq("(") {
+                depth += 1;
+            } else if ret[i..i + 1].eq(")") {
+                depth -= 1;
+            }
+        }
+        if depth < 0 {
+            for _ in 0..(-depth) {
+                ret.insert(0, '(');
+            }
+        }
+        if depth > 0 {
+            for _ in 0..depth {
+                ret.push(')');
+            }
         }
     }
     ret
@@ -99,6 +146,19 @@ mod tests {
     #[case("translate(-0px, 0px)", "translate(0,0)")]
     #[case("translate(0px, 0px)", "translate(0,0)")]
     #[case("translate(10px, 0px)", "translate(10px,0)")]
+    #[case("translate(     10px  , 0px   )", "translate(10px,0)")]
+    #[case("translate(     0px  , 0px   )", "translate(0,0)")]
+    #[case("         translate(     0px  , 0px   )         ", "translate(0,0)")]
+    #[case("clamp(0, 10px, 10px)", "clamp(0%,10px,10px)")]
+    #[case("clamp(10px, 0, 10px)", "clamp(10px,0%,10px)")]
+    #[case("clamp(10px, 10px, 0)", "clamp(10px,10px,0%)")]
+    #[case("clamp(0px, 10px, 0px)", "clamp(0%,10px,0%)")]
+    #[case("min(0, 10px)", "min(0%,10px)")]
+    #[case("max(0, 10px)", "max(0%,10px)")]
+    #[case("min(10px, 0)", "min(10px,0%)")]
+    #[case("max(10px, 0)", "max(10px,0%)")]
+    #[case("max(some(0), 0)", "max(some(0),0%)")]
+    #[case("translate(0, min(0, 10px))", "translate(0,min(0%,10px))")]
     #[case("\"red\"", "\"red\"")]
     #[case("'red'", "'red'")]
     #[case("`red`", "`red`")]
@@ -110,6 +170,11 @@ mod tests {
     #[case("('red;')", "('red')")]
     #[case("('red') + 'blue;'", "('red') + 'blue'")]
     #[case("translateX(0px) translateY(0px)", "translateX(0) translateY(0)")]
+    // recovery case
+    #[case("max(10px, 0", "max(10px,0%)")]
+    #[case("max(10px, calc(0", "max(10px,calc(0%))")]
+    #[case("max(10px, any(0", "max(10px,any(0))")]
+    #[case("10px, any(0))", "(10px,any(0))")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }
