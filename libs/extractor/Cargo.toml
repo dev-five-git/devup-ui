@@ -4,17 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-oxc_parser = "0.77.1"
-oxc_syntax = "0.77.1"
-oxc_span = "0.77.1"
-oxc_allocator = "0.77.1"
-oxc_ast = "0.77.1"
-oxc_ast_visit = "0.77.1"
-oxc_codegen = "0.77.1"
+oxc_parser = "0.77.3"
+oxc_syntax = "0.77.3"
+oxc_span = "0.77.3"
+oxc_allocator = "0.77.3"
+oxc_ast = "0.77.3"
+oxc_ast_visit = "0.77.3"
+oxc_codegen = "0.77.3"
 css = { path = "../css" }
 phf = "0.12"
-strum = "0.27.1"
-strum_macros = "0.27.1"
+strum = "0.27.2"
+strum_macros = "0.27.2"
 
 [dev-dependencies]
 insta = "1.43.1"

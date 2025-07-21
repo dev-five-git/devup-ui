@@ -95,5 +95,11 @@ pub(super) static DOT_ZERO_RE: Lazy<Regex> =
 pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
 pub(super) static INNER_TRIM_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
+
+pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|\)|,)").unwrap());
+
+pub(super) static NUM_TRIM_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw)?)\s+(\d)").unwrap());
 pub(super) static ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
+    Lazy::new(|| Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());

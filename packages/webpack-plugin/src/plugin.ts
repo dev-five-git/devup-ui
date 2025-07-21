@@ -72,9 +72,6 @@ export class DevupUIWebpackPlugin {
         },
       )
     }
-    writeFileSync(join(this.options.interfacePath, '.gitignore'), '*', {
-      encoding: 'utf-8',
-    })
 
     if (this.options.watch) {
       writeFileSync(this.options.cssFile, `/* ${Date.now()} */`, {
@@ -90,6 +87,10 @@ export class DevupUIWebpackPlugin {
 
     if (!existsSync(this.options.interfacePath))
       mkdirSync(this.options.interfacePath)
+
+    writeFileSync(join(this.options.interfacePath, '.gitignore'), '*', {
+      encoding: 'utf-8',
+    })
 
     const sheetFile = join(this.options.interfacePath, 'sheet.json')
     const classMapFile = join(this.options.interfacePath, 'classMap.json')
