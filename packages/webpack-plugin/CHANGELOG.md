@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.19
+
+### Patch Changes
+
+- c352113: Fix creating ignore logic
+- Updated dependencies [c352113]
+  - @devup-ui/wasm@1.0.19
+
 ## 1.0.18
 
 ### Patch Changes

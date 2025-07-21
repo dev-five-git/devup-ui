@@ -18,7 +18,7 @@
     "rsbuild"
   ],
   "type": "module",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
