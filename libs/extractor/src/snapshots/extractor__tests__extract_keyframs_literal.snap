@@ -1,0 +1,33 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { keyframes } from \"@devup-ui/core\";\nkeyframes({\n  from: `\n  background-color: red;\n  `,\n  to: `\n  background-color: blue;\n  `\n})\n\nkeyframes`\n  from {\n    background-color: red;\n  }\n  to {\n    background-color: blue;\n  }\n`\nkeyframes({\n  from: {\n    backgroundColor: \"red\"\n  },\n  to: {\n    backgroundColor: \"blue\"\n  }\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "backgroundColor",
+                            value: "red",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "backgroundColor",
+                            value: "blue",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n\"k0\";\n\"k0\";\n\"k0\";\n",
+}

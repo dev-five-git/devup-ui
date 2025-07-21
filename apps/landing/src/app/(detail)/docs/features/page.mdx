@@ -1,1 +1,94 @@
+export const metadata = {
+    title: "Features",
+    alternates: {
+        canonical: '/docs/features',
+    }
+
+}
+
 # Features
+
+Many css in js solutions are designed to be used with JavaScript, but Devup UI is designed to be used without JavaScript.
+
+Devup UI is a CSS in JS preprocessor that does not require runtime.
+
+Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
+
+We develop a preprocessor that considers all grammatical cases.
+
+
+## How it works
+
+```typescript
+const before = <Box bg={"red"} />
+
+const after = <div className="d0" />
+```
+
+## Responsive
+
+Devup UI supports responsive design.
+
+```typescript
+const before = <Box bg={["red", "blue"]} />
+
+const after = <div className="d0 d1" />
+```
+
+## Variables
+
+Devup UI supports variables.
+
+```typescript
+const before = <Box bg={colorVariable} />
+
+const after = <div className="d0" style={{
+    "--d0": colorVariable
+}}/>
+```
+
+## Theme
+
+Devup UI supports theme.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "text": "#000"
+      },
+      "dark": {
+        "text": "white"
+      }
+    }
+  }
+}
+```
+
+```typescript
+<Text color="$text"/>
+```
+
+## Expressions
+
+Devup UI supports expressions.
+
+```typescript
+const before = <Box bg={a > b ? "yellow" : variable}/>
+
+const after = <Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+    "--d2": variable
+}}/>
+```
+
+## Pseudo Selector
+
+Devup UI supports pseudo selector.
+
+```typescript
+const before = <Box _hover={{ bg: "red" }}/>
+
+const after = <Box className={"d0"}/>
+```
+

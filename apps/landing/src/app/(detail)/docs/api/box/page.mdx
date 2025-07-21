@@ -1,1 +1,29 @@
+export const metadata = {
+  title: 'Box',
+  alternates: {
+      canonical: '/docs/api/box',
+  }
+
+}
+
 # Box
+
+The `Box` component is a layout primitive that can be used to create any kind of layout.
+
+It is just a `div` with some styles.
+
+## How to use
+
+```typescript
+const before = <Box bg={"red"} />
+
+const after = <div className="d0" />
+```
+
+You can use the `as` prop to change the element type.
+
+```typescript
+const before = <Box as={"span"} />
+
+const after = <span className="d0" />
+```

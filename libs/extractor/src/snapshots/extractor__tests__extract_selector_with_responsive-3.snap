@@ -1,0 +1,61 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box _hover={[`\n        margin-left: 10px;\n        margin-right: 10px;\n        `,{\n        marginLeft: '20px',\n        marginRight: '20px',\n        }]} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "marginLeft",
+                value: "10px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginLeft",
+                value: "20px",
+                level: 1,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginRight",
+                value: "10px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginRight",
+                value: "20px",
+                level: 1,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3\" />;\n",
+}

@@ -1,0 +1,74 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "gap",
+                value: "4px",
+                level: 1,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "gap",
+                value: "8px",
+                level: 2,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 0,
+                identifier: "a",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 0,
+                identifier: "d",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 1,
+                identifier: "e",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 2,
+                identifier: "c",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 ${{\n\t\"0\": \"d1 d3 d4\",\n\t\"1\": \"d1 d6 d8\"\n}[idx] || \"\"}`} style={{\n\t\"--d2\": {\n\t\t0: a,\n\t\t1: d\n\t}[idx],\n\t\"--d5\": c,\n\t\"--d7\": e\n}} />;\n",
+}

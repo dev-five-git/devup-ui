@@ -1,15 +1,25 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? c : [d, e, f, \"2px\"]} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? c : [d, e, f, \"2px\"]} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "2px",
+                level: 3,
+                selector: None,
+                style_order: None,
+            },
+        ),
         Dynamic(
             ExtractDynamicStyle {
                 property: "margin",
                 level: 0,
                 identifier: "c",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -18,6 +28,7 @@ ExtractOutput {
                 level: 0,
                 identifier: "d",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -26,6 +37,7 @@ ExtractOutput {
                 level: 1,
                 identifier: "e",
                 selector: None,
+                style_order: None,
             },
         ),
         Dynamic(
@@ -34,17 +46,9 @@ ExtractOutput {
                 level: 2,
                 identifier: "f",
                 selector: None,
+                style_order: None,
             },
         ),
-        Static(
-            ExtractStaticStyle {
-                property: "margin",
-                value: "2px",
-                level: 3,
-                selector: None,
-                basic: false,
-            },
-        ),
-    ],
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"d0\" : \"d0 d2 d4 d6\"} style={{\n\t\"--d1\": a === b ? c : d,\n\t\"--d3\": e,\n\t\"--d5\": f\n}} />;\n",
 }

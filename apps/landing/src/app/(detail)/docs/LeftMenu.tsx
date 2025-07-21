@@ -1,62 +1,65 @@
 import { VStack } from '@devup-ui/react'
 
-import { URL_PREFIX } from '../../../constants'
 import { MenuItem } from './MenuItem'
 
 export function LeftMenu() {
   return (
-    <VStack gap="6px" h="1008px" p="20px 16px" w="220px">
-      <MenuItem to={URL_PREFIX + '/docs/overview'}>Overview</MenuItem>
-      <MenuItem to={URL_PREFIX + '/docs/installation'}>Installation</MenuItem>
-      <MenuItem to={URL_PREFIX + '/docs/features'}>Features</MenuItem>
+    <VStack gap="6px">
+      <MenuItem to="/docs/overview">Overview</MenuItem>
+      <MenuItem to="/docs/installation">Installation</MenuItem>
+      <MenuItem to="/docs/features">Features</MenuItem>
       <MenuItem
         subMenu={[
           {
-            to: URL_PREFIX + '/docs/api/box',
+            to: '/docs/api/box',
             children: 'Box',
           },
           {
-            to: URL_PREFIX + '/docs/api/button',
+            to: '/docs/api/button',
             children: 'Button',
           },
           {
-            to: URL_PREFIX + '/docs/api/input',
+            to: '/docs/api/input',
             children: 'Input',
           },
           {
-            to: URL_PREFIX + '/docs/api/input',
+            to: '/docs/api/text',
             children: 'Text',
           },
           {
-            to: URL_PREFIX + '/docs/api/image',
+            to: '/docs/api/image',
             children: 'Image',
           },
           {
-            to: URL_PREFIX + '/docs/api/flex',
+            to: '/docs/api/flex',
             children: 'Flex',
           },
           {
-            to: URL_PREFIX + '/docs/api/v-stack',
+            to: '/docs/api/v-stack',
             children: 'VStack',
           },
           {
-            to: URL_PREFIX + '/docs/api/center',
+            to: '/docs/api/center',
             children: 'Center',
           },
           {
-            to: URL_PREFIX + '/docs/api/css',
+            to: '/docs/api/grid',
+            children: 'Grid',
+          },
+          {
+            to: '/docs/api/css',
             children: 'css',
           },
           {
-            to: URL_PREFIX + '/docs/api/style-props',
+            to: '/docs/api/style-props',
             children: 'Style Props',
           },
           {
-            to: URL_PREFIX + '/docs/api/selector',
+            to: '/docs/api/selector',
             children: 'Selector',
           },
           {
-            to: URL_PREFIX + '/docs/api/group-selector',
+            to: '/docs/api/group-selector',
             children: 'Group Selector',
           },
         ]}
@@ -66,20 +69,24 @@ export function LeftMenu() {
       <MenuItem
         subMenu={[
           {
-            to: URL_PREFIX + '/docs/devup/devup-json',
+            to: '/docs/devup/devup-json',
             children: 'What is devup?',
           },
           {
-            to: URL_PREFIX + '/docs/devup/colors',
+            to: '/docs/devup/colors',
             children: 'Colors',
           },
           {
-            to: URL_PREFIX + '/docs/devup/typography',
+            to: '/docs/devup/typography',
             children: 'Typography',
           },
           {
-            to: URL_PREFIX + '/docs/devup/breakpoints',
+            to: '/docs/devup/breakpoints',
             children: 'Breakpoints',
+          },
+          {
+            to: '/docs/devup/figma-plugin',
+            children: 'Figma Plugin',
           },
         ]}
       >

@@ -1,7 +1,24 @@
 {
   "name": "@devup-ui/webpack-plugin",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react",
+    "webpack"
+  ],
   "type": "module",
-  "version": "0.1.20",
+  "version": "1.0.18",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -25,7 +42,8 @@
     "./css-loader": {
       "import": "./dist/css-loader.js",
       "require": "./dist/css-loader.cjs"
-    }
+    },
+    "./dist/*": "./dist/*"
   },
   "files": [
     "dist"
@@ -33,11 +51,14 @@
   "dependencies": {
     "@devup-ui/wasm": "workspace:*"
   },
+  "peerDependencies": {
+    "@devup-ui/wasm": "*"
+  },
   "devDependencies": {
-    "vite": "^6.0.7",
+    "vite": "^7.0.5",
     "@types/webpack": "^5.28.5",
-    "vite-plugin-dts": "^4.5.0",
-    "vitest": "^2.1.8",
-    "typescript": "^5.7.3"
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^3.2.4",
+    "typescript": "^5.8.3"
   }
 }

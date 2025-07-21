@@ -6,21 +6,26 @@
   "type": "module",
   "scripts": {
     "lint": "pnpm -F @devup-ui/* lint",
-    "test": "cargo tarpaulin && vitest test --coverage --run && pnpm -r test",
+    "pretest": "pnpm -F @devup-ui/vite-plugin build",
+    "test": "cargo tarpaulin --out xml --out stdout --out html && vitest test --coverage --run && pnpm -r test",
     "build": "pnpm -F @devup-ui/* build",
     "dev": "pnpm -r dev",
     "benchmark": "node benchmark.js"
   },
   "devDependencies": {
-    "eslint-plugin-devup": "^2.0.1",
-    "eslint": "^9.18.0",
-    "vitest": "^2.1.8",
-    "@vitest/coverage-v8": "^2.1.8",
-    "@changesets/cli": "^2.27.11",
-    "@types/node": "^22.10.7"
+    "eslint-plugin-devup": "^2.0.5",
+    "eslint": "^9.31.0",
+    "vitest": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@changesets/cli": "^2.29.5",
+    "@types/node": "^24.0.14",
+    "happy-dom": "^18.0.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@devup-ui/vite-plugin": "workspace:*"
   },
   "author": "devfive",
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@10.13.1",
   "resolutions": {
     "vite": "^6"
   }

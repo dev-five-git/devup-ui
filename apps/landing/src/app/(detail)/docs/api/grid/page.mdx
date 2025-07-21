@@ -1,0 +1,34 @@
+export const metadata = {
+  title: 'Grid',
+  alternates: {
+    canonical: '/docs/api/grid'
+  }
+
+}
+
+# Grid
+
+The grid component is a layout component that arranges its children in a grid layout. It supports both fixed and fluid layouts.
+
+It has a `display: grid` style by default.
+
+## How to use
+
+````typescript
+const before = (
+  <Grid>
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+  </Grid>
+)
+
+const after = (
+  <div className="d3">
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+  </div>
+)
+    ```
+````

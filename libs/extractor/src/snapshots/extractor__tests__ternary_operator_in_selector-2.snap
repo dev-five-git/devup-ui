@@ -1,31 +1,33 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex _hover={a ? { bg: \"red\" } : {}} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex _hover={a ? { bg: \"red\" } : {}} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
-        Static(
-            ExtractStaticStyle {
-                property: "display",
-                value: "flex",
-                level: 0,
-                selector: None,
-                basic: true,
-            },
-        ),
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
                 property: "background",
                 value: "red",
                 level: 0,
                 selector: Some(
-                    Postfix(
-                        "hover",
+                    Selector(
+                        "&:hover",
                     ),
                 ),
-                basic: false,
+                style_order: None,
             },
         ),
-    ],
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+    },
     code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 ${a ? \"d1\" : \"\"}`} />;\n",
 }

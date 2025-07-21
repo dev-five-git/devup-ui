@@ -1,1 +1,23 @@
+export const metadata = {
+  title: 'Group Selector',
+  alternates: {
+    canonical: '/docs/api/group-selector'
+  }
+
+}
+
 # Group Selector
+
+The `group` selector is used to apply styles to a group of elements. It is used to apply styles to a group of elements that are siblings of each other.
+
+## How to use
+
+```typescript
+const group = (
+  <div role="group">
+    <Box _groupHover={{ bg: 'red' }} />
+    <Box _groupHover={{ bg: 'red' }} />
+    <Box _groupHover={{ bg: 'red' }} />
+  </div>
+)
+```

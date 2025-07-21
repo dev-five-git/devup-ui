@@ -2,6 +2,7 @@
 import { DevupUI } from '@devup-ui/next-plugin'
 
 const nextConfig = {
+  trailingSlash: true,
   /* config options here */
 }
 

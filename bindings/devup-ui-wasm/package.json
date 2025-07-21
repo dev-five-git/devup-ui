@@ -1,6 +1,23 @@
 {
   "name": "@devup-ui/wasm",
-  "version": "0.1.17",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react",
+    "wasm"
+  ],
+  "version": "1.0.18",
   "scripts": {
     "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index && node script.js",
     "test": "wasm-pack test --node"
@@ -11,13 +28,6 @@
   "sideEffects": false,
   "main": "./pkg/index.js",
   "module": "./pkg/index.js",
-  "keywords": [
-    "react",
-    "css-in-js",
-    "zero-runtime",
-    "front-end",
-    "design-system"
-  ],
   "files": [
     "pkg/index.d.ts",
     "pkg/index.js",

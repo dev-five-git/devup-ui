@@ -1,1 +1,34 @@
+export const metadata = {
+  title: 'Breakpoints',
+  alternates: {
+    canonical: '/docs/devup/breakpoints'
+  }
+
+}
+
 # Breakpoints
+
+You can add responsive design by using an array of maximum 5 elements. The viewport ranges of each style
+value in the array are listed below:
+
+- 1st element: ~ 479px,
+- 2nd element: 480px ~ 767px,
+- 3rd element: 768px ~ 991px,
+- 4th element: 992px ~ 1279px,
+- 5th element: 1280px ~
+
+## How to use
+
+```typescript
+const box = (
+  <Box bg={['red', 'blue', 'green', 'yellow', 'purple']} w={25} h={25}>
+    <Text>Hello</Text>
+  </Box>
+)
+```
+
+If any of the five elements are set to `null`, Devup UI uses the previous value for responsive design.
+For example, if the array in the example above is changed into `['red', null, 'green', null, 'purple']`,
+the background color of `Box` component will be red from 0px to 767px, green from 768px to 1279px, purple from 1280px.
+
+If the length of the array is less than 5, Devup UI makes responsive design according to the index of the element.

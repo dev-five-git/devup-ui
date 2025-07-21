@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: sheet.create_css()
+---
+".test{margin-left:41px;margin-right:41px}.test{margin-left:42px;margin-right:42px}:root[data-theme=light] .test{margin-left:50px;margin-right:50px}:root[data-theme=light] .test{margin-left:51px;margin-right:51px}"

@@ -1,1 +1,42 @@
+export const metadata = {
+  title: 'devup.json',
+  alternates: {
+    canonical: '/docs/devup/devup-json'
+  }
+
+}
+
 # devup.json
+
+You can use `devup.json` file to create themes. Create `devup.json` at the root of your project.
+The structure of the JSON object should like this:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#6159D4",
+        "secondary": "#85A5F2"
+      },
+      "dark": {
+        "primary": "#737FE4",
+        "secondary": "#2A4586"
+      }
+    },
+    "typography": {
+      "h1": {
+        "fontFamily": "Pretendard",
+        "fontStyle": "normal",
+        "fontWeight": 800,
+        "fontSize": "52px",
+        "lineHeight": 1.3
+      }
+    }
+  }
+}
+```
+
+When you pass in the variables as props, Devup will parse it in accordance with `devup.json` file.
+
+To see examples, check out Colors and Typography pages.

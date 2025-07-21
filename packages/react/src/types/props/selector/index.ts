@@ -1,56 +1,80 @@
+import type { ResponsiveValue } from '../../responsive-value'
+import type { DevupTheme } from '../../theme'
 import type { DevupCommonProps } from '../index'
 
-export interface DevupSelectorProps {
-  _active?: DevupCommonProps
-  _checked?: DevupCommonProps
-  _default?: DevupCommonProps
-  _disabled?: DevupCommonProps
-  _empty?: DevupCommonProps
-  _enabled?: DevupCommonProps
-  _first?: DevupCommonProps
-  _firstChild?: DevupCommonProps
-  _firstOfType?: DevupCommonProps
-  _focus?: DevupCommonProps
-  _focusVisible?: DevupCommonProps
-  _focusWithin?: DevupCommonProps
-  _hover?: DevupCommonProps
-  _invalid?: DevupCommonProps
-  _lastChild?: DevupCommonProps
-  _lastOfType?: DevupCommonProps
-  _link?: DevupCommonProps
-  _onlyChild?: DevupCommonProps
-  _optional?: DevupCommonProps
-  _readOnly?: DevupCommonProps
+type toPascalCase<S extends string> = S extends `${infer T}${infer U}`
+  ? `${Uppercase<T>}${U}`
+  : S
 
-  _groupActive?: DevupCommonProps
-  _groupChecked?: DevupCommonProps
-  _groupDefault?: DevupCommonProps
-  _groupDisabled?: DevupCommonProps
-  _groupEmpty?: DevupCommonProps
-  _groupEnabled?: DevupCommonProps
-  _groupFirst?: DevupCommonProps
-  _groupFirstChild?: DevupCommonProps
-  _groupFirstOfType?: DevupCommonProps
-  _groupFocus?: DevupCommonProps
-  _groupFocusVisible?: DevupCommonProps
-  _groupFocusWithin?: DevupCommonProps
-  _groupHover?: DevupCommonProps
-  _groupInvalid?: DevupCommonProps
-  _groupLastChild?: DevupCommonProps
-  _groupLastOfType?: DevupCommonProps
-  _groupLink?: DevupCommonProps
-  _groupOnlyChild?: DevupCommonProps
-  _groupOptional?: DevupCommonProps
-  _groupReadOnly?: DevupCommonProps
+export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
+  ? Record<`_theme${string}`, DevupCommonProps & DevupSelectorProps>
+  : {
+      [K in keyof DevupTheme as `_theme${toPascalCase<K>}`]?: DevupCommonProps &
+        DevupSelectorProps
+    }
+
+type SelectorProps = ResponsiveValue<
+  | (DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps)
+  | string
+  | false
+>
+
+export interface DevupSelectorProps {
+  _active?: SelectorProps
+  _checked?: SelectorProps
+  _default?: SelectorProps
+  _disabled?: SelectorProps
+  _empty?: SelectorProps
+  _enabled?: SelectorProps
+  _first?: SelectorProps
+  _firstChild?: SelectorProps
+  _firstOfType?: SelectorProps
+  _focus?: SelectorProps
+  _focusVisible?: SelectorProps
+  _focusWithin?: SelectorProps
+  _hover?: SelectorProps
+  _invalid?: SelectorProps
+  _lastChild?: SelectorProps
+  _lastOfType?: SelectorProps
+  _link?: SelectorProps
+  _onlyChild?: SelectorProps
+  _optional?: SelectorProps
+  _readOnly?: SelectorProps
+  _print?: SelectorProps
+
+  _groupActive?: SelectorProps
+  _groupChecked?: SelectorProps
+  _groupDefault?: SelectorProps
+  _groupDisabled?: SelectorProps
+  _groupEmpty?: SelectorProps
+  _groupEnabled?: SelectorProps
+  _groupFirst?: SelectorProps
+  _groupFirstChild?: SelectorProps
+  _groupFirstOfType?: SelectorProps
+  _groupFocus?: SelectorProps
+  _groupFocusVisible?: SelectorProps
+  _groupFocusWithin?: SelectorProps
+  _groupHover?: SelectorProps
+  _groupInvalid?: SelectorProps
+  _groupLastChild?: SelectorProps
+  _groupLastOfType?: SelectorProps
+  _groupLink?: SelectorProps
+  _groupOnlyChild?: SelectorProps
+  _groupOptional?: SelectorProps
+  _groupReadOnly?: SelectorProps
 
   // double separator
-  _placeholder?: DevupCommonProps
-  _before?: DevupCommonProps
-  _after?: DevupCommonProps
-  _highlight?: DevupCommonProps
-  _viewTransition?: DevupCommonProps
-  _viewTransitionGroup?: DevupCommonProps
-  _viewTransitionImagePair?: DevupCommonProps
-  _viewTransitionNew?: DevupCommonProps
-  _viewTransitionOld?: DevupCommonProps
+  _placeholder?: SelectorProps
+  _before?: SelectorProps
+  _after?: SelectorProps
+  _highlight?: SelectorProps
+  _viewTransition?: SelectorProps
+  _viewTransitionGroup?: SelectorProps
+  _viewTransitionImagePair?: SelectorProps
+  _viewTransitionNew?: SelectorProps
+  _viewTransitionOld?: SelectorProps
+
+  selectors?: Record<string, SelectorProps>
+
+  styleOrder?: number
 }

@@ -1,74 +1,170 @@
-import { css, Flex, Image, Text } from '@devup-ui/react'
+import { Box, css, Flex } from '@devup-ui/react'
 import Link from 'next/link'
+import { Suspense } from 'react'
 
-import { URL_PREFIX } from '../../constants'
+import { Logo } from '../Logo'
+import { Discord } from './Discord'
+import { Github } from './Github'
+import { HeaderInput } from './HeaderInput'
+import { HeaderInputWrap } from './HeaderInputWrap'
 import { HeaderWrap } from './HeaderWrap'
+import { Kakao } from './Kakao'
+import { Menu } from './Menu'
+import { MobMenu } from './MobMenu'
+import { MobMenuButton } from './MobMenuButton'
+import { MobMenuWrapper } from './MobMenuWrapper'
+import { ThemeSwitch } from './ThemeSwitch'
 
 export function Header() {
-  return (
-    <HeaderWrap>
-      <Flex alignItems="center" gap="16px">
+  const top = (
+    <Flex alignItems="center">
+      <Flex alignItems="center" px="10px">
         <Link
           className={css({
             textDecoration: 'none',
           })}
-          href={URL_PREFIX}
+          href="https://github.com/dev-five-git/devup-ui"
+          target="_blank"
         >
-          <Image h="42px" src={URL_PREFIX + '/logo.svg'} />
+          <Github />
         </Link>
       </Flex>
-      <Flex alignItems="center" gap="10px">
-        <Flex alignItems="center" px="24px">
+      <Flex alignItems="center" px="10px">
+        <Discord />
+      </Flex>
+      <Flex alignItems="center" px="10px">
+        <Kakao />
+      </Flex>
+      <Flex alignItems="center" px="10px">
+        <ThemeSwitch />
+      </Flex>
+    </Flex>
+  )
+  return (
+    <HeaderWrap>
+      <Flex alignItems="center" gap="16px">
+        <Box display={['none', null, 'contents']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+              ml: 4,
+            })}
+            href="/"
+          >
+            <Logo />
+          </Link>
+        </Box>
+        <Box display={['contents', null, 'none']}>
+          <Suspense
+            fallback={
+              <Link
+                className={css({
+                  textDecoration: 'none',
+                  ml: 4,
+                })}
+                href="/"
+              >
+                <Logo />
+              </Link>
+            }
+          >
+            <MobMenuWrapper openChildren={top}>
+              <Link
+                className={css({
+                  textDecoration: 'none',
+                  ml: 4,
+                })}
+                href="/"
+              >
+                <Logo />
+              </Link>
+            </MobMenuWrapper>
+          </Suspense>
+        </Box>
+      </Flex>
+      <Flex
+        alignItems="center"
+        display={['none', null, 'flex']}
+        gap={[null, null, '4px', '10px']}
+      >
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
             })}
-            href={URL_PREFIX + '/docs/overview'}
+            href="/docs/overview"
           >
-            <Text color="$title" opacity="0.6" typography="buttonLsemiB">
-              Docs
-            </Text>
+            <Menu keyword="docs">Docs</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center" px="24px">
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
           <Link
             className={css({
               textDecoration: 'none',
             })}
-            href={URL_PREFIX + '/team'}
+            href="/components/overview"
           >
-            <Text color="$title" opacity="0.6" typography="buttonLsemiB">
-              Team
-            </Text>
+            <Menu keyword="components">Components</Menu>
           </Link>
         </Flex>
-        <Flex alignItems="center">
-          <Flex alignItems="center" px="10px">
-            <Link
-              className={css({
-                textDecoration: 'none',
-              })}
-              href="https://github.com/dev-five-git/devup-ui"
-              target="_blank"
-            >
-              <Image boxSize="24px" src={URL_PREFIX + '/github.svg'} />
-            </Link>
-          </Flex>
-          <Flex alignItems="center" px="10px">
-            <Link
-              className={css({
-                textDecoration: 'none',
-              })}
-              href="https://discord.gg/BtNffusw"
-              target="_blank"
-            >
-              <Image boxSize="24px" src={URL_PREFIX + '/discord.svg'} />
-            </Link>
-          </Flex>
-          <Flex alignItems="center" px="10px">
-            <Image boxSize="24px" src={URL_PREFIX + '/light.svg'} />
-          </Flex>
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+            })}
+            href="/team"
+          >
+            <Menu keyword="team">Team</Menu>
+          </Link>
         </Flex>
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+              display: 'flex',
+              gap: '4px',
+              alignItems: 'center',
+            })}
+            href="/storybook/index.html"
+            prefetch={false}
+            role="group"
+          >
+            <Menu keyword="storybook">Storybook</Menu>
+            <Box
+              _groupActive={{
+                opacity: '1',
+                bg: '$primary',
+              }}
+              _groupHover={{
+                opacity: '1',
+              }}
+              bg="$text"
+              boxSize="24px"
+              maskImage="url(/outlink.svg)"
+              maskPosition="center"
+              maskRepeat="no-repeat"
+              maskSize="contain"
+              opacity="0.6"
+            />
+          </Link>
+        </Flex>
+        <HeaderInputWrap>
+          <HeaderInput readOnly />
+        </HeaderInputWrap>
+        {top}
+      </Flex>
+      <Flex
+        alignItems="center"
+        cursor="pointer"
+        display={['flex', null, 'none']}
+        gap="10px"
+        p="10px"
+      >
+        <Suspense>
+          <MobMenuButton>
+            <MobMenu />
+          </MobMenuButton>
+        </Suspense>
       </Flex>
     </HeaderWrap>
   )

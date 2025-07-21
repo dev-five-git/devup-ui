@@ -1,4 +1,3 @@
-import type { DevupThemeTypography } from '../typography'
 import type { DevupUiAnimationProps } from './animation'
 import type { DevupUiBackgroundProps } from './background'
 import type { DevupUiBlendingProps } from './blending'
@@ -21,17 +20,20 @@ import type { DevupUiOverflowProps } from './overflow'
 import type { DevupUiOverflowBehaviorProps } from './overflow-behavior'
 import type { DevupUiPositionProps } from './position'
 import type { DevupUiScrollbarProps } from './scrollbar'
-import type { DevupSelectorProps } from './selector'
+import type { DevupSelectorProps, DevupThemeSelectorProps } from './selector'
 import type { DevupUiShapeProps } from './shape'
+import type { DevupUiSvgProps } from './svg'
 import type { DevupUiTableProps } from './table'
 import type { DevupUiTextProps } from './text'
 import type { DevupUiTransformProps } from './transform'
 import type { DevupUiTransitionProps } from './transition'
 import type { DevupUiUiProps } from './ui'
+import type { DevupUiVendorProps } from './vendor'
 import type { DevupUiViewTransitionProps } from './view-transition'
 
 export interface DevupCommonProps
-  extends DevupUiAnimationProps,
+  extends DevupUiVendorProps,
+    DevupUiAnimationProps,
     DevupUiBackgroundProps,
     DevupUiBlendingProps,
     DevupUiBorderProps,
@@ -59,12 +61,13 @@ export interface DevupCommonProps
     DevupUiTransformProps,
     DevupUiTransitionProps,
     DevupUiUiProps,
-    DevupUiViewTransitionProps {}
+    DevupUiViewTransitionProps,
+    DevupUiSvgProps {}
 
-export interface DevupProps extends DevupCommonProps, DevupSelectorProps {
-  as?: React.ElementType
-}
-
-export interface DevupTypographyProps extends DevupProps {
-  typography?: keyof DevupThemeTypography
+export interface DevupProps<T extends React.ElementType>
+  extends DevupCommonProps,
+    DevupSelectorProps,
+    DevupThemeSelectorProps {
+  as?: T
+  styleVars?: Record<string, string | undefined>
 }

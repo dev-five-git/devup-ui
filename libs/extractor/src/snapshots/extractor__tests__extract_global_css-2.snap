@@ -1,0 +1,25 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\nglobalCss({\n  div: {\n    bg: \"blue\"\n  }\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "div",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n;\n",
+}

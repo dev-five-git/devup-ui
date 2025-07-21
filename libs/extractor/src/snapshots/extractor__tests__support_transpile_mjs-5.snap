@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"import { jsx as e } from \"react/jsx-runtime\";\nimport { Box as o } from \"@devup-ui/core\";\ne(o, { className: \"a\", bg: variable, style: { color: \"blue\" }, ...props })\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "variable",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { jsx as e } from \"react/jsx-runtime\";\ne(\"div\", {\n\t...props,\n\tclassName: \"a d0\",\n\tstyle: {\n\t\t...{ \"--d1\": variable },\n\t\t...{ color: \"blue\" }\n\t}\n});\n",
+}

@@ -1,1 +1,47 @@
+export const metadata = {
+  title: 'css',
+  alternates: {
+    canonical: '/docs/api/css'
+  }
+
+}
+
 # css
+
+`css` function is a function that returns a string.
+
+## How to use
+
+### CSS Literal
+
+You can use `css` as a tag function to create a css string. Pass in a string of css properties as an argument, ans it will be converted
+into a class list.
+
+```typescript
+const before = (
+  <div
+    className={css`
+      color: red;
+    `}
+  />
+)
+
+const after = <any className="d0"/>
+
+```
+
+### CSS Object
+
+You can also use the css function by passing in a css object as an argument.
+
+```typescript
+const before = (
+  <any
+    className={css({
+      color: 'red',
+    })}
+  />
+)
+
+const after = <any className="d0" />
+```

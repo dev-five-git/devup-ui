@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box margin={a === b ? null : `${b}px`} />;\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin",
+                level: 0,
+                identifier: "`${b}px`",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"\" : \"d0\"} style={{ \"--d1\": `${b}px` }} />;\n",
+}

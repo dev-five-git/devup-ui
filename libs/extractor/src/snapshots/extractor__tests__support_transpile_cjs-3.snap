@@ -1,29 +1,29 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "extract(\"test.js\",\nr#\"\"use strict\";Object.defineProperty(exports,Symbol.toStringTag,{value:\"Module\"});const e=require(\"react/jsx-runtime\"),r=require(\"@devup-ui/react\");function t(){return e.jsxs(\"div\",{children:[e.jsx(r.Box,{_hover:{bg:\"blue\"},bg:\"$text\",color:\"red\",children:\"hello\"}),e.jsx(r.Text,{typography:\"header\",children:\"typo\"}),e.jsx(r.Flex,{as:\"section\",mt:2,children:\"section\"})]})}exports.Lib=t;\"#,\nExtractOption\n{ package: \"@devup-ui/react\".to_string(), css_file: None }).unwrap()"
+expression: "ToBTreeSet::from(extract(\"test.js\",\nr#\"\"use strict\";Object.defineProperty(exports,Symbol.toStringTag,{value:\"Module\"});const e=require(\"react/jsx-runtime\"),r=require(\"@devup-ui/react\");function t(){return e.jsxs(\"div\",{children:[e.jsx(r.Box,{_hover:{bg:\"blue\"},bg:\"$text\",color:\"red\",children:\"hello\"}),e.jsx(r.Text,{typography:\"header\",children:\"typo\"}),e.jsx(r.Flex,{as:\"section\",mt:2,children:\"section\"})]})}exports.Lib=t;\"#,\nExtractOption\n{ package: \"@devup-ui/react\".to_string(), css_file: None }).unwrap())"
 ---
-ExtractOutput {
-    styles: [
-        Static(
-            ExtractStaticStyle {
-                property: "background",
-                value: "blue",
-                level: 0,
-                selector: Some(
-                    Postfix(
-                        "hover",
-                    ),
-                ),
-                basic: false,
-            },
-        ),
+ToBTreeSet {
+    styles: {
         Static(
             ExtractStaticStyle {
                 property: "background",
                 value: "$text",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
             },
         ),
         Static(
@@ -32,11 +32,8 @@ ExtractOutput {
                 value: "red",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
-        ),
-        Typography(
-            "header",
         ),
         Static(
             ExtractStaticStyle {
@@ -44,7 +41,9 @@ ExtractOutput {
                 value: "flex",
                 level: 0,
                 selector: None,
-                basic: true,
+                style_order: Some(
+                    0,
+                ),
             },
         ),
         Static(
@@ -53,9 +52,12 @@ ExtractOutput {
                 value: "8px",
                 level: 0,
                 selector: None,
-                basic: false,
+                style_order: None,
             },
         ),
-    ],
+        Typography(
+            "header",
+        ),
+    },
     code: "\"use strict\";\nimport \"@devup-ui/react/devup-ui.css\";\nObject.defineProperty(exports, Symbol.toStringTag, { value: \"Module\" });\nconst e = require(\"react/jsx-runtime\"), r = require(\"@devup-ui/react\");\nfunction t() {\n\treturn e.jsxs(\"div\", { children: [\n\t\te.jsx(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"d0 d1 d2\"\n\t\t}),\n\t\te.jsx(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\te.jsx(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d3 d4\"\n\t\t})\n\t] });\n}\nexports.Lib = t;\n",
 }

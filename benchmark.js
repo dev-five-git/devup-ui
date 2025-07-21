@@ -20,6 +20,16 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-mui/.next'))
+    rmSync('./benchmark/next-mui/.next', {
+      recursive: true,
+      force: true,
+    })
+  if (existsSync('./benchmark/next-devup-ui/df'))
+    rmSync('./benchmark/next-devup-ui/df', {
+      recursive: true,
+      force: true,
+    })
 }
 
 function checkDirSize(path) {
@@ -57,6 +67,13 @@ execSync('pnpm -F next-chakra-ui-benchmark build', {
 })
 console.timeEnd('chakra-ui')
 console.info('chakra-ui', checkDirSize('./benchmark/next-chakra-ui/.next'))
+
+console.time('mui')
+execSync('pnpm -F next-mui-benchmark build', {
+  stdio: 'inherit',
+})
+console.timeEnd('mui')
+console.info('mui', checkDirSize('./benchmark/next-mui/.next'))
 
 console.time('devup-ui')
 execSync('pnpm -F next-devup-ui-benchmark build', {

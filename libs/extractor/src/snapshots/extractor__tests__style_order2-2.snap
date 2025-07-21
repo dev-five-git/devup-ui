@@ -1,0 +1,76 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Box, css} from '@devup-ui/core'\n    <Box styleOrder={\"20\"} p=\"4\" _hover={{ bg: [\"red\", \"blue\"]}}\n    className={css({color:\"white\", styleOrder:(\"100\")})}\n\n     selectors={{\n    \"*[aria-diabled='true'] &\": {\n      opacity: 0.5\n      }\n    }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 1,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: Some(
+                    20,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: Some(
+                    20,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "white",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    100,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "opacity",
+                value: ".5",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "*[aria-diabled='true'] &",
+                    ),
+                ),
+                style_order: Some(
+                    20,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    20,
+                ),
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3 d4\" />;\n",
+}

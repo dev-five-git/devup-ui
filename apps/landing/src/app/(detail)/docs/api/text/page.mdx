@@ -1,1 +1,21 @@
+export const metadata = {
+  title: 'Text',
+  alternates: {
+    canonical: '/docs/api/text'
+  }
+
+}
+
 # Text
+
+The `Text` component is a layout primitive that can be used like `span` to create texts.
+
+It is just a `span` with some styles.
+
+## How to use
+
+```typescript
+const before = <Text color={"red"}>This is Text component.</Text>
+
+const after = <span className="d0">This is Text component.</span>
+```

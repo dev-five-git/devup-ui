@@ -1,1 +1,28 @@
+export const metadata = {
+  title: 'Typography',
+  alternates: {
+    canonical: '/docs/devup/typography'
+  }
+
+}
+
 # Typography
+
+You can create a typography theme in your `devup.json` file and pass variables to `typography` props.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "h1": {
+        "fontSize": "24px",
+        "fontWeight": "bold"
+      }
+    }
+  }
+}
+```
+
+```typescript
+const text = <Text typography="h1">Hello</Text>
+```

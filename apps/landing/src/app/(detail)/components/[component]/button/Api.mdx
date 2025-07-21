@@ -1,0 +1,13 @@
+###### API
+`Button` props extends the button HTML attributes. 
+
+<div style={{ width: '100%', overflow: 'auto'}}>
+| Property | Description | Type | Default |
+| --- | --- | --- | --- |
+| **variant** | The variant of the button | `'primary' \| 'default'` | `'default'` |
+| **colors** | The color variables of the button, i.e. `var(--primary)` | ```{<br>  primary?: string<br>  error?: string<br>  text?: string<br>  border?: string<br>  inputBackground?: string<br>  primaryFocus?: string<br>}``` | `undefined` |
+| **danger** | Signals that it should be used with caution. It is often used in a delete button or to show the error status. | `boolean` | `false` |
+| **size** | The size of the button | `'sm' \| 'md' \| 'lg'` | `'md'` |
+| **icon** | Icon of the button passed in as a form of ReactNode | `React.ReactNode` | `undefined` |
+| **ellipsis** | Whether the button text should be truncated with an ellipsis. The button should have a width to be able to truncate the text. | `boolean` | `false` |
+</div>

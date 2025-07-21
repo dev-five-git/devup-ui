@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: sheet.create_css()
+---
+".test:wrong:hover{background:red}"

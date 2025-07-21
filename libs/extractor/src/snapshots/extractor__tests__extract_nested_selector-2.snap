@@ -1,0 +1,22 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/core'\n        <Box _hover={{\n          selectors: {\n            \"&::placeholder, &:active\": {\n              color: \"blue\"\n            }\n          },\n        }} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover::placeholder, &:hover:active",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0\" />;\n",
+}

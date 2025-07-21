@@ -1,1 +1,21 @@
+export const metadata = {
+  title: 'Image',
+  alternates: {
+    canonical: '/docs/api/image'
+  }
+
+}
+
 # Image
+
+The `Image` component is a layout primitive that can be used to render images.
+
+It is just a `img` with some styles.
+
+## How to use
+
+```typescript
+const before = <Image src={"https://via.placeholder.com/150"} />
+
+const after = <img src="https://via.placeholder.com/150" />
+```

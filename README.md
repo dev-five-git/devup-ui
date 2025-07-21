@@ -20,7 +20,7 @@
 <a href="https://badgen.net/github/stars/dev-five-git/devup-ui">
 <img alt="Github Stars" src="https://badgen.net/github/stars/dev-five-git/devup-ui" />
 </a>
-<a href="https://discord.gg/BtNffusw">
+<a href="https://discord.gg/8zjcGc7cWh">
 <img alt="Discord" src="https://img.shields.io/discord/1321362173619994644.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2" />
 </a>
 <a href="https://codecov.io/gh/dev-five-git/devup-ui" > 
@@ -70,11 +70,12 @@ npm install @devup-ui/vite-plugin
 
 Next.js Build Time and Build Size (AMD Ryzen 9 9950X, 128GB RAM, Windows 11)
 
-| Library   | Build Time | Build Size   |
-|-----------|------------|--------------|
-| kuma-ui   | 20.933s    | 57,295,073b  |
-| chakra-ui | 36.961s    | 129,527,610b |
-| devup-ui  | 15.162s    | 48,047,678b  |
+| Library      | Version  | Build Time | Build Size      |
+|--------------|----------|------------|-----------------|
+| kuma-ui      | 1.5.9    | 13.948s    | 61,910,524b     |
+| chakra-ui    | 3.22.0   | 20.557s    | 189,541,604b    |
+| mui          | 7.2.0    | 20.002s    | 218,204,592b    |
+| devup-ui     | 1.0.10   | 10.583s    | 53,111,181b     |
 
 ## How it works
 
@@ -82,31 +83,28 @@ Devup UI is a CSS in JS preprocessor that does not require runtime.
 Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
 We develop a preprocessor that considers all grammatical cases.
 
-```jsx
-// Before
-<Box bg={"red"}/>
-// After
-<Box className={"d0"}/>
+```typescript
+const before = <Box bg={"red"}/>
+
+const after = <div className="d0"/>
 ```
 
 Variables are fully supported.
 
-```jsx
-// Before
-<Box bg={colorVariable}/>
-// After
-<Box className={"d0"} style={{
+```typescript
+const before = <Box bg={colorVariable}/>
+
+const after = <div className="d0" style={{
     "--d0": colorVariable
 }}/>
 ```
 
 Various expressions and responsiveness are also fully supported.
 
-```jsx
-// Before
-<Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
-// After
-<Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
+```typescript
+const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+
+const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
     "--d2": variable
 }}/>
 ```
@@ -130,7 +128,7 @@ Support Theme with Typing
 }
 ```
 
-```jsx
+```typescript
 // Type Safe
 <Text color="$text"/>
 ```
@@ -139,11 +137,10 @@ Support Responsive And Pseudo Selector
 
 You can use responsive and pseudo selector.
 
-```jsx
+```typescript
 // Responsive with Selector
-<Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{bg: ["red", "blue"]}}/>
 
 // Same
-<Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
-
+const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```

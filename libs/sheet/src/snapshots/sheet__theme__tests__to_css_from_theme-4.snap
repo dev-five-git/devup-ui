@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/theme.rs
+expression: theme.to_css()
+---
+":root{color-scheme:light;--primary:#000;}\n:root[data-theme=a]{color-scheme:dark;--primary:#000;}\n:root[data-theme=b]{color-scheme:dark;--primary:#000;}\n:root[data-theme=c]{color-scheme:dark;--primary:#000;}\n"

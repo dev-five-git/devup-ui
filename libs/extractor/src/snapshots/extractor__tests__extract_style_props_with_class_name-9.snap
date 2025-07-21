@@ -1,0 +1,24 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box, Button as DevupButton, Center, css } from '@devup-ui/core'\nimport clsx from 'clsx'\n\n<DevupButton\n      boxSizing=\"border-box\"\n      className={clsx(\n        variants[variant],\n        isError && variant === 'default' && errorClassNames,\n        className,\n      )}\n      typography={\n        isPrimary\n          ? {\n              sm: 'buttonS',\n              md: 'buttonM',\n            }[size]\n          : undefined\n      }\n      {...props}\n    />\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "boxSizing",
+                value: "border-box",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Typography(
+            "buttonM",
+        ),
+        Typography(
+            "buttonS",
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport clsx from \"clsx\";\n<button {...props} className={`${clsx(variants[variant], isError && variant === \"default\" && errorClassNames, className) || \"\"} d0 ${isPrimary ? {\n\t\"md\": \"typo-buttonM\",\n\t\"sm\": \"typo-buttonS\"\n}[size] || \"\" : \"\"}`} style={props?.style} />;\n",
+}

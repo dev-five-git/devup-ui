@@ -1,0 +1,94 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {Center} from '@devup-ui/core'\n    <Center\n      _active={\n        variant !== 'disabled' && {\n          boxShadow: 'none',\n          transform: 'scale(0.95)',\n        }\n      }\n      _hover={\n        variant !== 'disabled' && {\n          boxShadow: [\n            '0px 1px 3px 0px rgba(0, 0, 0, 0.25)',\n            null,\n            '0px 0px 15px 0px rgba(0, 0, 0, 0.25)',\n          ],\n        }\n      }\n      {...props}\n    >\n      {children}\n    </Center>\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "alignItems",
+                value: "center",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "boxShadow",
+                value: "0 0 15px 0 rgba(0,0,0,.25)",
+                level: 2,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "boxShadow",
+                value: "0 1px 3px 0 rgba(0,0,0,.25)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "boxShadow",
+                value: "none",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "justifyContent",
+                value: "center",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "transform",
+                value: "scale(.95)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:active",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div {...props} className={`d0 d1 d2 ${variant !== \"disabled\" ? \"d3 d4\" : \"\"} ${variant !== \"disabled\" ? \"d5 d6\" : \"\"} ${props?.className || \"\"}`} style={props?.style}>\n      {children}\n    </div>;\n",
+}

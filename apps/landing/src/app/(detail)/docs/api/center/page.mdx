@@ -1,1 +1,32 @@
+export const metadata = {
+  title: 'Center',
+  alternates: {
+    canonical: '/docs/api/center'
+  }
+}
+
 # Center
+
+The `Center` component is a layout component that centers its children both vertically and horizontally.
+
+It has a `display: flex` style with `justify-content: center` and `align-items: center`.
+
+## How to use
+
+````typescript
+const before = (
+  <Center>
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+    <Box bg="blue" w={25} h={25} />
+  </Center>
+)
+
+const after = (
+  <div className="d3 d4 d5">
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+    <div className="d0 d1 d2"></div>
+  </div>
+)
+````

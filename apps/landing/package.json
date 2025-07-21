@@ -4,29 +4,38 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node ./script.js && next dev",
+    "search": "node ./script.js",
+    "build": "node ./script.js && next build",
+    "start": "node ./script.js && next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@devup-ui/components": "workspace:*",
     "@devup-ui/react": "workspace:*",
+    "@devup-ui/reset-css": "workspace:*",
     "@mdx-js/loader": "^3.1.0",
     "@mdx-js/react": "^3.1.0",
-    "@next/mdx": "^15.1.4",
+    "@next/mdx": "^15.4.1",
     "@types/mdx": "^2.0.13",
-    "next": "^15.1.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "body-scroll-lock": "3.1.5",
+    "clsx": "^2.1.1",
+    "next": "^15.4.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
-    "sanitize.css": "^13.0.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:*",
-    "@types/node": "^22",
+    "@types/body-scroll-lock": "^3.1.2",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "glob": "^11.0.3",
+    "remark": "^15.0.1",
     "typescript": "^5"
   }
 }

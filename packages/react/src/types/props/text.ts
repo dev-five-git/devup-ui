@@ -1,6 +1,8 @@
 import type { Property } from 'csstype'
 
 import type { ResponsiveValue } from '../responsive-value'
+import type { DevupThemeTypography } from '../typography'
+import type { Conditional } from '../utils'
 
 export interface DevupUiTextProps {
   hangingPunctuation?: ResponsiveValue<Property.HangingPunctuation>
@@ -22,6 +24,10 @@ export interface DevupUiTextProps {
   textDecorationColor?: ResponsiveValue<Property.TextDecorationColor>
   textDecorationLine?: ResponsiveValue<Property.TextDecorationLine>
   textDecorationStyle?: ResponsiveValue<Property.TextDecorationStyle>
+  textDecorationSkipInk?: ResponsiveValue<Property.TextDecorationSkipInk>
+  textDecorationThickness?: ResponsiveValue<Property.TextDecorationThickness>
+  textUnderlineOffset?: ResponsiveValue<Property.TextUnderlineOffset>
+  textUnderlinePosition?: ResponsiveValue<Property.TextUnderlinePosition>
   textEmphasis?: ResponsiveValue<Property.TextEmphasis>
   textEmphasisColor?: ResponsiveValue<Property.TextEmphasisColor>
   textEmphasisPosition?: ResponsiveValue<Property.TextEmphasisPosition>
@@ -34,4 +40,8 @@ export interface DevupUiTextProps {
   wordSpacing?: ResponsiveValue<Property.WordSpacing>
 
   content?: ResponsiveValue<Property.Content>
+
+  lineClamp?: ResponsiveValue<Property.LineClamp>
+
+  typography?: Conditional<DevupThemeTypography>
 }

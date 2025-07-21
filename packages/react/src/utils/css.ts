@@ -1,14 +1,20 @@
-import { DevupCommonProps } from '../types/props'
+import type { DevupCommonProps } from '../types/props'
 import type { DevupSelectorProps } from '../types/props/selector'
-
-export function css(props: DevupCommonProps): string
-export function css(strings: TemplateStringsArray): string
+import type { DevupThemeSelectorProps } from '../types/props/selector'
 
 export function css(
-  strings: TemplateStringsArray | (DevupCommonProps & DevupSelectorProps),
+  props: DevupCommonProps | DevupSelectorProps | DevupThemeSelectorProps,
+): string
+export function css(strings: TemplateStringsArray): string
+export function css(): string
+
+export function css(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  strings?:
+    | TemplateStringsArray
+    | DevupCommonProps
+    | DevupSelectorProps
+    | DevupThemeSelectorProps,
 ): string {
-  if (Array.isArray(strings)) {
-    return strings.join('')
-  }
-  return strings as string
+  throw new Error('Cannot run on the runtime')
 }

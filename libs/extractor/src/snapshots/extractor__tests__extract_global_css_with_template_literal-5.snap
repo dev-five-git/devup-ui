@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\n    globalCss`\n    div {\n      background-color: red;\n      color: blue;\n    }\n    `\n    \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Css(
+            ExtractCss {
+                css: "div{background-color:red;color:blue}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n;\n",
+}

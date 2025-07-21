@@ -1,1 +1,37 @@
+export const metadata = {
+  title: 'Colors',
+  alternates: {
+    canonical: '/docs/devup/colors'
+  }
+
+}
+
 # Colors
+
+You can directly pass color values to the primitive components.
+
+```typescript
+const box = <Box bg="#FF0000" w={25} h={25} />
+```
+
+But, when your project gets larger and more complicated, it could be better to use variables to style your project.
+Pass in the variables that you created in `devup.json`.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#FF0000"
+      },
+      "dark": {
+        "primary": "#FF0000"
+      }
+    }
+  }
+}
+```
+
+```typescript
+const color = <Box bg="$primary" w={25} h={25} />
+```

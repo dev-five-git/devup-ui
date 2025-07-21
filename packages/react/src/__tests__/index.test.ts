@@ -13,6 +13,16 @@ describe('export', () => {
       Grid: expect.any(Function),
 
       css: expect.any(Function),
+      globalCss: expect.any(Function),
+      keyframes: expect.any(Function),
+
+      ThemeScript: expect.any(Function),
+
+      getTheme: expect.any(Function),
+      setTheme: expect.any(Function),
+      initTheme: expect.any(Function),
+
+      useTheme: expect.any(Function),
     })
   })
 })

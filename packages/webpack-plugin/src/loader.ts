@@ -1,45 +1,56 @@
-import { writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { dirname, relative } from 'node:path'
 
-import { codeExtract } from '@devup-ui/wasm'
+import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
-import { type DevupUIWebpackPlugin } from './plugin'
-
 export interface DevupUILoaderOptions {
-  plugin: DevupUIWebpackPlugin
+  package: string
+  cssFile: string
+  sheetFile: string
+  classMapFile: string
+  watch: boolean
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
-    const { plugin } = this.getOptions()
-    const { package: libPackage, cssFile } = plugin.options
+    const {
+      watch,
+      package: libPackage,
+      cssFile,
+      sheetFile,
+      classMapFile,
+    } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
-    if (
-      id.includes('node_modules/') ||
-      id.includes('@devup-ui/react') ||
-      !/\.[tj](s|sx)?$/.test(id)
-    ) {
-      callback(null, source)
-      return
-    }
-    this.addDependency(cssFile)
 
     try {
-      const { code, css } = codeExtract(
-        this.resourcePath,
+      let rel = relative(dirname(this.resourcePath), cssFile).replaceAll(
+        '\\',
+        '/',
+      )
+      if (!rel.startsWith('./')) rel = `./${rel}`
+      const { code, css, map } = codeExtract(
+        id,
         source.toString(),
         libPackage,
-        cssFile,
+        rel,
       )
-      if (css) {
+      const sourceMap = map ? JSON.parse(map) : null
+      if (css && watch) {
+        const content = `${this.resourcePath} ${Date.now()}`
+        if (this._compiler) (this._compiler as any).__DEVUP_CACHE = content
         // should be reset css
-        writeFileSync(cssFile, css, {
-          encoding: 'utf-8',
-        })
+        Promise.all([
+          writeFile(cssFile, `/* ${content} */`),
+          writeFile(sheetFile, exportSheet()),
+          writeFile(classMapFile, exportClassMap()),
+        ])
+          .catch(console.error)
+          .finally(() => callback(null, code, sourceMap))
+        return
       }
-
-      callback(null, code)
+      callback(null, code, sourceMap)
     } catch (error) {
       callback(error as Error)
     }

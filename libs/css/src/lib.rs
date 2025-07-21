@@ -1,230 +1,64 @@
-use crate::StyleSelector::{Dual, Postfix, Prefix};
-use once_cell::sync::Lazy;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::sync::Mutex;
+pub mod class_map;
+mod constant;
+pub mod debug;
+pub mod optimize_value;
+pub mod property_type;
+mod selector_separator;
+pub mod style_selector;
+pub mod utils;
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
-pub enum StyleSelector {
-    Postfix(String),
-    Prefix(String),
-    Dual(String, String),
-}
+use std::hash::{DefaultHasher, Hash, Hasher};
 
-impl From<&str> for StyleSelector {
-    fn from(value: &str) -> Self {
-        if let Some(s) = value.strip_prefix("group") {
-            Dual("*[role=group]".to_string(), to_kebab_case(s))
-        } else {
-            Postfix(value.to_string())
-        }
-    }
-}
-
-impl Display for StyleSelector {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Postfix(value) => format!("-{}", value),
-                Prefix(value) => format!("-{}-", value),
-                Dual(prefix, postfix) => format!("-{}-{}", prefix, postfix),
-            }
-        )
-    }
-}
+use crate::class_map::GLOBAL_CLASS_MAP;
+use crate::constant::{COLOR_HASH, F_SPACE_RE, GLOBAL_STYLE_PROPERTY, ZERO_RE};
+use crate::debug::is_debug;
+use crate::optimize_value::optimize_value;
+use crate::style_selector::StyleSelector;
+use crate::utils::{to_camel_case, to_kebab_case};
 
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            Postfix(postfix) => match get_selector_separator(postfix) {
-                SelectorSeparator::Single => format!(".{}:{}", class_name, postfix),
-                SelectorSeparator::Double => format!(".{}::{}", class_name, postfix),
-            },
-            Prefix(prefix) => format!("{} {}", prefix, class_name),
-            Dual(prefix, postfix) => match get_selector_separator(postfix) {
-                SelectorSeparator::Single => format!("{}:{} .{}", prefix, postfix, class_name),
-                SelectorSeparator::Double => format!("{}::{} .{}", prefix, postfix, class_name),
-            },
-        }
-    } else {
-        format!(".{}", class_name)
-    }
-}
-
-pub enum SelectorSeparator {
-    Single,
-    Double,
-}
-
-impl SelectorSeparator {
-    pub fn separator(&self) -> &str {
-        match self {
-            SelectorSeparator::Single => ":",
-            SelectorSeparator::Double => "::",
-        }
-    }
-}
-
-static DOUBLE_SEPARATOR: Lazy<HashSet<&str>> = Lazy::new(|| {
-    let mut set = HashSet::new();
-
-    for key in [
-        "placeholder",
-        "before",
-        "after",
-        "highlight",
-        "view-transition",
-        "view-transition-group",
-        "view-transition-image-pair",
-        "view-transition-new",
-        "view-transition-old",
-    ] {
-        set.insert(key);
-    }
-    set
-});
-
-pub fn get_selector_separator(key: &str) -> SelectorSeparator {
-    if DOUBLE_SEPARATOR.contains(key) {
-        SelectorSeparator::Double
-    } else {
-        SelectorSeparator::Single
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum PropertyType {
-    Single(String),
-    Multi(Vec<String>),
-}
-
-impl From<&str> for PropertyType {
-    fn from(value: &str) -> Self {
-        value.to_string().into()
-    }
-}
-
-impl From<String> for PropertyType {
-    fn from(value: String) -> Self {
-        PropertyType::Single(value)
-    }
-}
-
-impl From<[&str; 2]> for PropertyType {
-    fn from(value: [&str; 2]) -> Self {
-        PropertyType::Multi(value.iter().map(|v| v.to_string()).collect())
-    }
-}
-
-static GLOBAL_STYLE_PROPERTY: Lazy<HashMap<&str, PropertyType>> = Lazy::new(|| {
-    let mut map = HashMap::new();
-
-    for (key, value) in [
-        ("bg", "background"),
-        ("bgAttachment", "background-attachment"),
-        ("bgClip", "background-clip"),
-        ("bgColor", "background-color"),
-        ("bgImage", "background-image"),
-        ("bgOrigin", "background-origin"),
-        ("bgPosition", "background-position"),
-        ("bgPositionX", "background-position-x"),
-        ("bgPositionY", "background-position-y"),
-        ("bgRepeat", "background-repeat"),
-        ("bgSize", "background-size"),
-        ("animationDir", "animation-direction"),
-        ("flexDir", "flex-direction"),
-        ("pos", "position"),
-        ("m", "margin"),
-        ("mt", "margin-top"),
-        ("mr", "margin-right"),
-        ("mb", "margin-bottom"),
-        ("ml", "margin-left"),
-        ("p", "padding"),
-        ("pt", "padding-top"),
-        ("pr", "padding-right"),
-        ("pb", "padding-bottom"),
-        ("pl", "padding-left"),
-        ("w", "width"),
-        ("h", "height"),
-        ("minW", "min-width"),
-        ("minH", "min-height"),
-        ("maxW", "max-width"),
-        ("maxH", "max-height"),
-    ] {
-        map.insert(key, value.into());
-    }
-
-    for (key, value) in [
-        ("mx", ["margin-left", "margin-right"]),
-        ("my", ["margin-top", "margin-bottom"]),
-        ("px", ["padding-left", "padding-right"]),
-        ("py", ["padding-top", "padding-bottom"]),
-        ("boxSize", ["width", "height"]),
-    ] {
-        map.insert(key, value.into());
-    }
-    map
-});
-
-static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, i32>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-
-/// for test
-pub fn reset_class_map() {
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.clear();
-}
-
-pub fn to_kebab_case(value: &str) -> String {
-    value
-        .chars()
-        .enumerate()
-        .map(|(i, c)| {
-            if c.is_uppercase() {
-                if i == 0 {
-                    c.to_ascii_lowercase().to_string()
+            StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
+            StyleSelector::Media {
+                selector: s,
+                query: _,
+            } => {
+                if let Some(s) = s {
+                    s.replace("&", &format!(".{class_name}"))
                 } else {
-                    format!("-{}", c.to_ascii_lowercase())
+                    format!(".{class_name}")
                 }
-            } else {
-                c.to_string()
             }
-        })
-        .collect()
+            StyleSelector::Global(v, _) => v.to_string(),
+        }
+    } else {
+        format!(".{class_name}")
+    }
 }
 
-pub fn to_camel_case(value: &str) -> String {
-    value
-        .split('-')
-        .enumerate()
-        .map(|(i, s)| {
-            if i == 0 {
-                s.to_string()
-            } else {
-                format!("{}{}", s[0..1].to_uppercase(), &s[1..])
-            }
-        })
-        .collect()
-}
-
-pub fn convert_property(property: &str) -> PropertyType {
+pub fn short_to_long(property: &str) -> String {
     GLOBAL_STYLE_PROPERTY
         .get(property)
-        .cloned()
-        .unwrap_or_else(|| to_kebab_case(property).into())
-}
-
-pub fn sort_to_long(property: &str) -> String {
-    GLOBAL_STYLE_PROPERTY
-        .get(property)
-        .map(|v| match v {
-            PropertyType::Single(value) => to_camel_case(value),
-            PropertyType::Multi(_) => property.to_string(),
+        .map(|v| match v.len() {
+            1 => to_camel_case(v[0]),
+            _ => property.to_string(),
         })
         .unwrap_or_else(|| property.to_string())
+}
+
+pub fn keyframes_to_keyframes_name(keyframes: &str) -> String {
+    if is_debug() {
+        format!("k-{keyframes}")
+    } else {
+        let key = format!("k-{keyframes}");
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key).map(|v| format!("k{v}")).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(key, len as i32);
+            format!("k{}", map.len() - 1)
+        })
+    }
 }
 
 pub fn sheet_to_classname(
@@ -232,45 +66,77 @@ pub fn sheet_to_classname(
     level: u8,
     value: Option<&str>,
     selector: Option<&str>,
+    style_order: Option<u8>,
 ) -> String {
-    let key = format!(
-        "{}-{}-{}-{}",
-        property,
-        level,
-        value.unwrap_or(""),
-        selector.unwrap_or("")
-    );
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(&key).map(|v| format!("d{}", v)).unwrap_or_else(|| {
-        let len = map.len();
-        map.insert(key, len as i32);
-        format!("d{}", map.len() - 1)
-    })
-}
-
-pub fn css_to_classname(css: &str) -> String {
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(css).map(|v| format!("d{}", v)).unwrap_or_else(|| {
-        let len = map.len();
-        map.insert(css.to_string(), len as i32);
-        format!("d{}", map.len() - 1)
-    })
+    if is_debug() {
+        let selector = selector.unwrap_or("").trim();
+        format!(
+            "{}-{}-{}-{}-{}",
+            property.trim(),
+            level,
+            optimize_value(value.unwrap_or("")),
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            },
+            style_order.unwrap_or(255)
+        )
+    } else {
+        let key = format!(
+            "{}-{}-{}-{}-{}",
+            property.trim(),
+            level,
+            optimize_value(value.unwrap_or("")),
+            selector.unwrap_or("").trim(),
+            style_order.unwrap_or(255)
+        );
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key).map(|v| format!("d{v}")).unwrap_or_else(|| {
+            let len = map.len();
+            map.insert(key, len as i32);
+            format!("d{}", map.len() - 1)
+        })
+    }
 }
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    let key = format!("{}-{}-{}", property, level, selector.unwrap_or(""));
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.get(&key)
-        .map(|v| format!("--d{}", v))
-        .unwrap_or_else(|| {
+    if is_debug() {
+        let selector = selector.unwrap_or("").trim();
+        format!(
+            "--{}-{}-{}",
+            property,
+            level,
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            }
+        )
+    } else {
+        let key = format!("{}-{}-{}", property, level, selector.unwrap_or("").trim());
+        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
+        map.get(&key).map(|v| format!("--d{v}")).unwrap_or_else(|| {
             let len = map.len();
             map.insert(key, len as i32);
             format!("--d{}", map.len() - 1)
         })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        class_map::{get_class_map, reset_class_map, set_class_map},
+        debug::set_debug,
+    };
+
     use super::*;
     use serial_test::serial;
 
@@ -278,6 +144,7 @@ mod tests {
     #[serial]
     fn test_sheet_to_variable_name() {
         reset_class_map();
+        set_debug(false);
         assert_eq!(sheet_to_variable_name("background", 0, None), "--d0");
         assert_eq!(
             sheet_to_variable_name("background", 0, Some("hover")),
@@ -292,247 +159,316 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_sheet_to_classname() {
-        reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None), "d0");
+    fn test_debug_sheet_to_variable_name() {
+        set_debug(true);
         assert_eq!(
-            sheet_to_classname("background", 0, Some("hover"), None),
+            sheet_to_variable_name("background", 0, None),
+            "--background-0-"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 0, Some("hover")),
+            "--background-0-12448419602614487988"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 1, None),
+            "--background-1-"
+        );
+        assert_eq!(
+            sheet_to_variable_name("background", 1, Some("hover")),
+            "--background-1-12448419602614487988"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_sheet_to_classname() {
+        set_debug(false);
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
             "d1"
         );
-        assert_eq!(sheet_to_classname("background", 1, None, None), "d2");
+        assert_eq!(sheet_to_classname("background", 1, None, None, None), "d2");
         assert_eq!(
-            sheet_to_classname("background", 1, Some("hover"), None),
+            sheet_to_classname("background", 1, None, Some("hover"), None),
             "d3"
         );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, None),
+            sheet_to_classname("background", 0, None, None, None)
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            sheet_to_classname("background", 0, Some("red"), None, None),
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("red"), None, None),
+            sheet_to_classname("  background  ", 0, Some("red;"), None, None),
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None),
+        );
+
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-rgba(255,0,0,.5)--255"), Some(&2));
+        }
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#fff"), None, None),
+            sheet_to_classname("  background  ", 0, Some("#FFF"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
+            sheet_to_classname("background", 0, Some("#FFF"), None, None),
+        );
+
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-#FFF--255"), Some(&3));
+        }
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFF"), None, None),
+        );
+
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("#ffffffAA"), None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None),
+        );
+
+        {
+            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+            assert_eq!(map.get("background-0-#FFFA--255"), Some(&4));
+        }
+        assert_eq!(
+            sheet_to_classname(
+                "background",
+                0,
+                Some("color-mix(in srgb,var(--primary) 80%,    #000 20%)"),
+                None,
+                None
+            ),
+            sheet_to_classname(
+                "background",
+                0,
+                Some("color-mix(in srgb,    var(--primary) 80%, #000000 20%)"),
+                None,
+                None
+            ),
+        );
+
+        reset_class_map();
+        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, Some(1)),
+            "d1"
+        );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0px"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0em"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0rem"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vh"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0%"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvh"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0dvw"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("width", 0, Some("0vw"), None, None),
+            "d0"
+        );
+        assert_eq!(sheet_to_classname("width", 0, Some("0"), None, None), "d0");
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0px red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0% red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0em red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0rem red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0vw red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None),
+            "d1"
+        );
+        assert_eq!(
+            sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None),
+            "d1"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0px 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0em 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0rem 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vh 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vw 0"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0dvh 0"), None, None),
+            "d2"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vh"), None, None),
+            "d2"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vw"), None, None),
+            "d2"
+        );
+
+        reset_class_map();
+        assert_eq!(
+            sheet_to_classname("transition", 0, Some("all 0.3s ease-in-out"), None, None),
+            "d0"
+        );
+        assert_eq!(
+            sheet_to_classname("transition", 0, Some("all .3s ease-in-out"), None, None),
+            "d0"
+        );
     }
 
     #[test]
-    fn test_convert_property() {
+    #[serial]
+    fn test_debug_sheet_to_classname() {
+        set_debug(true);
         assert_eq!(
-            convert_property("bg"),
-            PropertyType::Single("background".to_string())
+            sheet_to_classname("background", 0, None, None, None),
+            "background-0---255"
         );
         assert_eq!(
-            convert_property("bgColor"),
-            PropertyType::Single("background-color".to_string())
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
+            "background-0-red-12448419602614487988-255"
         );
         assert_eq!(
-            convert_property("color"),
-            PropertyType::Single("color".to_string())
+            sheet_to_classname("background", 1, None, None, None),
+            "background-1---255"
         );
         assert_eq!(
-            convert_property("m"),
-            PropertyType::Single("margin".to_string())
-        );
-        assert_eq!(
-            convert_property("mt"),
-            PropertyType::Single("margin-top".to_string())
-        );
-        assert_eq!(
-            convert_property("mr"),
-            PropertyType::Single("margin-right".to_string())
-        );
-        assert_eq!(
-            convert_property("mb"),
-            PropertyType::Single("margin-bottom".to_string())
-        );
-        assert_eq!(
-            convert_property("ml"),
-            PropertyType::Single("margin-left".to_string())
-        );
-        assert_eq!(
-            convert_property("p"),
-            PropertyType::Single("padding".to_string())
-        );
-        assert_eq!(
-            convert_property("pt"),
-            PropertyType::Single("padding-top".to_string())
-        );
-        assert_eq!(
-            convert_property("pr"),
-            PropertyType::Single("padding-right".to_string())
-        );
-        assert_eq!(
-            convert_property("pb"),
-            PropertyType::Single("padding-bottom".to_string())
-        );
-        assert_eq!(
-            convert_property("pl"),
-            PropertyType::Single("padding-left".to_string())
-        );
-        assert_eq!(
-            convert_property("w"),
-            PropertyType::Single("width".to_string())
-        );
-        assert_eq!(
-            convert_property("h"),
-            PropertyType::Single("height".to_string())
-        );
-        assert_eq!(
-            convert_property("minW"),
-            PropertyType::Single("min-width".to_string())
-        );
-        assert_eq!(
-            convert_property("minH"),
-            PropertyType::Single("min-height".to_string())
-        );
-        assert_eq!(
-            convert_property("maxW"),
-            PropertyType::Single("max-width".to_string())
-        );
-        assert_eq!(
-            convert_property("maxH"),
-            PropertyType::Single("max-height".to_string())
-        );
-        assert_eq!(
-            convert_property("mx"),
-            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
-        );
-        assert_eq!(
-            convert_property("my"),
-            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
-        );
-        assert_eq!(
-            convert_property("px"),
-            PropertyType::Multi(vec![
-                "padding-left".to_string(),
-                "padding-right".to_string()
-            ])
-        );
-        assert_eq!(
-            convert_property("py"),
-            PropertyType::Multi(vec![
-                "padding-top".to_string(),
-                "padding-bottom".to_string()
-            ])
+            sheet_to_classname("background", 1, Some("red"), Some("hover"), None),
+            "background-1-red-12448419602614487988-255"
         );
     }
 
     #[test]
-    fn test_property_type_from() {
+    fn test_merge_selector() {
+        assert_eq!(merge_selector("cls", Some(&"hover".into())), ".cls:hover");
         assert_eq!(
-            PropertyType::from("background"),
-            PropertyType::Single("background".to_string())
+            merge_selector("cls", Some(&"placeholder".into())),
+            ".cls::placeholder"
         );
         assert_eq!(
-            PropertyType::from("background-color"),
-            PropertyType::Single("background-color".to_string())
+            merge_selector("cls", Some(&"themeDark".into())),
+            ":root[data-theme=dark] .cls"
         );
         assert_eq!(
-            PropertyType::from("color"),
-            PropertyType::Single("color".to_string())
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Selector(
+                    ":root[data-theme=dark]:hover &".to_string(),
+                )),
+            ),
+            ":root[data-theme=dark]:hover .cls"
         );
         assert_eq!(
-            PropertyType::from("margin"),
-            PropertyType::Single("margin".to_string())
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Selector(
+                    ":root[data-theme=dark]::placeholder &".to_string()
+                )),
+            ),
+            ":root[data-theme=dark]::placeholder .cls"
         );
+
         assert_eq!(
-            PropertyType::from("margin-top"),
-            PropertyType::Single("margin-top".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-right"),
-            PropertyType::Single("margin-right".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-bottom"),
-            PropertyType::Single("margin-bottom".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("margin-left"),
-            PropertyType::Single("margin-left".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding"),
-            PropertyType::Single("padding".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-top"),
-            PropertyType::Single("padding-top".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-right"),
-            PropertyType::Single("padding-right".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-bottom"),
-            PropertyType::Single("padding-bottom".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("padding-left"),
-            PropertyType::Single("padding-left".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("width"),
-            PropertyType::Single("width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("height"),
-            PropertyType::Single("height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("min-width"),
-            PropertyType::Single("min-width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("min-height"),
-            PropertyType::Single("min-height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("max-width"),
-            PropertyType::Single("max-width".to_string())
-        );
-        assert_eq!(
-            PropertyType::from("max-height"),
-            PropertyType::Single("max-height".to_string())
-        );
-        assert_eq!(
-            PropertyType::from(["margin-left", "margin-right"]),
-            PropertyType::Multi(vec!["margin-left".to_string(), "margin-right".to_string()])
-        );
-        assert_eq!(
-            PropertyType::from(["margin-top", "margin-bottom"]),
-            PropertyType::Multi(vec!["margin-top".to_string(), "margin-bottom".to_string()])
+            merge_selector("cls", Some(&["themeDark", "hover"].into()),),
+            ":root[data-theme=dark] .cls:hover"
         );
     }
 
     #[test]
-    fn test_kebab_case() {
-        assert_eq!(to_kebab_case("backgroundColor"), "background-color");
-        assert_eq!(to_kebab_case("color"), "color");
-        assert_eq!(to_kebab_case("margin"), "margin");
-        assert_eq!(to_kebab_case("marginTop"), "margin-top");
-        assert_eq!(to_kebab_case("marginRight"), "margin-right");
-        assert_eq!(to_kebab_case("marginBottom"), "margin-bottom");
-        assert_eq!(to_kebab_case("marginLeft"), "margin-left");
-        assert_eq!(to_kebab_case("padding"), "padding");
-        assert_eq!(to_kebab_case("paddingTop"), "padding-top");
-        assert_eq!(to_kebab_case("paddingRight"), "padding-right");
-        assert_eq!(to_kebab_case("paddingBottom"), "padding-bottom");
-        assert_eq!(to_kebab_case("paddingLeft"), "padding-left");
-        assert_eq!(to_kebab_case("width"), "width");
-        assert_eq!(to_kebab_case("height"), "height");
-        assert_eq!(to_kebab_case("minWidth"), "min-width");
-        assert_eq!(to_kebab_case("minHeight"), "min-height");
-        assert_eq!(to_kebab_case("maxWidth"), "max-width");
-        assert_eq!(to_kebab_case("maxHeight"), "max-height");
-        assert_eq!(to_kebab_case("MaxHeight"), "max-height");
-        assert_eq!(to_kebab_case("Hover"), "hover");
+    #[serial]
+    fn test_set_class_map() {
+        let mut map = HashMap::new();
+        map.insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
+        set_class_map(map);
+        assert_eq!(get_class_map().len(), 1);
     }
 
     #[test]
-    fn test_style_selector() {
-        assert_eq!(StyleSelector::from("hover"), Postfix("hover".to_string()));
-        assert_eq!(
-            StyleSelector::from("groupHover"),
-            Dual("*[role=group]".to_string(), "hover".to_string())
-        );
-        assert_eq!(
-            StyleSelector::from("group1"),
-            Dual("*[role=group]".to_string(), "1".to_string())
-        );
-
-        assert_eq!(Prefix(".cls".to_string()).to_string(), "-.cls-");
-        assert_eq!(Postfix(".cls".to_string()).to_string(), "-.cls");
+    #[serial]
+    fn test_keyframes_to_keyframes_name() {
+        reset_class_map();
+        set_debug(false);
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
+        assert_eq!(keyframes_to_keyframes_name("spin2"), "k1");
+        reset_class_map();
+        set_debug(true);
+        assert_eq!(keyframes_to_keyframes_name("spin"), "k-spin");
+        assert_eq!(keyframes_to_keyframes_name("spin1"), "k-spin1");
     }
 }

@@ -42,8 +42,10 @@ jobs:
           pnpm lint
           pnpm test
       - name: Build Landing
-        run: pnpm -F landing build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pnpm -F components build-storybook
+          mv ./packages/components/storybook-static ./apps/landing/public/storybook
+          pnpm -F landing build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

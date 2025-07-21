@@ -1,0 +1,53 @@
+{
+  "name": "@devup-ui/reset-css",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react"
+  ],
+  "version": "1.0.1",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@devup-ui/react": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^7.0.5",
+    "vite-plugin-dts": "^4.5.4",
+    "rollup-plugin-preserve-directives": "^0.4.0"
+  },
+  "peerDependencies": {
+    "@devup-ui/react": "workspace:*"
+  }
+}
