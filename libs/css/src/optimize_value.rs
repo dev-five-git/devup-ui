@@ -1,11 +1,16 @@
 use crate::{
     COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{DOT_ZERO_RE, F_DOT_RE, INNER_TRIM_RE, ZERO_PERCENT_FUNCTION},
+    constant::{
+        DOT_ZERO_RE, F_DOT_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION,
+    },
 };
 
 pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
     ret = INNER_TRIM_RE.replace_all(&ret, "(${1})").to_string();
+    ret = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}").to_string();
+    ret = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}").to_string();
+
     if ret.contains(",") {
         ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
     }
@@ -128,6 +133,8 @@ mod tests {
     #[case("0dvh", "0")]
     #[case("0dvw", "0")]
     #[case("0px 0px", "0 0")]
+    #[case("-0px -0px", "0 0")]
+    #[case("0.0px   -0px", "0 0")]
     #[case("0em 0em", "0 0")]
     #[case("0rem 0rem", "0 0")]
     #[case("0vh 0vh", "0 0")]
@@ -158,6 +165,7 @@ mod tests {
     #[case("min(10px, 0)", "min(10px,0%)")]
     #[case("max(10px, 0)", "max(10px,0%)")]
     #[case("max(some(0), 0)", "max(some(0),0%)")]
+    #[case("max(some(0), -0)", "max(some(0),0%)")]
     #[case("translate(0, min(0, 10px))", "translate(0,min(0%,10px))")]
     #[case("\"red\"", "\"red\"")]
     #[case("'red'", "'red'")]
