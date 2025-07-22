@@ -1,7 +1,8 @@
 use crate::{
     COLOR_HASH, F_SPACE_RE, ZERO_RE,
     constant::{
-        DOT_ZERO_RE, F_DOT_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION,
+        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
+        ZERO_PERCENT_FUNCTION,
     },
 };
 
@@ -14,6 +15,29 @@ pub fn optimize_value(value: &str) -> String {
     if ret.contains(",") {
         ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
     }
+    ret = F_RGBA_RE
+        .replace_all(&ret, |c: &regex::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            let a = c[4].parse::<f32>().unwrap();
+            format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                r,
+                g,
+                b,
+                (a * 255.0).round() as i32
+            )
+        })
+        .to_string();
+    ret = F_RGB_RE
+        .replace_all(&ret, |c: &regex::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            format!("#{:02X}{:02X}{:02X}", r, g, b)
+        })
+        .to_string();
     if ret.contains("#") {
         ret = COLOR_HASH
             .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
@@ -101,7 +125,14 @@ fn optimize_color(value: &str) -> String {
         let ch = ret.chars().collect::<Vec<char>>();
         if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
             ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
+            if ret.ends_with("F") {
+                ret = ret[..ret.len() - 1].to_string();
+            }
+        } else if ret.ends_with("FF") {
+            ret = ret[..ret.len() - 2].to_string();
         }
+    } else if ret.len() == 4 && ret.ends_with("F") {
+        ret = ret[..ret.len() - 1].to_string();
     }
 
     format!("#{ret}")
@@ -145,8 +176,14 @@ mod tests {
     #[case("scale(0px)", "scale(0)")]
     #[case("scale(-0px)", "scale(0)")]
     #[case("scale(-0px);", "scale(0)")]
-    #[case("rgba(255, 0, 0,    0.5)", "rgba(255,0,0,.5)")]
-    #[case("rgba(0.0,0.0,0.0,0.5)", "rgba(0,0,0,.5)")]
+    #[case("rgba(255,12,12,0.5)", "#FF0C0C80")]
+    #[case("rgba(255,12,12,.5)", "#FF0C0C80")]
+    #[case("rgba(255,12,12,1)", "#FF0C0C")]
+    #[case("rgba(255, 0, 0,    0.5)", "#FF000080")]
+    #[case("rgba(255, 255, 255,   0.8  )", "#FFFC")]
+    #[case("rgb(255,12,12)", "#FF0C0C")]
+    #[case("rgb(255, 0, 0)", "#F00")]
+    #[case("rgb(255, 255, 255)", "#FFF")]
     #[case("red;", "red")]
     #[case("translate(0px)", "translate(0)")]
     #[case("translate(-0px,0px)", "translate(0,0)")]
@@ -190,9 +227,9 @@ mod tests {
     #[rstest]
     #[case("#ff0000", "#F00")]
     #[case("#123456", "#123456")]
-    #[case("#ff0000ff", "#F00F")]
+    #[case("#ff0000ff", "#F00")]
     #[case("#f00", "#F00")]
-    #[case("#f00f", "#F00F")]
+    #[case("#f00f", "#F00")]
     #[case("red", "red")]
     #[case("blue", "blue")]
     #[case("transparent", "transparent")]

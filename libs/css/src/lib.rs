@@ -225,9 +225,14 @@ mod tests {
             sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None),
         );
 
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
+            sheet_to_classname("background", 0, Some("#FF000080"), None, None),
+        );
+
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-rgba(255,0,0,.5)--255"), Some(&2));
+            assert_eq!(map.get("background-0-#FF000080--255"), Some(&2));
         }
         assert_eq!(
             sheet_to_classname("background", 0, Some("#fff"), None, None),
