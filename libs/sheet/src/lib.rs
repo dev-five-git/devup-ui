@@ -269,21 +269,18 @@ impl StyleSheet {
                 color_keys
                     .into_iter()
                     .map(|key| format!("{}:null;", convert_interface_key(&format!("${key}"))))
-                    .collect::<Vec<String>>()
-                    .join(""),
+                    .collect::<String>(),
                 typography_interface_name,
                 typography_keys
                     .into_iter()
                     .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<Vec<String>>()
-                    .join(""),
+                    .collect::<String>(),
                 theme_interface_name,
                 theme_keys
                     .into_iter()
                     // key to pascal
                     .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<Vec<String>>()
-                    .join("")
+                    .collect::<String>()
             )
         }
     }
@@ -294,8 +291,7 @@ impl StyleSheet {
             .values()
             .flatten()
             .map(|import| format!("@import \"{import}\";"))
-            .collect::<Vec<String>>()
-            .join("");
+            .collect::<String>();
         css.push_str(&self.theme.to_css());
 
         for (name, map) in self.keyframes.iter() {
@@ -310,8 +306,7 @@ impl StyleSheet {
                             .collect::<Vec<String>>()
                             .join(";")
                     ))
-                    .collect::<Vec<String>>()
-                    .join("")
+                    .collect::<String>()
             ));
         }
 
@@ -368,8 +363,7 @@ impl StyleSheet {
                     let inner_css = global_props
                         .into_iter()
                         .map(ExtractStyle::extract)
-                        .collect::<Vec<String>>()
-                        .join("");
+                        .collect::<String>();
                     css.push_str(
                         if let Some(break_point) = break_point {
                             format!("@media(min-width:{break_point}px){{{inner_css}}}")
@@ -384,8 +378,7 @@ impl StyleSheet {
                     let inner_css = sorted_props
                         .into_iter()
                         .map(ExtractStyle::extract)
-                        .collect::<Vec<String>>()
-                        .join("");
+                        .collect::<String>();
                     css.push_str(
                         if let Some(break_point) = break_point {
                             format!("@media(min-width:{break_point}px){{{inner_css}}}")
@@ -399,8 +392,7 @@ impl StyleSheet {
                     let inner_css = props
                         .into_iter()
                         .map(ExtractStyle::extract)
-                        .collect::<Vec<String>>()
-                        .join("");
+                        .collect::<String>();
                     css.push_str(
                         if let Some(break_point) = break_point {
                             format!("@media(min-width:{break_point}px)and {media}{{{inner_css}}}")

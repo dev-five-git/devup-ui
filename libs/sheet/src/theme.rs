@@ -180,8 +180,7 @@ impl Theme {
                     Some(theme_name)
                 };
                 if let Some(theme_key) = theme_key {
-                    theme_declaration
-                        .push_str(format!(":root[data-theme={theme_key}]{{").as_str());
+                    theme_declaration.push_str(format!(":root[data-theme={theme_key}]{{").as_str());
                     css_contents.push("color-scheme:dark".to_string());
                 } else {
                     theme_declaration.push_str(":root{".to_string().as_str());
@@ -193,10 +192,8 @@ impl Theme {
                     let optimized_value = optimize_value(value);
                     if theme_key.is_some() {
                         if other_theme_key.is_none()
-                            && let Some(default_value) = self
-                                .colors
-                                .get(&default_theme_key)
-                                .and_then(|v| {
+                            && let Some(default_value) =
+                                self.colors.get(&default_theme_key).and_then(|v| {
                                     v.0.get(prop).and_then(|v| {
                                         if optimize_value(v) == optimized_value {
                                             None
@@ -209,21 +206,18 @@ impl Theme {
                             css_color_contents.push(format!("--{prop}:{default_value}"));
                         }
                     } else {
-                        let other_theme_value = other_theme_key
-                            .as_ref()
-                            .and_then(|other_theme_key| {
-                                self.colors
-                                    .get(other_theme_key)
-                                    .and_then(|v| {
-                                        v.0.get(prop).and_then(|v| {
-                                            let other_theme_value = optimize_value(v.as_str());
-                                            if other_theme_value == optimized_value {
-                                                None
-                                            } else {
-                                                Some(other_theme_value)
-                                            }
-                                        })
+                        let other_theme_value =
+                            other_theme_key.as_ref().and_then(|other_theme_key| {
+                                self.colors.get(other_theme_key).and_then(|v| {
+                                    v.0.get(prop).and_then(|v| {
+                                        let other_theme_value = optimize_value(v.as_str());
+                                        if other_theme_value == optimized_value {
+                                            None
+                                        } else {
+                                            Some(other_theme_value)
+                                        }
                                     })
+                                })
                             });
                         // default theme
                         css_color_contents.push(format!(

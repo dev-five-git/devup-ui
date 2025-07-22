@@ -207,8 +207,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             .quasis
             .iter()
             .map(|q| q.value.raw.to_string())
-            .collect::<Vec<String>>()
-            .join("")
+            .collect::<String>()
             .parse::<f64>()
             .ok(),
         Expression::NumericLiteral(num) => Some(num.value),

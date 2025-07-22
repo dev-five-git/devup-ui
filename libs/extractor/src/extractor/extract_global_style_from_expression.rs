@@ -29,8 +29,7 @@ pub fn extract_global_style_from_expression<'a>(
                     t.quasis
                         .iter()
                         .map(|q| q.value.raw.as_str())
-                        .collect::<Vec<_>>()
-                        .join("")
+                        .collect::<String>()
                 } else {
                     continue;
                 };
@@ -46,8 +45,7 @@ pub fn extract_global_style_from_expression<'a>(
                                         t.quasis
                                             .iter()
                                             .map(|q| q.value.raw.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join("")
+                                            .collect::<String>()
                                             .trim()
                                             .to_string()
                                     } else {
