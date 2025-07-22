@@ -24,7 +24,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
                 value: "12px",
                 level: 0,
                 selector: None,
@@ -33,7 +33,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
                 value: "16px",
                 level: 0,
                 selector: None,
@@ -42,7 +42,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
                 value: "20px",
                 level: 0,
                 selector: None,
@@ -51,7 +51,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
                 value: "24px",
                 level: 0,
                 selector: None,
@@ -60,7 +60,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
                 value: "28px",
                 level: 0,
                 selector: None,
@@ -69,7 +69,61 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "px",
+                property: "paddingLeft",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
+                value: "20px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
+                value: "24px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
+                value: "28px",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "paddingRight",
                 value: "32px",
                 level: 0,
                 selector: None,
@@ -77,5 +131,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<button className={`${className || \"\"} ${{\n\t\"default\": \"d0\",\n\t\"primary\": \"d1\"\n}[variant] || \"\"} ${{\n\t\"false\": {\n\t\t\"lg\": \"d2\",\n\t\t\"md\": \"d3\",\n\t\t\"sm\": \"d4\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"d5\",\n\t\t\"md\": \"d6\",\n\t\t\"sm\": \"d7\"\n\t}[size] || \"\"\n}[(!!icon).toString()]}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<button className={`${className || \"\"} ${{\n\t\"default\": \"d0\",\n\t\"primary\": \"d1\"\n}[variant] || \"\"} ${{\n\t\"false\": {\n\t\t\"lg\": \"d2\",\n\t\t\"md\": \"d3\",\n\t\t\"sm\": \"d4\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"d5\",\n\t\t\"md\": \"d6\",\n\t\t\"sm\": \"d7\"\n\t}[size] || \"\"\n}[(!!icon).toString()]} ${{\n\t\"false\": {\n\t\t\"lg\": \"d8\",\n\t\t\"md\": \"d9\",\n\t\t\"sm\": \"d10\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"d11\",\n\t\t\"md\": \"d12\",\n\t\t\"sm\": \"d13\"\n\t}[size] || \"\"\n}[(!!icon).toString()]}`} />;\n",
 }

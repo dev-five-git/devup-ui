@@ -13,7 +13,7 @@ use crate::{
         is_same_expression, is_special_property,
     },
 };
-use css::style_selector::StyleSelector;
+use css::{disassemble_property, style_selector::StyleSelector};
 use oxc_allocator::CloneIn;
 use oxc_ast::{
     AstBuilder,
@@ -50,27 +50,30 @@ pub fn extract_style_from_expression<'a>(
                                 && let name = ident.name.as_str()
                                 && !is_special_property(name)
                             {
-                                if name == "styleOrder" {
-                                    style_order = get_number_by_literal_expression(&prop.value)
-                                        .map(|v| v as u8);
-                                    continue;
-                                }
-                                if name == "styleVars" {
-                                    style_vars = Some(prop.value.clone_in(ast_builder.allocator));
-                                    continue;
-                                }
+                                for name in disassemble_property(name) {
+                                    if name == "styleOrder" {
+                                        style_order = get_number_by_literal_expression(&prop.value)
+                                            .map(|v| v as u8);
+                                        continue;
+                                    }
+                                    if name == "styleVars" {
+                                        style_vars =
+                                            Some(prop.value.clone_in(ast_builder.allocator));
+                                        continue;
+                                    }
 
-                                let ExtractResult {
-                                    styles, tag: _tag, ..
-                                } = extract_style_from_expression(
-                                    ast_builder,
-                                    Some(name),
-                                    &mut prop.value,
-                                    0,
-                                    &None,
-                                );
-                                props_styles.extend(styles);
-                                tag = _tag.or(tag);
+                                    let ExtractResult {
+                                        styles, tag: _tag, ..
+                                    } = extract_style_from_expression(
+                                        ast_builder,
+                                        Some(&name),
+                                        &mut prop.value,
+                                        0,
+                                        &None,
+                                    );
+                                    props_styles.extend(styles);
+                                    tag = _tag.or(tag);
+                                }
                                 true
                             } else {
                                 false
@@ -513,16 +516,18 @@ pub fn extract_style_from_expression<'a>(
                 let mut props = vec![];
                 for p in obj.properties.iter_mut() {
                     if let ObjectPropertyKind::ObjectProperty(o) = p {
-                        props.extend(
-                            extract_style_from_expression(
-                                ast_builder,
-                                Some(&o.key.name().unwrap()),
-                                &mut o.value,
-                                level,
-                                selector,
-                            )
-                            .styles,
-                        );
+                        for name in disassemble_property(&o.key.name().unwrap()) {
+                            props.extend(
+                                extract_style_from_expression(
+                                    ast_builder,
+                                    Some(&name),
+                                    &mut o.value,
+                                    level,
+                                    selector,
+                                )
+                                .styles,
+                            );
+                        }
                     }
                 }
                 ExtractResult {
