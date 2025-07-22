@@ -2,4 +2,4 @@
 source: libs/sheet/src/theme.rs
 expression: theme.to_css()
 ---
-":root{--primary:#000;}\n"
+":root{color-scheme:light;--primary:#000}:root[data-theme=a]{color-scheme:dark}:root[data-theme=b]{color-scheme:dark}:root[data-theme=c]{color-scheme:dark}"

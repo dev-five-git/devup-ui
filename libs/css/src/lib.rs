@@ -20,10 +20,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
-            StyleSelector::Media {
-                selector: s,
-                query: _,
-            } => {
+            StyleSelector::Media { selector: s, .. } => {
                 if let Some(s) = s {
                     s.replace("&", &format!(".{class_name}"))
                 } else {
@@ -451,6 +448,27 @@ mod tests {
         assert_eq!(
             merge_selector("cls", Some(&["themeDark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
+        );
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Media {
+                    query: "print".to_string(),
+                    selector: None,
+                })
+            ),
+            ".cls"
+        );
+
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Media {
+                    query: "print".to_string(),
+                    selector: Some("&:hover".to_string()),
+                })
+            ),
+            ".cls:hover"
         );
     }
 
