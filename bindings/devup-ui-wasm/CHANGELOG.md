@@ -1,5 +1,14 @@
 # @devup-ui/wasm
 
+## 1.0.20
+
+### Patch Changes
+
+- 80360c0: Fix multi imports issue
+- 00c39d0: Split property
+- c17424a: Optimize rgba func
+- 1dd32af: Convert light-dark and optimize theme
+
 ## 1.0.19
 
 ### Patch Changes
