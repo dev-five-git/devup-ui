@@ -103,3 +103,9 @@ pub(super) static NUM_TRIM_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw)?)\s+(\d)").unwrap());
 pub(super) static ZERO_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
+
+pub(super) static F_RGBA_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
+
+pub(super) static F_RGB_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
