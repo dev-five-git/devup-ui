@@ -41,7 +41,14 @@ jobs:
           pnpm build
           pnpm lint
           # rust coverage issue
-          echo "max_width = 1000\ntab_spaces = 4\nnewline_style = \"Unix\"\nfn_call_width = 1000\nfn_params_layout = \"Compressed\"\nchain_width = 1000\nmerge_derives = true\nuse_small_heuristics = \"Default\"\n" > .rustfmt.toml
+          echo 'max_width = 1000' > .rustfmt.toml
+          echo 'tab_spaces = 4' >> .rustfmt.toml
+          echo 'newline_style = "Unix"' >> .rustfmt.toml
+          echo 'fn_call_width = 1000' >> .rustfmt.toml
+          echo 'fn_params_layout = "Compressed"' >> .rustfmt.toml
+          echo 'chain_width = 1000' >> .rustfmt.toml
+          echo 'merge_derives = true' >> .rustfmt.toml
+          echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
           pnpm test
       - name: Benchmark
