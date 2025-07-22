@@ -144,8 +144,8 @@ pub fn set_debug(debug: bool) {
 }
 
 #[wasm_bindgen(js_name = "isDebug")]
-pub fn is_debug() {
-    css::debug::is_debug();
+pub fn is_debug() -> bool {
+    css::debug::is_debug()
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
@@ -240,10 +240,13 @@ pub fn get_theme_interface(
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use insta::assert_debug_snapshot;
+    use rstest::rstest;
     use serial_test::serial;
-    use sheet::theme::{ColorTheme, Theme};
+    use sheet::theme::{ColorTheme, Theme, Typography};
 
     #[test]
     #[serial]
@@ -271,6 +274,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn deserialize_theme() {
         {
             let theme: Theme = serde_json::from_str(
@@ -349,5 +353,326 @@ mod tests {
             .unwrap();
             assert_debug_snapshot!(theme);
         }
+    }
+
+    #[test]
+    #[serial]
+    fn to_css_from_theme() {
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+
+        assert_eq!(color_theme.0.keys().count(), 1);
+
+        theme.add_color_theme("default", color_theme);
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#fff");
+        theme.add_color_theme("dark", color_theme);
+        theme.add_typography(
+            "default",
+            vec![
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("16px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("24px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+            ],
+        );
+
+        theme.add_typography(
+            "default1",
+            vec![
+                None,
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("24px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+            ],
+        );
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+
+        assert_eq!(Theme::default().to_css(), "");
+        let mut theme = Theme::default();
+        theme.add_typography(
+            "default",
+            vec![Some(Typography::new(None, None, None, None, None))],
+        );
+        assert_eq!(theme.to_css(), "");
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "default",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "dark",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "dark",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "c",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#001".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#002".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "c",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
+    }
+
+    #[rstest]
+    #[case(
+        vec![0, 480, 768, 992, 1280],
+        vec![0, 480, 768, 992, 1280, 1600]
+    )]
+    #[case(
+        vec![0, 480, 768, 992, 1280, 1600],
+        vec![0, 480, 768, 992, 1280, 1600]
+    )]
+    #[case(
+        vec![0, 480, 768, 992, 1280, 1600, 1920],
+        vec![0, 480, 768, 992, 1280, 1600, 1920]
+    )]
+    fn update_breakpoints(#[case] input: Vec<u16>, #[case] expected: Vec<u16>) {
+        let mut theme = Theme::default();
+        theme.update_breakpoints(input);
+        assert_eq!(theme.breakpoints, expected);
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_theme_interface() {
+        let sheet = StyleSheet::default();
+        assert_eq!(
+            sheet.create_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            ""
+        );
+
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("dark", color_theme);
+        GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(theme);
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
+        );
+
+        // test wrong case
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("(primary)", "#000");
+        theme.add_color_theme("dark", color_theme);
+        theme.add_typography(
+            "prim``ary",
+            vec![Some(Typography::new(
+                Some("Arial".to_string()),
+                Some("16px".to_string()),
+                Some("400".to_string()),
+                Some("1.5".to_string()),
+                Some("0.5".to_string()),
+            ))],
+        );
+        sheet.set_theme(theme);
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_debug() {
+        assert_eq!(is_debug(), false);
+        set_debug(true);
+        assert_eq!(is_debug(), true);
+        set_debug(false);
+        assert_eq!(is_debug(), false);
+    }
+
+    #[test]
+    #[serial]
+    fn test_default_theme() {
+        let mut theme = Theme::default();
+        theme.add_color_theme("light", ColorTheme::default());
+        theme.add_color_theme("dark", ColorTheme::default());
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(theme);
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+        assert_eq!(get_default_theme().unwrap(), Some("light".to_string()));
+
+        let mut theme = Theme::default();
+        theme.add_color_theme("default", ColorTheme::default());
+        theme.add_color_theme("dark", ColorTheme::default());
+
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(theme);
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+        assert_eq!(get_default_theme().unwrap(), Some("default".to_string()));
+
+        let mut theme = Theme::default();
+        theme.add_color_theme("dark", ColorTheme::default());
+
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(theme);
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+        assert_eq!(get_default_theme().unwrap(), Some("dark".to_string()));
     }
 }

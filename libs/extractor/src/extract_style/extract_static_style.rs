@@ -1,5 +1,5 @@
 use css::{
-    optimize_value::optimize_value, sheet_to_classname, short_to_long,
+    optimize_value::optimize_value, sheet_to_classname,
     style_selector::StyleSelector,
 };
 
@@ -33,7 +33,7 @@ impl ExtractStaticStyle {
             } else {
                 convert_value(value)
             }),
-            property: short_to_long(property),
+            property: property.to_string(),
             level,
             selector,
             style_order: None,

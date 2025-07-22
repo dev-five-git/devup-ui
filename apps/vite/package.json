@@ -18,7 +18,7 @@
   "devDependencies": {
     "@devup-ui/vite-plugin": "workspace:*",
     "vite": "^7.0.5",
-    "@vitejs/plugin-react": "^4.6.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5",
     "@types/node": "^24",
     "@types/react": "^19",

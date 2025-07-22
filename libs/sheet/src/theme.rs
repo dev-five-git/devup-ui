@@ -181,10 +181,10 @@ impl Theme {
                 };
                 if let Some(theme_key) = theme_key {
                     theme_declaration
-                        .push_str(format!(":root[data-theme={}]{{", theme_key).as_str());
+                        .push_str(format!(":root[data-theme={theme_key}]{{").as_str());
                     css_contents.push("color-scheme:dark".to_string());
                 } else {
-                    theme_declaration.push_str(format!(":root{{",).as_str());
+                    theme_declaration.push_str(":root{".to_string().as_str());
                     if !single_theme {
                         css_contents.push("color-scheme:light".to_string());
                     }
@@ -196,7 +196,7 @@ impl Theme {
                             && let Some(default_value) = self
                                 .colors
                                 .get(&default_theme_key)
-                                .map(|v| {
+                                .and_then(|v| {
                                     v.0.get(prop).and_then(|v| {
                                         if optimize_value(v) == optimized_value {
                                             None
@@ -205,17 +205,16 @@ impl Theme {
                                         }
                                     })
                                 })
-                                .flatten()
                         {
-                            css_color_contents.push(format!("--{prop}:{}", default_value));
+                            css_color_contents.push(format!("--{prop}:{default_value}"));
                         }
                     } else {
                         let other_theme_value = other_theme_key
                             .as_ref()
-                            .map(|other_theme_key| {
+                            .and_then(|other_theme_key| {
                                 self.colors
                                     .get(other_theme_key)
-                                    .map(|v| {
+                                    .and_then(|v| {
                                         v.0.get(prop).and_then(|v| {
                                             let other_theme_value = optimize_value(v.as_str());
                                             if other_theme_value == optimized_value {
@@ -225,9 +224,7 @@ impl Theme {
                                             }
                                         })
                                     })
-                                    .flatten()
-                            })
-                            .flatten();
+                            });
                         // default theme
                         css_color_contents.push(format!(
                             "--{prop}:{}",
@@ -245,7 +242,7 @@ impl Theme {
                         .join(";")
                         .as_str(),
                 );
-                theme_declaration.push_str("}");
+                theme_declaration.push('}');
             }
         }
         let mut css = theme_declaration;
@@ -284,7 +281,7 @@ impl Theme {
                     if !css_content.is_empty() {
                         level_map
                             .entry(idx as u8)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(format!(".typo-{}{{{}}}", ty.0, css_content));
                     }
                 }

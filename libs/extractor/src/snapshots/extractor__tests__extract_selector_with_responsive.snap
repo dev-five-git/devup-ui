@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "mx",
+                property: "marginLeft",
                 value: "4px",
                 level: 0,
                 selector: Some(
@@ -19,7 +19,33 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "mx",
+                property: "marginLeft",
+                value: "8px",
+                level: 1,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginRight",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "marginRight",
                 value: "8px",
                 level: 1,
                 selector: Some(
@@ -31,5 +57,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3\" />;\n",
 }

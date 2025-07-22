@@ -34,14 +34,14 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     }
 }
 
-pub fn short_to_long(property: &str) -> String {
+pub fn disassemble_property(property: &str) -> Vec<String> {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .map(|v| match v.len() {
-            1 => to_camel_case(v[0]),
-            _ => property.to_string(),
+            1 => vec![to_camel_case(v[0])],
+            _ => v.iter().map(|v| to_camel_case(v)).collect(),
         })
-        .unwrap_or_else(|| property.to_string())
+        .unwrap_or_else(|| vec![property.to_string()])
 }
 
 pub fn keyframes_to_keyframes_name(keyframes: &str) -> String {

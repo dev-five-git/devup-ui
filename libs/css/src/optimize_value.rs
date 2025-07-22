@@ -35,7 +35,7 @@ pub fn optimize_value(value: &str) -> String {
             let r = c[1].parse::<i32>().unwrap();
             let g = c[2].parse::<i32>().unwrap();
             let b = c[3].parse::<i32>().unwrap();
-            format!("#{:02X}{:02X}{:02X}", r, g, b)
+            format!("#{r:02X}{g:02X}{b:02X}")
         })
         .to_string();
     if ret.contains("#") {

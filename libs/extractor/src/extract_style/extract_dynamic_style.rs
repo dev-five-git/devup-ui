@@ -1,6 +1,6 @@
 use css::{
-    optimize_value::optimize_value, sheet_to_classname, sheet_to_variable_name, short_to_long,
-    style_selector::StyleSelector,
+    optimize_value::optimize_value, sheet_to_classname,
+    sheet_to_variable_name, style_selector::StyleSelector,
 };
 
 use crate::extract_style::{ExtractStyleProperty, style_property::StyleProperty};
@@ -28,7 +28,7 @@ impl ExtractDynamicStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         Self {
-            property: short_to_long(property),
+            property: property.to_string(),
             level,
             identifier: optimize_value(identifier),
             selector,

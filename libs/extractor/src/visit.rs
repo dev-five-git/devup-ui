@@ -15,7 +15,7 @@ use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
-use css::short_to_long;
+use css::disassemble_property;
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
@@ -522,35 +522,38 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
                     && let Identifier(name) = &attr.name
-                    && let name = short_to_long(&name.name)
-                    && !is_special_property(&name)
+                    && !is_special_property(&name.name)
                 {
-                    if duplicate_set.contains(&name) {
-                        continue;
-                    }
-                    duplicate_set.insert(name.clone());
-                    if name == "styleOrder" {
-                        style_order =
-                            jsx_expression_to_number(attr.value.as_ref().unwrap()).map(|n| n as u8);
-                        continue;
-                    }
-                    if name == "styleVars" {
-                        if let Some(value) = attr.value.as_ref()
-                            && let JSXAttributeValue::ExpressionContainer(expr) = value
-                        {
-                            style_vars =
-                                Some(expr.expression.to_expression().clone_in(self.ast.allocator));
+                    for name in disassemble_property(&name.name) {
+                        if duplicate_set.contains(&name) {
+                            continue;
                         }
-                        continue;
-                    }
+                        duplicate_set.insert(name.clone());
+                        if name == "styleOrder" {
+                            style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
+                                .map(|n| n as u8);
+                            continue;
+                        }
+                        if name == "styleVars" {
+                            if let Some(value) = attr.value.as_ref()
+                                && let JSXAttributeValue::ExpressionContainer(expr) = value
+                            {
+                                style_vars = Some(
+                                    expr.expression.to_expression().clone_in(self.ast.allocator),
+                                );
+                            }
+                            continue;
+                        }
 
-                    if let Some(at) = &mut attr.value {
-                        let ExtractResult { styles, tag, .. } =
-                            extract_style_from_jsx(&self.ast, &name, at);
-                        props_styles.extend(styles.into_iter().rev());
-                        tag_name = tag.unwrap_or(tag_name);
-                        continue;
+                        if let Some(at) = &mut attr.value {
+                            let ExtractResult { styles, tag, .. } =
+                                extract_style_from_jsx(&self.ast, &name, at);
+                            props_styles.extend(styles.into_iter().rev());
+                            tag_name = tag.unwrap_or(tag_name);
+                            continue;
+                        }
                     }
+                    continue;
                 }
                 attrs.insert(i, attr);
             }
