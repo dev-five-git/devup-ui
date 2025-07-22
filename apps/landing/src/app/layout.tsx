@@ -76,6 +76,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <ThemeScript auto />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
         <link href="/favicon.ico" rel="shortcut icon" />
+        <link
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
+          rel="stylesheet"
+        />
       </head>
       <body
         className={css({
