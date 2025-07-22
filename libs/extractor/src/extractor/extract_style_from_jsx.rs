@@ -13,26 +13,23 @@ pub fn extract_style_from_jsx<'a>(
     value: &mut JSXAttributeValue<'a>,
 ) -> ExtractResult<'a> {
     match value {
-        JSXAttributeValue::ExpressionContainer(expression) => {
-            if expression.expression.is_expression() {
-                extract_style_from_expression(
-                    ast_builder,
-                    Some(name),
-                    expression.expression.to_expression_mut(),
-                    0,
-                    &None,
-                )
-            } else {
-                ExtractResult::default()
-            }
+        JSXAttributeValue::ExpressionContainer(expression)
+            if expression.expression.is_expression() =>
+        {
+            Some(
+                expression
+                    .expression
+                    .to_expression()
+                    .clone_in(ast_builder.allocator),
+            )
         }
-        JSXAttributeValue::StringLiteral(literal) => extract_style_from_expression(
-            ast_builder,
-            Some(name),
-            &mut Expression::StringLiteral(literal.clone_in(ast_builder.allocator)),
-            0,
-            &None,
-        ),
-        _ => ExtractResult::default(),
+        JSXAttributeValue::StringLiteral(literal) => Some(Expression::StringLiteral(
+            literal.clone_in(ast_builder.allocator),
+        )),
+        _ => None,
     }
+    .map(|mut expression| {
+        extract_style_from_expression(ast_builder, Some(name), &mut expression, 0, &None)
+    })
+    .unwrap_or_default()
 }

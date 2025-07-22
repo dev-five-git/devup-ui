@@ -267,10 +267,7 @@ mod tests {
             sheet.set_theme(theme);
         }
 
-        assert_eq!(
-            get_css().unwrap(),
-            ":root{color-scheme:light;--primary:#FFF;}\n:root[data-theme=dark]{color-scheme:dark;--primary:#000;}\n"
-        );
+        assert_debug_snapshot!(get_css().unwrap());
     }
 
     #[test]
