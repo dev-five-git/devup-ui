@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Text } from '@kuma-ui/Core'
+import { Box, Text } from '@kuma-ui/core'
 import { useState } from 'react'
 
 export default function HomePage() {
