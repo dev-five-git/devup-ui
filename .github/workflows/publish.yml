@@ -41,6 +41,8 @@ jobs:
           pnpm build
           pnpm lint
           pnpm test
+      - name: Benchmark
+        run: pnpm benchmark
       - name: Build Landing
         run: |
           pnpm -F components build-storybook

@@ -72,10 +72,10 @@ Next.js Build Time and Build Size (AMD Ryzen 9 9950X, 128GB RAM, Windows 11)
 
 | Library      | Version  | Build Time | Build Size      |
 |--------------|----------|------------|-----------------|
-| kuma-ui      | 1.5.9    | 13.948s    | 61,910,524b     |
-| chakra-ui    | 3.22.0   | 20.557s    | 189,541,604b    |
-| mui          | 7.2.0    | 20.002s    | 218,204,592b    |
-| devup-ui     | 1.0.10   | 10.583s    | 53,111,181b     |
+| kuma-ui      | 1.5.9    | 12.350s    | 61,934,146b     |
+| chakra-ui    | 3.22.0   | 18.536s    | 189,585,521b    |
+| mui          | 7.2.0    | 14.434s    | 86,186,191b     |
+| devup-ui     | 1.0.20   | 11.302s    | 53,232,399b     |
 
 ## How it works
 
