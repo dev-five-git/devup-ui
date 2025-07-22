@@ -68,7 +68,7 @@ npm install @devup-ui/vite-plugin
 
 ## 비교 벤치마크
 
-Next.js Build Time and Build Size (AMD Ryzen 9 9950X, 128GB RAM, Windows 11)
+Next.js Build Time and Build Size (github action - ubuntu-latest)
 
 | 라이브러리  |  버전    | 빌드 시간   | 빌드 사이즈        |
 |------------|---------|------------|------------------|
