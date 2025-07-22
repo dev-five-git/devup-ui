@@ -640,11 +640,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_debug() {
-        assert_eq!(is_debug(), false);
+        assert!(!is_debug());
         set_debug(true);
-        assert_eq!(is_debug(), true);
+        assert!(is_debug());
         set_debug(false);
-        assert_eq!(is_debug(), false);
+        assert!(!is_debug());
     }
 
     #[test]

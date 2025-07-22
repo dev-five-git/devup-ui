@@ -144,8 +144,7 @@ pub fn extract_style_from_expression<'a>(
                     &tmp.quasis
                         .iter()
                         .map(|q| q.value.raw.as_str())
-                        .collect::<Vec<_>>()
-                        .join(""),
+                        .collect::<String>(),
                     level,
                     selector,
                 ),

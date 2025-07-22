@@ -157,7 +157,7 @@ pub fn optimize_css_block(css: &str) -> String {
         .split(";")
         .map(|s| {
             if !s.contains(":") {
-                s.to_string().trim().to_string()
+                s.trim().to_string()
             } else {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();
@@ -470,11 +470,20 @@ mod tests {
             ("50%", vec![("color", "red"), ("background", "blue")]),
         ],
     )]
+    // error case
+    #[case(
+        "50% { color: red        ; background: blue ",
+        vec![
+        ],
+    )]
     fn test_keyframes_to_keyframes_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
     ) {
         let styles = keyframes_to_keyframes_style(input);
+        if styles.len() != expected.len() {
+            panic!("styles.len() != expected.len()");
+        }
         for (expected_key, expected_styles) in styles.iter() {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles

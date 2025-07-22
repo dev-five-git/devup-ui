@@ -229,9 +229,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .quasi
                     .quasis
                     .iter()
-                    .map(|quasi| quasi.value.raw.as_str())
-                    .collect::<Vec<&str>>()
-                    .join("");
+                    .map(|quasi| quasi.value.raw.to_string())
+                    .collect::<String>();
                 match css_type.as_ref() {
                     UtilType::Css => {
                         let mut styles = css_to_style(&css_str, 0, &None);

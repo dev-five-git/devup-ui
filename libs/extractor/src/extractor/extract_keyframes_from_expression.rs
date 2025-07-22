@@ -27,8 +27,7 @@ pub fn extract_keyframes_from_expression<'a>(
                     t.quasis
                         .iter()
                         .map(|q| q.value.raw.as_str())
-                        .collect::<Vec<_>>()
-                        .join("")
+                        .collect::<String>()
                 } else if let PropertyKey::NumericLiteral(n) = &o.key {
                     n.value.to_string()
                 } else {

@@ -454,7 +454,7 @@ mod tests {
                 "cls",
                 Some(&StyleSelector::Media {
                     query: "print".to_string(),
-                    selector: None,
+                    selector: None
                 })
             ),
             ".cls"
@@ -465,7 +465,7 @@ mod tests {
                 "cls",
                 Some(&StyleSelector::Media {
                     query: "print".to_string(),
-                    selector: Some("&:hover".to_string()),
+                    selector: Some("&:hover".to_string())
                 })
             ),
             ".cls:hover"
