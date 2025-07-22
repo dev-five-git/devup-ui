@@ -756,6 +756,27 @@ mod tests {
     }
 
     #[test]
+    fn test_selector_with_query() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "my",
+            0,
+            "40px",
+            Some(
+                &StyleSelector::Media {
+                    query: "(min-width: 1024px)".to_string(),
+                    selector: Some("&:hover".to_string()),
+                }
+                .into(),
+            ),
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css());
+    }
+
+    #[test]
     fn test_deserialize() {
         {
             let sheet: StyleSheet = serde_json::from_str(
@@ -906,6 +927,30 @@ mod tests {
             Some(255),
         );
         assert_debug_snapshot!(sheet.create_css());
+
+        sheet.add_property(
+            "test",
+            "background-color",
+            0,
+            "red",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test2.tsx".to_string(),
+            )),
+            Some(255),
+        );
+
+        sheet.add_property(
+            "test2",
+            "background-color",
+            0,
+            "red",
+            Some(&StyleSelector::Selector("&:hover".to_string()).into()),
+            Some(255),
+        );
+
+        sheet.rm_global_css("test.tsx");
+        assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]
@@ -987,5 +1032,70 @@ mod tests {
             ),
             "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
         );
+    }
+
+    #[test]
+    fn test_keyframes() {
+        let mut sheet = StyleSheet::default();
+        let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+
+        let mut from_props = BTreeSet::new();
+        from_props.insert(StyleSheetProperty {
+            class_name: String::from("test"),
+            property: String::from("opacity"),
+            value: String::from("0"),
+            selector: None,
+        });
+        keyframes.insert(
+            String::from("from"),
+            vec![(String::from("opacity"), String::from("0"))],
+        );
+
+        let mut to_props = BTreeSet::new();
+        to_props.insert(StyleSheetProperty {
+            class_name: String::from("test"),
+            property: String::from("opacity"),
+            value: String::from("1"),
+            selector: None,
+        });
+        keyframes.insert(
+            String::from("to"),
+            vec![(String::from("opacity"), String::from("1"))],
+        );
+
+        sheet.add_keyframes("fadeIn", keyframes);
+        let past = sheet.create_css();
+        assert_debug_snapshot!(past);
+
+        let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        let mut from_props = BTreeSet::new();
+        from_props.insert(StyleSheetProperty {
+            class_name: String::from("test"),
+            property: String::from("opacity"),
+            value: String::from("0"),
+            selector: None,
+        });
+        keyframes.insert(
+            String::from("from"),
+            vec![(String::from("opacity"), String::from("0"))],
+        );
+
+        let mut to_props = BTreeSet::new();
+        to_props.insert(StyleSheetProperty {
+            class_name: String::from("test"),
+            property: String::from("opacity"),
+            value: String::from("1"),
+            selector: None,
+        });
+        keyframes.insert(
+            String::from("to"),
+            vec![(String::from("opacity"), String::from("1"))],
+        );
+
+        sheet.add_keyframes("fadeIn", keyframes);
+
+        let now = sheet.create_css();
+        assert_debug_snapshot!(now);
+        assert_eq!(past, now);
     }
 }
