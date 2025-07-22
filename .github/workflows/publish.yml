@@ -37,6 +37,8 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - run: pnpm i
+      - name: Benchmark
+        run: pnpm benchmark
       - run: |
           pnpm build
           pnpm lint
