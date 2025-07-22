@@ -4990,6 +4990,28 @@ keyframes({
             .unwrap()
         ));
     }
+    #[test]
+    #[serial]
+    fn extract_wrong_keyframs() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { keyframes } from "@devup-ui/core";
+keyframes({
+  from: { opacity: 0 },
+  [true]: { opacity: 0.5 },
+  to: { opacity: 1, color: dy }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
 
     #[test]
     #[serial]

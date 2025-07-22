@@ -470,11 +470,20 @@ mod tests {
             ("50%", vec![("color", "red"), ("background", "blue")]),
         ],
     )]
+    // error case
+    #[case(
+        "50% { color: red        ; background: blue ",
+        vec![
+        ],
+    )]
     fn test_keyframes_to_keyframes_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
     ) {
         let styles = keyframes_to_keyframes_style(input);
+        if styles.len() != expected.len() {
+            panic!("styles.len() != expected.len()");
+        }
         for (expected_key, expected_styles) in styles.iter() {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles
