@@ -147,7 +147,7 @@ pub struct StyleSheet {
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
-    pub imports: BTreeMap<String, String>,
+    pub imports: BTreeMap<String, BTreeSet<String>>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -182,7 +182,10 @@ impl StyleSheet {
 
     pub fn add_import(&mut self, file: &str, import: &str) {
         self.global_css_files.insert(file.to_string());
-        self.imports.insert(file.to_string(), import.to_string());
+        self.imports
+            .entry(file.to_string())
+            .or_default()
+            .insert(import.to_string());
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
@@ -289,6 +292,7 @@ impl StyleSheet {
         let mut css = self
             .imports
             .values()
+            .flatten()
             .map(|import| format!("@import \"{import}\";"))
             .collect::<Vec<String>>()
             .join("");
@@ -902,12 +906,26 @@ mod tests {
 
     #[test]
     fn test_create_css_with_imports() {
-        let mut sheet = StyleSheet::default();
-        sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
-        sheet.add_import("test2.tsx", "@devup-ui/core/css/global2.css");
-        sheet.add_import("test3.tsx", "@devup-ui/core/css/global3.css");
-        sheet.add_import("test4.tsx", "@devup-ui/core/css/global4.css");
-        assert_debug_snapshot!(sheet.create_css());
+        {
+            let mut sheet = StyleSheet::default();
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            sheet.add_import("test2.tsx", "@devup-ui/core/css/global2.css");
+            sheet.add_import("test3.tsx", "@devup-ui/core/css/global3.css");
+            sheet.add_import("test4.tsx", "@devup-ui/core/css/global4.css");
+            assert_debug_snapshot!(sheet.create_css());
+        }
+        {
+            let mut sheet = StyleSheet::default();
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            sheet.add_import("test.tsx", "@devup-ui/core/css/new-global.css");
+            assert_debug_snapshot!(sheet.create_css());
+        }
+        {
+            let mut sheet = StyleSheet::default();
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            assert_debug_snapshot!(sheet.create_css());
+        }
     }
 
     #[test]
