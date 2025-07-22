@@ -37,12 +37,12 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - run: pnpm i
-      - name: Benchmark
-        run: pnpm benchmark
       - run: |
           pnpm build
           pnpm lint
           pnpm test
+      - name: Benchmark
+        run: pnpm benchmark
       - name: Build Landing
         run: |
           pnpm -F components build-storybook
