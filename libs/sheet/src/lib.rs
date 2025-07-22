@@ -665,6 +665,10 @@ mod tests {
         sheet.rm_global_css("test.tsx");
 
         assert_debug_snapshot!(sheet.create_css());
+
+        sheet.rm_global_css("wrong.tsx");
+
+        assert_debug_snapshot!(sheet.create_css());
     }
 
     #[test]

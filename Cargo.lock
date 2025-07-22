@@ -270,6 +270,7 @@ dependencies = [
  "insta",
  "js-sys",
  "once_cell",
+ "rstest",
  "serde-wasm-bindgen",
  "serde_json",
  "serial_test",
