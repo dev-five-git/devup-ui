@@ -124,7 +124,7 @@ pub fn merge_expression_for_class_name<'a>(
     let mut unknown_expr = vec![];
     for expr in expressions {
         if let Expression::StringLiteral(str) = &expr {
-            class_names.push(str.value.to_string().trim().to_string())
+            class_names.push(str.value.trim().to_string())
         } else {
             unknown_expr.push(expr);
         }

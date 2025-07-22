@@ -114,7 +114,7 @@ pub fn optimize_value(value: &str) -> String {
 }
 
 fn optimize_color(value: &str) -> String {
-    let mut ret = value.to_string().to_uppercase();
+    let mut ret = value.to_uppercase();
 
     if ret.len() == 6 {
         let ch = ret.chars().collect::<Vec<char>>();

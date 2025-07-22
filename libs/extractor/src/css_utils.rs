@@ -157,7 +157,7 @@ pub fn optimize_css_block(css: &str) -> String {
         .split(";")
         .map(|s| {
             if !s.contains(":") {
-                s.to_string().trim().to_string()
+                s.trim().to_string()
             } else {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();

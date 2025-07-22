@@ -40,6 +40,9 @@ jobs:
       - run: |
           pnpm build
           pnpm lint
+          # rust coverage issue
+          echo "max_width = 1000\ntab_spaces = 4\nnewline_style = \"Unix\"\nfn_call_width = 1000\nfn_params_layout = \"Compressed\"\nchain_width = 1000\nmerge_derives = true\nuse_small_heuristics = \"Default\"\n" > .rustfmt.toml
+          cargo fmt
           pnpm test
       - name: Benchmark
         run: pnpm benchmark
