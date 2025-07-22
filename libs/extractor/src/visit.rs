@@ -528,7 +528,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if duplicate_set.contains(&name) {
                             continue;
                         }
-                        println!("name: {name}");
                         duplicate_set.insert(name.clone());
                         if name == "styleOrder" {
                             style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
