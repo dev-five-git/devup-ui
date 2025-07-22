@@ -1,7 +1,4 @@
-use css::{
-    optimize_value::optimize_value, sheet_to_classname,
-    style_selector::StyleSelector,
-};
+use css::{optimize_value::optimize_value, sheet_to_classname, style_selector::StyleSelector};
 
 use crate::{
     extract_style::{

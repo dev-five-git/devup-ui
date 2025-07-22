@@ -755,13 +755,10 @@ mod tests {
             "my",
             0,
             "40px",
-            Some(
-                &StyleSelector::Media {
-                    query: "(min-width: 1024px)".to_string(),
-                    selector: Some("&:hover".to_string()),
-                }
-                .into(),
-            ),
+            Some(&StyleSelector::Media {
+                query: "(min-width: 1024px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            }),
             None,
         );
 
@@ -937,7 +934,7 @@ mod tests {
             "background-color",
             0,
             "red",
-            Some(&StyleSelector::Selector("&:hover".to_string()).into()),
+            Some(&StyleSelector::Selector("&:hover".to_string())),
             Some(255),
         );
 
