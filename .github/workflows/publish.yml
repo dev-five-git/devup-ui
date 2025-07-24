@@ -51,6 +51,7 @@ jobs:
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
           pnpm test
+          rm -rf .rustfmt.toml
       - name: Benchmark
         run: pnpm benchmark
       - name: Build Landing
