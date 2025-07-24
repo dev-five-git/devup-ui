@@ -960,11 +960,7 @@ mod tests {
         );
 
         for property in SPECIAL_PROPERTIES.iter() {
-            // println!("{}", property);
-            if css.contains(*property) {
-                println!("{}", property);
-            }
-            // assert!(css.contains(*property));
+            assert!(!css.contains(*property));
         }
     }
 }
