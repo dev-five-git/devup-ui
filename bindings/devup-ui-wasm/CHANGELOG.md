@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.21
+
+### Patch Changes
+
+- 39895fc: Optimize many func and props
+
 ## 1.0.20
 
 ### Patch Changes
