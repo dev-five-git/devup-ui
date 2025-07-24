@@ -32,8 +32,12 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgPosition" => &["background-position"],
     "bgPositionX" => &["background-position-x"],
     "bgPositionY" => &["background-position-y"],
+    "bgPos" => &["background-position"],
+    "bgPosX" => &["background-position-x"],
+    "bgPosY" => &["background-position-y"],
     "bgRepeat" => &["background-repeat"],
     "bgSize" => &["background-size"],
+    "bgBlendMode" => &["background-blend-mode"],
     "animationDir" => &["animation-direction"],
     "flexDir" => &["flex-direction"],
     "pos" => &["position"],
@@ -62,29 +66,56 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "borderTopRadius" => &["border-top-left-radius", "border-top-right-radius"],
     "borderLeftRadius" => &["border-top-left-radius", "border-bottom-left-radius"],
     "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
+    "objectPos" => &["object-position"],
+    "offsetPos" => &["offset-position"],
 };
 
 pub(super) static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
-        "placeholder",
-        "before",
-        "after",
-        "highlight",
-        "view-transition",
-        "view-transition-group",
-        "view-transition-image-pair",
-        "view-transition-new",
-        "view-transition-old",
+    "after",
+    "backdrop",
+    "before",
+    "checkmark",
+    "cue",
+    "cue-region",
+    "details-content",
+    "file-selector-button",
+    "first-letter",
+    "first-line",
+    "grammar-error",
+    "marker",
+    "picker-icon",
+    "placeholder",
+    "scroll-marker",
+    "scroll-marker-group",
+    "selection",
+    "spelling-error",
+    "target-text",
+    "view-transition"
 };
 
 pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
-    "min(",
-    "max(",
-    "clamp(",
+    "abs(",
+    "acos(",
+    "asin(",
+    "atan(",
+    "atan2(",
     "calc(",
-    "MIN(",
-    "MAX(",
-    "CLAMP(",
-    "CALC(",
+    "calc-size(",
+    "clamp(",
+    "cos(",
+    "exp(",
+    "hypot(",
+    "log(",
+    "max(",
+    "min(",
+    "mod(",
+    "pow(",
+    "rem(",
+    "round(",
+    "sign(",
+    "sin(",
+    "sqrt(",
+    "tan(",
 };
 
 pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
@@ -96,13 +127,17 @@ pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA
 pub(super) static INNER_TRIM_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
 
-pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|\)|,)").unwrap());
+pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|\)|,)").unwrap()
+});
 
-pub(super) static NUM_TRIM_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw)?)\s+(\d)").unwrap());
-pub(super) static ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
+pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic)?)\s+(\d)").unwrap()
+});
+pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic)")
+        .unwrap()
+});
 
 pub(super) static F_RGBA_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());

@@ -1,6 +1,7 @@
 pub mod class_map;
 mod constant;
 pub mod debug;
+pub mod is_special_property;
 pub mod optimize_value;
 pub mod property_type;
 mod selector_separator;

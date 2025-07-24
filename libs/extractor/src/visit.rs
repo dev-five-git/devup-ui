@@ -16,6 +16,7 @@ use crate::prop_modify_utils::{modify_prop_object, modify_props};
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::disassemble_property;
+use css::is_special_property::is_special_property;
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
@@ -32,7 +33,7 @@ use oxc_ast_visit::walk_mut::{
 };
 use strum::IntoEnumIterator;
 
-use crate::utils::{is_special_property, jsx_expression_to_number};
+use crate::utils::jsx_expression_to_number;
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
