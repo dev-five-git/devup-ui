@@ -49,19 +49,20 @@ pub fn optimize_value(value: &str) -> String {
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
 
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            if ret.contains(f) {
-                let index = ret.find(f).unwrap() + f.len();
+            let tmp = ret.to_lowercase();
+            if tmp.contains(f) {
+                let index = tmp.find(f).unwrap() + f.len();
                 let mut zero_idx = vec![];
                 let mut depth = 0;
-                for i in index..ret.len() {
-                    if ret[i..i + 1].eq("(") {
+                for i in index..tmp.len() {
+                    if tmp[i..i + 1].eq("(") {
                         depth += 1;
-                    } else if ret[i..i + 1].eq(")") {
+                    } else if tmp[i..i + 1].eq(")") {
                         depth -= 1;
-                    } else if ret[i..i + 1].eq("0")
-                        && !ret[i - 1..i].chars().next().unwrap().is_ascii_digit()
-                        && (ret.len() == i + 1
-                            || !ret[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
+                    } else if tmp[i..i + 1].eq("0")
+                        && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit()
+                        && (tmp.len() == i + 1
+                            || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
                         && depth == 0
                     {
                         zero_idx.push(i);

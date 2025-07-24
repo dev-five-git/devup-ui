@@ -10,10 +10,12 @@ use crate::{
     },
     utils::{
         expression_to_code, get_number_by_literal_expression, get_string_by_literal_expression,
-        is_same_expression, is_special_property,
+        is_same_expression,
     },
 };
-use css::{disassemble_property, style_selector::StyleSelector};
+use css::{
+    disassemble_property, is_special_property::is_special_property, style_selector::StyleSelector,
+};
 use oxc_allocator::CloneIn;
 use oxc_ast::{
     AstBuilder,

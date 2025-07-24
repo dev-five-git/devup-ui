@@ -1,4 +1,5 @@
 import type { DevupCommonProps, DevupProps } from '..'
+import type { DevupSelectorProps } from '../selector'
 
 describe('index', () => {
   it('DevupCommonProps', () => {
@@ -54,6 +55,37 @@ describe('index', () => {
           },
         ],
       },
+    })
+  })
+  it('DevupSelectorProps', () => {
+    assertType<DevupSelectorProps>({
+      _hover: {
+        bg: 'red',
+      },
+      selectors: {
+        '&:hover': {
+          bg: 'red',
+        },
+      },
+    })
+    assertType<DevupSelectorProps>({
+      selectors: {
+        '&:hover': `
+        background-color: red;
+        `,
+      },
+      _backdrop: {
+        bg: 'red',
+      },
+    })
+
+    assertType<DevupSelectorProps>({
+      _hover: `
+      background-color: red;
+      `,
+      _backdrop: `
+      backdrop-filter: blur(10px);
+      `,
     })
   })
 })
