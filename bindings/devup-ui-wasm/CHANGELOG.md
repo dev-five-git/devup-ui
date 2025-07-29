@@ -1,5 +1,13 @@
 # @devup-ui/wasm
 
+## 1.0.22
+
+### Patch Changes
+
+- 18bc846: Support \_selector in selectors prop
+- 18bc846: Optimize selectors
+- 18bc846: Optimize 0deg
+
 ## 1.0.21
 
 ### Patch Changes
