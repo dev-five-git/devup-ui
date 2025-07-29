@@ -94,7 +94,6 @@ impl Ord for StyleSelector {
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
         let value = value
-            .trim()
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")
