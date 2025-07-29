@@ -208,7 +208,7 @@ pub fn extract_style_from_expression<'a>(
                                     .to_string()
                                 } else {
                                     if name.contains("&") {
-                                        name.to_string().replace("&", &selector.to_string())
+                                        name.replace("&", &selector.to_string())
                                     } else {
                                         StyleSelector::from([
                                             selector.to_string().replace("_", "").as_str(),
