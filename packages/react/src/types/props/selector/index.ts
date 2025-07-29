@@ -2,7 +2,7 @@ import type { Pseudos } from 'csstype'
 
 import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'
-import type { DevupCommonProps } from '../index'
+import type { DevupProps } from '../index'
 
 type CamelCase<S extends string> =
   S extends Lowercase<S>
@@ -13,18 +13,13 @@ type CamelCase<S extends string> =
 
 type PascalCase<S extends string> = Capitalize<CamelCase<S>>
 
+type SelectorProps = ResponsiveValue<DevupProps | string | false>
 export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
-  ? Record<`_theme${string}`, DevupCommonProps & DevupSelectorProps>
+  ? Record<`_theme${string}`, SelectorProps>
   : {
-      [K in keyof DevupTheme as `_theme${PascalCase<K>}`]?: DevupCommonProps &
-        DevupSelectorProps
+      [K in keyof DevupTheme as `_theme${PascalCase<K>}`]?: SelectorProps
     }
 
-type SelectorProps = ResponsiveValue<
-  | (DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps)
-  | string
-  | false
->
 type NormalSelector = Exclude<
   Pseudos,
   `:-${string}` | `::-${string}` | `${string}()`
