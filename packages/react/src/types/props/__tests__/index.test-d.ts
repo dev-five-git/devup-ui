@@ -1,4 +1,8 @@
-import type { DevupCommonProps, DevupComponentProps } from '..'
+import { Property } from 'csstype'
+
+import type { ResponsiveValue } from '../../responsive-value'
+import type { DevupCommonProps, DevupComponentProps, DevupProps } from '..'
+import type { Selectors } from '../selector'
 
 describe('index', () => {
   it('DevupCommonProps', () => {
@@ -6,6 +10,16 @@ describe('index', () => {
       bg: 'red',
       bgColor: 'red',
     })
+  })
+
+  it('DevupProps', () => {
+    expectTypeOf<DevupProps>()
+      .toHaveProperty('bg')
+      .toEqualTypeOf<ResponsiveValue<Property.Background>>()
+  })
+
+  it('Selectors', () => {
+    expectTypeOf<Selectors>().toHaveProperty('&:hover')
   })
 
   it('DevupCommonProps _selector', () => {

@@ -19,7 +19,7 @@
   "version": "1.0.12",
   "type": "module",
   "scripts": {
-    "lint": "eslint",
+    "lint": "eslint && tsc --noEmit",
     "build": "tsc && vite build"
   },
   "publishConfig": {

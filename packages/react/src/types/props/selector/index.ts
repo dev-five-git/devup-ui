@@ -13,7 +13,7 @@ type CamelCase<S extends string> =
 
 type PascalCase<S extends string> = Capitalize<CamelCase<S>>
 
-type SelectorProps = ResponsiveValue<DevupProps | string | false>
+export type SelectorProps<T = DevupProps> = ResponsiveValue<T | string | false>
 export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
   ? Record<`_theme${string}`, SelectorProps>
   : {
@@ -24,22 +24,29 @@ type NormalSelector = Exclude<
   Pseudos,
   `:-${string}` | `::-${string}` | `${string}()`
 >
-type ExtractSelector<T> = T extends `::${infer R}`
+type ExtractSelector<T = NormalSelector> = T extends `::${infer R}`
   ? R
   : T extends `:${infer R}`
     ? R
     : never
 export type CommonSelectorProps = {
-  [K in ExtractSelector<NormalSelector> as
+  [K in ExtractSelector as
     | `_${CamelCase<K>}`
     | `_group${PascalCase<K>}`]?: SelectorProps
 }
+
+export type Selectors = Partial<
+  Record<
+    (string & {}) | `&${NormalSelector}` | `_${CamelCase<ExtractSelector>}`,
+    SelectorProps
+  >
+>
 
 export interface DevupSelectorProps extends CommonSelectorProps {
   // media query
   _print?: SelectorProps
 
-  selectors?: Record<string, SelectorProps>
+  selectors?: Selectors
 
   styleOrder?: number
 }
