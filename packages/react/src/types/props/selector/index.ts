@@ -16,9 +16,7 @@ type PascalCase<S extends string> = Capitalize<CamelCase<S>>
 export type SelectorProps<T = DevupProps> = ResponsiveValue<T | string | false>
 export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
   ? Record<`_theme${string}`, SelectorProps>
-  : {
-      [K in keyof DevupTheme as `_theme${PascalCase<K>}`]?: SelectorProps
-    }
+  : Record<`_theme${PascalCase<keyof DevupTheme>}`, SelectorProps>
 
 type NormalSelector = Exclude<
   Pseudos,

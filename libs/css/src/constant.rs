@@ -128,14 +128,15 @@ pub(super) static INNER_TRIM_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
 
 pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|\)|,)").unwrap()
+    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap()
 });
 
 pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic)?)\s+(\d)").unwrap()
+    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
+        .unwrap()
 });
 pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic)")
+    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)")
         .unwrap()
 });
 

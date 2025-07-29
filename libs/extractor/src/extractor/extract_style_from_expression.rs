@@ -173,22 +173,63 @@ pub fn extract_style_from_expression<'a>(
             let mut props = vec![];
             for p in obj.properties.iter_mut() {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    let name = o.key.name().unwrap().to_string();
+                    let key_name = o.key.name().unwrap().to_string();
+                    let name = key_name.trim();
+                    let mut part_of_selector = vec![];
+
+                    let mut level = 0;
+                    let mut last_idx = 0;
+                    for (idx, c) in name.chars().enumerate() {
+                        if c == '(' {
+                            level += 1;
+                        }
+                        if c == ')' {
+                            level -= 1;
+                        }
+                        if c == ',' && level == 0 {
+                            part_of_selector.push(&name[last_idx..idx]);
+                            last_idx = idx + 1;
+                        }
+                        if idx == name.len() - 1 {
+                            part_of_selector.push(&name[last_idx..]);
+                        }
+                    }
+
+                    let sel = part_of_selector
+                        .iter()
+                        .map(|name| {
+                            let name = name.trim();
+                            if let Some(selector) = selector {
+                                if name.starts_with("_theme") {
+                                    StyleSelector::from([
+                                        name.replace("_theme", "theme").as_str(),
+                                        &selector.to_string(),
+                                    ])
+                                    .to_string()
+                                } else {
+                                    if name.contains("&") {
+                                        name.to_string().replace("&", &selector.to_string())
+                                    } else {
+                                        StyleSelector::from([
+                                            selector.to_string().replace("_", "").as_str(),
+                                            &name.replace("_", ""),
+                                        ])
+                                        .to_string()
+                                    }
+                                }
+                            } else {
+                                StyleSelector::from(name.replace("_", "").as_str()).to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
                     props.extend(
                         extract_style_from_expression(
                             ast_builder,
                             None,
                             &mut o.value,
                             level,
-                            &Some(
-                                if let Some(selector) = selector {
-                                    name.replace("&", &selector.to_string())
-                                } else {
-                                    name
-                                }
-                                .as_str()
-                                .into(),
-                            ),
+                            &Some(StyleSelector::Selector(sel)),
                         )
                         .styles,
                     );
