@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.13
+
+### Patch Changes
+
+- 18bc846: Fix nested selector typing issue
+
 ## 1.0.12
 
 ### Patch Changes
