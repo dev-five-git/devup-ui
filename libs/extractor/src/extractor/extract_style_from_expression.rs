@@ -179,7 +179,7 @@ pub fn extract_style_from_expression<'a>(
 
                     let mut level = 0;
                     let mut last_idx = 0;
-                    for (idx, c) in name.chars().enumerate() {
+                    for (idx, c) in name.char_indices() {
                         if c == '(' {
                             level += 1;
                         }
@@ -206,16 +206,14 @@ pub fn extract_style_from_expression<'a>(
                                         &selector.to_string(),
                                     ])
                                     .to_string()
+                                } else if name.contains("&") {
+                                    name.replace("&", &selector.to_string())
                                 } else {
-                                    if name.contains("&") {
-                                        name.replace("&", &selector.to_string())
-                                    } else {
-                                        StyleSelector::from([
-                                            selector.to_string().replace("_", "").as_str(),
-                                            &name.replace("_", ""),
-                                        ])
-                                        .to_string()
-                                    }
+                                    StyleSelector::from([
+                                        selector.to_string().replace("_", "").as_str(),
+                                        &name.replace("_", ""),
+                                    ])
+                                    .to_string()
                                 }
                             } else {
                                 StyleSelector::from(name.replace("_", "").as_str()).to_string()

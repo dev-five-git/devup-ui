@@ -11,4 +11,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 regex = "1.11.1"
 
 [dev-dependencies]
-rstest = "0.25.0"
+rstest = "0.26.1"
