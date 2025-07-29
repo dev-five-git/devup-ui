@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.12
+
+### Patch Changes
+
+- 7dba3e9: Optimize typing
+
 ## 1.0.11
 
 ### Patch Changes
