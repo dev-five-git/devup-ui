@@ -23,6 +23,7 @@ export interface DevupShortcutsProps
     DevupUiMotionPathProps,
     DevupUiPositionProps,
     DevupUiTextProps {}
+
 export type DevupCommonProps = Merge<
   {
     [K in keyof Properties]?: ResponsiveValue<Properties[K]>
@@ -30,10 +31,13 @@ export type DevupCommonProps = Merge<
   DevupShortcutsProps
 >
 
-export interface DevupProps<T extends React.ElementType>
+export interface DevupProps
   extends DevupCommonProps,
     DevupSelectorProps,
-    DevupThemeSelectorProps {
+    DevupThemeSelectorProps {}
+
+export interface DevupComponentProps<T extends React.ElementType>
+  extends DevupProps {
   as?: T
   styleVars?: Record<string, string | undefined>
 }
