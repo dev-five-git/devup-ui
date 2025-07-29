@@ -40,9 +40,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 for (idx, p) in array.elements.iter_mut().enumerate() {
                     if let ArrayExpressionElement::SpreadElement(sp) = p {
                         etc = Some(sp.argument.clone_in(ast_builder.allocator));
-                        continue;
-                    }
-                    if idx as f64 == num {
+                    } else if idx as f64 == num {
                         return extract_style_from_expression(
                             ast_builder,
                             name,
@@ -193,25 +191,21 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map,
             });
         }
-        Expression::Identifier(_) => {
-            if let Some(name) = name {
-                ret.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                    ExtractDynamicStyle::new(
-                        name,
-                        level,
-                        &expression_to_code(&Expression::ComputedMemberExpression(
-                            ast_builder.alloc_computed_member_expression(
-                                SPAN,
-                                mem.object.clone_in(ast_builder.allocator),
-                                mem_expression.clone_in(ast_builder.allocator),
-                                false,
-                            ),
-                        )),
-                        selector.clone(),
+        Expression::Identifier(_) => ret.push(ExtractStyleProp::Static(
+            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+                name.unwrap(),
+                level,
+                &expression_to_code(&Expression::ComputedMemberExpression(
+                    ast_builder.alloc_computed_member_expression(
+                        SPAN,
+                        mem.object.clone_in(ast_builder.allocator),
+                        mem_expression.clone_in(ast_builder.allocator),
+                        false,
                     ),
-                )))
-            }
-        }
+                )),
+                selector.clone(),
+            )),
+        )),
         _ => {}
     };
 

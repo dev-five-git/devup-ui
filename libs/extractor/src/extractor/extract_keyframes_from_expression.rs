@@ -19,7 +19,7 @@ pub fn extract_keyframes_from_expression<'a>(
     if let Expression::ObjectExpression(obj) = expression {
         for p in obj.properties.iter_mut() {
             if let ObjectPropertyKind::ObjectProperty(o) = p {
-                let mut name = if let PropertyKey::StaticIdentifier(ident) = &o.key {
+                let name = if let PropertyKey::StaticIdentifier(ident) = &o.key {
                     ident.name.to_string()
                 } else if let PropertyKey::StringLiteral(s) = &o.key {
                     s.value.to_string()
@@ -33,10 +33,6 @@ pub fn extract_keyframes_from_expression<'a>(
                 } else {
                     continue;
                 };
-                // convert number
-                if let Ok(num) = name.parse::<f64>() {
-                    name = format!("{num}%");
-                }
                 let mut styles =
                     extract_style_from_expression(ast_builder, None, &mut o.value, 0, &None)
                         .styles
@@ -47,7 +43,10 @@ pub fn extract_keyframes_from_expression<'a>(
                         })
                         .collect::<Vec<_>>();
                 styles.sort_by_key(|a| a.property().to_string());
-                keyframes.keyframes.insert(name, styles);
+                keyframes.keyframes.insert(
+                    name.parse::<f64>().map(|v| format!("{v}%")).unwrap_or(name),
+                    styles,
+                );
             }
         }
     }

@@ -3667,6 +3667,25 @@ export default function Card({
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn props_direct_wrong() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Flex} from '@devup-ui/core'
+;<Flex gap={true[1]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
     #[test]
     #[serial]
     fn test_component_in_func() {

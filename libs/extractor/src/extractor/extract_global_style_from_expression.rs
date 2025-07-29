@@ -56,18 +56,18 @@ pub fn extract_global_style_from_expression<'a>(
                             )));
                         }
                     }
-                    continue;
+                } else {
+                    styles.extend(
+                        extract_style_from_expression(
+                            ast_builder,
+                            None,
+                            &mut o.value,
+                            0,
+                            &Some(StyleSelector::Global(name.clone(), file.to_string())),
+                        )
+                        .styles,
+                    );
                 }
-                styles.extend(
-                    extract_style_from_expression(
-                        ast_builder,
-                        None,
-                        &mut o.value,
-                        0,
-                        &Some(StyleSelector::Global(name.clone(), file.to_string())),
-                    )
-                    .styles,
-                );
             }
         }
     }
