@@ -56,25 +56,22 @@ pub fn extract_style_from_expression<'a>(
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
                                             .map(|v| v as u8);
-                                        continue;
-                                    }
-                                    if name == "styleVars" {
+                                    } else if name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator));
-                                        continue;
+                                    } else {
+                                        let ExtractResult {
+                                            styles, tag: _tag, ..
+                                        } = extract_style_from_expression(
+                                            ast_builder,
+                                            Some(&name),
+                                            &mut prop.value,
+                                            0,
+                                            &None,
+                                        );
+                                        props_styles.extend(styles);
+                                        tag = _tag.or(tag);
                                     }
-
-                                    let ExtractResult {
-                                        styles, tag: _tag, ..
-                                    } = extract_style_from_expression(
-                                        ast_builder,
-                                        Some(&name),
-                                        &mut prop.value,
-                                        0,
-                                        &None,
-                                    );
-                                    props_styles.extend(styles);
-                                    tag = _tag.or(tag);
                                 }
                                 true
                             } else {
@@ -302,73 +299,70 @@ pub fn extract_style_from_expression<'a>(
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
             Expression::TemplateLiteral(tmp) => {
-                if let Some(name) = name {
-                    if tmp.quasis.len() == 1 {
-                        ExtractResult {
-                            styles: vec![ExtractStyleProp::Static(if typo {
-                                ExtractStyleValue::Typography(tmp.quasis[0].value.raw.to_string())
-                            } else {
-                                ExtractStyleValue::Static(ExtractStaticStyle::new(
-                                    name,
-                                    &tmp.quasis[0].value.raw,
-                                    level,
-                                    selector.clone(),
-                                ))
-                            })],
-                            ..ExtractResult::default()
-                        }
-                    } else if typo {
-                        ExtractResult {
-                            styles: vec![ExtractStyleProp::Expression {
-                                expression: ast_builder.expression_template_literal(
-                                    SPAN,
-                                    ast_builder.vec_from_array([
-                                        ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom("typo-"),
-                                                cooked: None,
-                                            },
-                                            false,
-                                        ),
-                                        ast_builder.template_element(
-                                            SPAN,
-                                            TemplateElementValue {
-                                                raw: ast_builder.atom(""),
-                                                cooked: None,
-                                            },
-                                            true,
-                                        ),
-                                    ]),
-                                    ast_builder.vec_from_array([
-                                        expression.clone_in(ast_builder.allocator)
-                                    ]),
-                                ),
-                                styles: vec![],
-                            }],
-                            ..ExtractResult::default()
-                        }
-                    } else {
-                        ExtractResult {
-                            styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                                ExtractDynamicStyle::new(
-                                    name,
-                                    level,
-                                    &expression_to_code(expression),
-                                    selector.clone(),
-                                ),
-                            ))],
-                            ..ExtractResult::default()
-                        }
+                let name = name.unwrap();
+                if tmp.quasis.len() == 1 {
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Static(if typo {
+                            ExtractStyleValue::Typography(tmp.quasis[0].value.raw.to_string())
+                        } else {
+                            ExtractStyleValue::Static(ExtractStaticStyle::new(
+                                name,
+                                &tmp.quasis[0].value.raw,
+                                level,
+                                selector.clone(),
+                            ))
+                        })],
+                        ..ExtractResult::default()
+                    }
+                } else if typo {
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Expression {
+                            expression: ast_builder.expression_template_literal(
+                                SPAN,
+                                ast_builder.vec_from_array([
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom("typo-"),
+                                            cooked: None,
+                                        },
+                                        false,
+                                    ),
+                                    ast_builder.template_element(
+                                        SPAN,
+                                        TemplateElementValue {
+                                            raw: ast_builder.atom(""),
+                                            cooked: None,
+                                        },
+                                        true,
+                                    ),
+                                ]),
+                                ast_builder
+                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                            ),
+                            styles: vec![],
+                        }],
+                        ..ExtractResult::default()
                     }
                 } else {
-                    ExtractResult::default()
+                    ExtractResult {
+                        styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                            ExtractDynamicStyle::new(
+                                name,
+                                level,
+                                &expression_to_code(expression),
+                                selector.clone(),
+                            ),
+                        ))],
+                        ..ExtractResult::default()
+                    }
                 }
             }
             Expression::Identifier(identifier) => {
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
-                } else if let Some(name) = name {
+                } else {
+                    let name = name.unwrap();
                     if typo {
                         ExtractResult {
                             styles: vec![ExtractStyleProp::Expression {
@@ -419,8 +413,6 @@ pub fn extract_style_from_expression<'a>(
                             ..ExtractResult::default()
                         }
                     }
-                } else {
-                    ExtractResult::default()
                 }
             }
             Expression::LogicalExpression(logical) => {
