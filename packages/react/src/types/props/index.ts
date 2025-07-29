@@ -31,13 +31,14 @@ export type DevupCommonProps = Merge<
   DevupShortcutsProps
 >
 
-export interface DevupProps
-  extends DevupCommonProps,
-    DevupSelectorProps,
+export interface DevupProps extends DevupCommonProps, DevupSelectorProps {}
+
+export interface DevupPropsWithTheme
+  extends DevupProps,
     DevupThemeSelectorProps {}
 
 export interface DevupComponentProps<T extends React.ElementType>
-  extends DevupProps {
+  extends DevupPropsWithTheme {
   as?: T
   styleVars?: Record<string, string | undefined>
 }
