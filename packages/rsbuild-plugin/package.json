@@ -56,8 +56,8 @@
     "@rsbuild/core": "*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.4.9",
-    "vite": "^7.0.5",
+    "@rsbuild/core": "^1.4.11",
+    "vite": "^7.0.6",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
     "typescript": "^5.8.3"

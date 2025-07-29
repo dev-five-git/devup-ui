@@ -93,6 +93,11 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
+        let value = value
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace(", ", ",");
         if value.contains("&") {
             StyleSelector::Selector(value.to_string())
         } else if let Some(s) = value.strip_prefix("group") {
@@ -116,7 +121,7 @@ impl From<&str> for StyleSelector {
                 selector: None,
             }
         } else {
-            let post = to_kebab_case(value);
+            let post = to_kebab_case(&value);
 
             StyleSelector::Selector(format!(
                 "&{}{}",
@@ -129,7 +134,11 @@ impl From<&str> for StyleSelector {
 
 impl From<[&str; 2]> for StyleSelector {
     fn from(value: [&str; 2]) -> Self {
-        let post = to_kebab_case(value[1]);
+        let post = if value[1].contains("&:") {
+            to_kebab_case(value[1].split(":").last().unwrap())
+        } else {
+            to_kebab_case(value[1])
+        };
         StyleSelector::Selector(format!(
             "{}{}{}",
             StyleSelector::from(value[0]),

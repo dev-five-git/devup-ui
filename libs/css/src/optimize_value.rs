@@ -221,6 +221,17 @@ mod tests {
     #[case("max(10px, calc(0", "max(10px,calc(0%))")]
     #[case("max(10px, any(0", "max(10px,any(0))")]
     #[case("10px, any(0))", "(10px,any(0))")]
+    #[case("scale(0deg, 0deg)", "scale(0,0)")]
+    #[case(
+        "scaleX(0deg) scaleY(0deg) scaleZ(0deg)",
+        "scaleX(0) scaleY(0) scaleZ(0)"
+    )]
+    #[case("scaleX(0deg)", "scaleX(0)")]
+    #[case("scaleY(0deg)", "scaleY(0)")]
+    #[case("scaleZ(0deg)", "scaleZ(0)")]
+    #[case("translate(0px) scale(0deg)", "translate(0) scale(0)")]
+    #[case("translate(-0px) scale(-0deg)", "translate(0) scale(0)")]
+    #[case("translate(-10px) scale(-10deg)", "translate(-10px) scale(-10deg)")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }
