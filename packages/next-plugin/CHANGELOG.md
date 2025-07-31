@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.23
+
+### Patch Changes
+
+- a3eed1d: Add gitIgnore in turbopack
+
 ## 1.0.22
 
 ### Patch Changes
