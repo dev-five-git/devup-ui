@@ -110,6 +110,10 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
         })
 }
 
+pub fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
 #[cfg(test)]
 mod tests {
     use oxc_allocator::Vec;

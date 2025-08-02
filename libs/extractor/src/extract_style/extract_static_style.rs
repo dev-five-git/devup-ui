@@ -8,7 +8,7 @@ use crate::{
     extract_style::{
         ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty,
     },
-    utils::convert_value,
+    utils::{convert_value, gcd},
 };
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -30,7 +30,20 @@ impl ExtractStaticStyle {
     pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
             value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                value.to_string()
+                if property == "aspect-ratio" && value.contains("/") {
+                    if let [Ok(a), Ok(b)] = value
+                        .split('/')
+                        .map(|v| v.trim().parse::<u32>())
+                        .collect::<Vec<_>>()[..]
+                    {
+                        let gcd = gcd(a, b);
+                        format!("{}/{}", a / gcd, b / gcd)
+                    } else {
+                        value.to_string()
+                    }
+                } else {
+                    value.to_string()
+                }
             } else {
                 convert_value(value)
             }),
