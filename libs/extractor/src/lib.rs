@@ -2964,6 +2964,55 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
     #[test]
     #[serial]
+    fn optimize_aspect_ratio() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Flex} from '@devup-ui/core'
+        <Flex aspectRatio={"200/400"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Flex} from '@devup-ui/core'
+        <Flex aspectRatio={"   200  /  400  "} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Flex} from '@devup-ui/core'
+        <Flex aspectRatio={"   200.2  /  400.2  "} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn ternary_operator_in_selector() {
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
