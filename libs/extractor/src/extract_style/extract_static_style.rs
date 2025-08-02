@@ -1,4 +1,8 @@
-use css::{optimize_value::optimize_value, sheet_to_classname, style_selector::StyleSelector};
+use css::{
+    optimize_value::optimize_value,
+    sheet_to_classname,
+    style_selector::{StyleSelector, optimize_selector},
+};
 
 use crate::{
     extract_style::{
@@ -32,7 +36,7 @@ impl ExtractStaticStyle {
             }),
             property: property.to_string(),
             level,
-            selector,
+            selector: selector.map(optimize_selector),
             style_order: None,
         }
     }
@@ -81,13 +85,13 @@ impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
         StyleProperty::ClassName(sheet_to_classname(
-            self.property.as_str(),
+            &self.property,
             self.level,
             Some(&optimize_value(
-                &if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
+                &if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
                     self.value.to_string()
                 } else {
-                    convert_value(self.value.as_str())
+                    convert_value(&self.value)
                 },
             )),
             s.as_deref(),

@@ -24,7 +24,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "12px",
                 level: 0,
                 selector: None,
@@ -33,7 +33,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "16px",
                 level: 0,
                 selector: None,
@@ -42,7 +42,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "20px",
                 level: 0,
                 selector: None,
@@ -51,7 +51,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "24px",
                 level: 0,
                 selector: None,
@@ -60,7 +60,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "28px",
                 level: 0,
                 selector: None,
@@ -69,7 +69,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingLeft",
+                property: "padding-left",
                 value: "32px",
                 level: 0,
                 selector: None,
@@ -78,7 +78,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "12px",
                 level: 0,
                 selector: None,
@@ -87,7 +87,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "16px",
                 level: 0,
                 selector: None,
@@ -96,7 +96,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "20px",
                 level: 0,
                 selector: None,
@@ -105,7 +105,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "24px",
                 level: 0,
                 selector: None,
@@ -114,7 +114,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "28px",
                 level: 0,
                 selector: None,
@@ -123,7 +123,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "paddingRight",
+                property: "padding-right",
                 value: "32px",
                 level: 0,
                 selector: None,

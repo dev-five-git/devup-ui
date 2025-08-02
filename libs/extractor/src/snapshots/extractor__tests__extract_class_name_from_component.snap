@@ -17,7 +17,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "flexDirection",
+                property: "flex-direction",
                 value: "column",
                 level: 0,
                 selector: None,

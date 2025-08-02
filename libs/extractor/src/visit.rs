@@ -524,17 +524,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && let Identifier(name) = &attr.name
                     && !is_special_property(&name.name)
                 {
-                    for name in disassemble_property(&name.name) {
+                    let property_name = name.name.to_string();
+                    for name in disassemble_property(&property_name) {
                         if duplicate_set.contains(&name) {
                             continue;
                         }
                         duplicate_set.insert(name.clone());
-                        if name == "styleOrder" {
+                        if &property_name == "styleOrder" {
                             style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
                                 .map(|n| n as u8);
                             continue;
                         }
-                        if name == "styleVars" {
+                        if property_name == "styleVars" {
                             if let Some(value) = attr.value.as_ref()
                                 && let JSXAttributeValue::ExpressionContainer(expr) = value
                             {

@@ -17,6 +17,7 @@ pub struct Output {
     code: String,
     styles: HashSet<ExtractStyleValue>,
     map: Option<String>,
+    default_collected: bool,
 }
 #[wasm_bindgen]
 extern "C" {
@@ -130,7 +131,7 @@ impl Output {
             }
         }
 
-        if !collected {
+        if !collected && !self.default_collected {
             return None;
         }
 
@@ -183,7 +184,6 @@ pub fn code_extract(
     css_file: &str,
 ) -> Result<Output, JsValue> {
     let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    sheet.rm_global_css(filename);
 
     match extract(
         filename,
@@ -197,6 +197,7 @@ pub fn code_extract(
             code: output.code,
             styles: output.styles,
             map: output.map,
+            default_collected: sheet.rm_global_css(filename),
         }),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }

@@ -56,7 +56,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "fontWeight",
+                property: "font-weight",
                 value: "bold",
                 level: 0,
                 selector: Some(

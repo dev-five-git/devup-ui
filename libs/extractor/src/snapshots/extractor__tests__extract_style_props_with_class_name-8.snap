@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "borderColor",
+                property: "border-color",
                 value: "",
                 level: 0,
                 selector: Some(
@@ -19,7 +19,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "borderColor",
+                property: "border-color",
                 value: "blue",
                 level: 0,
                 selector: Some(

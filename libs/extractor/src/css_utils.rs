@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use css::{style_selector::StyleSelector, utils::to_camel_case};
+use css::{rm_css_comment::rm_css_comment, style_selector::StyleSelector};
 
 use crate::{
     ExtractStyleProp,
@@ -97,17 +97,18 @@ fn css_to_style_block<'a>(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStyleProp<'a>> {
-    css.split(";")
+    rm_css_comment(css)
+        .split(";")
         .filter_map(|s| {
             let s = s.trim();
             if s.is_empty() {
                 None
             } else {
                 let mut iter = s.split(":").map(|s| s.trim());
-                let property = to_camel_case(iter.next().unwrap());
+                let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
                 Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(&property, value, level, selector.clone()),
+                    ExtractStaticStyle::new(property, value, level, selector.clone()),
                 )))
             }
         })
@@ -146,7 +147,8 @@ pub fn keyframes_to_keyframes_style<'a>(
 }
 
 pub fn optimize_css_block(css: &str) -> String {
-    css.split("{")
+    rm_css_comment(css)
+        .split("{")
         .map(|s| s.trim().to_string())
         .collect::<Vec<String>>()
         .join("{")
@@ -179,6 +181,20 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
+    #[case(
+        "div{
+        /* comment */
+        background-color: red;
+        /* color: blue; */
+    }",
+        "div{background-color:red}"
+    )]
+    #[case(
+        "/*div{
+        background-color: red;
+    }*/",
+        ""
+    )]
     #[case(
         "       img      {       background-color    :       red;      }     ",
         "img{background-color:red}"
@@ -226,7 +242,7 @@ mod tests {
     #[case(
         "font-size: 16px;",
         vec![
-            ("fontSize", "16px", None),
+            ("font-size", "16px", None),
         ]
     )]
     #[case(
@@ -282,6 +298,36 @@ mod tests {
             ("color", "#FFF", Some(StyleSelector::Media {
                 query: "(min-width:768px)".to_string(),
                 selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover,   &:active, &:nth-child(2) {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
         ]
     )]
@@ -436,8 +482,8 @@ mod tests {
     #[case(
         "to {\nbackground-color:red;\n}\nfrom {\nbackground-color:blue;\n}",
         vec![
-            ("to", vec![("backgroundColor", "red")]),
-            ("from", vec![("backgroundColor", "blue")]),
+            ("to", vec![("background-color", "red")]),
+            ("from", vec![("background-color", "blue")]),
         ],
     )]
     #[case(
@@ -468,6 +514,13 @@ mod tests {
         "50% { color: red        ; background: blue; }",
         vec![
             ("50%", vec![("color", "red"), ("background", "blue")]),
+        ],
+    )]
+    // comment case
+    #[case(
+        "50% { color: red; /*background: blue;*/ }",
+        vec![
+            ("50%", vec![("color", "red")]),
         ],
     )]
     // error case
