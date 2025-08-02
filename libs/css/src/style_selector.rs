@@ -29,7 +29,6 @@ fn optimize_selector_string(selector: &str) -> String {
         .replace(", ", ",")
 }
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
-    println!("optimize_selector: {:?}", selector);
     match selector {
         StyleSelector::Media { query, selector } => StyleSelector::Media {
             query: query.to_string(),
@@ -121,7 +120,6 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        println!("from: {:?}", value);
         let value = value
             .split_whitespace()
             .collect::<Vec<_>>()
