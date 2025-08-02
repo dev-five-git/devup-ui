@@ -108,7 +108,7 @@ fn css_to_style_block<'a>(
                 let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
                 Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(&property, value, level, selector.clone()),
+                    ExtractStaticStyle::new(property, value, level, selector.clone()),
                 )))
             }
         })
