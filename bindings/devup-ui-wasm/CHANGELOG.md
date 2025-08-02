@@ -1,5 +1,14 @@
 # @devup-ui/wasm
 
+## 1.0.23
+
+### Patch Changes
+
+- 2116e88: Fix global css rerender issue without components
+- 2116e88: Support css comment syntax
+- 2116e88: Optimize css selector
+- 2116e88: Optimize creating css
+
 ## 1.0.22
 
 ### Patch Changes
