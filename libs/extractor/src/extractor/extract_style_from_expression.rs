@@ -15,6 +15,7 @@ use crate::{
 };
 use css::{
     disassemble_property, is_special_property::is_special_property, style_selector::StyleSelector,
+    utils::to_kebab_case,
 };
 use oxc_allocator::CloneIn;
 use oxc_ast::{
@@ -200,21 +201,23 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(selector) = selector {
                                 if name.starts_with("_theme") {
                                     StyleSelector::from([
-                                        name.replace("_theme", "theme").as_str(),
+                                        to_kebab_case(name.replace("_theme", "theme").as_str())
+                                            .as_str(),
                                         &selector.to_string(),
                                     ])
                                     .to_string()
                                 } else if name.contains("&") {
-                                    name.replace("&", &selector.to_string())
+                                    to_kebab_case(&name.replace("&", &selector.to_string()))
                                 } else {
                                     StyleSelector::from([
                                         selector.to_string().replace("_", "").as_str(),
-                                        &name.replace("_", ""),
+                                        &to_kebab_case(&name.replace("_", "")),
                                     ])
                                     .to_string()
                                 }
                             } else {
-                                StyleSelector::from(name.replace("_", "").as_str()).to_string()
+                                StyleSelector::from(to_kebab_case(&name.replace("_", "")).as_str())
+                                    .to_string()
                             }
                         })
                         .collect::<Vec<_>>()

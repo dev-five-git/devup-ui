@@ -557,7 +557,7 @@ mod tests {
             "background",
             0,
             "red",
-            Some(&StyleSelector::from("groupFocusVisible")),
+            Some(&StyleSelector::from("group-focus-visible")),
             None,
         );
         sheet.add_property(
@@ -565,7 +565,7 @@ mod tests {
             "background",
             0,
             "blue",
-            Some(&StyleSelector::from("groupFocusVisible")),
+            Some(&StyleSelector::from("group-focus-visible")),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -576,7 +576,7 @@ mod tests {
             "background",
             0,
             "red",
-            Some(&StyleSelector::from("groupFocusVisible")),
+            Some(&StyleSelector::from("group-focus-visible")),
             None,
         );
         sheet.add_property(
@@ -603,7 +603,7 @@ mod tests {
             "background",
             0,
             "blue",
-            Some(&StyleSelector::from("groupFocusVisible")),
+            Some(&StyleSelector::from("group-focus-visible")),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -614,7 +614,7 @@ mod tests {
             "background",
             0,
             "red",
-            Some(&["themeDark", "hover"].into()),
+            Some(&["theme-dark", "hover"].into()),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -724,7 +724,7 @@ mod tests {
             "margin-left",
             1,
             "40px",
-            Some(&"groupHover".into()),
+            Some(&"group-hover".into()),
             None,
         );
         sheet.add_property(
@@ -732,7 +732,7 @@ mod tests {
             "margin-right",
             1,
             "40px",
-            Some(&"groupHover".into()),
+            Some(&"group-hover".into()),
             None,
         );
         sheet.add_property(
@@ -740,7 +740,7 @@ mod tests {
             "margin-left",
             2,
             "50px",
-            Some(&"groupHover".into()),
+            Some(&"group-hover".into()),
             None,
         );
         sheet.add_property(
@@ -748,7 +748,7 @@ mod tests {
             "margin-right",
             2,
             "50px",
-            Some(&"groupHover".into()),
+            Some(&"group-hover".into()),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -762,7 +762,7 @@ mod tests {
             "margin-left",
             0,
             "40px",
-            Some(&"themeDark".into()),
+            Some(&"theme-dark".into()),
             None,
         );
         sheet.add_property(
@@ -770,7 +770,7 @@ mod tests {
             "margin-right",
             0,
             "40px",
-            Some(&"themeDark".into()),
+            Some(&"theme-dark".into()),
             None,
         );
         sheet.add_property(
@@ -778,7 +778,7 @@ mod tests {
             "margin-top",
             0,
             "40px",
-            Some(&"themeDark".into()),
+            Some(&"theme-dark".into()),
             None,
         );
         sheet.add_property(
@@ -786,7 +786,7 @@ mod tests {
             "margin-bottom",
             0,
             "40px",
-            Some(&"themeDark".into()),
+            Some(&"theme-dark".into()),
             None,
         );
         sheet.add_property(
@@ -794,7 +794,7 @@ mod tests {
             "margin-left",
             0,
             "50px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         sheet.add_property(
@@ -802,7 +802,7 @@ mod tests {
             "margin-right",
             0,
             "50px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());
@@ -813,7 +813,7 @@ mod tests {
             "margin-left",
             0,
             "50px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         sheet.add_property(
@@ -821,7 +821,7 @@ mod tests {
             "margin-right",
             0,
             "50px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         sheet.add_property("test", "margin-left", 0, "41px", None, None);
@@ -831,7 +831,7 @@ mod tests {
             "margin-left",
             0,
             "51px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         sheet.add_property(
@@ -839,7 +839,7 @@ mod tests {
             "margin-right",
             0,
             "51px",
-            Some(&"themeLight".into()),
+            Some(&"theme-light".into()),
             None,
         );
         sheet.add_property("test", "margin-left", 0, "42px", None, None);
@@ -852,7 +852,7 @@ mod tests {
             "margin-left",
             0,
             "50px",
-            Some(&["themeLight", "active"].into()),
+            Some(&["theme-light", "active"].into()),
             None,
         );
         sheet.add_property(
@@ -860,7 +860,7 @@ mod tests {
             "margin-right",
             0,
             "50px",
-            Some(&["themeLight", "active"].into()),
+            Some(&["theme-light", "active"].into()),
             None,
         );
         sheet.add_property(
@@ -868,7 +868,7 @@ mod tests {
             "margin-left",
             0,
             "50px",
-            Some(&["themeLight", "hover"].into()),
+            Some(&["theme-light", "hover"].into()),
             None,
         );
         sheet.add_property(
@@ -876,7 +876,7 @@ mod tests {
             "margin-right",
             0,
             "50px",
-            Some(&["themeLight", "hover"].into()),
+            Some(&["theme-light", "hover"].into()),
             None,
         );
         assert_debug_snapshot!(sheet.create_css());

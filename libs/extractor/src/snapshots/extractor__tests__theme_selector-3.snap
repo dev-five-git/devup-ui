@@ -24,7 +24,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=-dark] & :is(svg,img)",
+                        ":root[data-theme=dark] & :is(svg,img)",
                     ),
                 ),
                 style_order: None,
@@ -37,7 +37,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=-dark] & :is(svg,img)",
+                        ":root[data-theme=dark] & :is(svg,img)",
                     ),
                 ),
                 style_order: None,
@@ -50,7 +50,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=-dark] & :is(svg,img)",
+                        ":root[data-theme=dark] & :is(svg,img)",
                     ),
                 ),
                 style_order: None,

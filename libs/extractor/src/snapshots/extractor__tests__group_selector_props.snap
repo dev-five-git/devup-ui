@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        "*[role=group]:-hover &",
+                        "*[role=group]:hover &",
                     ),
                 ),
                 style_order: None,

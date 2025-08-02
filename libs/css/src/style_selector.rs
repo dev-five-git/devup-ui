@@ -5,7 +5,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator, to_kebab_case};
+use crate::{
+    constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator, to_kebab_case,
+    utils::to_camel_case,
+};
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
@@ -26,6 +29,7 @@ fn optimize_selector_string(selector: &str) -> String {
         .replace(", ", ",")
 }
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
+    println!("optimize_selector: {:?}", selector);
     match selector {
         StyleSelector::Media { query, selector } => StyleSelector::Media {
             query: query.to_string(),
@@ -117,6 +121,7 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
+        println!("from: {:?}", value);
         let value = value
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -124,7 +129,7 @@ impl From<&str> for StyleSelector {
             .replace(", ", ",");
         if value.contains("&") {
             StyleSelector::Selector(value.to_string())
-        } else if let Some(s) = value.strip_prefix("group") {
+        } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
             StyleSelector::Selector(format!(
                 "{}{}{} &",
@@ -132,13 +137,9 @@ impl From<&str> for StyleSelector {
                 SelectorSeparator::from(post.as_str()),
                 post
             ))
-        } else if let Some(s) = value.strip_prefix("theme") {
+        } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
-            StyleSelector::Selector(format!(
-                ":root[data-theme={}{}] &",
-                s.chars().next().unwrap().to_ascii_lowercase(),
-                &s[1..]
-            ))
+            StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
         } else if value == "print" {
             StyleSelector::Media {
                 query: "print".to_string(),
@@ -236,11 +237,11 @@ mod tests {
     #[rstest]
     #[case("hover", StyleSelector::Selector("&:hover".to_string()))]
     #[case("focusVisible", StyleSelector::Selector("&:focus-visible".to_string()))]
-    #[case("groupHover", StyleSelector::Selector("*[role=group]:hover &".to_string()))]
-    #[case("groupFocusVisible", StyleSelector::Selector("*[role=group]:focus-visible &".to_string()))]
-    #[case("group1", StyleSelector::Selector("*[role=group]:1 &".to_string()))]
-    #[case(["themeDark", "placeholder"], StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string()))]
-    #[case("themeLight", StyleSelector::Selector(":root[data-theme=light] &".to_string()))]
+    #[case("group-hover", StyleSelector::Selector("*[role=group]:hover &".to_string()))]
+    #[case("group-focus-visible", StyleSelector::Selector("*[role=group]:focus-visible &".to_string()))]
+    #[case("group-1", StyleSelector::Selector("*[role=group]:1 &".to_string()))]
+    #[case(["theme-dark", "placeholder"], StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string()))]
+    #[case("theme-light", StyleSelector::Selector(":root[data-theme=light] &".to_string()))]
     #[case("*[aria=disabled='true'] &:hover", StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string()))]
     fn test_style_selector(
         #[case] input: impl Into<StyleSelector>,

@@ -109,7 +109,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('fontSize-0-15px--1')
+    expect(container.querySelector('button')).toHaveClass('font-size-0-15px--1')
   })
 
   it('should have font size 14px when size is sm and variant is default', () => {
@@ -119,7 +119,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('fontSize-0-14px--1')
+    expect(container.querySelector('button')).toHaveClass('font-size-0-14px--1')
   })
 
   it('should render icon when icon is provided', () => {

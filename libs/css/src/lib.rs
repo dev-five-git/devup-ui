@@ -439,7 +439,7 @@ mod tests {
             ".cls::placeholder"
         );
         assert_eq!(
-            merge_selector("cls", Some(&"themeDark".into())),
+            merge_selector("cls", Some(&"theme-dark".into())),
             ":root[data-theme=dark] .cls"
         );
         assert_eq!(
@@ -462,7 +462,7 @@ mod tests {
         );
 
         assert_eq!(
-            merge_selector("cls", Some(&["themeDark", "hover"].into()),),
+            merge_selector("cls", Some(&["theme-dark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
         );
         assert_eq!(
