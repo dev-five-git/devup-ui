@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "boxSizing",
+                property: "box-sizing",
                 value: "border-box",
                 level: 0,
                 selector: None,

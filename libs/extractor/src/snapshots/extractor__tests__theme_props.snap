@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=light] &",
+                        ":root[data-theme=-light] &",
                     ),
                 ),
                 style_order: None,
@@ -24,7 +24,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &",
+                        ":root[data-theme=-dark] &",
                     ),
                 ),
                 style_order: None,

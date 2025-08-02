@@ -119,6 +119,10 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
 };
 
 pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
+
+pub(super) static CSS_COMMENT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
+
 pub(super) static F_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
 pub(super) static DOT_ZERO_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());

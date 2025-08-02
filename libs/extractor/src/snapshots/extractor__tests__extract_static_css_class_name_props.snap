@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "backgroundColor",
+                property: "background-color",
                 value: "red",
                 level: 0,
                 selector: None,

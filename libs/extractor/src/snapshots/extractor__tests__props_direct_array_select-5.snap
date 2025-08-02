@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "alignItems",
+                property: "align-items",
                 value: "center",
                 level: 0,
                 selector: None,
@@ -55,7 +55,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "justifyContent",
+                property: "justify-content",
                 value: "center",
                 level: 0,
                 selector: None,

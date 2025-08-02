@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box selectors={{\n          '_themeDark': {\n            mx: 1\n          }\n        }} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import {Box} from '@devup-ui/core'\n        <Box _nthLastChild={{\n          mx: 1\n        }} />\n        \",\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &",
+                        "&:nth-last-child",
                     ),
                 ),
                 style_order: None,
@@ -24,7 +24,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &",
+                        "&:nth-last-child",
                     ),
                 ),
                 style_order: None,

@@ -11,7 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &:active",
+                        ":root[data-theme=-dark] &:active",
                     ),
                 ),
                 style_order: None,
@@ -24,7 +24,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &:active::placeholder",
+                        ":root[data-theme=-dark] &:active::placeholder",
                     ),
                 ),
                 style_order: None,
@@ -37,7 +37,7 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Selector(
-                        ":root[data-theme=dark] &:hover",
+                        ":root[data-theme=-dark] &:hover",
                     ),
                 ),
                 style_order: None,

@@ -52,11 +52,12 @@ pub fn extract_style_from_expression<'a>(
                                 && let name = ident.name.as_str()
                                 && !is_special_property(name)
                             {
-                                for name in disassemble_property(name) {
-                                    if name == "styleOrder" {
+                                let property_name = name.to_string();
+                                for name in disassemble_property(&property_name) {
+                                    if &property_name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
                                             .map(|v| v as u8);
-                                    } else if name == "styleVars" {
+                                    } else if &property_name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator));
                                     } else {

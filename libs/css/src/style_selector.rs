@@ -18,6 +18,30 @@ pub enum StyleSelector {
     Global(String, String),
 }
 
+fn optimize_selector_string(selector: &str) -> String {
+    selector
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(", ", ",")
+}
+pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
+    match selector {
+        StyleSelector::Media { query, selector } => StyleSelector::Media {
+            query: query.to_string(),
+            selector: selector
+                .as_ref()
+                .map(|s| optimize_selector_string(s.as_str())),
+        },
+        StyleSelector::Selector(selector) => {
+            StyleSelector::Selector(optimize_selector_string(&selector))
+        }
+        StyleSelector::Global(selector, file) => {
+            StyleSelector::Global(optimize_selector_string(&selector), file.to_string())
+        }
+    }
+}
+
 impl PartialOrd for StyleSelector {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))

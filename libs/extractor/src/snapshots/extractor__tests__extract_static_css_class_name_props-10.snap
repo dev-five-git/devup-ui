@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "backgroundColor",
+                property: "background-color",
                 value: "green",
                 level: 1,
                 selector: Some(
@@ -19,7 +19,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "backgroundColor",
+                property: "background-color",
                 value: "red",
                 level: 0,
                 selector: Some(
@@ -32,7 +32,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "backgroundColor",
+                property: "background-color",
                 value: "red",
                 level: 2,
                 selector: Some(

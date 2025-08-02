@@ -1695,6 +1695,47 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import {Box} from '@devup-ui/core'
+        <Box _nthLastChild={{
+          mx: 1
+        }} />
+        ",
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box
+          selectors={{
+            "&:nth-last-child(2), &:nth-last-child(3)": {
+              mx: 1
+            },
+            _nthLastChild: {
+              mx: 2
+            }
+          }}
+         />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]

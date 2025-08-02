@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "marginLeft",
+                property: "margin-left",
                 value: "40px",
                 level: 0,
                 selector: Some(
@@ -19,7 +19,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "marginLeft",
+                property: "margin-left",
                 value: "80px",
                 level: 1,
                 selector: Some(
@@ -32,7 +32,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "marginRight",
+                property: "margin-right",
                 value: "40px",
                 level: 0,
                 selector: Some(
@@ -45,7 +45,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "marginRight",
+                property: "margin-right",
                 value: "80px",
                 level: 1,
                 selector: Some(
