@@ -89,7 +89,7 @@ describe('Button', () => {
     )
     expect(container).toMatchSnapshot()
     const button = container.querySelector('button>div>div')
-    expect(button).toHaveClass('textOverflow-0-ellipsis--255')
+    expect(button).toHaveClass('text-overflow-0-ellipsis--255')
   })
 
   it('should have font size 15px when size is md and variant is primary', () => {
@@ -99,7 +99,7 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveClass('fontSize-0-15px--1')
+    expect(container.querySelector('button')).toHaveClass('font-size-0-15px--1')
   })
 
   it('should have font size 15px when size is sm and variant is primary', () => {
