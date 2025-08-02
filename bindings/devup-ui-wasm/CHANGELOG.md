@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.24
+
+### Patch Changes
+
+- c1c4f52: Optimize aspect-ratio by gcd
+
 ## 1.0.23
 
 ### Patch Changes
