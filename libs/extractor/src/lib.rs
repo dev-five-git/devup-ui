@@ -5191,6 +5191,29 @@ globalCss({
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: undefined,
+      src: "url('/fonts/Roboto-Regular.ttf')",
+      fontWeight: 400,
+    }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
