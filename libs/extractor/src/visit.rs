@@ -247,13 +247,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         // already set style order
                         self.styles
-                            .extend(styles.into_iter().map(|ex| ExtractStyleValue::Static(ex)));
+                            .extend(styles.into_iter().map(ExtractStyleValue::Static));
                     }
                     UtilType::Keyframes => {
                         let keyframes = ExtractKeyframes {
                             keyframes: keyframes_to_keyframes_style(&css_str)
                                 .into_iter()
-                                .map(|(k, v)| (k, v))
                                 .collect(),
                         };
                         let name = keyframes.extract().to_string();

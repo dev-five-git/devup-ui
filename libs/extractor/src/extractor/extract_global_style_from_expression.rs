@@ -106,7 +106,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     &None,
                                 )
                                 .into_iter()
-                                .map(|p| ExtractStyleValue::Static(p))
+                                .map(ExtractStyleValue::Static)
                                 .collect::<Vec<_>>();
                                 styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(
                                     ExtractFontFace {

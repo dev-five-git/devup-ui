@@ -8,7 +8,7 @@ use css::{
 
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 
-pub fn css_to_style<'a>(
+pub fn css_to_style(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
@@ -85,7 +85,7 @@ pub fn css_to_style<'a>(
     styles
 }
 
-fn css_to_style_block<'a>(
+fn css_to_style_block(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
@@ -116,9 +116,7 @@ fn css_to_style_block<'a>(
         .collect()
 }
 
-pub fn keyframes_to_keyframes_style<'a>(
-    keyframes: &str,
-) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
+pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
