@@ -18,21 +18,24 @@ pub fn extract_keyframes_from_expression<'a>(
 
     if let Expression::ObjectExpression(obj) = expression {
         for p in obj.properties.iter_mut() {
-            if let ObjectPropertyKind::ObjectProperty(o) = p {
-                let name = if let PropertyKey::StaticIdentifier(ident) = &o.key {
-                    ident.name.to_string()
+            if let ObjectPropertyKind::ObjectProperty(o) = p
+                && let Some(name) = if let PropertyKey::StaticIdentifier(ident) = &o.key {
+                    Some(ident.name.to_string())
                 } else if let PropertyKey::StringLiteral(s) = &o.key {
-                    s.value.to_string()
+                    Some(s.value.to_string())
                 } else if let PropertyKey::TemplateLiteral(t) = &o.key {
-                    t.quasis
-                        .iter()
-                        .map(|q| q.value.raw.as_str())
-                        .collect::<String>()
+                    Some(
+                        t.quasis
+                            .iter()
+                            .map(|q| q.value.raw.as_str())
+                            .collect::<String>(),
+                    )
                 } else if let PropertyKey::NumericLiteral(n) = &o.key {
-                    n.value.to_string()
+                    Some(n.value.to_string())
                 } else {
-                    continue;
-                };
+                    None
+                }
+            {
                 let mut styles =
                     extract_style_from_expression(ast_builder, None, &mut o.value, 0, &None)
                         .styles

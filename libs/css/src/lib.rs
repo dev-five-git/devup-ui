@@ -487,6 +487,17 @@ mod tests {
             ),
             ".cls:hover"
         );
+
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Global(
+                    "&".to_string(),
+                    "file.ts".to_string()
+                ))
+            ),
+            "&"
+        );
     }
 
     #[test]

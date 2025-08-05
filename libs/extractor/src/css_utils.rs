@@ -135,9 +135,7 @@ pub fn keyframes_to_keyframes_style<'a>(
         let rest = &input[start + 1..];
         if let Some(end) = rest.find('}') {
             let block = &rest[..end];
-            let mut styles = css_to_style(block, 0, &None)
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut styles = css_to_style(block, 0, &None);
 
             styles.sort_by_key(|a| {
                 if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
