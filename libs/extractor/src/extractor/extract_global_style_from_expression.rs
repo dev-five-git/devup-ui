@@ -50,23 +50,27 @@ pub fn extract_global_style_from_expression<'a>(
                 if name == "imports" {
                     if let Expression::ArrayExpression(arr) = &o.value {
                         for p in arr.elements.iter() {
-                            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Import(
-                                ExtractImport {
-                                    url: if let ArrayExpressionElement::StringLiteral(s) = p {
-                                        s.value.trim().to_string()
-                                    } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
-                                        t.quasis
-                                            .iter()
-                                            .map(|q| q.value.raw.as_str())
-                                            .collect::<String>()
-                                            .trim()
-                                            .to_string()
-                                    } else {
-                                        continue;
+                            if let Some(url) = if let ArrayExpressionElement::StringLiteral(s) = p {
+                                Some(s.value.trim().to_string())
+                            } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
+                                Some(
+                                    t.quasis
+                                        .iter()
+                                        .map(|q| q.value.raw.as_str())
+                                        .collect::<String>()
+                                        .trim()
+                                        .to_string(),
+                                )
+                            } else {
+                                None
+                            } {
+                                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Import(
+                                    ExtractImport {
+                                        url,
+                                        file: file.to_string(),
                                     },
-                                    file: file.to_string(),
-                                },
-                            )));
+                                )));
+                            }
                         }
                     }
                 } else if name == "fontFaces" {
