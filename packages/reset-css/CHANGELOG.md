@@ -1,5 +1,12 @@
 # @devup-ui/reset-css
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies [c42d636]
+  - @devup-ui/react@1.0.14
+
 ## 1.0.4
 
 ### Patch Changes

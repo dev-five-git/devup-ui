@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.25
+
+### Patch Changes
+
+- c42d636: Impl font-faces to global
+
 ## 1.0.24
 
 ### Patch Changes

@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.13",
+  "version": "1.0.14",
   "type": "module",
   "scripts": {
     "lint": "eslint && tsc --noEmit",

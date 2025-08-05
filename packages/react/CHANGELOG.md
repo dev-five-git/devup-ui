@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.14
+
+### Patch Changes
+
+- c42d636: Impl font-faces to global
+
 ## 1.0.13
 
 ### Patch Changes
