@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
-use css::{rm_css_comment::rm_css_comment, style_selector::StyleSelector};
+use css::{
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    rm_css_comment::rm_css_comment,
+    style_selector::StyleSelector,
+};
 
 use crate::{
     ExtractStyleProp,
@@ -107,8 +111,13 @@ fn css_to_style_block<'a>(
                 let mut iter = s.split(":").map(|s| s.trim());
                 let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
+                let value = if check_multi_css_optimize(property) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
                 Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(property, value, level, selector.clone()),
+                    ExtractStaticStyle::new(property, &value, level, selector.clone()),
                 )))
             }
         })
@@ -164,6 +173,11 @@ pub fn optimize_css_block(css: &str) -> String {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
+                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
                 format!("{property}:{value}")
             }
         })
@@ -218,6 +232,14 @@ mod tests {
     #[case(
         "ul { list-style : none ; margin : 0 ; padding : 0 ; }",
         "ul{list-style:none;margin:0;padding:0}"
+    )]
+    #[case(
+        "ul { font-family: 'Roboto',       sans-serif; }",
+        "ul{font-family:Roboto,sans-serif}"
+    )]
+    #[case(
+        "ul { font-family: \"Roboto Hello\",       sans-serif; }",
+        "ul{font-family:\"Roboto Hello\",sans-serif}"
     )]
     #[case("section{  }", "section{}")]
     fn test_optimize_css_block(#[case] input: &str, #[case] expected: &str) {
@@ -455,6 +477,12 @@ mod tests {
         @media (max-width: 768px) and (min-width: 480px) {
         }",
         vec![]
+    )]
+    #[case(
+        "ul { font-family: 'Roboto Hello',       sans-serif; }",
+        vec![
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
     )]
     fn test_css_to_style(
         #[case] input: &str,

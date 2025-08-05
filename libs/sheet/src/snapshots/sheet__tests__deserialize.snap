@@ -19,6 +19,7 @@ StyleSheet {
     keyframes: {},
     global_css_files: {},
     imports: {},
+    font_faces: {},
     theme: Theme {
         colors: {},
         breakpoints: [

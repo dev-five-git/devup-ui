@@ -134,6 +134,8 @@ pub struct StyleSheet {
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
     pub imports: BTreeMap<String, BTreeSet<String>>,
+    #[serde(default)]
+    pub font_faces: BTreeMap<String, BTreeSet<BTreeMap<String, String>>>,
     #[serde(skip)]
     pub theme: Theme,
 }
@@ -174,6 +176,14 @@ impl StyleSheet {
             .insert(import.to_string());
     }
 
+    pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
+        self.global_css_files.insert(file.to_string());
+        self.font_faces
+            .entry(file.to_string())
+            .or_default()
+            .insert(properties.clone());
+    }
+
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
         self.global_css_files.insert(file.to_string());
         self.css
@@ -204,6 +214,9 @@ impl StyleSheet {
         }
         self.global_css_files.remove(file);
         self.css.remove(file);
+
+        self.font_faces.remove(file);
+
         for map in self.properties.values_mut() {
             for props in map.values_mut() {
                 props.retain(|prop| {
@@ -295,6 +308,19 @@ impl StyleSheet {
                     ))
                     .collect::<String>()
             ));
+        }
+
+        for (_, font_faces) in self.font_faces.iter() {
+            for font_face in font_faces.iter() {
+                css.push_str(&format!(
+                    "@font-face{{{}}}",
+                    font_face
+                        .iter()
+                        .map(|(key, value)| format!("{key}:{value}"))
+                        .collect::<Vec<String>>()
+                        .join(";")
+                ));
+            }
         }
 
         for (_, _css) in self.css.iter() {
@@ -1369,5 +1395,27 @@ mod tests {
         let now = sheet.create_css();
         assert_debug_snapshot!(now);
         assert_eq!(past, now);
+    }
+
+    #[test]
+    fn test_font_face() {
+        let mut sheet = StyleSheet::default();
+        let mut font_face_props = BTreeMap::new();
+        font_face_props.insert("font-family".to_string(), "Roboto".to_string());
+        font_face_props.insert(
+            "src".to_string(),
+            "url('/fonts/Roboto-Regular.ttf')".to_string(),
+        );
+        font_face_props.insert("font-weight".to_string(), "400".to_string());
+
+        sheet.add_font_face("test.tsx", &font_face_props);
+
+        let css = sheet.create_css();
+        assert!(css.contains("@font-face"));
+        assert!(css.contains("font-family:Roboto"));
+        assert!(css.contains("src:url('/fonts/Roboto-Regular.ttf')"));
+        assert!(css.contains("font-weight:400"));
+
+        assert_debug_snapshot!(css);
     }
 }

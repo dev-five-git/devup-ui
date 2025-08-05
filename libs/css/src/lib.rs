@@ -2,6 +2,7 @@ pub mod class_map;
 mod constant;
 pub mod debug;
 pub mod is_special_property;
+pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;

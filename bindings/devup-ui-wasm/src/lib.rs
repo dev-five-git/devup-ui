@@ -128,6 +128,9 @@ impl Output {
                 ExtractStyleValue::Import(st) => {
                     sheet.add_import(&st.file, &st.url);
                 }
+                ExtractStyleValue::FontFace(font) => {
+                    sheet.add_font_face(&font.file, &font.properties);
+                }
             }
         }
 

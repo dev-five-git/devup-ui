@@ -12,15 +12,33 @@ type GlobalCssProps = {
     | DevupThemeSelectorProps
 }
 
+interface FontFaceProps {
+  fontFamily: string
+  src: string
+  fontWeight?: string | number
+  fontStyle?: string
+  fontDisplay?: string
+  unicodeRange?: string
+  fontVariant?: string
+  ascentOverride?: string
+  descentOverride?: string
+  fontStretch?: string
+  lineGapOverride?: string
+  sizeAdjust?: string
+  fontFeatureSettings?: string
+  fontVariationSettings?: string
+}
+
 export function globalCss(
   strings?:
     | TemplateStringsArray
     | (Omit<GlobalCssProps, 'imports'> & {
         imports?: string[]
+        fontFaces?: FontFaceProps[]
       }),
-): never
+): void
 
-export function globalCss(): never
+export function globalCss(): void
 
 export function globalCss(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -29,6 +47,6 @@ export function globalCss(
     | (Omit<GlobalCssProps, 'imports'> & {
         imports?: string[]
       }),
-): never {
+): void {
   throw new Error('Cannot run on the runtime')
 }
