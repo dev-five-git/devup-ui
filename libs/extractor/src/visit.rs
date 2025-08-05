@@ -164,16 +164,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     .expression_string_literal(SPAN, self.ast.atom(""), None)
                             } else {
                                 // css can not reachable
-                                // ExtractResult::ExtractStyleWithChangeTag(styles, _)
                                 let class_name =
                                     gen_class_names(&self.ast, &mut styles, style_order);
 
-                                self.styles.extend(
-                                    styles
-                                        .into_iter()
-                                        // already set style order
-                                        .flat_map(|ex| ex.extract()),
-                                );
+                                // already set style order
+                                self.styles
+                                    .extend(styles.into_iter().flat_map(|ex| ex.extract()));
                                 if let Some(cls) = class_name {
                                     cls
                                 } else {
@@ -206,17 +202,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 call.arguments[0].to_expression_mut(),
                                 &self.filename,
                             );
-                            self.styles.extend(
-                                styles
-                                    .into_iter()
-                                    // already set style order
-                                    .flat_map(|mut ex| {
-                                        if let ExtractStyleProp::Static(css) = &mut ex {
-                                            css.set_style_order(style_order.unwrap_or(0));
-                                        }
-                                        ex.extract()
-                                    }),
-                            );
+                            // already set style order
+                            self.styles.extend(styles.into_iter().flat_map(|mut ex| {
+                                if let ExtractStyleProp::Static(css) = &mut ex {
+                                    css.set_style_order(style_order.unwrap_or(0));
+                                }
+                                ex.extract()
+                            }));
                             self.ast.expression_identifier(SPAN, self.ast.atom(""))
                         }
                     }
@@ -244,12 +236,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .ast
                                 .expression_string_literal(SPAN, self.ast.atom(""), None);
                         }
-                        self.styles.extend(
-                            styles
-                                .into_iter()
-                                // already set style order
-                                .flat_map(|ex| ex.extract()),
-                        );
+                        // already set style order
+                        self.styles
+                            .extend(styles.into_iter().flat_map(|ex| ex.extract()));
                     }
                     UtilType::Keyframes => {
                         let keyframes = ExtractKeyframes {
@@ -382,11 +371,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
         if let Some(Expression::CallExpression(call)) = &it.init {
-            if call.arguments.len() != 1 {
-                return;
-            }
-            if let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
-                (&call.callee, &call.arguments[0])
+            if call.arguments.len() == 1
+                && let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
+                    (&call.callee, &call.arguments[0])
                 && ident.name == "require"
             {
                 if arg.value == "react/jsx-runtime" {
