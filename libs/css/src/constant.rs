@@ -69,6 +69,12 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "objectPos" => &["object-position"],
     "offsetPos" => &["offset-position"],
 };
+pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
+    "font-family",
+    "src",
+    "content",
+    "animation-name",
+};
 
 pub(super) static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
     "after",

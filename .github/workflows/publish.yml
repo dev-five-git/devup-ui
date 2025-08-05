@@ -41,12 +41,12 @@ jobs:
           pnpm build
           pnpm lint
           # rust coverage issue
-          echo 'max_width = 1000' > .rustfmt.toml
+          echo 'max_width = 100000' > .rustfmt.toml
           echo 'tab_spaces = 4' >> .rustfmt.toml
           echo 'newline_style = "Unix"' >> .rustfmt.toml
-          echo 'fn_call_width = 1000' >> .rustfmt.toml
+          echo 'fn_call_width = 100000' >> .rustfmt.toml
           echo 'fn_params_layout = "Compressed"' >> .rustfmt.toml
-          echo 'chain_width = 1000' >> .rustfmt.toml
+          echo 'chain_width = 100000' >> .rustfmt.toml
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt

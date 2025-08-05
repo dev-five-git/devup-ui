@@ -7,6 +7,7 @@ pub fn rm_css_comment(value: &str) -> String {
         .split_ascii_whitespace()
         .collect::<Vec<&str>>()
         .join(" ")
+        .replace(", ", ",")
 }
 
 #[cfg(test)]

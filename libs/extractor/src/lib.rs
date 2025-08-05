@@ -2944,6 +2944,9 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_file: None }).unwrap()));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_file: None }).unwrap()));
     }
 
     #[test]
@@ -5061,6 +5064,150 @@ globalCss({
                 r#"import { globalCss } from "@devup-ui/core";
 globalCss({
   imports: [`@devup-ui/core/css/global3.css`, `@devup-ui/core/css/global4.css`]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_global_css_with_font_faces() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: "Roboto",
+      src: "url('/fonts/Roboto-Regular.ttf')",
+      fontWeight: 400,
+    },
+    {
+      fontFamily: "Roboto2",
+      src: "url('/fonts/Roboto-Regular.ttf')",
+      fontWeight: 400,
+    }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: "Roboto",
+      src: `url('/fonts/Roboto-Regular.ttf')`,
+      fontWeight: `400`,
+    }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: "Roboto",
+      src: "url('/fonts/Roboto-Regular.ttf')",
+    }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [`
+  font-family: "Roboto";
+  src: "url('/fonts/Roboto-Regular.ttf')";
+  font-weight: 400;
+  `]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: "Roboto Hello",
+      src: "url('/fonts/Roboto-Regular.ttf')",
+      fontWeight: 400,
+    }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: undefined,
+      src: "url('/fonts/Roboto-Regular.ttf')",
+      fontWeight: 400,
+    }
+  ]
 })
 "#,
                 ExtractOption {

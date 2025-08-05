@@ -18,14 +18,14 @@
     "vitest": "^3.2.4",
     "@vitest/coverage-v8": "^3.2.4",
     "@changesets/cli": "^2.29.5",
-    "@types/node": "^24.1.0",
+    "@types/node": "^24.2.0",
     "happy-dom": "^18.0.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/jest-dom": "^6.6.4",
     "@devup-ui/vite-plugin": "workspace:*"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@10.14.0",
   "resolutions": {
     "vite": "^6"
   }

@@ -1,19 +1,18 @@
 use std::collections::BTreeMap;
 
-use css::{rm_css_comment::rm_css_comment, style_selector::StyleSelector};
-
-use crate::{
-    ExtractStyleProp,
-    extract_style::{
-        extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
-    },
+use css::{
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    rm_css_comment::rm_css_comment,
+    style_selector::StyleSelector,
 };
 
-pub fn css_to_style<'a>(
+use crate::extract_style::extract_static_style::ExtractStaticStyle;
+
+pub fn css_to_style(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
+) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
     let mut input = css;
 
@@ -82,21 +81,15 @@ pub fn css_to_style<'a>(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_by_key(|a| {
-        if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-            a.property().to_string()
-        } else {
-            "".to_string()
-        }
-    });
+    styles.sort_by_key(|a| a.property().to_string());
     styles
 }
 
-fn css_to_style_block<'a>(
+fn css_to_style_block(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
+) -> Vec<ExtractStaticStyle> {
     rm_css_comment(css)
         .split(";")
         .filter_map(|s| {
@@ -107,17 +100,23 @@ fn css_to_style_block<'a>(
                 let mut iter = s.split(":").map(|s| s.trim());
                 let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
-                Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(property, value, level, selector.clone()),
-                )))
+                let value = if check_multi_css_optimize(property) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
+                Some(ExtractStaticStyle::new(
+                    property,
+                    &value,
+                    level,
+                    selector.clone(),
+                ))
             }
         })
         .collect()
 }
 
-pub fn keyframes_to_keyframes_style<'a>(
-    keyframes: &str,
-) -> BTreeMap<String, Vec<ExtractStyleProp<'a>>> {
+pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
@@ -126,17 +125,9 @@ pub fn keyframes_to_keyframes_style<'a>(
         let rest = &input[start + 1..];
         if let Some(end) = rest.find('}') {
             let block = &rest[..end];
-            let mut styles = css_to_style(block, 0, &None)
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut styles = css_to_style(block, 0, &None);
 
-            styles.sort_by_key(|a| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-                    a.property().to_string()
-                } else {
-                    "".to_string()
-                }
-            });
+            styles.sort_by_key(|a| a.property().to_string());
             map.insert(key, styles);
             input = &rest[end + 1..];
         } else {
@@ -164,6 +155,11 @@ pub fn optimize_css_block(css: &str) -> String {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
+                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
                 format!("{property}:{value}")
             }
         })
@@ -218,6 +214,14 @@ mod tests {
     #[case(
         "ul { list-style : none ; margin : 0 ; padding : 0 ; }",
         "ul{list-style:none;margin:0;padding:0}"
+    )]
+    #[case(
+        "ul { font-family: 'Roboto',       sans-serif; }",
+        "ul{font-family:Roboto,sans-serif}"
+    )]
+    #[case(
+        "ul { font-family: \"Roboto Hello\",       sans-serif; }",
+        "ul{font-family:\"Roboto Hello\",sans-serif}"
     )]
     #[case("section{  }", "section{}")]
     fn test_optimize_css_block(#[case] input: &str, #[case] expected: &str) {
@@ -456,6 +460,12 @@ mod tests {
         }",
         vec![]
     )]
+    #[case(
+        "ul { font-family: 'Roboto Hello',       sans-serif; }",
+        vec![
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
@@ -463,14 +473,7 @@ mod tests {
         let styles = css_to_style(input, 0, &None);
         let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
             .iter()
-            .filter_map(|prop| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) = prop
-                {
-                    Some((st.property(), st.value(), st.selector().cloned()))
-                } else {
-                    None
-                }
-            })
+            .map(|prop| (prop.property(), prop.value(), prop.selector().cloned()))
             .collect();
         result.sort();
         let mut expected_sorted = expected.clone();
@@ -541,15 +544,7 @@ mod tests {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles
                 .iter()
-                .filter_map(|prop| {
-                    if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) =
-                        prop
-                    {
-                        Some((st.property(), st.value()))
-                    } else {
-                        None
-                    }
-                })
+                .map(|prop| (prop.property(), prop.value()))
                 .collect();
             result.sort();
             let mut expected_sorted = expected

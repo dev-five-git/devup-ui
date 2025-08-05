@@ -1,4 +1,5 @@
 use css::{
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
     optimize_value::optimize_value,
     sheet_to_classname,
     style_selector::{StyleSelector, optimize_selector},
@@ -97,16 +98,20 @@ impl ExtractStaticStyle {
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
+        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
+            self.value.to_string()
+        } else {
+            convert_value(&self.value)
+        });
+        let v = if check_multi_css_optimize(&self.property) {
+            optimize_mutli_css_value(&v)
+        } else {
+            v
+        };
         StyleProperty::ClassName(sheet_to_classname(
             &self.property,
             self.level,
-            Some(&optimize_value(
-                &if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
-                    self.value.to_string()
-                } else {
-                    convert_value(&self.value)
-                },
-            )),
+            Some(&v),
             s.as_deref(),
             self.style_order,
         ))

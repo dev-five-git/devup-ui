@@ -10,9 +10,9 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@chakra-ui/react": "^3.23.0",
+    "@chakra-ui/react": "^3.24.0",
     "@emotion/react": "^11.14.0",
-    "next": "^15.4.4",
+    "next": "^15.4.5",
     "next-themes": "^0.4.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
