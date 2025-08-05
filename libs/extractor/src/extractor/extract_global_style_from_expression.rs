@@ -31,20 +31,22 @@ pub fn extract_global_style_from_expression<'a>(
 
     if let Expression::ObjectExpression(obj) = expression {
         for p in obj.properties.iter_mut() {
-            if let ObjectPropertyKind::ObjectProperty(o) = p {
-                let name = if let PropertyKey::StaticIdentifier(ident) = &o.key {
-                    ident.name.to_string()
+            if let ObjectPropertyKind::ObjectProperty(o) = p
+                && let Some(name) = if let PropertyKey::StaticIdentifier(ident) = &o.key {
+                    Some(ident.name.to_string())
                 } else if let PropertyKey::StringLiteral(s) = &o.key {
-                    s.value.to_string()
+                    Some(s.value.to_string())
                 } else if let PropertyKey::TemplateLiteral(t) = &o.key {
-                    t.quasis
-                        .iter()
-                        .map(|q| q.value.raw.as_str())
-                        .collect::<String>()
+                    Some(
+                        t.quasis
+                            .iter()
+                            .map(|q| q.value.raw.as_str())
+                            .collect::<String>(),
+                    )
                 } else {
-                    continue;
-                };
-
+                    None
+                }
+            {
                 if name == "imports" {
                     if let Expression::ArrayExpression(arr) = &o.value {
                         for p in arr.elements.iter() {
