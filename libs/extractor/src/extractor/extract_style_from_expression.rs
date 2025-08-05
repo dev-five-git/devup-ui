@@ -304,52 +304,46 @@ pub fn extract_style_from_expression<'a>(
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
-            Expression::TemplateLiteral(_) => {
-                let name = name.unwrap();
-                if typo {
-                    ExtractResult {
-                        styles: vec![ExtractStyleProp::Expression {
-                            expression: ast_builder.expression_template_literal(
-                                SPAN,
-                                ast_builder.vec_from_array([
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom("typo-"),
-                                            cooked: None,
-                                        },
-                                        false,
-                                    ),
-                                    ast_builder.template_element(
-                                        SPAN,
-                                        TemplateElementValue {
-                                            raw: ast_builder.atom(""),
-                                            cooked: None,
-                                        },
-                                        true,
-                                    ),
-                                ]),
-                                ast_builder
-                                    .vec_from_array([expression.clone_in(ast_builder.allocator)]),
-                            ),
-                            styles: vec![],
-                        }],
-                        ..ExtractResult::default()
-                    }
+            Expression::TemplateLiteral(_) => ExtractResult {
+                styles: if typo {
+                    vec![ExtractStyleProp::Expression {
+                        expression: ast_builder.expression_template_literal(
+                            SPAN,
+                            ast_builder.vec_from_array([
+                                ast_builder.template_element(
+                                    SPAN,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom("typo-"),
+                                        cooked: None,
+                                    },
+                                    false,
+                                ),
+                                ast_builder.template_element(
+                                    SPAN,
+                                    TemplateElementValue {
+                                        raw: ast_builder.atom(""),
+                                        cooked: None,
+                                    },
+                                    true,
+                                ),
+                            ]),
+                            ast_builder
+                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                        ),
+                        styles: vec![],
+                    }]
                 } else {
-                    ExtractResult {
-                        styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                            ExtractDynamicStyle::new(
-                                name,
-                                level,
-                                &expression_to_code(expression),
-                                selector.clone(),
-                            ),
-                        ))],
-                        ..ExtractResult::default()
-                    }
-                }
-            }
+                    vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                        ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            &expression_to_code(expression),
+                            selector.clone(),
+                        ),
+                    ))]
+                },
+                ..ExtractResult::default()
+            },
             Expression::Identifier(identifier) => {
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
