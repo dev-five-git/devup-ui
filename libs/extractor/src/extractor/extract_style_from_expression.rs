@@ -148,7 +148,10 @@ pub fn extract_style_from_expression<'a>(
                         .collect::<String>(),
                     level,
                     selector,
-                ),
+                )
+                .into_iter()
+                .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
+                .collect(),
                 ..ExtractResult::default()
             },
             _ => ExtractResult::default(),
@@ -268,7 +271,10 @@ pub fn extract_style_from_expression<'a>(
             }
         } else {
             ExtractResult {
-                styles: css_to_style(&value, level, selector),
+                styles: css_to_style(&value, level, selector)
+                    .into_iter()
+                    .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
+                    .collect(),
                 ..ExtractResult::default()
             }
         }

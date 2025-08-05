@@ -226,8 +226,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .collect::<String>();
                 match css_type.as_ref() {
                     UtilType::Css => {
-                        let mut styles = css_to_style(&css_str, 0, &None);
-                        let class_name = gen_class_names(&self.ast, &mut styles, None);
+                        let styles = css_to_style(&css_str, 0, &None);
+                        let class_name = gen_class_names(
+                            &self.ast,
+                            &mut styles
+                                .iter()
+                                .map(|ex| {
+                                    ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone()))
+                                })
+                                .collect::<Vec<_>>(),
+                            None,
+                        );
 
                         if let Some(cls) = class_name {
                             *it = cls;
@@ -238,29 +247,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         // already set style order
                         self.styles
-                            .extend(styles.into_iter().flat_map(|ex| ex.extract()));
+                            .extend(styles.into_iter().map(|ex| ExtractStyleValue::Static(ex)));
                     }
                     UtilType::Keyframes => {
                         let keyframes = ExtractKeyframes {
                             keyframes: keyframes_to_keyframes_style(&css_str)
                                 .into_iter()
-                                .map(|(k, v)| {
-                                    (
-                                        k,
-                                        v.into_iter()
-                                            .filter_map(|ex| {
-                                                if let crate::ExtractStyleProp::Static(
-                                                    crate::ExtractStyleValue::Static(st),
-                                                ) = ex
-                                                {
-                                                    Some(st)
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect(),
-                                    )
-                                })
+                                .map(|(k, v)| (k, v))
                                 .collect(),
                         };
                         let name = keyframes.extract().to_string();

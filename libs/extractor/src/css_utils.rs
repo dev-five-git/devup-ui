@@ -6,18 +6,13 @@ use css::{
     style_selector::StyleSelector,
 };
 
-use crate::{
-    ExtractStyleProp,
-    extract_style::{
-        extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
-    },
-};
+use crate::extract_style::extract_static_style::ExtractStaticStyle;
 
 pub fn css_to_style<'a>(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
+) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
     let mut input = css;
 
@@ -86,13 +81,7 @@ pub fn css_to_style<'a>(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_by_key(|a| {
-        if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-            a.property().to_string()
-        } else {
-            "".to_string()
-        }
-    });
+    styles.sort_by_key(|a| a.property().to_string());
     styles
 }
 
@@ -100,7 +89,7 @@ fn css_to_style_block<'a>(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
+) -> Vec<ExtractStaticStyle> {
     rm_css_comment(css)
         .split(";")
         .filter_map(|s| {
@@ -116,9 +105,12 @@ fn css_to_style_block<'a>(
                 } else {
                     value.to_string()
                 };
-                Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(property, &value, level, selector.clone()),
-                )))
+                Some(ExtractStaticStyle::new(
+                    property,
+                    &value,
+                    level,
+                    selector.clone(),
+                ))
             }
         })
         .collect()
@@ -126,7 +118,7 @@ fn css_to_style_block<'a>(
 
 pub fn keyframes_to_keyframes_style<'a>(
     keyframes: &str,
-) -> BTreeMap<String, Vec<ExtractStyleProp<'a>>> {
+) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
@@ -137,13 +129,7 @@ pub fn keyframes_to_keyframes_style<'a>(
             let block = &rest[..end];
             let mut styles = css_to_style(block, 0, &None);
 
-            styles.sort_by_key(|a| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-                    a.property().to_string()
-                } else {
-                    "".to_string()
-                }
-            });
+            styles.sort_by_key(|a| a.property().to_string());
             map.insert(key, styles);
             input = &rest[end + 1..];
         } else {
@@ -489,14 +475,7 @@ mod tests {
         let styles = css_to_style(input, 0, &None);
         let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
             .iter()
-            .filter_map(|prop| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) = prop
-                {
-                    Some((st.property(), st.value(), st.selector().cloned()))
-                } else {
-                    None
-                }
-            })
+            .map(|prop| (prop.property(), prop.value(), prop.selector().cloned()))
             .collect();
         result.sort();
         let mut expected_sorted = expected.clone();
@@ -567,15 +546,7 @@ mod tests {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles
                 .iter()
-                .filter_map(|prop| {
-                    if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) =
-                        prop
-                    {
-                        Some((st.property(), st.value()))
-                    } else {
-                        None
-                    }
-                })
+                .map(|prop| (prop.property(), prop.value()))
                 .collect();
             result.sort();
             let mut expected_sorted = expected
