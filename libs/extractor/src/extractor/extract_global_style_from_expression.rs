@@ -105,18 +105,16 @@ pub fn extract_global_style_from_expression<'a>(
                                 )));
                             } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
                                 let css_styles = css_to_style(
-                                    &t.quasis
+                                    t.quasis
                                         .iter()
                                         .map(|q| q.value.raw.as_str())
                                         .collect::<String>()
-                                        .trim()
-                                        .to_string(),
+                                        .trim(),
                                     0,
                                     &None,
                                 )
                                 .into_iter()
-                                .map(|p| p.extract())
-                                .flatten()
+                                .flat_map(|p| p.extract())
                                 .collect::<Vec<_>>();
                                 styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(
                                     ExtractFontFace {
