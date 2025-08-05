@@ -251,9 +251,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                     UtilType::Keyframes => {
                         let keyframes = ExtractKeyframes {
-                            keyframes: keyframes_to_keyframes_style(&css_str)
-                                .into_iter()
-                                .collect(),
+                            keyframes: keyframes_to_keyframes_style(&css_str),
                         };
                         let name = keyframes.extract().to_string();
 
