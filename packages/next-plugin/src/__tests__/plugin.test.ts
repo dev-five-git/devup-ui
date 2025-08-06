@@ -138,6 +138,7 @@ describe('plugin', () => {
         resolve('df', 'devup-ui.css'),
         '/* devup-ui */',
       )
+      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
   })
 })

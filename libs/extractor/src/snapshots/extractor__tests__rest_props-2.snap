@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "boxShadow",
+                property: "box-shadow",
                 value: "none",
                 level: 0,
                 selector: Some(
@@ -30,7 +30,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "flexDirection",
+                property: "flex-direction",
                 value: "column",
                 level: 0,
                 selector: None,

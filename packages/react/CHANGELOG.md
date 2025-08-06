@@ -1,5 +1,29 @@
 # @devup-ui/react
 
+## 1.0.14
+
+### Patch Changes
+
+- c42d636: Impl font-faces to global
+
+## 1.0.13
+
+### Patch Changes
+
+- 18bc846: Fix nested selector typing issue
+
+## 1.0.12
+
+### Patch Changes
+
+- 7dba3e9: Optimize typing
+
+## 1.0.11
+
+### Patch Changes
+
+- 39895fc: Implement Dynamic props by csstype
+
 ## 1.0.10
 
 ### Patch Changes

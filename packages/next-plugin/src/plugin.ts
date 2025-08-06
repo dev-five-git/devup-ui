@@ -35,8 +35,10 @@ export function DevupUI(
 
     const sheetFile = join(interfacePath, 'sheet.json')
     const classMapFile = join(interfacePath, 'classMap.json')
+    const gitignoreFile = join(interfacePath, '.gitignore')
     if (!existsSync(interfacePath)) mkdirSync(interfacePath)
     if (!existsSync(cssFile)) writeFileSync(cssFile, '/* devup-ui */')
+    if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [basename(cssFile)]: [
         {

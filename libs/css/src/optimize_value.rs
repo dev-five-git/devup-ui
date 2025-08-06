@@ -49,19 +49,20 @@ pub fn optimize_value(value: &str) -> String {
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
 
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            if ret.contains(f) {
-                let index = ret.find(f).unwrap() + f.len();
+            let tmp = ret.to_lowercase();
+            if tmp.contains(f) {
+                let index = tmp.find(f).unwrap() + f.len();
                 let mut zero_idx = vec![];
                 let mut depth = 0;
-                for i in index..ret.len() {
-                    if ret[i..i + 1].eq("(") {
+                for i in index..tmp.len() {
+                    if tmp[i..i + 1].eq("(") {
                         depth += 1;
-                    } else if ret[i..i + 1].eq(")") {
+                    } else if tmp[i..i + 1].eq(")") {
                         depth -= 1;
-                    } else if ret[i..i + 1].eq("0")
-                        && !ret[i - 1..i].chars().next().unwrap().is_ascii_digit()
-                        && (ret.len() == i + 1
-                            || !ret[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
+                    } else if tmp[i..i + 1].eq("0")
+                        && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit()
+                        && (tmp.len() == i + 1
+                            || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
                         && depth == 0
                     {
                         zero_idx.push(i);
@@ -220,6 +221,17 @@ mod tests {
     #[case("max(10px, calc(0", "max(10px,calc(0%))")]
     #[case("max(10px, any(0", "max(10px,any(0))")]
     #[case("10px, any(0))", "(10px,any(0))")]
+    #[case("scale(0deg, 0deg)", "scale(0,0)")]
+    #[case(
+        "scaleX(0deg) scaleY(0deg) scaleZ(0deg)",
+        "scaleX(0) scaleY(0) scaleZ(0)"
+    )]
+    #[case("scaleX(0deg)", "scaleX(0)")]
+    #[case("scaleY(0deg)", "scaleY(0)")]
+    #[case("scaleZ(0deg)", "scaleZ(0)")]
+    #[case("translate(0px) scale(0deg)", "translate(0) scale(0)")]
+    #[case("translate(-0px) scale(-0deg)", "translate(0) scale(0)")]
+    #[case("translate(-10px) scale(-10deg)", "translate(-10px) scale(-10deg)")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }

@@ -1,4 +1,8 @@
-import type { DevupCommonProps, DevupProps } from '..'
+import { Property } from 'csstype'
+
+import type { ResponsiveValue } from '../../responsive-value'
+import type { DevupCommonProps, DevupComponentProps, DevupProps } from '..'
+import type { Selectors } from '../selector'
 
 describe('index', () => {
   it('DevupCommonProps', () => {
@@ -8,8 +12,18 @@ describe('index', () => {
     })
   })
 
+  it('DevupProps', () => {
+    expectTypeOf<DevupProps>()
+      .toHaveProperty('bg')
+      .toEqualTypeOf<ResponsiveValue<Property.Background>>()
+  })
+
+  it('Selectors', () => {
+    expectTypeOf<Selectors>().toHaveProperty('&:hover')
+  })
+
   it('DevupCommonProps _selector', () => {
-    assertType<DevupProps<'div'>>({
+    assertType<DevupComponentProps<'div'>>({
       _hover: {
         bg: 'red',
         _active: {
@@ -18,24 +32,26 @@ describe('index', () => {
       },
     })
 
-    assertType<DevupProps<'div'>>({
+    assertType<DevupComponentProps<'div'>>({
       _hover: `
       background-color: red;
       `,
     })
 
-    expectTypeOf<DevupProps<'div'>>().toExtend<DevupProps<'div'>['_hover']>()
+    expectTypeOf<DevupComponentProps<'div'>>().toExtend<
+      DevupComponentProps<'div'>['_hover']
+    >()
   })
 
   it('DevupCommonProps selectors', () => {
-    assertType<DevupProps<'div'>>({
+    assertType<DevupComponentProps<'div'>>({
       selectors: {
         '&:hover': {
           bg: 'red',
         },
       },
     })
-    assertType<DevupProps<'div'>>({
+    assertType<DevupComponentProps<'div'>>({
       selectors: {
         '&:hover': `
         background-color: red;
@@ -43,7 +59,7 @@ describe('index', () => {
       },
     })
 
-    assertType<DevupProps<'div'>>({
+    assertType<DevupComponentProps<'div'>>({
       selectors: {
         '&:hover': [
           `
@@ -54,6 +70,37 @@ describe('index', () => {
           },
         ],
       },
+    })
+  })
+  it('DevupSelectorProps', () => {
+    assertType<DevupComponentProps<'div'>>({
+      _hover: {
+        bg: 'red',
+      },
+      selectors: {
+        '&:hover': {
+          bg: 'red',
+        },
+      },
+    })
+    assertType<DevupComponentProps<'div'>>({
+      selectors: {
+        '&:hover': `
+        background-color: red;
+        `,
+      },
+      _backdrop: {
+        bg: 'red',
+      },
+    })
+
+    assertType<DevupComponentProps<'div'>>({
+      _hover: `
+      background-color: red;
+      `,
+      _backdrop: `
+      backdrop-filter: blur(10px);
+      `,
     })
   })
 })

@@ -12,9 +12,9 @@ extractor = { path = "../extractor" }
 
 [dev-dependencies]
 insta = "1.43.1"
-serde_json = "1.0.141"
-criterion = { version = "0.6", features = ["html_reports"] }
-rstest = "0.25.0"
+serde_json = "1.0.142"
+criterion = { version = "0.7", features = ["html_reports"] }
+rstest = "0.26.1"
 
 [[bench]]
 name = "my_benchmark"

@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Dynamic(
             ExtractDynamicStyle {
-                property: "zIndex",
+                property: "z-index",
                 level: 0,
                 identifier: "-1 * a",
                 selector: None,
