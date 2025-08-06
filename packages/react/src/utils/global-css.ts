@@ -1,12 +1,20 @@
 import type { DevupCommonProps } from '../types/props'
-import type { DevupThemeSelectorProps } from '../types/props/selector'
+import type {
+  DevupThemeSelectorProps,
+  ExtractSelector,
+  NormalSelector,
+} from '../types/props/selector'
 import type { DevupSelectorProps } from '../types/props/selector'
 
+type GlobalCssKeys =
+  | `*${NormalSelector | ''}`
+  | `${keyof HTMLElementTagNameMap}${NormalSelector | ''}`
+  | `${keyof SVGElementTagNameMap}${NormalSelector | ''}`
+  | `_${ExtractSelector}`
+  | (string & {})
+
 type GlobalCssProps = {
-  [key in
-    | keyof HTMLElementTagNameMap
-    | keyof SVGElementTagNameMap
-    | (string & {})]?:
+  [K in GlobalCssKeys]?:
     | DevupCommonProps
     | DevupSelectorProps
     | DevupThemeSelectorProps

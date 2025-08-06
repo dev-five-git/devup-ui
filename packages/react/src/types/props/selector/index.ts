@@ -18,11 +18,11 @@ export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
   ? Partial<Record<`_theme${string}`, SelectorProps>>
   : Partial<Record<`_theme${PascalCase<keyof DevupTheme>}`, SelectorProps>>
 
-type NormalSelector = Exclude<
+export type NormalSelector = Exclude<
   Pseudos,
   `:-${string}` | `::-${string}` | `${string}()`
 >
-type ExtractSelector<T = NormalSelector> = T extends `::${infer R}`
+export type ExtractSelector<T = NormalSelector> = T extends `::${infer R}`
   ? R
   : T extends `:${infer R}`
     ? R
