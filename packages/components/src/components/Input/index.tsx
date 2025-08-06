@@ -66,6 +66,7 @@ export function Input({
     >
       {icon && (
         <Center
+          aria-label="icon"
           boxSize="24px"
           className={classNames?.icon}
           color={
@@ -101,6 +102,7 @@ export function Input({
         _hover={{
           border: '1px solid var(--primary, light-dark(red, blue))',
         }}
+        aria-label="input"
         bg="var(--inputBg, light-dark(#FFFFFF, #2E2E2E))"
         borderColor={
           error
@@ -122,7 +124,17 @@ export function Input({
           },
         }}
         styleOrder={1}
-        styleVars={Object.assign({}, colors)}
+        styleVars={{
+          primary: colors?.primary,
+          error: colors?.error,
+          text: colors?.text,
+          base: colors?.base,
+          iconBold: colors?.iconBold,
+          border: colors?.border,
+          inputBackground: colors?.inputBackground,
+          primaryFocus: colors?.primaryFocus,
+          negative20: colors?.negative20,
+        }}
         transition="all 0.1s ease-in-out"
         typography={typography}
         value={valueProp ?? value}
@@ -138,6 +150,7 @@ export function Input({
       )}
       {errorMessage && (
         <Text
+          aria-label="error-message"
           bottom="-8px"
           className={classNames?.errorMessage}
           color="var(--error, light-dark(#D52B2E, #FF5B5E))"
@@ -158,6 +171,7 @@ export function ClearButton(props: ComponentProps<'button'>) {
   return (
     <Button
       alignItems="center"
+      aria-label="clear-button"
       bg="var(--negative20, light-dark(#00000033, #FFFFFF66))"
       border="none"
       borderRadius="50%"
