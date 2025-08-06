@@ -3,6 +3,7 @@
 import {
   Box,
   Button,
+  Center,
   css,
   DevupThemeTypography,
   Input as DevupInput,
@@ -14,6 +15,7 @@ interface InputProps extends ComponentProps<'input'> {
   error?: boolean
   errorMessage?: string
   allowClear?: boolean
+  icon?: React.ReactNode
 }
 
 export function Input({
@@ -24,6 +26,7 @@ export function Input({
   error = false,
   errorMessage,
   allowClear = false,
+  icon,
   ...props
 }: InputProps) {
   const [value, setValue] = useState(defaultValue ?? '')
@@ -33,10 +36,26 @@ export function Input({
   const handleClear = () => {
     setValue('')
   }
-  const isClearButtonVisible = value && !props.disabled
+  const clearButtonVisible = value && !props.disabled
 
   return (
-    <Box pos="relative" w="fit-content">
+    <Box
+      pos="relative"
+      selectors={{ '&,&>*': { boxSizing: 'border-box' } }}
+      w="fit-content"
+    >
+      {icon && (
+        <Center
+          boxSize="24px"
+          color="$base"
+          left="12px"
+          pos="absolute"
+          top="50%"
+          transform="translateY(-50%)"
+        >
+          {icon}
+        </Center>
+      )}
       <DevupInput
         _disabled={{
           selectors: {
@@ -60,8 +79,8 @@ export function Input({
         border={error ? '1px solid $error' : '1px solid $border'}
         borderRadius="8px"
         onChange={onChangeProp ?? handleChange}
-        pl="12px"
-        pr={isClearButtonVisible ? '32px' : '12px'}
+        pl={icon ? '36px' : '12px'}
+        pr={['36px', null, allowClear ? '36px' : '12px']}
         py="12px"
         selectors={{
           '&::placeholder': {
@@ -72,9 +91,10 @@ export function Input({
         transition="all 0.1s ease-in-out"
         typography={typography}
         value={valueProp ?? value}
+        w="200px"
         {...props}
       />
-      {isClearButtonVisible && (
+      {clearButtonVisible && (
         <ClearButton
           className={css({
             display: ['flex', null, allowClear ? 'flex' : 'none'],
