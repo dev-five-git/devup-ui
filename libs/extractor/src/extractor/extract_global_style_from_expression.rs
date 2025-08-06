@@ -14,7 +14,7 @@ use crate::{
 };
 use css::{
     disassemble_property,
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value, wrap_url},
     style_selector::StyleSelector,
 };
 use oxc_ast::{
@@ -86,7 +86,15 @@ pub fn extract_global_style_from_expression<'a>(
                                                     && let PropertyKey::StaticIdentifier(ident) = &o.key
                                                     && let Some(s) = get_string_by_literal_expression(&o.value)
                                                 {
-                                                    Some(disassemble_property(&ident.name).iter().map(|p| (p.to_string(), if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() })).collect::<Vec<_>>())
+                                                    Some(disassemble_property(&ident.name).iter().map(|p| {
+                                                        let v= if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() };
+                                                        if *p == "src" {
+                                                            (p.to_string(), wrap_url(&v))
+                                                        }
+                                                        else {
+                                                            (p.to_string(), v)
+                                                        }
+                                                    }).collect::<Vec<_>>())
                                                 } else {
                                                     None
                                                 }
@@ -135,7 +143,16 @@ pub fn extract_global_style_from_expression<'a>(
                             None,
                             &mut o.value,
                             0,
-                            &Some(StyleSelector::Global(name.clone(), file.to_string())),
+                            &Some(StyleSelector::Global(
+                                if name.starts_with("_") {
+                                    StyleSelector::from(&name[1..])
+                                        .to_string()
+                                        .replace("&", "*")
+                                } else {
+                                    name.to_string()
+                                },
+                                file.to_string(),
+                            )),
                         )
                         .styles,
                     );

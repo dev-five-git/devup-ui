@@ -4692,6 +4692,63 @@ globalCss({
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  _hover: {
+    bg: "red"
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  _placeholder: {
+    bg: "red"
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  _nthLastChild: {
+    bg: "red"
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -5207,6 +5264,44 @@ globalCss({
       src: "url('/fonts/Roboto-Regular.ttf')",
       fontWeight: 400,
     }
+  ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_file: None
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  fontFaces: [
+    {
+      fontFamily: "Roboto Regular2",
+      src: "//fonts/Roboto-Regular.ttf",
+      fontWeight: 400,
+    },
+    {
+      fontFamily: "Roboto Regular",
+      src: "//fonts/Roboto Regular.ttf",
+      fontWeight: 400,
+    },
+    {
+      fontFamily: "Roboto Regular3",
+      src: "fonts/Roboto Regular.ttf",
+      fontWeight: 400,
+    },
+    {
+      fontFamily: "Roboto Regular4",
+      src: "local('fonts/Roboto Regular.ttf')",
+      fontWeight: 400,
+    },
   ]
 })
 "#,
