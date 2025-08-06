@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.26
+
+### Patch Changes
+
+- b6b2fed: Support auto wrapping for src in font faces
+- b6b2fed: Support \_ selector and typing in globalCss
+
 ## 1.0.25
 
 ### Patch Changes

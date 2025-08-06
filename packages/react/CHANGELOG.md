@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.15
+
+### Patch Changes
+
+- b6b2fed: Support \_ selector and typing in globalCss
+
 ## 1.0.14
 
 ### Patch Changes
