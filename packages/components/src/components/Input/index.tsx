@@ -11,7 +11,9 @@ import {
 } from '@devup-ui/react'
 import { ComponentProps, useState } from 'react'
 
-interface InputProps extends Omit<ComponentProps<'input'>, 'className'> {
+interface InputProps
+  extends Omit<ComponentProps<'input'>, 'className' | 'type'> {
+  type?: Exclude<ComponentProps<'input'>['type'], 'file'>
   typography?: keyof DevupThemeTypography
   error?: boolean
   errorMessage?: string
