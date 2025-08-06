@@ -144,10 +144,8 @@ pub fn extract_global_style_from_expression<'a>(
                             &mut o.value,
                             0,
                             &Some(StyleSelector::Global(
-                                if name.starts_with("_") {
-                                    StyleSelector::from(&name[1..])
-                                        .to_string()
-                                        .replace("&", "*")
+                                if let Some(name) = name.strip_prefix("_") {
+                                    StyleSelector::from(name).to_string().replace("&", "*")
                                 } else {
                                     name.to_string()
                                 },
