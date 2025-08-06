@@ -20,11 +20,6 @@ const meta: Meta<typeof Input> = {
 
 export const Default: Story = {
   args: {
-    colors: {
-      primary: 'red',
-      error: 'blue',
-      text: 'green',
-    },
     placeholder: 'Input text',
   },
 }
