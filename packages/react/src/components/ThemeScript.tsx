@@ -1,6 +1,5 @@
-import type { Conditional } from 'src/types/utils'
-
 import type { DevupTheme } from '../types/theme'
+import type { Conditional } from '../types/utils'
 
 interface ThemeScriptProps {
   auto?: boolean

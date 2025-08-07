@@ -68,14 +68,14 @@ npm install @devup-ui/vite-plugin
 
 ## Comparison Benchmarks
 
-Next.js Build Time and Build Size (AMD Ryzen 9 9950X, 128GB RAM, Windows 11)
+Next.js Build Time and Build Size (github action - ubuntu-latest)
 
 | Library      | Version  | Build Time | Build Size      |
 |--------------|----------|------------|-----------------|
-| kuma-ui      | 1.5.9    | 13.948s    | 61,910,524b     |
-| chakra-ui    | 3.22.0   | 20.557s    | 189,541,604b    |
-| mui          | 7.2.0    | 20.002s    | 218,204,592b    |
-| devup-ui     | 1.0.10   | 10.583s    | 53,111,181b     |
+| kuma-ui      | 1.5.9    | 20.589s    | 63,256,341b     |
+| chakra-ui    | 3.22.0   | 28.988s    | 193,241,174b    |
+| mui          | 7.2.0    | 21.209s    | 88,146,983b     |
+| devup-ui     | 1.0.10   | 17.130s    | 53,861,412b     |
 
 ## How it works
 

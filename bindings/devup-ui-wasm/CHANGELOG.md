@@ -1,5 +1,62 @@
 # @devup-ui/wasm
 
+## 1.0.26
+
+### Patch Changes
+
+- b6b2fed: Support auto wrapping for src in font faces
+- b6b2fed: Support \_ selector and typing in globalCss
+
+## 1.0.25
+
+### Patch Changes
+
+- c42d636: Impl font-faces to global
+
+## 1.0.24
+
+### Patch Changes
+
+- c1c4f52: Optimize aspect-ratio by gcd
+
+## 1.0.23
+
+### Patch Changes
+
+- 2116e88: Fix global css rerender issue without components
+- 2116e88: Support css comment syntax
+- 2116e88: Optimize css selector
+- 2116e88: Optimize creating css
+
+## 1.0.22
+
+### Patch Changes
+
+- 18bc846: Support \_selector in selectors prop
+- 18bc846: Optimize selectors
+- 18bc846: Optimize 0deg
+
+## 1.0.21
+
+### Patch Changes
+
+- 39895fc: Optimize many func and props
+
+## 1.0.20
+
+### Patch Changes
+
+- 80360c0: Fix multi imports issue
+- 00c39d0: Split property
+- c17424a: Optimize rgba func
+- 1dd32af: Convert light-dark and optimize theme
+
+## 1.0.19
+
+### Patch Changes
+
+- c352113: Optimize zero minus
+
 ## 1.0.18
 
 ### Patch Changes

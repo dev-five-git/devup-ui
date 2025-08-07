@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.1",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "lint": "eslint",
@@ -42,8 +42,8 @@
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
-    "vite": "^7.0.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.6",
     "vite-plugin-dts": "^4.5.4",
     "rollup-plugin-preserve-directives": "^0.4.0"
   },

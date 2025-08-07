@@ -6,6 +6,12 @@ describe('css', () => {
     expect(() => css('class name' as any)).toThrowError(
       'Cannot run on the runtime',
     )
-    expect(() => css()).toThrowError('Cannot run on the runtime')
+    expect(() =>
+      css({
+        selectors: {
+          '&::after': {},
+        },
+      }),
+    ).toThrowError('Cannot run on the runtime')
   })
 })

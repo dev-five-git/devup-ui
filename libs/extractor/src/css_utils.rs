@@ -1,19 +1,18 @@
 use std::collections::BTreeMap;
 
-use css::{style_selector::StyleSelector, utils::to_camel_case};
-
-use crate::{
-    ExtractStyleProp,
-    extract_style::{
-        extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
-    },
+use css::{
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    rm_css_comment::rm_css_comment,
+    style_selector::StyleSelector,
 };
 
-pub fn css_to_style<'a>(
+use crate::extract_style::extract_static_style::ExtractStaticStyle;
+
+pub fn css_to_style(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
+) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
     let mut input = css;
 
@@ -82,41 +81,42 @@ pub fn css_to_style<'a>(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_by_key(|a| {
-        if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-            a.property().to_string()
-        } else {
-            "".to_string()
-        }
-    });
+    styles.sort_by_key(|a| a.property().to_string());
     styles
 }
 
-fn css_to_style_block<'a>(
+fn css_to_style_block(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
-) -> Vec<ExtractStyleProp<'a>> {
-    css.split(";")
+) -> Vec<ExtractStaticStyle> {
+    rm_css_comment(css)
+        .split(";")
         .filter_map(|s| {
             let s = s.trim();
             if s.is_empty() {
                 None
             } else {
                 let mut iter = s.split(":").map(|s| s.trim());
-                let property = to_camel_case(iter.next().unwrap());
+                let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
-                Some(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(&property, value, level, selector.clone()),
-                )))
+                let value = if check_multi_css_optimize(property) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
+                Some(ExtractStaticStyle::new(
+                    property,
+                    &value,
+                    level,
+                    selector.clone(),
+                ))
             }
         })
         .collect()
 }
 
-pub fn keyframes_to_keyframes_style<'a>(
-    keyframes: &str,
-) -> BTreeMap<String, Vec<ExtractStyleProp<'a>>> {
+pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {
     let mut map = BTreeMap::new();
     let mut input = keyframes;
 
@@ -125,17 +125,9 @@ pub fn keyframes_to_keyframes_style<'a>(
         let rest = &input[start + 1..];
         if let Some(end) = rest.find('}') {
             let block = &rest[..end];
-            let mut styles = css_to_style(block, 0, &None)
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut styles = css_to_style(block, 0, &None);
 
-            styles.sort_by_key(|a| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(a)) = a {
-                    a.property().to_string()
-                } else {
-                    "".to_string()
-                }
-            });
+            styles.sort_by_key(|a| a.property().to_string());
             map.insert(key, styles);
             input = &rest[end + 1..];
         } else {
@@ -146,7 +138,8 @@ pub fn keyframes_to_keyframes_style<'a>(
 }
 
 pub fn optimize_css_block(css: &str) -> String {
-    css.split("{")
+    rm_css_comment(css)
+        .split("{")
         .map(|s| s.trim().to_string())
         .collect::<Vec<String>>()
         .join("{")
@@ -157,11 +150,16 @@ pub fn optimize_css_block(css: &str) -> String {
         .split(";")
         .map(|s| {
             if !s.contains(":") {
-                s.to_string().trim().to_string()
+                s.trim().to_string()
             } else {
                 let mut iter = s.split(":");
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
+                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
                 format!("{property}:{value}")
             }
         })
@@ -179,6 +177,20 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
+    #[case(
+        "div{
+        /* comment */
+        background-color: red;
+        /* color: blue; */
+    }",
+        "div{background-color:red}"
+    )]
+    #[case(
+        "/*div{
+        background-color: red;
+    }*/",
+        ""
+    )]
     #[case(
         "       img      {       background-color    :       red;      }     ",
         "img{background-color:red}"
@@ -203,6 +215,14 @@ mod tests {
         "ul { list-style : none ; margin : 0 ; padding : 0 ; }",
         "ul{list-style:none;margin:0;padding:0}"
     )]
+    #[case(
+        "ul { font-family: 'Roboto',       sans-serif; }",
+        "ul{font-family:Roboto,sans-serif}"
+    )]
+    #[case(
+        "ul { font-family: \"Roboto Hello\",       sans-serif; }",
+        "ul{font-family:\"Roboto Hello\",sans-serif}"
+    )]
     #[case("section{  }", "section{}")]
     fn test_optimize_css_block(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_css_block(input), expected);
@@ -226,7 +246,7 @@ mod tests {
     #[case(
         "font-size: 16px;",
         vec![
-            ("fontSize", "16px", None),
+            ("font-size", "16px", None),
         ]
     )]
     #[case(
@@ -282,6 +302,36 @@ mod tests {
             ("color", "#FFF", Some(StyleSelector::Media {
                 query: "(min-width:768px)".to_string(),
                 selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover,   &:active, &:nth-child(2) {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
         ]
     )]
@@ -410,6 +460,12 @@ mod tests {
         }",
         vec![]
     )]
+    #[case(
+        "ul { font-family: 'Roboto Hello',       sans-serif; }",
+        vec![
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
@@ -417,14 +473,7 @@ mod tests {
         let styles = css_to_style(input, 0, &None);
         let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
             .iter()
-            .filter_map(|prop| {
-                if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) = prop
-                {
-                    Some((st.property(), st.value(), st.selector().cloned()))
-                } else {
-                    None
-                }
-            })
+            .map(|prop| (prop.property(), prop.value(), prop.selector().cloned()))
             .collect();
         result.sort();
         let mut expected_sorted = expected.clone();
@@ -436,8 +485,8 @@ mod tests {
     #[case(
         "to {\nbackground-color:red;\n}\nfrom {\nbackground-color:blue;\n}",
         vec![
-            ("to", vec![("backgroundColor", "red")]),
-            ("from", vec![("backgroundColor", "blue")]),
+            ("to", vec![("background-color", "red")]),
+            ("from", vec![("background-color", "blue")]),
         ],
     )]
     #[case(
@@ -470,24 +519,32 @@ mod tests {
             ("50%", vec![("color", "red"), ("background", "blue")]),
         ],
     )]
+    // comment case
+    #[case(
+        "50% { color: red; /*background: blue;*/ }",
+        vec![
+            ("50%", vec![("color", "red")]),
+        ],
+    )]
+    // error case
+    #[case(
+        "50% { color: red        ; background: blue ",
+        vec![
+        ],
+    )]
     fn test_keyframes_to_keyframes_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
     ) {
         let styles = keyframes_to_keyframes_style(input);
+        if styles.len() != expected.len() {
+            panic!("styles.len() != expected.len()");
+        }
         for (expected_key, expected_styles) in styles.iter() {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles
                 .iter()
-                .filter_map(|prop| {
-                    if let crate::ExtractStyleProp::Static(crate::ExtractStyleValue::Static(st)) =
-                        prop
-                    {
-                        Some((st.property(), st.value()))
-                    } else {
-                        None
-                    }
-                })
+                .map(|prop| (prop.property(), prop.value()))
                 .collect();
             result.sort();
             let mut expected_sorted = expected

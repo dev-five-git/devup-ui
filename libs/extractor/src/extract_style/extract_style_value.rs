@@ -1,7 +1,8 @@
 use crate::extract_style::{
     ExtractStyleProperty, extract_css::ExtractCss, extract_dynamic_style::ExtractDynamicStyle,
-    extract_import::ExtractImport, extract_keyframes::ExtractKeyframes,
-    extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
+    extract_font_face::ExtractFontFace, extract_import::ExtractImport,
+    extract_keyframes::ExtractKeyframes, extract_static_style::ExtractStaticStyle,
+    style_property::StyleProperty,
 };
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -11,6 +12,7 @@ pub enum ExtractStyleValue {
     Dynamic(ExtractDynamicStyle),
     Css(ExtractCss),
     Import(ExtractImport),
+    FontFace(ExtractFontFace),
     Keyframes(ExtractKeyframes),
 }
 
@@ -23,7 +25,9 @@ impl ExtractStyleValue {
             ExtractStyleValue::Typography(typo) => {
                 Some(StyleProperty::ClassName(format!("typo-{typo}")))
             }
-            ExtractStyleValue::Css(_) | ExtractStyleValue::Import(_) => None,
+            ExtractStyleValue::Css(_)
+            | ExtractStyleValue::Import(_)
+            | ExtractStyleValue::FontFace(_) => None,
         }
     }
     pub fn set_style_order(&mut self, order: u8) {

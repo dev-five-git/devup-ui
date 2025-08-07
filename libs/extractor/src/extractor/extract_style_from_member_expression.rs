@@ -31,11 +31,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
     match &mut mem.object {
-        Expression::ArrayExpression(array) => {
-            if array.elements.is_empty() {
-                return ExtractResult::default();
-            }
-
+        Expression::ArrayExpression(array) if !array.elements.is_empty() => {
             if let Some(num) = get_number_by_literal_expression(mem_expression) {
                 if num < 0f64 {
                     return ExtractResult::default();
@@ -44,9 +40,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 for (idx, p) in array.elements.iter_mut().enumerate() {
                     if let ArrayExpressionElement::SpreadElement(sp) = p {
                         etc = Some(sp.argument.clone_in(ast_builder.allocator));
-                        continue;
-                    }
-                    if idx as f64 == num {
+                    } else if idx as f64 == num {
                         return extract_style_from_expression(
                             ast_builder,
                             name,
@@ -125,11 +119,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map,
             });
         }
-        Expression::ObjectExpression(obj) => {
-            if obj.properties.is_empty() {
-                return ExtractResult::default();
-            }
-
+        Expression::ObjectExpression(obj) if !obj.properties.is_empty() => {
             let mut map = BTreeMap::new();
             if let Some(k) = get_string_by_literal_expression(mem_expression) {
                 let mut etc = None;
@@ -156,9 +146,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 }
 
                 match etc {
-                    None => {
-                        return ExtractResult::default();
-                    }
+                    None => return ExtractResult::default(),
                     Some(etc) => ret.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
                         ExtractDynamicStyle::new(
                             name.unwrap(),
@@ -203,25 +191,21 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map,
             });
         }
-        Expression::Identifier(_) => {
-            if let Some(name) = name {
-                ret.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                    ExtractDynamicStyle::new(
-                        name,
-                        level,
-                        &expression_to_code(&Expression::ComputedMemberExpression(
-                            ast_builder.alloc_computed_member_expression(
-                                SPAN,
-                                mem.object.clone_in(ast_builder.allocator),
-                                mem_expression.clone_in(ast_builder.allocator),
-                                false,
-                            ),
-                        )),
-                        selector.clone(),
+        Expression::Identifier(_) => ret.push(ExtractStyleProp::Static(
+            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+                name.unwrap(),
+                level,
+                &expression_to_code(&Expression::ComputedMemberExpression(
+                    ast_builder.alloc_computed_member_expression(
+                        SPAN,
+                        mem.object.clone_in(ast_builder.allocator),
+                        mem_expression.clone_in(ast_builder.allocator),
+                        false,
                     ),
-                )))
-            }
-        }
+                )),
+                selector.clone(),
+            )),
+        )),
         _ => {}
     };
 

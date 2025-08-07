@@ -1,14 +1,43 @@
 use crate::{
     COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{DOT_ZERO_RE, F_DOT_RE, INNER_TRIM_RE, ZERO_PERCENT_FUNCTION},
+    constant::{
+        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
+        ZERO_PERCENT_FUNCTION,
+    },
 };
 
 pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
     ret = INNER_TRIM_RE.replace_all(&ret, "(${1})").to_string();
+    ret = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}").to_string();
+    ret = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}").to_string();
+
     if ret.contains(",") {
         ret = F_SPACE_RE.replace_all(&ret, ",").trim().to_string();
     }
+    ret = F_RGBA_RE
+        .replace_all(&ret, |c: &regex::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            let a = c[4].parse::<f32>().unwrap();
+            format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                r,
+                g,
+                b,
+                (a * 255.0).round() as i32
+            )
+        })
+        .to_string();
+    ret = F_RGB_RE
+        .replace_all(&ret, |c: &regex::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            format!("#{r:02X}{g:02X}{b:02X}")
+        })
+        .to_string();
     if ret.contains("#") {
         ret = COLOR_HASH
             .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
@@ -20,19 +49,20 @@ pub fn optimize_value(value: &str) -> String {
         ret = ZERO_RE.replace_all(&ret, "${1}0").to_string();
 
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            if ret.contains(f) {
-                let index = ret.find(f).unwrap() + f.len();
+            let tmp = ret.to_lowercase();
+            if tmp.contains(f) {
+                let index = tmp.find(f).unwrap() + f.len();
                 let mut zero_idx = vec![];
                 let mut depth = 0;
-                for i in index..ret.len() {
-                    if ret[i..i + 1].eq("(") {
+                for i in index..tmp.len() {
+                    if tmp[i..i + 1].eq("(") {
                         depth += 1;
-                    } else if ret[i..i + 1].eq(")") {
+                    } else if tmp[i..i + 1].eq(")") {
                         depth -= 1;
-                    } else if ret[i..i + 1].eq("0")
-                        && !ret[i - 1..i].chars().next().unwrap().is_ascii_digit()
-                        && (ret.len() == i + 1
-                            || !ret[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
+                    } else if tmp[i..i + 1].eq("0")
+                        && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit()
+                        && (tmp.len() == i + 1
+                            || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
                         && depth == 0
                     {
                         zero_idx.push(i);
@@ -85,7 +115,7 @@ pub fn optimize_value(value: &str) -> String {
 }
 
 fn optimize_color(value: &str) -> String {
-    let mut ret = value.to_string().to_uppercase();
+    let mut ret = value.to_uppercase();
 
     if ret.len() == 6 {
         let ch = ret.chars().collect::<Vec<char>>();
@@ -96,7 +126,14 @@ fn optimize_color(value: &str) -> String {
         let ch = ret.chars().collect::<Vec<char>>();
         if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
             ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
+            if ret.ends_with("F") {
+                ret = ret[..ret.len() - 1].to_string();
+            }
+        } else if ret.ends_with("FF") {
+            ret = ret[..ret.len() - 2].to_string();
         }
+    } else if ret.len() == 4 && ret.ends_with("F") {
+        ret = ret[..ret.len() - 1].to_string();
     }
 
     format!("#{ret}")
@@ -128,6 +165,8 @@ mod tests {
     #[case("0dvh", "0")]
     #[case("0dvw", "0")]
     #[case("0px 0px", "0 0")]
+    #[case("-0px -0px", "0 0")]
+    #[case("0.0px   -0px", "0 0")]
     #[case("0em 0em", "0 0")]
     #[case("0rem 0rem", "0 0")]
     #[case("0vh 0vh", "0 0")]
@@ -138,8 +177,14 @@ mod tests {
     #[case("scale(0px)", "scale(0)")]
     #[case("scale(-0px)", "scale(0)")]
     #[case("scale(-0px);", "scale(0)")]
-    #[case("rgba(255, 0, 0,    0.5)", "rgba(255,0,0,.5)")]
-    #[case("rgba(0.0,0.0,0.0,0.5)", "rgba(0,0,0,.5)")]
+    #[case("rgba(255,12,12,0.5)", "#FF0C0C80")]
+    #[case("rgba(255,12,12,.5)", "#FF0C0C80")]
+    #[case("rgba(255,12,12,1)", "#FF0C0C")]
+    #[case("rgba(255, 0, 0,    0.5)", "#FF000080")]
+    #[case("rgba(255, 255, 255,   0.8  )", "#FFFC")]
+    #[case("rgb(255,12,12)", "#FF0C0C")]
+    #[case("rgb(255, 0, 0)", "#F00")]
+    #[case("rgb(255, 255, 255)", "#FFF")]
     #[case("red;", "red")]
     #[case("translate(0px)", "translate(0)")]
     #[case("translate(-0px,0px)", "translate(0,0)")]
@@ -158,6 +203,7 @@ mod tests {
     #[case("min(10px, 0)", "min(10px,0%)")]
     #[case("max(10px, 0)", "max(10px,0%)")]
     #[case("max(some(0), 0)", "max(some(0),0%)")]
+    #[case("max(some(0), -0)", "max(some(0),0%)")]
     #[case("translate(0, min(0, 10px))", "translate(0,min(0%,10px))")]
     #[case("\"red\"", "\"red\"")]
     #[case("'red'", "'red'")]
@@ -175,6 +221,17 @@ mod tests {
     #[case("max(10px, calc(0", "max(10px,calc(0%))")]
     #[case("max(10px, any(0", "max(10px,any(0))")]
     #[case("10px, any(0))", "(10px,any(0))")]
+    #[case("scale(0deg, 0deg)", "scale(0,0)")]
+    #[case(
+        "scaleX(0deg) scaleY(0deg) scaleZ(0deg)",
+        "scaleX(0) scaleY(0) scaleZ(0)"
+    )]
+    #[case("scaleX(0deg)", "scaleX(0)")]
+    #[case("scaleY(0deg)", "scaleY(0)")]
+    #[case("scaleZ(0deg)", "scaleZ(0)")]
+    #[case("translate(0px) scale(0deg)", "translate(0) scale(0)")]
+    #[case("translate(-0px) scale(-0deg)", "translate(0) scale(0)")]
+    #[case("translate(-10px) scale(-10deg)", "translate(-10px) scale(-10deg)")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }
@@ -182,9 +239,9 @@ mod tests {
     #[rstest]
     #[case("#ff0000", "#F00")]
     #[case("#123456", "#123456")]
-    #[case("#ff0000ff", "#F00F")]
+    #[case("#ff0000ff", "#F00")]
     #[case("#f00", "#F00")]
-    #[case("#f00f", "#F00F")]
+    #[case("#f00f", "#F00")]
     #[case("red", "red")]
     #[case("blue", "blue")]
     #[case("transparent", "transparent")]

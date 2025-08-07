@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: css
+---
+"@font-face{font-family:Roboto;font-weight:400;src:url('/fonts/Roboto-Regular.ttf')}"

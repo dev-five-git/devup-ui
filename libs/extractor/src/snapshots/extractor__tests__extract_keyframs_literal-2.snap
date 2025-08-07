@@ -9,7 +9,7 @@ ToBTreeSet {
                 keyframes: {
                     "0%": [
                         ExtractStaticStyle {
-                            property: "backgroundColor",
+                            property: "background-color",
                             value: "red",
                             level: 0,
                             selector: None,
@@ -25,7 +25,7 @@ ToBTreeSet {
                     ],
                     "100%": [
                         ExtractStaticStyle {
-                            property: "backgroundColor",
+                            property: "background-color",
                             value: "blue",
                             level: 0,
                             selector: None,

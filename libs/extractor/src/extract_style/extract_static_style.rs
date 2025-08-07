@@ -1,13 +1,15 @@
 use css::{
-    optimize_value::optimize_value, sheet_to_classname, short_to_long,
-    style_selector::StyleSelector,
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    optimize_value::optimize_value,
+    sheet_to_classname,
+    style_selector::{StyleSelector, optimize_selector},
 };
 
 use crate::{
     extract_style::{
         ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty,
     },
-    utils::convert_value,
+    utils::{convert_value, gcd},
 };
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
@@ -29,13 +31,26 @@ impl ExtractStaticStyle {
     pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
             value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                value.to_string()
+                if property == "aspect-ratio" && value.contains("/") {
+                    if let [Ok(a), Ok(b)] = value
+                        .split('/')
+                        .map(|v| v.trim().parse::<u32>())
+                        .collect::<Vec<_>>()[..]
+                    {
+                        let gcd = gcd(a, b);
+                        format!("{}/{}", a / gcd, b / gcd)
+                    } else {
+                        value.to_string()
+                    }
+                } else {
+                    value.to_string()
+                }
             } else {
                 convert_value(value)
             }),
-            property: short_to_long(property),
+            property: property.to_string(),
             level,
-            selector,
+            selector: selector.map(optimize_selector),
             style_order: None,
         }
     }
@@ -83,16 +98,20 @@ impl ExtractStaticStyle {
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
+        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
+            self.value.to_string()
+        } else {
+            convert_value(&self.value)
+        });
+        let v = if check_multi_css_optimize(&self.property) {
+            optimize_mutli_css_value(&v)
+        } else {
+            v
+        };
         StyleProperty::ClassName(sheet_to_classname(
-            self.property.as_str(),
+            &self.property,
             self.level,
-            Some(&optimize_value(
-                &if MAINTAIN_VALUE_PROPERTIES.contains(self.property.as_str()) {
-                    self.value.to_string()
-                } else {
-                    convert_value(self.value.as_str())
-                },
-            )),
+            Some(&v),
             s.as_deref(),
             self.style_order,
         ))

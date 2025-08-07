@@ -1,0 +1,49 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\nglobalCss({\n  fontFaces: [\n    {\n      fontFamily: \"Roboto Regular2\",\n      src: \"//fonts/Roboto-Regular.ttf\",\n      fontWeight: 400,\n    },\n    {\n      fontFamily: \"Roboto Regular\",\n      src: \"//fonts/Roboto Regular.ttf\",\n      fontWeight: 400,\n    },\n    {\n      fontFamily: \"Roboto Regular3\",\n      src: \"fonts/Roboto Regular.ttf\",\n      fontWeight: 400,\n    },\n    {\n      fontFamily: \"Roboto Regular4\",\n      src: \"local('fonts/Roboto Regular.ttf')\",\n      fontWeight: 400,\n    },\n  ]\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        FontFace(
+            ExtractFontFace {
+                file: "test.tsx",
+                properties: {
+                    "font-family": "\"Roboto Regular\"",
+                    "font-weight": "400",
+                    "src": "url(\"//fonts/Roboto Regular.ttf\")",
+                },
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "test.tsx",
+                properties: {
+                    "font-family": "\"Roboto Regular2\"",
+                    "font-weight": "400",
+                    "src": "url(//fonts/Roboto-Regular.ttf)",
+                },
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "test.tsx",
+                properties: {
+                    "font-family": "\"Roboto Regular3\"",
+                    "font-weight": "400",
+                    "src": "url(\"fonts/Roboto Regular.ttf\")",
+                },
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "test.tsx",
+                properties: {
+                    "font-family": "\"Roboto Regular4\"",
+                    "font-weight": "400",
+                    "src": "local('fonts/Roboto Regular.ttf')",
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n;\n",
+}

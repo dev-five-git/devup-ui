@@ -55,7 +55,7 @@ impl ExportVariableKind {
                         "display", "flex", 0, None,
                     )),
                     ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                        "flexDirection",
+                        "flex-direction",
                         "column",
                         0,
                         None,
@@ -68,13 +68,13 @@ impl ExportVariableKind {
                         "display", "flex", 0, None,
                     )),
                     ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                        "justifyContent",
+                        "justify-content",
                         "center",
                         0,
                         None,
                     )),
                     ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                        "alignItems",
+                        "align-items",
                         "center",
                         0,
                         None,
@@ -182,7 +182,7 @@ mod tests {
                     "display", "flex", 0, None,
                 )),
                 ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                    "flexDirection",
+                    "flex-direction",
                     "column",
                     0,
                     None,
@@ -196,13 +196,13 @@ mod tests {
                     "display", "flex", 0, None,
                 )),
                 ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                    "justifyContent",
+                    "justify-content",
                     "center",
                     0,
                     None,
                 )),
                 ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
-                    "alignItems",
+                    "align-items",
                     "center",
                     0,
                     None,

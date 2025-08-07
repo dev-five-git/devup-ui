@@ -4,7 +4,6 @@ use oxc_codegen::Codegen;
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::UnaryOperator;
-use phf::phf_set;
 
 /// Convert a value to a pixel value
 pub(super) fn convert_value(value: &str) -> String {
@@ -47,144 +46,6 @@ pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> 
     }
 }
 
-static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
-    "style",
-    "className",
-    "role",
-    "ref",
-    "key",
-    "id",
-    "alt",
-    "type",
-    "src",
-    "children",
-    "placeholder",
-    "tabIndex",
-    "maxLength",
-    "minLength",
-    "disabled",
-    "readOnly",
-    "autoFocus",
-    "required",
-    "checked",
-    "defaultChecked",
-    "value",
-    "defaultValue",
-    "selected",
-    "multiple",
-    "accept",
-    "step",
-    "autoComplete",
-    "capture",
-    "form",
-    "formAction",
-    "formEncType",
-    "formMethod",
-    "formNoValidate",
-    "formTarget",
-    "list",
-    "max",
-    "min",
-    "name",
-    "pattern",
-    "size",
-    "challenge",
-    "keyType",
-    "keyParams",
-    "htmlFor",
-    "crossOrigin",
-    "fetchPriority",
-    "href",
-    "hrefLang",
-    "integrity",
-    "media",
-    "imageSrcSet",
-    "imageSizes",
-    "referrerPolicy",
-    "sizes",
-    "charSet",
-    "precedence",
-    "autoPlay",
-    "controls",
-    "controlsList",
-    "loop",
-    "mediaGroup",
-    "muted",
-    "playsInline",
-    "preload",
-    "httpEquiv",
-    "high",
-    "low",
-    "optimum",
-    "classID",
-    "data",
-    "useMap",
-    "wmode",
-    "reversed",
-    "start",
-    "label",
-    "async",
-    "defer",
-    "noModule",
-    "srcSet",
-    "scoped",
-    "align",
-    "bgcolor",
-    "cellPadding",
-    "cellSpacing",
-    "frame",
-    "rules",
-    "summary",
-    "cols",
-    "dirName",
-    "rows",
-    "wrap",
-    "colSpan",
-    "headers",
-    "rowSpan",
-    "scope",
-    "abbr",
-    "valign",
-    "dateTime",
-    "default",
-    "kind",
-    "srcLang",
-    "poster",
-    "disablePictureInPicture",
-    "disableRemotePlayback",
-    "download",
-    "target",
-    "rel",
-    "ping",
-    "coords",
-    "shape",
-    "isMap",
-    "longDesc",
-    "loading",
-    "decoding",
-    "importance",
-    "axis",
-    "char",
-    "charOff",
-    "span",
-    "noWrap",
-    "vSpace",
-    "hSpace",
-    "compact",
-    "scheme",
-    "indeterminate",
-    "defaultSelected",
-    "selectedIndex",
-    "selectedOptions"
-};
-
-pub(super) fn is_special_property(name: &str) -> bool {
-    name.starts_with("on")
-        || name.starts_with("data-")
-        || name.starts_with("aria-")
-        || SPECIAL_PROPERTIES.contains(name)
-}
-
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
         JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
@@ -207,8 +68,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             .quasis
             .iter()
             .map(|q| q.value.raw.to_string())
-            .collect::<Vec<String>>()
-            .join("")
+            .collect::<String>()
             .parse::<f64>()
             .ok(),
         Expression::NumericLiteral(num) => Some(num.value),
@@ -248,6 +108,10 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
             }
             _ => None,
         })
+}
+
+pub fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 #[cfg(test)]

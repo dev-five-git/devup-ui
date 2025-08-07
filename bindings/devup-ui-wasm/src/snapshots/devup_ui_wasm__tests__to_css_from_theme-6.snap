@@ -1,0 +1,5 @@
+---
+source: bindings/devup-ui-wasm/src/lib.rs
+expression: theme.to_css()
+---
+":root{--primary:#000}"

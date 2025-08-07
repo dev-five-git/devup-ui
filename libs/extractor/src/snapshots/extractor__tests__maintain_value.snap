@@ -6,8 +6,8 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "MozTabSize",
-                value: "4",
+                property: "-moz-tab-size",
+                value: "16px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -35,7 +35,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "fontWeight",
+                property: "font-weight",
                 value: "900",
                 level: 0,
                 selector: None,
@@ -44,7 +44,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "lineHeight",
+                property: "line-height",
                 value: "1",
                 level: 0,
                 selector: None,
@@ -71,7 +71,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "tabSize",
+                property: "tab-size",
                 value: "4",
                 level: 0,
                 selector: None,
@@ -80,7 +80,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "zIndex",
+                property: "z-index",
                 value: "2",
                 level: 0,
                 selector: None,

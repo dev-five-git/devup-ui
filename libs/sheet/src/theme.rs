@@ -1,3 +1,4 @@
+use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -161,33 +162,81 @@ impl Theme {
                 col
             };
             let single_theme = entries.len() <= 1;
+            // if other theme is exists, should use light-dark function
+            let other_theme_key = if entries.len() == 2 {
+                entries
+                    .iter()
+                    .find(|(k, _)| *k != &default_theme_key)
+                    .map(|(k, _)| k.to_string())
+            } else {
+                None
+            };
             for (theme_name, theme_properties) in entries {
-                if let Some(theme_key) = if *theme_name == *default_theme_key {
+                let mut css_contents = vec![];
+                let mut css_color_contents = vec![];
+                let theme_key = if *theme_name == *default_theme_key {
                     None
                 } else {
                     Some(theme_name)
-                } {
-                    theme_declaration.push_str(
-                        format!(":root[data-theme={}]{{{}", theme_key, "color-scheme:dark;")
-                            .as_str(),
-                    );
+                };
+                if let Some(theme_key) = theme_key {
+                    theme_declaration.push_str(format!(":root[data-theme={theme_key}]{{").as_str());
+                    css_contents.push("color-scheme:dark".to_string());
                 } else {
-                    theme_declaration.push_str(
-                        format!(
-                            ":root{{{}",
-                            if single_theme {
-                                ""
-                            } else {
-                                "color-scheme:light;"
-                            }
-                        )
-                        .as_str(),
-                    );
+                    theme_declaration.push_str(":root{".to_string().as_str());
+                    if !single_theme {
+                        css_contents.push("color-scheme:light".to_string());
+                    }
                 }
                 for (prop, value) in theme_properties.0.iter() {
-                    theme_declaration.push_str(format!("--{prop}:{value};").as_str());
+                    let optimized_value = optimize_value(value);
+                    if theme_key.is_some() {
+                        if other_theme_key.is_none()
+                            && let Some(default_value) =
+                                self.colors.get(&default_theme_key).and_then(|v| {
+                                    v.0.get(prop).and_then(|v| {
+                                        if optimize_value(v) == optimized_value {
+                                            None
+                                        } else {
+                                            Some(optimized_value)
+                                        }
+                                    })
+                                })
+                        {
+                            css_color_contents.push(format!("--{prop}:{default_value}"));
+                        }
+                    } else {
+                        let other_theme_value =
+                            other_theme_key.as_ref().and_then(|other_theme_key| {
+                                self.colors.get(other_theme_key).and_then(|v| {
+                                    v.0.get(prop).and_then(|v| {
+                                        let other_theme_value = optimize_value(v.as_str());
+                                        if other_theme_value == optimized_value {
+                                            None
+                                        } else {
+                                            Some(other_theme_value)
+                                        }
+                                    })
+                                })
+                            });
+                        // default theme
+                        css_color_contents.push(format!(
+                            "--{prop}:{}",
+                            if let Some(other_theme_value) = other_theme_value {
+                                format!("light-dark({optimized_value},{other_theme_value})")
+                            } else {
+                                optimized_value
+                            }
+                        ));
+                    }
                 }
-                theme_declaration.push_str("}\n");
+                theme_declaration.push_str(
+                    [css_contents, css_color_contents]
+                        .concat()
+                        .join(";")
+                        .as_str(),
+                );
+                theme_declaration.push('}');
             }
         }
         let mut css = theme_declaration;
@@ -195,39 +244,40 @@ impl Theme {
         for ty in self.typography.iter() {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
-                    let css_content = format!(
-                        "{}{}{}{}{}",
+                    let css_content = [
                         t.font_family
                             .clone()
-                            .map(|v| format!("font-family:{v};"))
+                            .map(|v| format!("font-family:{v}"))
                             .unwrap_or("".to_string()),
                         t.font_size
                             .clone()
-                            .map(|v| format!("font-size:{v};"))
+                            .map(|v| format!("font-size:{v}"))
                             .unwrap_or("".to_string()),
                         t.font_weight
                             .clone()
-                            .map(|v| format!("font-weight:{v};"))
+                            .map(|v| format!("font-weight:{v}"))
                             .unwrap_or("".to_string()),
                         t.line_height
                             .clone()
-                            .map(|v| format!("line-height:{v};"))
+                            .map(|v| format!("line-height:{v}"))
                             .unwrap_or("".to_string()),
                         t.letter_spacing
                             .clone()
                             .map(|v| format!("letter-spacing:{v}"))
-                            .unwrap_or("".to_string())
-                    );
-                    if css_content.is_empty() {
-                        continue;
+                            .unwrap_or("".to_string()),
+                    ]
+                    .iter()
+                    .map(|v| v.trim())
+                    .filter(|v| !v.is_empty())
+                    .collect::<Vec<&str>>()
+                    .join(";");
+
+                    if !css_content.is_empty() {
+                        level_map
+                            .entry(idx as u8)
+                            .or_default()
+                            .push(format!(".typo-{}{{{}}}", ty.0, css_content));
                     }
-                    let typo_css = format!(".typo-{}{{{}}}", ty.0, css_content);
-                    level_map
-                        .get_mut(&(idx as u8))
-                        .map(|v| v.push(typo_css.clone()))
-                        .unwrap_or_else(|| {
-                            level_map.insert(idx as u8, vec![typo_css]);
-                        });
                 }
             }
         }
@@ -239,7 +289,7 @@ impl Theme {
                 .get(level as usize)
                 .map(|v| format!("(min-width:{v}px)"))
             {
-                css.push_str(format!("\n@media {}{{{}}}", media, css_vec.join("")).as_str());
+                css.push_str(format!("@media{media}{{{}}}", css_vec.join("")).as_str());
             }
         }
         css
@@ -250,6 +300,7 @@ impl Theme {
 mod tests {
     use super::*;
     use insta::assert_debug_snapshot;
+    use rstest::rstest;
 
     #[test]
     fn to_css_from_theme() {
@@ -297,10 +348,7 @@ mod tests {
             ],
         );
         let css = theme.to_css();
-        assert_eq!(
-            css,
-            ":root{color-scheme:light;--primary:#000;}\n:root[data-theme=dark]{color-scheme:dark;--primary:#fff;}\n.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}\n@media (min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
-        );
+        assert_debug_snapshot!(css);
 
         assert_eq!(Theme::default().to_css(), "");
         let mut theme = Theme::default();
@@ -418,16 +466,62 @@ mod tests {
             }),
         );
         assert_debug_snapshot!(theme.to_css());
+
+        let mut theme = Theme::default();
+        theme.add_color_theme(
+            "light",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "b",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#001".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "a",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#002".to_string());
+                map
+            }),
+        );
+
+        theme.add_color_theme(
+            "c",
+            ColorTheme({
+                let mut map = HashMap::new();
+                map.insert("primary".to_string(), "#000".to_string());
+                map
+            }),
+        );
+        assert_debug_snapshot!(theme.to_css());
     }
 
-    #[test]
-    fn update_breakpoints() {
+    #[rstest]
+    #[case(
+        vec![0, 480, 768, 992, 1280],
+        vec![0, 480, 768, 992, 1280, 1600]
+    )]
+    #[case(
+        vec![0, 480, 768, 992, 1280, 1600],
+        vec![0, 480, 768, 992, 1280, 1600]
+    )]
+    #[case(
+        vec![0, 480, 768, 992, 1280, 1600, 1920],
+        vec![0, 480, 768, 992, 1280, 1600, 1920]
+    )]
+    fn update_breakpoints(#[case] input: Vec<u16>, #[case] expected: Vec<u16>) {
         let mut theme = Theme::default();
-        theme.update_breakpoints(vec![0, 480, 768, 992, 1280]);
-        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
-        theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600]);
-        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600]);
-        theme.update_breakpoints(vec![0, 480, 768, 992, 1280, 1600, 1920]);
-        assert_eq!(theme.breakpoints, vec![0, 480, 768, 992, 1280, 1600, 1920]);
+        theme.update_breakpoints(input);
+        assert_eq!(theme.breakpoints, expected);
     }
 }

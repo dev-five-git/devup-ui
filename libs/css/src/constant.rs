@@ -32,8 +32,12 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgPosition" => &["background-position"],
     "bgPositionX" => &["background-position-x"],
     "bgPositionY" => &["background-position-y"],
+    "bgPos" => &["background-position"],
+    "bgPosX" => &["background-position-x"],
+    "bgPosY" => &["background-position-y"],
     "bgRepeat" => &["background-repeat"],
     "bgSize" => &["background-size"],
+    "bgBlendMode" => &["background-blend-mode"],
     "animationDir" => &["animation-direction"],
     "flexDir" => &["flex-direction"],
     "pos" => &["position"],
@@ -62,32 +66,72 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "borderTopRadius" => &["border-top-left-radius", "border-top-right-radius"],
     "borderLeftRadius" => &["border-top-left-radius", "border-bottom-left-radius"],
     "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
+    "objectPos" => &["object-position"],
+    "offsetPos" => &["offset-position"],
+};
+pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
+    "font-family",
+    "src",
+    "content",
+    "animation-name",
 };
 
 pub(super) static DOUBLE_SEPARATOR: phf::Set<&str> = phf_set! {
-        "placeholder",
-        "before",
-        "after",
-        "highlight",
-        "view-transition",
-        "view-transition-group",
-        "view-transition-image-pair",
-        "view-transition-new",
-        "view-transition-old",
+    "after",
+    "backdrop",
+    "before",
+    "checkmark",
+    "cue",
+    "cue-region",
+    "details-content",
+    "file-selector-button",
+    "first-letter",
+    "first-line",
+    "grammar-error",
+    "marker",
+    "picker-icon",
+    "placeholder",
+    "scroll-marker",
+    "scroll-marker-group",
+    "selection",
+    "spelling-error",
+    "target-text",
+    "view-transition"
 };
 
 pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
-    "min(",
-    "max(",
-    "clamp(",
+    "abs(",
+    "acos(",
+    "asin(",
+    "atan(",
+    "atan2(",
     "calc(",
-    "MIN(",
-    "MAX(",
-    "CLAMP(",
-    "CALC(",
+    "calc-size(",
+    "clamp(",
+    "cos(",
+    "exp(",
+    "hypot(",
+    "log(",
+    "max(",
+    "min(",
+    "mod(",
+    "pow(",
+    "rem(",
+    "round(",
+    "sign(",
+    "sin(",
+    "sqrt(",
+    "tan(",
 };
 
 pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
+pub(super) static CSS_FUNCTION_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
+pub(super) static CHECK_QUOTES_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[()\s]").unwrap());
+
+pub(super) static CSS_COMMENT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
+
 pub(super) static F_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
 pub(super) static DOT_ZERO_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
@@ -95,5 +139,22 @@ pub(super) static DOT_ZERO_RE: Lazy<Regex> =
 pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
 pub(super) static INNER_TRIM_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
-pub(super) static ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(^|\s|\(|,)-?0(px|em|rem|vh|vw|%|dvh|dvw)").unwrap());
+
+pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap()
+});
+
+pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
+        .unwrap()
+});
+pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)")
+        .unwrap()
+});
+
+pub(super) static F_RGBA_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
+
+pub(super) static F_RGB_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());

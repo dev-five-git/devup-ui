@@ -1,8 +1,10 @@
 pub mod class_map;
 mod constant;
 pub mod debug;
+pub mod is_special_property;
+pub mod optimize_multi_css_value;
 pub mod optimize_value;
-pub mod property_type;
+pub mod rm_css_comment;
 mod selector_separator;
 pub mod style_selector;
 pub mod utils;
@@ -14,16 +16,13 @@ use crate::constant::{COLOR_HASH, F_SPACE_RE, GLOBAL_STYLE_PROPERTY, ZERO_RE};
 use crate::debug::is_debug;
 use crate::optimize_value::optimize_value;
 use crate::style_selector::StyleSelector;
-use crate::utils::{to_camel_case, to_kebab_case};
+use crate::utils::to_kebab_case;
 
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
-            StyleSelector::Media {
-                selector: s,
-                query: _,
-            } => {
+            StyleSelector::Media { selector: s, .. } => {
                 if let Some(s) = s {
                     s.replace("&", &format!(".{class_name}"))
                 } else {
@@ -37,14 +36,29 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     }
 }
 
-pub fn short_to_long(property: &str) -> String {
+pub fn disassemble_property(property: &str) -> Vec<String> {
     GLOBAL_STYLE_PROPERTY
         .get(property)
         .map(|v| match v.len() {
-            1 => to_camel_case(v[0]),
-            _ => property.to_string(),
+            1 => vec![v[0].to_string()],
+            _ => v.iter().map(|v| v.to_string()).collect(),
         })
-        .unwrap_or_else(|| property.to_string())
+        .unwrap_or_else(|| {
+            vec![if (property.starts_with("Webkit")
+                && property.len() > 6
+                && property.chars().nth(6).unwrap().is_uppercase())
+                || (property.starts_with("Moz")
+                    && property.len() > 3
+                    && property.chars().nth(3).unwrap().is_uppercase())
+                || (property.starts_with("ms")
+                    && property.len() > 2
+                    && property.chars().nth(2).unwrap().is_uppercase())
+            {
+                format!("-{}", to_kebab_case(property))
+            } else {
+                to_kebab_case(property)
+            }]
+        })
 }
 
 pub fn keyframes_to_keyframes_name(keyframes: &str) -> String {
@@ -225,9 +239,14 @@ mod tests {
             sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None),
         );
 
+        assert_eq!(
+            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
+            sheet_to_classname("background", 0, Some("#FF000080"), None, None),
+        );
+
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-rgba(255,0,0,.5)--255"), Some(&2));
+            assert_eq!(map.get("background-0-#FF000080--255"), Some(&2));
         }
         assert_eq!(
             sheet_to_classname("background", 0, Some("#fff"), None, None),
@@ -421,7 +440,7 @@ mod tests {
             ".cls::placeholder"
         );
         assert_eq!(
-            merge_selector("cls", Some(&"themeDark".into())),
+            merge_selector("cls", Some(&"theme-dark".into())),
             ":root[data-theme=dark] .cls"
         );
         assert_eq!(
@@ -444,8 +463,40 @@ mod tests {
         );
 
         assert_eq!(
-            merge_selector("cls", Some(&["themeDark", "hover"].into()),),
+            merge_selector("cls", Some(&["theme-dark", "hover"].into()),),
             ":root[data-theme=dark] .cls:hover"
+        );
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Media {
+                    query: "print".to_string(),
+                    selector: None
+                })
+            ),
+            ".cls"
+        );
+
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Media {
+                    query: "print".to_string(),
+                    selector: Some("&:hover".to_string())
+                })
+            ),
+            ".cls:hover"
+        );
+
+        assert_eq!(
+            merge_selector(
+                "cls",
+                Some(&StyleSelector::Global(
+                    "&".to_string(),
+                    "file.ts".to_string()
+                ))
+            ),
+            "&"
         );
     }
 

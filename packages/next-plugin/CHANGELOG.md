@@ -1,5 +1,60 @@
 # @devup-ui/next-plugin
 
+## 1.0.27
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.26
+
+## 1.0.26
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.25
+
+## 1.0.25
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.24
+
+## 1.0.24
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.23
+
+## 1.0.23
+
+### Patch Changes
+
+- a3eed1d: Add gitIgnore in turbopack
+
+## 1.0.22
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.22
+
+## 1.0.21
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.21
+
+## 1.0.20
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.20
+
+## 1.0.19
+
+### Patch Changes
+
+- Updated dependencies [c352113]
+  - @devup-ui/webpack-plugin@1.0.19
+
 ## 1.0.18
 
 ### Patch Changes

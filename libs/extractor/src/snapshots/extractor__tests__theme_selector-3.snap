@@ -19,7 +19,20 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "boxSize",
+                property: "filter",
+                value: "brightness(0) invert(1)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] & :is(svg,img)",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
                 value: "100%",
                 level: 0,
                 selector: Some(
@@ -32,8 +45,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "filter",
-                value: "brightness(0) invert(1)",
+                property: "width",
+                value: "100%",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -44,5 +57,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"d0 d1 d2 d3\" />;\n",
 }

@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "alignItems",
+                property: "align-items",
                 value: "center",
                 level: 0,
                 selector: None,
@@ -17,8 +17,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "boxShadow",
-                value: "0 0 15px 0 rgba(0,0,0,.25)",
+                property: "box-shadow",
+                value: "0 0 15px 0 #00000040",
                 level: 2,
                 selector: Some(
                     Selector(
@@ -30,8 +30,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "boxShadow",
-                value: "0 1px 3px 0 rgba(0,0,0,.25)",
+                property: "box-shadow",
+                value: "0 1px 3px 0 #00000040",
                 level: 0,
                 selector: Some(
                     Selector(
@@ -43,7 +43,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "boxShadow",
+                property: "box-shadow",
                 value: "none",
                 level: 0,
                 selector: Some(
@@ -67,7 +67,7 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "justifyContent",
+                property: "justify-content",
                 value: "center",
                 level: 0,
                 selector: None,

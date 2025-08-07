@@ -5,27 +5,27 @@
   "description": "devup-ui",
   "type": "module",
   "scripts": {
-    "lint": "pnpm -F @devup-ui/* lint",
+    "lint": "pnpm -F @devup-ui/* lint && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings",
     "pretest": "pnpm -F @devup-ui/vite-plugin build",
-    "test": "cargo tarpaulin --out xml --out stdout --out html && vitest test --coverage --run && pnpm -r test",
-    "build": "pnpm -F @devup-ui/* build",
+    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && vitest test --coverage --run && pnpm -r test",
+    "build": "pnpm -F wasm build && pnpm -F @devup-ui/* -F !wasm build",
     "dev": "pnpm -r dev",
     "benchmark": "node benchmark.js"
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.5",
-    "eslint": "^9.31.0",
+    "eslint": "^9.32.0",
     "vitest": "^3.2.4",
     "@vitest/coverage-v8": "^3.2.4",
     "@changesets/cli": "^2.29.5",
-    "@types/node": "^24.0.14",
+    "@types/node": "^24.2.0",
     "happy-dom": "^18.0.1",
     "@testing-library/react": "^16.3.0",
-    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/jest-dom": "^6.6.4",
     "@devup-ui/vite-plugin": "workspace:*"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@10.14.0",
   "resolutions": {
     "vite": "^6"
   }

@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "zIndex",
+                property: "z-index",
                 value: "-1",
                 level: 0,
                 selector: None,

@@ -6,7 +6,20 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "mx",
+                property: "margin-left",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-right",
                 value: "4px",
                 level: 0,
                 selector: Some(
@@ -18,5 +31,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"\" : \"d0\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"\" : \"d0 d1\"} />;\n",
 }
