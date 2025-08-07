@@ -282,7 +282,7 @@ export function SelectOption({
                       top: '55%',
                       left: '50%',
                       transform: 'translate(-50%, -50%)',
-                      color: '$primary',
+                      color: 'inherit',
                     })}
                   />
                 </Box>
