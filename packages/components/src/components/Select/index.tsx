@@ -5,16 +5,24 @@ import clsx from 'clsx'
 import { ComponentProps, createContext, useContext, useState } from 'react'
 
 import { Button } from '../Button'
+import { IconCheck } from './IconCheck'
+
+type SelectType = 'default' | 'radio' | 'checkbox'
+type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
 
 interface SelectProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: React.ReactNode
+  type?: SelectType
 }
 
 const SelectContext = createContext<{
   open: boolean
   setOpen: (open: boolean) => void
+  value: SelectValue<SelectType>
+  setValue: (value: string) => void
+  type: SelectType
 } | null>(null)
 
 export const useSelect = () => {
@@ -26,17 +34,44 @@ export const useSelect = () => {
 }
 
 export function Select({
+  type = 'default',
   children,
   open: openProp,
   onOpenChange,
 }: SelectProps) {
   const [open, setOpen] = useState(openProp ?? false)
+  const [value, setValue] = useState<SelectValue<typeof type>>(
+    type === 'checkbox' ? [] : '',
+  )
+
   const handleOpenChange = (open: boolean) => {
     setOpen(open)
     onOpenChange?.(open)
   }
+
+  const handleValueChange = (nextValue: string) => {
+    if (type === 'default') return
+    if (type === 'radio') {
+      setValue(nextValue)
+      return
+    }
+    if (Array.isArray(value) && value.includes(nextValue)) {
+      setValue(value.filter((v) => v !== nextValue))
+    } else {
+      setValue([...value, nextValue])
+    }
+  }
+
   return (
-    <SelectContext.Provider value={{ open, setOpen: handleOpenChange }}>
+    <SelectContext.Provider
+      value={{
+        open,
+        setOpen: handleOpenChange,
+        value,
+        setValue: handleValueChange,
+        type,
+      }}
+    >
       <Box display="inline-block" pos="relative">
         {children}
       </Box>
@@ -105,14 +140,25 @@ export function SelectOption({
   children,
   ...props
 }: SelectOptionProps) {
-  const { setOpen } = useSelect()
+  const { setOpen, setValue, value, type } = useSelect()
+
+  const handleClose = () => {
+    if (type === 'checkbox') return
+    setOpen(false)
+  }
+
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (onClick) {
       onClick(e)
       return
     }
-    setOpen(false)
+    setValue(children as string)
+    handleClose()
   }
+
+  const isChecked = Array.isArray(value)
+    ? value.includes(children as string)
+    : value === children
 
   return (
     <Flex
@@ -123,16 +169,70 @@ export function SelectOption({
       }
       alignItems="center"
       borderRadius="8px"
-      color={disabled ? '$selectDisabled' : '$title'}
+      color={disabled ? '$selectDisabled' : isChecked ? '$primary' : '$title'}
       cursor={disabled ? 'default' : 'pointer'}
+      gap={
+        {
+          checkbox: '10px',
+          radio: '6px',
+          default: '0',
+        }[type]
+      }
       h="40px"
       onClick={disabled ? undefined : handleClick}
       px="10px"
       styleOrder={1}
       transition="background-color 0.1s ease-in-out"
-      typography="inputText"
+      typography={isChecked ? 'inputBold' : 'inputText'}
       {...props}
     >
+      {
+        {
+          checkbox: (
+            <Box
+              bg={isChecked ? '$primary' : '$border'}
+              borderRadius="4px"
+              boxSize="18px"
+              pos="relative"
+              transition="background-color 0.1s ease-in-out"
+            >
+              {isChecked && (
+                <IconCheck
+                  className={css({
+                    position: 'absolute',
+                    top: '55%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                  })}
+                />
+              )}
+            </Box>
+          ),
+          radio: (
+            <>
+              {isChecked && (
+                <Box
+                  borderRadius="4px"
+                  boxSize="18px"
+                  pos="relative"
+                  transition="background-color 0.1s ease-in-out"
+                >
+                  <IconCheck
+                    className={css({
+                      position: 'absolute',
+                      top: '55%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      color: '$primary',
+                    })}
+                  />
+                </Box>
+              )}
+            </>
+          ),
+          default: null,
+        }[type]
+      }
       {children}
     </Flex>
   )
