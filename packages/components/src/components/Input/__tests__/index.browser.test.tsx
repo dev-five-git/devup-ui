@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react'
 import { DevupThemeTypography } from 'node_modules/@devup-ui/react/dist/types/typography'
 
 import { ClearButton, Input } from '..'
+import { Controlled } from '../Controlled'
 import { GlassIcon } from '../GlassIcon'
 
 describe('Input', () => {
@@ -18,6 +19,17 @@ describe('Input', () => {
   it('should render with allowClear prop', () => {
     const { container } = render(<Input allowClear />)
     expect(container).toMatchSnapshot()
+    expect(container.querySelector('[aria-label="input"]')).toHaveClass(
+      'padding-right-0-36px--1',
+    )
+  })
+
+  it('should not have padding right when allowClear is false', () => {
+    const { container } = render(<Input allowClear={false} />)
+    expect(container).toMatchSnapshot()
+    expect(container.querySelector('[aria-label="input"]')).not.toHaveClass(
+      'padding-right-0-36px--1',
+    )
   })
 
   it('should show clear button when value is not empty', () => {
@@ -133,5 +145,29 @@ describe('Input', () => {
     expect(container.querySelector('[aria-label="icon"]')).toHaveClass(
       'color-0-var(--inputDisabledText,light-dark(#D6D7DE,#373737))--1',
     )
+  })
+
+  it('should call onChange prop when it is provided andvalue is changed', () => {
+    const onChange = vi.fn()
+    const { container } = render(<Input onChange={onChange} />)
+    fireEvent.change(container.querySelector('input')!, {
+      target: { value: 'test' },
+    })
+    expect(onChange).toHaveBeenCalledWith(expect.any(Object))
+  })
+})
+
+describe('Controlled Input', () => {
+  it('should render with value', () => {
+    const { container } = render(<Controlled />)
+    expect(container).toMatchSnapshot()
+  })
+
+  it('should update value when it is changed', () => {
+    const { container } = render(<Controlled />)
+    fireEvent.change(container.querySelector('input')!, {
+      target: { value: 'test' },
+    })
+    expect(container.querySelector('input')!.value).toBe('test')
   })
 })

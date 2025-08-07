@@ -121,7 +121,7 @@ export function Input({
         disabled={disabled}
         onChange={handleChange}
         pl={icon ? '36px' : '12px'}
-        pr={['36px', null, allowClear ? '36px' : '12px']}
+        pr={allowClear ? '36px' : '12px'}
         py="12px"
         styleOrder={1}
         styleVars={{
