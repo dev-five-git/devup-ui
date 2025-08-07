@@ -1,6 +1,12 @@
 import { Meta, StoryObj } from '@storybook/react-vite'
 
-import { Select } from '.'
+import {
+  Select,
+  SelectContainer,
+  SelectDivider,
+  SelectOption,
+  SelectTrigger,
+} from '.'
 
 type Story = StoryObj<typeof meta>
 
@@ -18,9 +24,19 @@ const meta: Meta<typeof Select> = {
 }
 
 export const Default: Story = {
-  args: {
-    placeholder: 'Input text',
-  },
+  args: {},
+  render: (args) => (
+    <Select {...args}>
+      <SelectTrigger>Select</SelectTrigger>
+      <SelectContainer>
+        <SelectOption>Option 1</SelectOption>
+        <SelectOption>Option 2</SelectOption>
+        <SelectDivider />
+        <SelectOption>Option 3</SelectOption>
+        <SelectOption disabled>Option 4</SelectOption>
+      </SelectContainer>
+    </Select>
+  ),
 }
 
 export default meta
