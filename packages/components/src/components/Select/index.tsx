@@ -2,7 +2,14 @@
 
 import { Box, css, Flex, VStack } from '@devup-ui/react'
 import clsx from 'clsx'
-import { ComponentProps, createContext, useContext, useState } from 'react'
+import {
+  ComponentProps,
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import { Button } from '../Button'
 import { IconCheck } from './IconCheck'
@@ -39,10 +46,21 @@ export function Select({
   open: openProp,
   onOpenChange,
 }: SelectProps) {
+  const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(openProp ?? false)
   const [value, setValue] = useState<SelectValue<typeof type>>(
     type === 'checkbox' ? [] : '',
   )
+
+  useEffect(() => {
+    if (!ref.current) return
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (ref.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [open, setOpen])
 
   const handleOpenChange = (open: boolean) => {
     setOpen(open)
@@ -72,7 +90,7 @@ export function Select({
         type,
       }}
     >
-      <Box display="inline-block" pos="relative">
+      <Box ref={ref} display="inline-block" pos="relative">
         {children}
       </Box>
     </SelectContext.Provider>
@@ -108,6 +126,7 @@ export function SelectTrigger({
 
 export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
   const { open } = useSelect()
+
   if (!open) return null
   return (
     <VStack
