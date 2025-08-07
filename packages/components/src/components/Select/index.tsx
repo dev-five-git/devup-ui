@@ -22,6 +22,10 @@ type SelectType = 'default' | 'radio' | 'checkbox'
 type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
 
 interface SelectProps extends ComponentProps<'div'> {
+  defaultValue?: SelectValue<SelectType>
+  value?: SelectValue<SelectType>
+  onValueChange?: (value: SelectValue<SelectType>) => void
+  defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: React.ReactNode
@@ -47,14 +51,18 @@ export const useSelect = () => {
 export function Select({
   type = 'default',
   children,
+  defaultValue,
+  value: valueProp,
+  onValueChange,
+  defaultOpen,
   open: openProp,
   onOpenChange,
   ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(openProp ?? false)
+  const [open, setOpen] = useState(defaultOpen ?? false)
   const [value, setValue] = useState<SelectValue<typeof type>>(
-    type === 'checkbox' ? [] : '',
+    defaultValue ?? (type === 'checkbox' ? [] : ''),
   )
 
   useEffect(() => {
@@ -68,11 +76,19 @@ export function Select({
   }, [open, setOpen])
 
   const handleOpenChange = (open: boolean) => {
+    if (onOpenChange) {
+      onOpenChange(open)
+      return
+    }
     setOpen(open)
-    onOpenChange?.(open)
   }
 
   const handleValueChange = (nextValue: string) => {
+    if (onValueChange) {
+      onValueChange(nextValue)
+      return
+    }
+
     if (type === 'default') return
     if (type === 'radio') {
       setValue(nextValue)
@@ -88,9 +104,9 @@ export function Select({
   return (
     <SelectContext.Provider
       value={{
-        open,
+        open: openProp ?? open,
         setOpen: handleOpenChange,
-        value,
+        value: valueProp ?? value,
         setValue: handleValueChange,
         type,
       }}
