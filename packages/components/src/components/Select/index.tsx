@@ -181,17 +181,20 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
   )
 }
 
-interface SelectOptionProps extends ComponentProps<'div'> {
+interface SelectOptionProps extends Omit<ComponentProps<'div'>, 'onClick'> {
+  onClick?: (value?: string, e?: React.MouseEvent<HTMLDivElement>) => void
   disabled?: boolean
+  value?: string
 }
 
 export function SelectOption({
   disabled,
   onClick,
   children,
+  value,
   ...props
 }: SelectOptionProps) {
-  const { setOpen, setValue, value, type } = useSelect()
+  const { setOpen, setValue, value: selectedValue, type } = useSelect()
 
   const handleClose = () => {
     if (type === 'checkbox') return
@@ -200,16 +203,19 @@ export function SelectOption({
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (onClick) {
-      onClick(e)
+      onClick(value, e)
       return
     }
-    setValue(children as string)
+    if (typeof value === 'string') setValue(value)
     handleClose()
   }
 
-  const isSelected = Array.isArray(value)
-    ? value.includes(children as string)
-    : value === children
+  const isSelected = {
+    default: false,
+    radio: selectedValue === value,
+    checkbox:
+      Array.isArray(selectedValue) && value && selectedValue.includes(value),
+  }[type]
 
   const changesOnHover = !disabled && !(type === 'radio' && isSelected)
 

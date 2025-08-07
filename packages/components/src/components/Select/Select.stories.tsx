@@ -36,15 +36,10 @@ export const Default: Story = {
         <SelectDivider />
         <SelectOption>Option 3</SelectOption>
         <SelectOption disabled>Option 4</SelectOption>
-        <Select>
+        <Select type="radio">
           <SelectTrigger asChild>
             <SelectOption>
-              <Flex
-                alignItems="center"
-                className={css({ w: '100%' })}
-                justifyContent="space-between"
-                w="100%"
-              >
+              <Flex alignItems="center" justifyContent="space-between" w="100%">
                 Option 5<IconArrow />
               </Flex>
             </SelectOption>
@@ -56,8 +51,8 @@ export const Default: Story = {
               transform: 'translateX(100%)',
             })}
           >
-            <SelectOption>Option 6</SelectOption>
-            <SelectOption>Option 7</SelectOption>
+            <SelectOption value="Option 6">Option 6</SelectOption>
+            <SelectOption value="Option 7">Option 7</SelectOption>
           </SelectContainer>
         </Select>
       </SelectContainer>
