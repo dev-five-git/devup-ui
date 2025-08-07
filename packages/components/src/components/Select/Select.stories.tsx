@@ -1,3 +1,4 @@
+import { css, Flex } from '@devup-ui/react'
 import { Meta, StoryObj } from '@storybook/react-vite'
 
 import {
@@ -7,6 +8,7 @@ import {
   SelectOption,
   SelectTrigger,
 } from '.'
+import { IconArrow } from './IconArrow'
 
 type Story = StoryObj<typeof meta>
 
@@ -34,6 +36,30 @@ export const Default: Story = {
         <SelectDivider />
         <SelectOption>Option 3</SelectOption>
         <SelectOption disabled>Option 4</SelectOption>
+        <Select>
+          <SelectTrigger asChild>
+            <SelectOption>
+              <Flex
+                alignItems="center"
+                className={css({ w: '100%' })}
+                justifyContent="space-between"
+                w="100%"
+              >
+                Option 5<IconArrow />
+              </Flex>
+            </SelectOption>
+          </SelectTrigger>
+          <SelectContainer
+            className={css({
+              right: '0',
+              top: '0',
+              transform: 'translateX(100%)',
+            })}
+          >
+            <SelectOption>Option 6</SelectOption>
+            <SelectOption>Option 7</SelectOption>
+          </SelectContainer>
+        </Select>
       </SelectContainer>
     </Select>
   ),

@@ -3,8 +3,12 @@
 import { Box, css, Flex, VStack } from '@devup-ui/react'
 import clsx from 'clsx'
 import {
+  Children,
   ComponentProps,
   createContext,
+  JSX,
+  JSXElementConstructor,
+  ReactElement,
   useContext,
   useEffect,
   useRef,
@@ -17,7 +21,7 @@ import { IconCheck } from './IconCheck'
 type SelectType = 'default' | 'radio' | 'checkbox'
 type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
 
-interface SelectProps {
+interface SelectProps extends ComponentProps<'div'> {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: React.ReactNode
@@ -45,6 +49,7 @@ export function Select({
   children,
   open: openProp,
   onOpenChange,
+  ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(openProp ?? false)
@@ -90,28 +95,39 @@ export function Select({
         type,
       }}
     >
-      <Box ref={ref} display="inline-block" pos="relative">
+      <Box ref={ref} display="inline-block" pos="relative" {...props}>
         {children}
       </Box>
     </SelectContext.Provider>
   )
 }
 
+interface SelectTriggerProps extends ComponentProps<typeof Button> {
+  asChild?: boolean
+}
 export function SelectTrigger({
   className,
   children,
+  asChild,
   ...props
-}: ComponentProps<typeof Button>) {
+}: SelectTriggerProps) {
   const { open, setOpen } = useSelect()
   const handleClick = () => {
     setOpen(!open)
+  }
+
+  if (asChild) {
+    const element = Children.only(children) as ReactElement<
+      ComponentProps<keyof JSX.IntrinsicElements | JSXElementConstructor<any>>
+    >
+    const Comp = element.type
+    return <Comp onClick={handleClick} {...element.props} />
   }
 
   return (
     <Button
       className={clsx(
         css({
-          pos: 'relative',
           borderRadius: '8px',
         }),
         className,
@@ -136,9 +152,9 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
       bottom="-4px"
       boxShadow="0 2px 2px 0 $base10"
       gap="6px"
+      h="fit-content"
       p="10px"
       pos="absolute"
-      styleOrder={1}
       transform="translateY(100%)"
       userSelect="none"
       w="232px"
@@ -175,21 +191,23 @@ export function SelectOption({
     handleClose()
   }
 
-  const isChecked = Array.isArray(value)
+  const isSelected = Array.isArray(value)
     ? value.includes(children as string)
     : value === children
+
+  const changesOnHover = !disabled && !(type === 'radio' && isSelected)
 
   return (
     <Flex
       _hover={
-        !disabled && {
+        changesOnHover && {
           bg: '$primaryBg',
         }
       }
       alignItems="center"
       borderRadius="8px"
-      color={disabled ? '$selectDisabled' : isChecked ? '$primary' : '$title'}
-      cursor={disabled ? 'default' : 'pointer'}
+      color={disabled ? '$selectDisabled' : isSelected ? '$primary' : '$title'}
+      cursor={changesOnHover ? 'pointer' : 'default'}
       gap={
         {
           checkbox: '10px',
@@ -202,20 +220,20 @@ export function SelectOption({
       px="10px"
       styleOrder={1}
       transition="background-color 0.1s ease-in-out"
-      typography={isChecked ? 'inputBold' : 'inputText'}
+      typography={isSelected ? 'inputBold' : 'inputText'}
       {...props}
     >
       {
         {
           checkbox: (
             <Box
-              bg={isChecked ? '$primary' : '$border'}
+              bg={isSelected ? '$primary' : '$border'}
               borderRadius="4px"
               boxSize="18px"
               pos="relative"
               transition="background-color 0.1s ease-in-out"
             >
-              {isChecked && (
+              {isSelected && (
                 <IconCheck
                   className={css({
                     position: 'absolute',
@@ -229,7 +247,7 @@ export function SelectOption({
           ),
           radio: (
             <>
-              {isChecked && (
+              {isSelected && (
                 <Box
                   borderRadius="4px"
                   boxSize="18px"
