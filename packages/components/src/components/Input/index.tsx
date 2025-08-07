@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   Center,
-  css,
   DevupThemeTypography,
   Input as DevupInput,
   Text,
@@ -44,27 +43,29 @@ export function Input({
   typography,
   error = false,
   errorMessage,
-  allowClear = false,
+  allowClear = true,
   icon,
   colors,
   disabled,
   classNames,
+  ref,
   ...props
 }: InputProps) {
-  const [value, setValue] = useState(defaultValue ?? '')
+  const [value, setValue] = useState(defaultValue || '')
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value)
+    onChangeProp?.(e)
   }
   const handleClear = () => {
     setValue('')
   }
-  const clearButtonVisible = value && !disabled
+  const clearButtonVisible = value && !disabled && allowClear
 
   return (
     <Box
+      display="inline-block"
       pos="relative"
       selectors={{ '&,&>*': { boxSizing: 'border-box' } }}
-      w="fit-content"
     >
       {icon && (
         <Center
@@ -86,11 +87,10 @@ export function Input({
         </Center>
       )}
       <DevupInput
+        ref={ref}
         _disabled={{
-          selectors: {
-            '&::placeholder': {
-              color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
-            },
+          _placeholder: {
+            color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
           },
           bg: 'var(--inputDisabledBg, light-dark(#F0F0F3, #414244))',
           border: '1px solid var(--border, light-dark(#E4E4E4, #434343))',
@@ -104,6 +104,9 @@ export function Input({
         _hover={{
           border: '1px solid var(--primary, light-dark(red, blue))',
         }}
+        _placeholder={{
+          color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
+        }}
         aria-label="input"
         bg="var(--inputBg, light-dark(#FFFFFF, #2E2E2E))"
         borderColor={
@@ -116,15 +119,10 @@ export function Input({
         borderWidth="1px"
         className={classNames?.input}
         disabled={disabled}
-        onChange={onChangeProp ?? handleChange}
+        onChange={handleChange}
         pl={icon ? '36px' : '12px'}
         pr={['36px', null, allowClear ? '36px' : '12px']}
         py="12px"
-        selectors={{
-          '&::placeholder': {
-            color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
-          },
-        }}
         styleOrder={1}
         styleVars={{
           primary: colors?.primary,
@@ -142,14 +140,7 @@ export function Input({
         value={valueProp ?? value}
         {...props}
       />
-      {clearButtonVisible && (
-        <ClearButton
-          className={css({
-            display: ['flex', null, allowClear ? 'flex' : 'none'],
-          })}
-          onClick={handleClear}
-        />
-      )}
+      {clearButtonVisible && <ClearButton onClick={handleClear} />}
       {errorMessage && (
         <Text
           aria-label="error-message"
@@ -174,7 +165,7 @@ export function ClearButton(props: ComponentProps<'button'>) {
     <Button
       alignItems="center"
       aria-label="clear-button"
-      bg="var(--negative20, light-dark(#00000033, #FFFFFF66))"
+      bg="var(--negative20, light-dark(#0003, #FFF6))"
       border="none"
       borderRadius="50%"
       boxSize="20px"

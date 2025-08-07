@@ -1,5 +1,6 @@
 import { Meta, StoryObj } from '@storybook/react-vite'
 
+import { Controlled } from './Controlled'
 import { GlassIcon } from './GlassIcon'
 import { Input } from './index'
 
@@ -22,6 +23,13 @@ export const Default: Story = {
   args: {
     placeholder: 'Input text',
   },
+}
+
+export const ControlledInput: Story = {
+  args: {
+    placeholder: 'Input text',
+  },
+  render: () => <Controlled />,
 }
 
 export const Error: Story = {
