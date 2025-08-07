@@ -24,7 +24,7 @@ type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
 interface SelectProps extends ComponentProps<'div'> {
   defaultValue?: SelectValue<SelectType>
   value?: SelectValue<SelectType>
-  onValueChange?: (value: SelectValue<SelectType>) => void
+  onValueChange?: (value: string) => void
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -171,6 +171,7 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
       h="fit-content"
       p="10px"
       pos="absolute"
+      styleOrder={1}
       transform="translateY(100%)"
       userSelect="none"
       w="232px"

@@ -8,6 +8,8 @@ import {
   SelectOption,
   SelectTrigger,
 } from '.'
+import { ControlledCheckbox } from './ControlledCheckbox'
+import { ControlledRadio } from './ControlledRadio'
 import { IconArrow } from './IconArrow'
 
 type Story = StoryObj<typeof meta>
@@ -26,16 +28,20 @@ const meta: Meta<typeof Select> = {
 }
 
 export const Default: Story = {
-  args: {},
+  args: { type: 'radio' },
   render: (args) => (
-    <Select {...args}>
+    <Select {...args} defaultValue="Option 1">
       <SelectTrigger>Select</SelectTrigger>
       <SelectContainer>
-        <SelectOption>Option 1</SelectOption>
-        <SelectOption>Option 2</SelectOption>
+        <SelectOption disabled value="Option 1">
+          Option 1
+        </SelectOption>
+        <SelectOption value="Option 2">Option 2</SelectOption>
         <SelectDivider />
-        <SelectOption>Option 3</SelectOption>
-        <SelectOption disabled>Option 4</SelectOption>
+        <SelectOption value="Option 3">Option 3</SelectOption>
+        <SelectOption disabled value="Option 4">
+          Option 4
+        </SelectOption>
         <Select type="radio">
           <SelectTrigger asChild>
             <SelectOption>
@@ -58,6 +64,16 @@ export const Default: Story = {
       </SelectContainer>
     </Select>
   ),
+}
+
+export const ControlledRadioStory: Story = {
+  args: {},
+  render: () => <ControlledRadio />,
+}
+
+export const ControlledCheckboxStory: Story = {
+  args: {},
+  render: () => <ControlledCheckbox />,
 }
 
 export default meta
