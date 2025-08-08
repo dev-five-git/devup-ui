@@ -137,11 +137,20 @@ export function SelectTrigger({
       ComponentProps<keyof JSX.IntrinsicElements | JSXElementConstructor<any>>
     >
     const Comp = element.type
-    return <Comp onClick={handleClick} {...element.props} />
+    return (
+      <Comp
+        aria-expanded={open}
+        aria-label="Select toggle"
+        onClick={handleClick}
+        {...element.props}
+      />
+    )
   }
 
   return (
     <Button
+      aria-expanded={open}
+      aria-label="Select toggle"
       className={clsx(
         css({
           borderRadius: '8px',
@@ -162,6 +171,7 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
   if (!open) return null
   return (
     <VStack
+      aria-label="Select container"
       bg="$inputBg"
       border="1px solid $border"
       borderRadius="8px"
@@ -239,6 +249,7 @@ export function SelectOption({
       borderRadius="8px"
       color={disabled ? '$selectDisabled' : isSelected ? '$primary' : '$title'}
       cursor={changesOnHover ? 'pointer' : 'default'}
+      data-value={value}
       gap={
         {
           checkbox: '10px',

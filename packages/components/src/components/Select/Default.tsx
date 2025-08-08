@@ -1,7 +1,5 @@
-'use client'
-
 import { css, Flex } from '@devup-ui/react'
-import { useState } from 'react'
+import { ComponentProps } from 'react'
 
 import {
   Select,
@@ -12,41 +10,23 @@ import {
 } from '.'
 import { IconArrow } from './IconArrow'
 
-export function ControlledCheckbox() {
-  const [value, setValue] = useState<string[]>([])
-  const handleChange = (nextValue: string) => {
-    if (value.includes(nextValue)) {
-      setValue(value.filter((v) => v !== nextValue))
-    } else {
-      setValue([...value, nextValue])
-    }
-  }
-
-  const [subValue, setSubValue] = useState<string[]>([])
-  const handleSubChange = (nextValue: string) => {
-    if (subValue.includes(nextValue)) {
-      setSubValue(subValue.filter((v) => v !== nextValue))
-    } else {
-      setSubValue([...subValue, nextValue])
-    }
-  }
-
+export function Default({
+  ...props
+}: Omit<ComponentProps<typeof Select>, 'children'>) {
   return (
-    <Select onValueChange={handleChange} type="checkbox" value={value}>
-      <SelectTrigger>Select {value}</SelectTrigger>
+    <Select {...props}>
+      <SelectTrigger>Select</SelectTrigger>
       <SelectContainer>
         <SelectOption value="Option 1">Option 1</SelectOption>
         <SelectOption value="Option 2">Option 2</SelectOption>
         <SelectDivider />
         <SelectOption value="Option 3">Option 3</SelectOption>
-        <SelectOption value="Option 4">Option 4</SelectOption>
-        <Select
-          onValueChange={handleSubChange}
-          type="checkbox"
-          value={subValue}
-        >
+        <SelectOption disabled value="Option 4">
+          Option 4
+        </SelectOption>
+        <Select type="radio">
           <SelectTrigger asChild>
-            <SelectOption showCheck={false}>
+            <SelectOption>
               <Flex alignItems="center" justifyContent="space-between" w="100%">
                 Option 5<IconArrow />
               </Flex>
