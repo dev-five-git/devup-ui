@@ -124,6 +124,11 @@ export function Select({
         ref={ref}
         display="inline-block"
         pos="relative"
+        selectors={{
+          '&,& *': {
+            boxSizing: 'border-box',
+          },
+        }}
         styleOrder={1}
         styleVars={{
           primary: colors?.primary,
