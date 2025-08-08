@@ -72,7 +72,7 @@ function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
   const disabled = value <= min
   return (
     <Button
-      aria-label="Decrease value"
+      aria-label="Decrease button"
       className={css({
         p: '0',
         boxSize: '28px',
@@ -101,7 +101,7 @@ function StepperIncreaseButton({ ...props }: ComponentProps<typeof Button>) {
   const disabled = value >= max
   return (
     <Button
-      aria-label="Increase value"
+      aria-label="Increase button"
       className={css({
         p: '0',
         boxSize: '28px',
@@ -148,6 +148,7 @@ function StepperInput({
   return (
     <Comp
       allowClear={false}
+      aria-label="Stepper value"
       className={clsx(
         css({
           styleOrder: 2,
@@ -169,6 +170,7 @@ function StepperInput({
       dangerouslySetInnerHTML={
         editable ? undefined : { __html: Number(value).toString() }
       }
+      data-value={value}
       onChange={(e) => setValue(Number(e.target.value))}
       readOnly={!editable}
       type="number"

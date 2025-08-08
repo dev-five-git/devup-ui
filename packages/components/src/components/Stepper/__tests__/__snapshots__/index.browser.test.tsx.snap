@@ -1,0 +1,79 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Stepper > should render 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 align-items-0-center--1 gap-0-20px--1 "
+  >
+    <button
+      aria-disabled="true"
+      aria-label="Decrease button"
+      class="padding-0-0--255 height-0-28px--255 width-0-28px--255 border-radius-0-4px--255 outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-16px--1 padding-left-0-16px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+      disabled=""
+      type="button"
+    >
+      <div
+        class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <div
+          class=" line-height-0-1.2--255 min-height-0-1.2em--255 "
+        >
+          <svg
+            class="color-0-var(--base10,light-dark(#0000001A,#FFFFFF1A))--255"
+            fill="none"
+            height="28"
+            viewBox="0 0 28 28"
+            width="28"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              clip-rule="evenodd"
+              d="M9 14C9 13.4477 9.3731 13 9.83333 13H18.1667C18.6269 13 19 13.4477 19 14C19 14.5523 18.6269 15 18.1667 15H9.83333C9.3731 15 9 14.5523 9 14Z"
+              fill="currentColor"
+              fill-rule="evenodd"
+            />
+          </svg>
+        </div>
+      </div>
+    </button>
+    <div
+      aria-label="Stepper value"
+      class="width-0-80px--2 height-0-50px--2 text-align-0-center--2 padding-bottom-0-10px--2 padding-top-0-10px--2 padding-right-0-12px--2 padding-left-0-12px--2 border-radius-0-6px--2 display-0-none-1599573265477977541-2 padding-0-0--3 border-0-none--3 width-0-fit-content--3 height-0-fit-content--3"
+      data-value="0"
+      readonly=""
+      type="number"
+      value="0"
+    >
+      0
+    </div>
+    <button
+      aria-disabled="false"
+      aria-label="Increase button"
+      class="padding-0-0--255 height-0-28px--255 width-0-28px--255 border-radius-0-4px--255 outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-16px--1 padding-left-0-16px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+      type="button"
+    >
+      <div
+        class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <div
+          class=" line-height-0-1.2--255 min-height-0-1.2em--255 "
+        >
+          <svg
+            class="color-0-var(--text,light-dark(#272727,#F6F6F6))--255"
+            fill="none"
+            height="28"
+            viewBox="0 0 28 28"
+            width="28"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M14.8333 9.83333C14.8333 9.3731 14.4602 9 14 9C13.5397 9 13.1666 9.3731 13.1666 9.83333V13.1667H9.8333C9.37307 13.1667 8.99997 13.5398 8.99997 14C8.99997 14.4602 9.37307 14.8333 9.8333 14.8333H13.1666V18.1667C13.1666 18.6269 13.5397 19 14 19C14.4602 19 14.8333 18.6269 14.8333 18.1667V14.8333H18.1666C18.6269 14.8333 19 14.4602 19 14C19 13.5398 18.6269 13.1667 18.1666 13.1667H14.8333V9.83333Z"
+              fill="currentColor"
+            />
+          </svg>
+        </div>
+      </div>
+    </button>
+  </div>
+</div>
+`;
