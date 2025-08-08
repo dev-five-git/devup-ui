@@ -197,8 +197,15 @@ export function SelectTrigger({
   )
 }
 
-export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
-  const { open } = useSelect()
+interface SelectContainerProps extends ComponentProps<'div'> {
+  showConfirmButton?: boolean
+}
+export function SelectContainer({
+  children,
+  showConfirmButton,
+  ...props
+}: SelectContainerProps) {
+  const { open, setOpen, type } = useSelect()
 
   if (!open) return null
   return (
@@ -220,6 +227,26 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
       {...props}
     >
       {children}
+      {showConfirmButton && type === 'checkbox' && (
+        <Flex justifyContent="end" w="100%">
+          <Button
+            className={css({
+              textAlign: 'end',
+              bg: 'var(--primary, light-dark(#674DC7, #8163E1))',
+              borderRadius: '8px',
+              w: 'fit-content',
+              px: '30px',
+              py: '10px',
+              color: 'var(--white, light-dark(#FFF,#FFF))',
+              typography: 'buttonS',
+            })}
+            onClick={() => setOpen(false)}
+            variant="primary"
+          >
+            완료
+          </Button>
+        </Flex>
+      )}
     </VStack>
   )
 }

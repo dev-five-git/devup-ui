@@ -69,7 +69,7 @@ function ControlledCheckbox() {
   return (
     <Select onValueChange={handleChange} type="checkbox" value={value}>
       <SelectTrigger>Select {value}</SelectTrigger>
-      <SelectContainer>
+      <SelectContainer showConfirmButton>
         <SelectOption value="Option 1">Option 1</SelectOption>
         <SelectOption value="Option 2">Option 2</SelectOption>
         <SelectDivider />
