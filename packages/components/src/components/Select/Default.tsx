@@ -17,7 +17,9 @@ export function Default({
     <Select {...props}>
       <SelectTrigger>Select</SelectTrigger>
       <SelectContainer>
-        <SelectOption value="Option 1">Option 1</SelectOption>
+        <SelectOption disabled value="Option 1">
+          Option 1
+        </SelectOption>
         <SelectOption value="Option 2">Option 2</SelectOption>
         <SelectDivider />
         <SelectOption value="Option 3">Option 3</SelectOption>

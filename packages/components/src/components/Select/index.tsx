@@ -21,17 +21,6 @@ import { IconCheck } from './IconCheck'
 type SelectType = 'default' | 'radio' | 'checkbox'
 type SelectValue<T extends SelectType> = T extends 'radio' ? string : string[]
 
-interface SelectProps extends ComponentProps<'div'> {
-  defaultValue?: SelectValue<SelectType>
-  value?: SelectValue<SelectType>
-  onValueChange?: (value: string) => void
-  defaultOpen?: boolean
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
-  children: React.ReactNode
-  type?: SelectType
-}
-
 const SelectContext = createContext<{
   open: boolean
   setOpen: (open: boolean) => void
@@ -48,6 +37,26 @@ export const useSelect = () => {
   return context
 }
 
+interface SelectProps extends ComponentProps<'div'> {
+  defaultValue?: SelectValue<SelectType>
+  value?: SelectValue<SelectType>
+  onValueChange?: (value: string) => void
+  defaultOpen?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  children: React.ReactNode
+  type?: SelectType
+  colors?: {
+    primary?: string
+    border?: string
+    inputBg?: string
+    base10?: string
+    title?: string
+    selectDisabled?: string
+    primaryBg?: string
+  }
+}
+
 export function Select({
   type = 'default',
   children,
@@ -57,6 +66,7 @@ export function Select({
   defaultOpen,
   open: openProp,
   onOpenChange,
+  colors,
   ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -111,7 +121,22 @@ export function Select({
         type,
       }}
     >
-      <Box ref={ref} display="inline-block" pos="relative" {...props}>
+      <Box
+        ref={ref}
+        display="inline-block"
+        pos="relative"
+        styleOrder={1}
+        styleVars={{
+          primary: colors?.primary,
+          border: colors?.border,
+          inputBg: colors?.inputBg,
+          base10: colors?.base10,
+          title: colors?.title,
+          selectDisabled: colors?.selectDisabled,
+          primaryBg: colors?.primaryBg,
+        }}
+        {...props}
+      >
         {children}
       </Box>
     </SelectContext.Provider>
@@ -172,11 +197,11 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
   return (
     <VStack
       aria-label="Select container"
-      bg="$inputBg"
-      border="1px solid $border"
+      bg="var(--inputBg, light-dark(#FFF,#2E2E2E))"
+      border="1px solid var(--border, light-dark(#E4E4E4,#434343))"
       borderRadius="8px"
       bottom="-4px"
-      boxShadow="0 2px 2px 0 $base10"
+      boxShadow="0 2px 2px 0 var(--base10, light-dark(#0000001A,#FFFFFF1A))"
       gap="6px"
       h="fit-content"
       p="10px"
@@ -242,12 +267,18 @@ export function SelectOption({
     <Flex
       _hover={
         changesOnHover && {
-          bg: '$primaryBg',
+          bg: 'var(--primaryBg, light-dark(#F4F3FA, #F4F3FA0D))',
         }
       }
       alignItems="center"
       borderRadius="8px"
-      color={disabled ? '$selectDisabled' : isSelected ? '$primary' : '$title'}
+      color={
+        disabled
+          ? 'var(--selectDisabled, light-dark(#C4C5D1, #45464D))'
+          : isSelected
+            ? 'var(--primary, light-dark(#674DC7, #8163E1)'
+            : 'var(--title, light-dark(#1A1A1A,#FAFAFA))'
+      }
       cursor={changesOnHover ? 'pointer' : 'default'}
       data-value={value}
       gap={
@@ -269,7 +300,11 @@ export function SelectOption({
         {
           checkbox: (
             <Box
-              bg={isSelected ? '$primary' : '$border'}
+              bg={
+                isSelected
+                  ? 'var(--primary, light-dark(#674DC7, #8163E1)'
+                  : 'var(--border, light-dark(#E4E4E4, #434343))'
+              }
               borderRadius="4px"
               boxSize="18px"
               pos="relative"
@@ -317,5 +352,13 @@ export function SelectOption({
 }
 
 export function SelectDivider({ ...props }: ComponentProps<'div'>) {
-  return <Box bg="$border" h="1px" styleOrder={1} w="100%" {...props} />
+  return (
+    <Box
+      bg="var(--border, light-dark(#E4E4E4,#434343)"
+      h="1px"
+      styleOrder={1}
+      w="100%"
+      {...props}
+    />
+  )
 }
