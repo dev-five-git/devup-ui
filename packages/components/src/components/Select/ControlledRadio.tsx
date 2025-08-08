@@ -17,6 +17,10 @@ export function ControlledRadio() {
   const handleChange = (value: string) => {
     setValue(value)
   }
+  const [subValue, setSubValue] = useState('')
+  const handleSubChange = (value: string) => {
+    setSubValue(value)
+  }
   return (
     <Select onValueChange={handleChange} type="radio" value={value}>
       <SelectTrigger>Select {value}</SelectTrigger>
@@ -26,9 +30,9 @@ export function ControlledRadio() {
         <SelectDivider />
         <SelectOption value="Option 3">Option 3</SelectOption>
         <SelectOption value="Option 4">Option 4</SelectOption>
-        <Select type="radio">
+        <Select onValueChange={handleSubChange} type="radio" value={subValue}>
           <SelectTrigger asChild>
-            <SelectOption>
+            <SelectOption showCheck={false}>
               <Flex alignItems="center" justifyContent="space-between" w="100%">
                 Option 5<IconArrow />
               </Flex>
@@ -41,8 +45,26 @@ export function ControlledRadio() {
               transform: 'translateX(100%)',
             })}
           >
-            <SelectOption value="Option 6">Option 6</SelectOption>
-            <SelectOption value="Option 7">Option 7</SelectOption>
+            <SelectOption
+              onClick={(value) => {
+                if (value) {
+                  setSubValue(value)
+                }
+              }}
+              value="Option 6"
+            >
+              Option 6
+            </SelectOption>
+            <SelectOption
+              onClick={(value) => {
+                if (value) {
+                  setSubValue(value)
+                }
+              }}
+              value="Option 7"
+            >
+              Option 7
+            </SelectOption>
           </SelectContainer>
         </Select>
       </SelectContainer>

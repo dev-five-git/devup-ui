@@ -183,9 +183,13 @@ export function SelectContainer({ children, ...props }: ComponentProps<'div'>) {
 }
 
 interface SelectOptionProps extends Omit<ComponentProps<'div'>, 'onClick'> {
-  onClick?: (value?: string, e?: React.MouseEvent<HTMLDivElement>) => void
+  onClick?: (
+    value: string | undefined,
+    e?: React.MouseEvent<HTMLDivElement>,
+  ) => void
   disabled?: boolean
   value?: string
+  showCheck?: boolean
 }
 
 export function SelectOption({
@@ -193,6 +197,7 @@ export function SelectOption({
   onClick,
   children,
   value,
+  showCheck = true,
   ...props
 }: SelectOptionProps) {
   const { setOpen, setValue, value: selectedValue, type } = useSelect()
@@ -202,7 +207,10 @@ export function SelectOption({
     setOpen(false)
   }
 
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleClick = (
+    value: string | undefined,
+    e: React.MouseEvent<HTMLDivElement>,
+  ) => {
     if (onClick) {
       onClick(value, e)
       return
@@ -239,14 +247,14 @@ export function SelectOption({
         }[type]
       }
       h="40px"
-      onClick={disabled ? undefined : handleClick}
+      onClick={disabled ? undefined : (e) => handleClick(value, e)}
       px="10px"
       styleOrder={1}
       transition="background-color 0.1s ease-in-out"
       typography={isSelected ? 'inputBold' : 'inputText'}
       {...props}
     >
-      {
+      {showCheck &&
         {
           checkbox: (
             <Box
@@ -291,8 +299,7 @@ export function SelectOption({
             </>
           ),
           default: null,
-        }[type]
-      }
+        }[type]}
       {children}
     </Flex>
   )

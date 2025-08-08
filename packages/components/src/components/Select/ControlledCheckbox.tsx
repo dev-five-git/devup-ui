@@ -46,7 +46,7 @@ export function ControlledCheckbox() {
           value={subValue}
         >
           <SelectTrigger asChild>
-            <SelectOption>
+            <SelectOption showCheck={false}>
               <Flex alignItems="center" justifyContent="space-between" w="100%">
                 Option 5<IconArrow />
               </Flex>
