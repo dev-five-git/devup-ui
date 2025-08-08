@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, css, Flex, VStack } from '@devup-ui/react'
+import { Box, css, DevupThemeTypography, Flex, VStack } from '@devup-ui/react'
 import clsx from 'clsx'
 import {
   Children,
@@ -55,6 +55,7 @@ interface SelectProps extends ComponentProps<'div'> {
     selectDisabled?: string
     primaryBg?: string
   }
+  typography?: keyof DevupThemeTypography
 }
 
 export function Select({
@@ -67,6 +68,7 @@ export function Select({
   open: openProp,
   onOpenChange,
   colors,
+  typography,
   ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -139,6 +141,7 @@ export function Select({
           selectDisabled: colors?.selectDisabled,
           primaryBg: colors?.primaryBg,
         }}
+        typography={typography}
         {...props}
       >
         {children}
@@ -285,6 +288,7 @@ export function SelectOption({
       }
       cursor={changesOnHover ? 'pointer' : 'default'}
       data-value={value}
+      fontWeight={isSelected ? '700' : '400'}
       gap={
         {
           checkbox: '10px',
@@ -297,7 +301,6 @@ export function SelectOption({
       px="10px"
       styleOrder={1}
       transition="background-color 0.1s ease-in-out"
-      typography={isSelected ? 'inputBold' : 'inputText'}
       {...props}
     >
       {showCheck &&
