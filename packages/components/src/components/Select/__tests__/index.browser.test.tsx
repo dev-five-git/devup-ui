@@ -6,6 +6,10 @@ import { Select, SelectContainer, SelectOption, SelectTrigger } from '..'
 import { Default } from '../Default'
 
 describe('Select', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('should render', () => {
     const { container } = render(<Default />)
     expect(container).toMatchSnapshot()
@@ -183,25 +187,26 @@ describe('Select', () => {
     expect(option2).not.toHaveClass('gap-0-0--1')
   })
 
-  it('should handle ref.current being null by mocking useRef', () => {
-    const useRefSpy = vi
-      .spyOn(React, 'useRef')
-      .mockReturnValueOnce({ current: null })
-
-    const { container } = render(<Select>Select</Select>)
-
-    // The component should render without errors even with null ref
-    expect(container).toBeInTheDocument()
-
-    // Trigger a click outside to test the useEffect logic with null ref
-    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
-    fireEvent.click(selectToggle!)
-    expect(selectToggle).toHaveAttribute('aria-expanded', 'true')
-
-    // Click outside - this should trigger the useEffect but return early due to null ref
-    fireEvent.click(document.body)
-
-    // The select should still be open because the useEffect returned early
-    expect(useRefSpy).toHaveBeenCalledWith({ current: null })
+  it('should add styleVars to the container when colors are provided', () => {
+    const { container } = render(
+      <Default
+        colors={{
+          primary: 'red',
+          border: 'blue',
+          inputBg: 'green',
+          base10: 'yellow',
+          title: 'purple',
+        }}
+        data-testid="select"
+      />,
+    )
+    const select = container.querySelector('[data-testid="select"]')
+    expect(select).toHaveStyle({
+      '--primary': 'red',
+      '--border': 'blue',
+      '--inputBg': 'green',
+      '--base10': 'yellow',
+      '--title': 'purple',
+    })
   })
 })

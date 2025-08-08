@@ -28,7 +28,10 @@ const meta: Meta<typeof Select> = {
 }
 
 export const DefaultStory: Story = {
-  args: { type: 'radio' },
+  args: {
+    type: 'default',
+    colors: {},
+  },
   render: (args) => <DefaultComponent {...args} />,
 }
 

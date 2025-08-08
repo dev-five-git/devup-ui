@@ -76,9 +76,8 @@ export function Select({
   )
 
   useEffect(() => {
-    if (!ref.current) return
     const handleOutsideClick = (e: MouseEvent) => {
-      if (ref.current?.contains(e.target as Node)) return
+      if (ref.current && ref.current.contains(e.target as Node)) return
       setOpen(false)
     }
     document.addEventListener('click', handleOutsideClick)
