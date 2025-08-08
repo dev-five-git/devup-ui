@@ -27,10 +27,10 @@ export const useStepper = () => {
 }
 
 type StepperProps = {
-  children: React.ReactNode
-  defaultValue: number
-  value: number
-  onValueChange: (value: number) => void
+  children?: React.ReactNode
+  defaultValue?: number
+  value?: number
+  onValueChange?: (value: number) => void
   min?: number
   max?: number
 }
