@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.27
+
+### Patch Changes
+
+- 641c8ab: Update rust
+
 ## 1.0.26
 
 ### Patch Changes
