@@ -1,6 +1,12 @@
 import { Meta, StoryObj } from '@storybook/react-vite'
 
-import { Stepper } from './index'
+import {
+  Stepper,
+  StepperContainer,
+  StepperDecreaseButton,
+  StepperIncreaseButton,
+  StepperInput,
+} from './index'
 
 type Story = StoryObj<typeof meta>
 
@@ -18,9 +24,16 @@ const meta: Meta<typeof Stepper> = {
 }
 
 export const Default: Story = {
-  args: {
-    value: 1,
-  },
+  args: {},
+  render: (args) => (
+    <Stepper {...args}>
+      <StepperContainer>
+        <StepperDecreaseButton />
+        <StepperInput editable={false} />
+        <StepperIncreaseButton />
+      </StepperContainer>
+    </Stepper>
+  ),
 }
 
 export default meta
