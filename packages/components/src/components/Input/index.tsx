@@ -65,7 +65,7 @@ export function Input({
     <Box
       display="inline-block"
       pos="relative"
-      selectors={{ '&,& *': { boxSizing: 'border-box' } }}
+      selectors={{ '&, & *': { boxSizing: 'border-box' } }}
     >
       {icon && (
         <Center

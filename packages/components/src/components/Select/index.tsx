@@ -127,7 +127,7 @@ export function Select({
         display="inline-block"
         pos="relative"
         selectors={{
-          '&,& *': {
+          '&, & *': {
             boxSizing: 'border-box',
           },
         }}
