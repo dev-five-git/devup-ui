@@ -109,11 +109,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         for i in (0..it.body.len()).rev() {
-            if let Statement::ImportDeclaration(decl) = &it.body[i] {
-                if decl.source.value == self.package && decl.specifiers.iter().all(|s| s.is_empty())
-                {
-                    it.body.remove(i);
-                }
+            if let Statement::ImportDeclaration(decl) = &it.body[i]
+                && decl.source.value == self.package
+                && decl.specifiers.iter().all(|s| s.is_empty())
+            {
+                it.body.remove(i);
             }
         }
     }
@@ -214,63 +214,62 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-        } else if let Expression::TaggedTemplateExpression(tag) = it {
-            if let Expression::Identifier(ident) = &tag.tag
-                && let Some(css_type) = self.util_imports.get(ident.name.as_str())
-            {
-                let css_str = tag
-                    .quasi
-                    .quasis
-                    .iter()
-                    .map(|quasi| quasi.value.raw.to_string())
-                    .collect::<String>();
-                match css_type.as_ref() {
-                    UtilType::Css => {
-                        let styles = css_to_style(&css_str, 0, &None);
-                        let class_name = gen_class_names(
-                            &self.ast,
-                            &mut styles
-                                .iter()
-                                .map(|ex| {
-                                    ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone()))
-                                })
-                                .collect::<Vec<_>>(),
-                            None,
-                        );
+        } else if let Expression::TaggedTemplateExpression(tag) = it
+            && let Expression::Identifier(ident) = &tag.tag
+            && let Some(css_type) = self.util_imports.get(ident.name.as_str())
+        {
+            let css_str = tag
+                .quasi
+                .quasis
+                .iter()
+                .map(|quasi| quasi.value.raw.to_string())
+                .collect::<String>();
+            match css_type.as_ref() {
+                UtilType::Css => {
+                    let styles = css_to_style(&css_str, 0, &None);
+                    let class_name = gen_class_names(
+                        &self.ast,
+                        &mut styles
+                            .iter()
+                            .map(|ex| {
+                                ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone()))
+                            })
+                            .collect::<Vec<_>>(),
+                        None,
+                    );
 
-                        if let Some(cls) = class_name {
-                            *it = cls;
-                        } else {
-                            *it = self
-                                .ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None);
-                        }
-                        // already set style order
-                        self.styles
-                            .extend(styles.into_iter().map(ExtractStyleValue::Static));
-                    }
-                    UtilType::Keyframes => {
-                        let keyframes = ExtractKeyframes {
-                            keyframes: keyframes_to_keyframes_style(&css_str),
-                        };
-                        let name = keyframes.extract().to_string();
-
-                        self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+                    if let Some(cls) = class_name {
+                        *it = cls;
+                    } else {
                         *it = self
                             .ast
-                            .expression_string_literal(SPAN, self.ast.atom(&name), None);
+                            .expression_string_literal(SPAN, self.ast.atom(""), None);
                     }
-                    UtilType::GlobalCss => {
-                        let optimized_css = optimize_css_block(&css_str);
-                        if !optimized_css.is_empty() {
-                            let css = ExtractStyleValue::Css(ExtractCss {
-                                css: optimized_css,
-                                file: self.filename.clone(),
-                            });
-                            self.styles.insert(css);
-                        }
-                        *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));
+                    // already set style order
+                    self.styles
+                        .extend(styles.into_iter().map(ExtractStyleValue::Static));
+                }
+                UtilType::Keyframes => {
+                    let keyframes = ExtractKeyframes {
+                        keyframes: keyframes_to_keyframes_style(&css_str),
+                    };
+                    let name = keyframes.extract().to_string();
+
+                    self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+                    *it = self
+                        .ast
+                        .expression_string_literal(SPAN, self.ast.atom(&name), None);
+                }
+                UtilType::GlobalCss => {
+                    let optimized_css = optimize_css_block(&css_str);
+                    if !optimized_css.is_empty() {
+                        let css = ExtractStyleValue::Css(ExtractCss {
+                            css: optimized_css,
+                            file: self.filename.clone(),
+                        });
+                        self.styles.insert(css);
                     }
+                    *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));
                 }
             }
         }
@@ -360,42 +359,41 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_call_expression(self, it);
     }
     fn visit_variable_declarator(&mut self, it: &mut VariableDeclarator<'a>) {
-        if let Some(Expression::CallExpression(call)) = &it.init {
-            if call.arguments.len() == 1
-                && let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
-                    (&call.callee, &call.arguments[0])
-                && ident.name == "require"
-            {
-                if arg.value == "react/jsx-runtime" {
-                    if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
-                        self.jsx_object = Some(ident.name.to_string());
-                    } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
-                        for prop in &object.properties {
-                            if let PropertyKey::StaticIdentifier(ident) = &prop.key
-                                && let Some(k) = prop
-                                    .value
-                                    .get_binding_identifier()
-                                    .map(|id| id.name.to_string())
-                            {
-                                self.jsx_imports.insert(k, ident.name.to_string());
-                            }
+        if let Some(Expression::CallExpression(call)) = &it.init
+            && call.arguments.len() == 1
+            && let (Expression::Identifier(ident), Argument::StringLiteral(arg)) =
+                (&call.callee, &call.arguments[0])
+            && ident.name == "require"
+        {
+            if arg.value == "react/jsx-runtime" {
+                if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                    self.jsx_object = Some(ident.name.to_string());
+                } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                    for prop in &object.properties {
+                        if let PropertyKey::StaticIdentifier(ident) = &prop.key
+                            && let Some(k) = prop
+                                .value
+                                .get_binding_identifier()
+                                .map(|id| id.name.to_string())
+                        {
+                            self.jsx_imports.insert(k, ident.name.to_string());
                         }
                     }
-                } else if arg.value == self.package {
-                    if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
-                        self.import_object = Some(ident.name.to_string());
-                    } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
-                        for prop in &object.properties {
-                            if let PropertyKey::StaticIdentifier(ident) = &prop.key
-                                && let Ok(kind) = ExportVariableKind::try_from(
-                                    prop.value
-                                        .get_binding_identifier()
-                                        .map(|id| id.name.to_string())
-                                        .unwrap_or("".to_string()),
-                                )
-                            {
-                                self.imports.insert(ident.name.to_string(), kind);
-                            }
+                }
+            } else if arg.value == self.package {
+                if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                    self.import_object = Some(ident.name.to_string());
+                } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                    for prop in &object.properties {
+                        if let PropertyKey::StaticIdentifier(ident) = &prop.key
+                            && let Ok(kind) = ExportVariableKind::try_from(
+                                prop.value
+                                    .get_binding_identifier()
+                                    .map(|id| id.name.to_string())
+                                    .unwrap_or_default(),
+                            )
+                        {
+                            self.imports.insert(ident.name.to_string(), kind);
                         }
                     }
                 }
