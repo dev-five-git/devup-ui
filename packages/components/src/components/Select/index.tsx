@@ -87,18 +87,12 @@ export function Select({
   }, [open, setOpen])
 
   const handleOpenChange = (open: boolean) => {
-    if (onOpenChange) {
-      onOpenChange(open)
-      return
-    }
+    onOpenChange?.(open)
     setOpen(open)
   }
 
   const handleValueChange = (nextValue: string) => {
-    if (onValueChange) {
-      onValueChange(nextValue)
-      return
-    }
+    onValueChange?.(nextValue)
 
     if (type === 'default') return
     if (type === 'radio') {
