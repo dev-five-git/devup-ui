@@ -230,6 +230,7 @@ export function SelectContainer({
       {showConfirmButton && type === 'checkbox' && (
         <Flex justifyContent="end" w="100%">
           <Button
+            aria-label="Select confirm button"
             className={css({
               textAlign: 'end',
               bg: 'var(--primary, light-dark(#674DC7, #8163E1))',

@@ -2,7 +2,14 @@ import { fireEvent, render } from '@testing-library/react'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { Select, SelectContainer, SelectOption, SelectTrigger } from '..'
+import {
+  Select,
+  SelectContainer,
+  SelectDivider,
+  SelectOption,
+  SelectTrigger,
+  useSelect,
+} from '..'
 import { Default } from '../Default'
 
 describe('Select', () => {
@@ -208,5 +215,55 @@ describe('Select', () => {
       '--base10': 'yellow',
       '--title': 'purple',
     })
+  })
+
+  it('should show confirm button when type is checkbox and showConfirmButton is true', () => {
+    const { container } = render(
+      <Select type="checkbox">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer showConfirmButton>
+          <SelectOption disabled value="Option 1">
+            Option 1
+          </SelectOption>
+          <SelectDivider />
+          <SelectOption value="Option 2">Option 2</SelectOption>
+          <SelectOption value="Option 3">Option 3</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const confirmButton = container.querySelector(
+      '[aria-label="Select confirm button"]',
+    )
+    expect(confirmButton).toBeInTheDocument()
+  })
+
+  it('should not show confirm button when type is checkbox and showConfirmButton is false', () => {
+    const { container } = render(
+      <Select type="checkbox">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer showConfirmButton={false}>
+          <SelectOption disabled value="Option 1">
+            Option 1
+          </SelectOption>
+          <SelectDivider />
+          <SelectOption value="Option 2">Option 2</SelectOption>
+          <SelectOption value="Option 3">Option 3</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const confirmButton = container.querySelector(
+      '[aria-label="Select confirm button"]',
+    )
+    expect(confirmButton).not.toBeInTheDocument()
+  })
+
+  it('should throw error when useSelect is used outside of Select context', () => {
+    expect(() => {
+      useSelect()
+    }).toThrow()
   })
 })

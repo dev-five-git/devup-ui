@@ -3,7 +3,7 @@
 exports[`Select > should render 1`] = `
 <div>
   <div
-    class="display-0-inline-block--1 position-0-relative--1 "
+    class="display-0-inline-block--1 position-0-relative--1 box-sizing-0-border-box-1137980104803605758-1  "
   >
     <button
       aria-expanded="false"
