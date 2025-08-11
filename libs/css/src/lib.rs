@@ -83,12 +83,12 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
 ) -> String {
     if is_debug() {
-        let selector = selector.unwrap_or("").trim();
+        let selector = selector.unwrap_or_default().trim();
         format!(
             "{}-{}-{}-{}-{}",
             property.trim(),
             level,
-            optimize_value(value.unwrap_or("")),
+            optimize_value(value.unwrap_or_default()),
             if selector.is_empty() {
                 "".to_string()
             } else {
@@ -103,8 +103,8 @@ pub fn sheet_to_classname(
             "{}-{}-{}-{}-{}",
             property.trim(),
             level,
-            optimize_value(value.unwrap_or("")),
-            selector.unwrap_or("").trim(),
+            optimize_value(value.unwrap_or_default()),
+            selector.unwrap_or_default().trim(),
             style_order.unwrap_or(255)
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
@@ -118,7 +118,7 @@ pub fn sheet_to_classname(
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     if is_debug() {
-        let selector = selector.unwrap_or("").trim();
+        let selector = selector.unwrap_or_default().trim();
         format!(
             "--{}-{}-{}",
             property,
@@ -132,7 +132,12 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
             }
         )
     } else {
-        let key = format!("{}-{}-{}", property, level, selector.unwrap_or("").trim());
+        let key = format!(
+            "{}-{}-{}",
+            property,
+            level,
+            selector.unwrap_or_default().trim()
+        );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
         map.get(&key).map(|v| format!("--d{v}")).unwrap_or_else(|| {
             let len = map.len();
