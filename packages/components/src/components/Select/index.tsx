@@ -49,7 +49,7 @@ interface SelectProps extends ComponentProps<'div'> {
   colors?: {
     primary?: string
     border?: string
-    inputBg?: string
+    inputBackground?: string
     base10?: string
     title?: string
     selectDisabled?: string
@@ -135,7 +135,7 @@ export function Select({
         styleVars={{
           primary: colors?.primary,
           border: colors?.border,
-          inputBg: colors?.inputBg,
+          inputBackground: colors?.inputBackground,
           base10: colors?.base10,
           title: colors?.title,
           selectDisabled: colors?.selectDisabled,
@@ -238,7 +238,7 @@ export function SelectContainer({
               w: 'fit-content',
               px: '30px',
               py: '10px',
-              color: 'var(--white, light-dark(#FFF,#FFF))',
+              color: '#FFF',
               typography: 'buttonS',
             })}
             onClick={() => setOpen(false)}
