@@ -155,6 +155,16 @@ describe('Input', () => {
     })
     expect(onChange).toHaveBeenCalledWith(expect.any(Object))
   })
+
+  it('should call onClear props when click clear button', () => {
+    const onClear = vi.fn()
+    const { container } = render(<Input onClear={onClear} />)
+    fireEvent.change(container.querySelector('input')!, {
+      target: { value: 'test' },
+    })
+    fireEvent.click(container.querySelector('[aria-label="clear-button"]')!)
+    expect(onClear).toHaveBeenCalled()
+  })
 })
 
 describe('Controlled Input', () => {
