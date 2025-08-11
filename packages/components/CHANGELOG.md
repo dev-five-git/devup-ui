@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.3
+
+### Patch Changes
+
+- 9d7b342: Add onClear prop in input component
+
 ## 0.1.2
 
 ### Patch Changes

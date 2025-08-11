@@ -72,10 +72,10 @@ Next.js Build Time and Build Size (github action - ubuntu-latest)
 
 | Library      | Version  | Build Time | Build Size      |
 |--------------|----------|------------|-----------------|
-| kuma-ui      | 1.5.9    | 20.589s    | 63,256,341b     |
-| chakra-ui    | 3.22.0   | 28.988s    | 193,241,174b    |
-| mui          | 7.2.0    | 21.209s    | 88,146,983b     |
-| devup-ui     | 1.0.10   | 17.130s    | 53,861,412b     |
+| kuma-ui      | 1.5.9    | 20.606s    | 63,248,791b     |
+| chakra-ui    | 3.24.2   | 29.358s    | 195,258,486b    |
+| mui          | 7.3.1    | 21.631s    | 88,332,632b     |
+| devup-ui     | 1.0.15   | 16.873s    | 53,729,988b     |
 
 ## How it works
 
