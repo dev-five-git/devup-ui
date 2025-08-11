@@ -100,4 +100,38 @@ describe('Stepper', () => {
       useStepper: expect.any(Function),
     })
   })
+
+  it('should increase value when increase button is clicked', () => {
+    const { container } = render(
+      <Stepper>
+        <StepperDecreaseButton />
+        <StepperInput />
+        <StepperIncreaseButton />
+      </Stepper>,
+    )
+    const increaseButton = container.querySelector(
+      '[aria-label="Increase button"]',
+    )
+    fireEvent.click(increaseButton!)
+    expect(
+      container.querySelector('[aria-label="Stepper value"]'),
+    ).toHaveAttribute('data-value', '1')
+  })
+
+  it('should decrease value when decrease button is clicked', () => {
+    const { container } = render(
+      <Stepper defaultValue={1}>
+        <StepperDecreaseButton />
+        <StepperInput />
+        <StepperIncreaseButton />
+      </Stepper>,
+    )
+    const decreaseButton = container.querySelector(
+      '[aria-label="Decrease button"]',
+    )
+    fireEvent.click(decreaseButton!)
+    expect(
+      container.querySelector('[aria-label="Stepper value"]'),
+    ).toHaveAttribute('data-value', '0')
+  })
 })
