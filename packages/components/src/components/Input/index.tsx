@@ -21,6 +21,7 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
     icon?: string
     errorMessage?: string
   }
+  onClear?: () => void
   colors?: {
     primary?: string
     error?: string
@@ -49,6 +50,7 @@ export function Input({
   className,
   classNames,
   ref,
+  onClear,
   ...props
 }: InputProps) {
   const [value, setValue] = useState(defaultValue || '')
@@ -58,6 +60,7 @@ export function Input({
   }
   const handleClear = () => {
     setValue('')
+    onClear?.()
   }
   const clearButtonVisible = value && !disabled && allowClear
 
