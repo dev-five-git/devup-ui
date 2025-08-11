@@ -45,11 +45,11 @@ export const ControlledCheckboxStory: Story = {
 
 export default meta
 
-export function DefaultComponent({
-  ...props
-}: Omit<ComponentProps<typeof Select>, 'children'>) {
+function DefaultComponent(
+  props: Omit<ComponentProps<typeof Select>, 'children'>,
+) {
   return (
-    <Select {...props}>
+    <Select {...props} onValueChange={() => {}}>
       <SelectTrigger>Select</SelectTrigger>
       <SelectContainer>
         <SelectOption disabled value="Option 1">

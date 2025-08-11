@@ -10,7 +10,6 @@ import {
   SelectTrigger,
 } from '..'
 import { IconArrow } from '../IconArrow'
-import { DefaultComponent } from '../Select.stories'
 
 const children = (
   <>
@@ -67,7 +66,7 @@ describe('Select', () => {
   it('should close select when clicking outside', () => {
     const { container } = render(
       <div data-testid="container">
-        <DefaultComponent />
+        <Select>{children}</Select>
       </div>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
