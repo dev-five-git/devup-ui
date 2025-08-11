@@ -105,7 +105,7 @@ export function Input({
           outline: 'none',
         }}
         _hover={{
-          border: '1px solid var(--primary, light-dark(red, blue))',
+          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
         }}
         _placeholder={{
           color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
