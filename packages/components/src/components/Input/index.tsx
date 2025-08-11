@@ -10,8 +10,7 @@ import {
 } from '@devup-ui/react'
 import { ComponentProps, useState } from 'react'
 
-interface InputProps
-  extends Omit<ComponentProps<'input'>, 'className' | 'type'> {
+interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   type?: Exclude<ComponentProps<'input'>['type'], 'file'>
   typography?: keyof DevupThemeTypography
   error?: boolean
@@ -47,6 +46,7 @@ export function Input({
   icon,
   colors,
   disabled,
+  className,
   classNames,
   ref,
   ...props
@@ -117,7 +117,7 @@ export function Input({
         borderRadius="8px"
         borderStyle="solid"
         borderWidth="1px"
-        className={classNames?.input}
+        className={`${className || ''} ${classNames?.input || ''}`.trim()}
         disabled={disabled}
         onChange={handleChange}
         pl={icon ? '36px' : '12px'}
