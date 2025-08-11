@@ -1,5 +1,5 @@
+import { css, Flex } from '@devup-ui/react'
 import { fireEvent, render } from '@testing-library/react'
-import React from 'react'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -8,9 +8,45 @@ import {
   SelectDivider,
   SelectOption,
   SelectTrigger,
-  useSelect,
 } from '..'
-import { Default } from '../Default'
+import { IconArrow } from '../IconArrow'
+import { DefaultComponent } from '../Select.stories'
+
+const children = (
+  <>
+    <SelectTrigger>Select</SelectTrigger>
+    <SelectContainer>
+      <SelectOption disabled value="Option 1">
+        Option 1
+      </SelectOption>
+      <SelectOption value="Option 2">Option 2</SelectOption>
+      <SelectDivider />
+      <SelectOption value="Option 3">Option 3</SelectOption>
+      <SelectOption disabled value="Option 4">
+        Option 4
+      </SelectOption>
+      <Select type="radio">
+        <SelectTrigger asChild>
+          <SelectOption>
+            <Flex alignItems="center" justifyContent="space-between" w="100%">
+              Option 5<IconArrow />
+            </Flex>
+          </SelectOption>
+        </SelectTrigger>
+        <SelectContainer
+          className={css({
+            right: '0',
+            top: '0',
+            transform: 'translateX(100%)',
+          })}
+        >
+          <SelectOption value="Option 6">Option 6</SelectOption>
+          <SelectOption value="Option 7">Option 7</SelectOption>
+        </SelectContainer>
+      </Select>
+    </SelectContainer>
+  </>
+)
 
 describe('Select', () => {
   afterEach(() => {
@@ -18,7 +54,7 @@ describe('Select', () => {
   })
 
   it('should render', () => {
-    const { container } = render(<Default />)
+    const { container } = render(<Select>{children}</Select>)
     expect(container).toMatchSnapshot()
   })
 
@@ -31,7 +67,7 @@ describe('Select', () => {
   it('should close select when clicking outside', () => {
     const { container } = render(
       <div data-testid="container">
-        <Default />
+        <DefaultComponent />
       </div>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
@@ -47,7 +83,9 @@ describe('Select', () => {
   it('should call onOpenChange function when it is provided', () => {
     const onOpenChange = vi.fn()
     const { container } = render(
-      <Default onOpenChange={onOpenChange} type="radio" />,
+      <Select onOpenChange={onOpenChange} type="radio">
+        {children}
+      </Select>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
@@ -57,7 +95,9 @@ describe('Select', () => {
   it('should call onValueChange function when it is provided', () => {
     const onValueChange = vi.fn()
     const { container } = render(
-      <Default onValueChange={onValueChange} type="radio" />,
+      <Select onValueChange={onValueChange} type="radio">
+        {children}
+      </Select>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
@@ -68,7 +108,7 @@ describe('Select', () => {
   })
 
   it('should do nothing when onValueChange is not provided and type is default', () => {
-    const { container } = render(<Default type="default" />)
+    const { container } = render(<Select type="default">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -80,7 +120,7 @@ describe('Select', () => {
   })
 
   it('should select option when type is radio and the option should have a check', () => {
-    const { container } = render(<Default type="radio" />)
+    const { container } = render(<Select type="radio">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -92,7 +132,7 @@ describe('Select', () => {
   })
 
   it('should have multiple check marks when type is checkbox and multiple options are selected', () => {
-    const { container } = render(<Default type="checkbox" />)
+    const { container } = render(<Select type="checkbox">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -106,7 +146,7 @@ describe('Select', () => {
   })
 
   it('should not have a check mark when type is checkbox and the option is not selected', () => {
-    const { container } = render(<Default type="checkbox" />)
+    const { container } = render(<Select type="checkbox">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -141,7 +181,9 @@ describe('Select', () => {
 
   it('should have a check mark when type is radio and defaultValue is provided', () => {
     const { container } = render(
-      <Default defaultValue="Option 2" type="radio" />,
+      <Select defaultValue="Option 2" type="radio">
+        {children}
+      </Select>,
     )
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
@@ -151,7 +193,7 @@ describe('Select', () => {
   })
 
   it('should not have a check mark when type is radio and defaultValue is not provided', () => {
-    const { container } = render(<Default type="radio" />)
+    const { container } = render(<Select type="radio">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const selectContainer = container.querySelector(
@@ -162,7 +204,7 @@ describe('Select', () => {
   })
 
   it('should have 10px gap in an option when type is checkbox', () => {
-    const { container } = render(<Default type="checkbox" />)
+    const { container } = render(<Select type="checkbox">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -170,7 +212,7 @@ describe('Select', () => {
   })
 
   it('should have 6px gap in an option when type is radio', () => {
-    const { container } = render(<Default type="radio" />)
+    const { container } = render(<Select type="radio">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -178,7 +220,7 @@ describe('Select', () => {
   })
 
   it('should have 0 gap in an option when type is default', () => {
-    const { container } = render(<Default type="default" />)
+    const { container } = render(<Select type="default">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -187,7 +229,7 @@ describe('Select', () => {
 
   it('should have undefined gap when type is not right', () => {
     // @ts-expect-error - test for wrong type
-    const { container } = render(<Default type="no-type" />)
+    const { container } = render(<Select type="no-type">{children}</Select>)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')
@@ -196,22 +238,24 @@ describe('Select', () => {
 
   it('should add styleVars to the container when colors are provided', () => {
     const { container } = render(
-      <Default
+      <Select
         colors={{
           primary: 'red',
           border: 'blue',
-          inputBg: 'green',
+          inputBackground: 'green',
           base10: 'yellow',
           title: 'purple',
         }}
         data-testid="select"
-      />,
+      >
+        {children}
+      </Select>,
     )
     const select = container.querySelector('[data-testid="select"]')
     expect(select).toHaveStyle({
       '--primary': 'red',
       '--border': 'blue',
-      '--inputBg': 'green',
+      '--inputBackground': 'green',
       '--base10': 'yellow',
       '--title': 'purple',
     })
@@ -239,6 +283,25 @@ describe('Select', () => {
     expect(confirmButton).toBeInTheDocument()
   })
 
+  it('should close select when clicking confirm button', () => {
+    const { container } = render(
+      <Select type="checkbox">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer showConfirmButton>
+          <SelectOption value="Option 1">Option 1</SelectOption>
+          <SelectOption value="Option 2">Option 2</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const confirmButton = container.querySelector(
+      '[aria-label="Select confirm button"]',
+    )
+    fireEvent.click(confirmButton!)
+    expect(selectToggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('should not show confirm button when type is checkbox and showConfirmButton is false', () => {
     const { container } = render(
       <Select type="checkbox">
@@ -261,9 +324,33 @@ describe('Select', () => {
     expect(confirmButton).not.toBeInTheDocument()
   })
 
-  it('should throw error when useSelect is used outside of Select context', () => {
-    expect(() => {
-      useSelect()
-    }).toThrow()
+  it('should render IconCheck when type is checkbox and the option is selected', () => {
+    const { container } = render(
+      <Select defaultValue={['Option 2']} type="checkbox">
+        {children}
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option2 = container.querySelector('[data-value="Option 2"]')
+    expect(option2?.querySelector('svg')).toBeInTheDocument()
+  })
+
+  it('should not check the option when type is checkbox and the option is not selected', () => {
+    const { container } = render(
+      <Select defaultOpen type="checkbox">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer showConfirmButton={false}>
+          <SelectOption disabled value="Option 1">
+            Option 1
+          </SelectOption>
+          <SelectDivider />
+          <SelectOption value="Option 2">Option 2</SelectOption>
+          <SelectOption value="Option 3">Option 3</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const svg = container.querySelector('svg')
+    expect(svg).not.toBeInTheDocument()
   })
 })
