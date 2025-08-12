@@ -3,7 +3,7 @@
 exports[`Controlled Input > should render with value 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -17,7 +17,7 @@ exports[`Controlled Input > should render with value 1`] = `
 exports[`Input > should have typography when typography is provided 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -31,7 +31,7 @@ exports[`Input > should have typography when typography is provided 1`] = `
 exports[`Input > should not have padding right when allowClear is false 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -45,7 +45,7 @@ exports[`Input > should not have padding right when allowClear is false 1`] = `
 exports[`Input > should not show clear button when value is empty 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -59,7 +59,7 @@ exports[`Input > should not show clear button when value is empty 1`] = `
 exports[`Input > should pass className prop to error message component 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -79,7 +79,7 @@ exports[`Input > should pass className prop to error message component 1`] = `
 exports[`Input > should pass className prop to icon component 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <div
       aria-label="icon"
@@ -144,7 +144,7 @@ exports[`Input > should pass props to ClearButton component 1`] = `
 exports[`Input > should render disabled icon style when disabled is true 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <div
       aria-label="icon"
@@ -178,7 +178,7 @@ exports[`Input > should render disabled icon style when disabled is true 1`] = `
 exports[`Input > should render error style when error is true 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -192,7 +192,7 @@ exports[`Input > should render error style when error is true 1`] = `
 exports[`Input > should render with allowClear prop 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -206,7 +206,7 @@ exports[`Input > should render with allowClear prop 1`] = `
 exports[`Input > should render with default props 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -220,7 +220,7 @@ exports[`Input > should render with default props 1`] = `
 exports[`Input > should render with disabled prop 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
@@ -235,7 +235,7 @@ exports[`Input > should render with disabled prop 1`] = `
 exports[`Input > should show clear button when value is not empty 1`] = `
 <div>
   <div
-    class="display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
+    class=" display-0-inline-block--255 position-0-relative--255 box-sizing-0-border-box-1137980104803605758-255"
   >
     <input
       aria-label="input"
