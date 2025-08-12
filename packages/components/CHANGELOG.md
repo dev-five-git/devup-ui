@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.6
+
+### Patch Changes
+
+- 0ef7821: Fix Input, Select, Stepper
+
 ## 0.1.5
 
 ### Patch Changes
