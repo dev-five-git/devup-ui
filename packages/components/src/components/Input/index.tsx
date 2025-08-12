@@ -146,7 +146,7 @@ export function Input({
         {...props}
       />
       {clearButtonVisible && <ClearButton onClick={handleClear} />}
-      {errorMessage && (
+      {error && errorMessage && (
         <Text
           aria-label="error-message"
           bottom="-8px"
