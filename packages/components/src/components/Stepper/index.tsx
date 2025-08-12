@@ -77,9 +77,6 @@ function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
         p: '0',
         boxSize: '28px',
         borderRadius: '4px',
-        selectors: {
-          '&>div>div': {},
-        },
       })}
       disabled={disabled}
       onClick={() => setValue(value - 1)}
