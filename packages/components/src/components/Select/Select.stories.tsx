@@ -49,7 +49,7 @@ function DefaultComponent(
   props: Omit<ComponentProps<typeof Select>, 'children'>,
 ) {
   return (
-    <Select {...props} onValueChange={() => {}}>
+    <Select {...props} defaultValue={['Option 1']} onValueChange={() => {}}>
       <SelectTrigger>Select</SelectTrigger>
       <SelectContainer>
         <SelectOption disabled value="Option 1">
