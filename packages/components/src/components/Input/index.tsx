@@ -17,6 +17,7 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
   errorMessage?: string
   allowClear?: boolean
   classNames?: {
+    container?: string
     input?: string
     icon?: string
     errorMessage?: string
@@ -66,6 +67,7 @@ export function Input({
 
   return (
     <Box
+      className={classNames?.container}
       display="inline-block"
       pos="relative"
       selectors={{ '&,&>*': { boxSizing: 'border-box' } }}
@@ -105,7 +107,7 @@ export function Input({
           outline: 'none',
         }}
         _hover={{
-          border: '1px solid var(--primary, light-dark(red, blue))',
+          border: '1px solid var(--primary, light-dark(#674DC7, #8163E1))',
         }}
         _placeholder={{
           color: 'var(--inputPlaceholder, light-dark(#A9A8AB, #CBCBCB))',
