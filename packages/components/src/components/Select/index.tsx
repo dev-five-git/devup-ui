@@ -193,10 +193,12 @@ export function SelectTrigger({
 
 interface SelectContainerProps extends ComponentProps<'div'> {
   showConfirmButton?: boolean
+  confirmButtonText?: string
 }
 export function SelectContainer({
   children,
   showConfirmButton,
+  confirmButtonText = '완료',
   ...props
 }: SelectContainerProps) {
   const { open, setOpen, type } = useSelect()
@@ -238,7 +240,7 @@ export function SelectContainer({
             onClick={() => setOpen(false)}
             variant="primary"
           >
-            완료
+            {confirmButtonText}
           </Button>
         </Flex>
       )}
