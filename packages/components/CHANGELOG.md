@@ -1,5 +1,13 @@
 # @devup-ui/components
 
+## 0.1.4
+
+### Patch Changes
+
+- 6948495: Add Stepper component
+- 6b51aa1: Fix Input test snapshot
+- 082e519: Fix Input
+
 ## 0.1.3
 
 ### Patch Changes
