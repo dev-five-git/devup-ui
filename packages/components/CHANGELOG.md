@@ -1,5 +1,12 @@
 # @devup-ui/components
 
+## 0.1.5
+
+### Patch Changes
+
+- fdaff93: Add Select component
+- 247f40a: Add Select component
+
 ## 0.1.4
 
 ### Patch Changes
