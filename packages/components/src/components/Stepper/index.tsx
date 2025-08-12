@@ -14,6 +14,7 @@ type StepperContextType = {
   setValue: (value: number) => void
   min: number
   max: number
+  type: 'input' | 'text'
 }
 
 const StepperContext = createContext<StepperContextType | null>(null)
@@ -33,6 +34,7 @@ type StepperProps = {
   onValueChange?: (value: number) => void
   min?: number
   max?: number
+  type?: 'input' | 'text'
 }
 
 function Stepper({
@@ -42,6 +44,7 @@ function Stepper({
   onValueChange,
   min = 0,
   max = 100,
+  type = 'input',
 }: StepperProps) {
   const [value, setValue] = useState(defaultValue ?? 0)
 
@@ -56,7 +59,13 @@ function Stepper({
 
   return (
     <StepperContext.Provider
-      value={{ value: valueProp ?? value, setValue: handleChange, min, max }}
+      value={{
+        value: valueProp ?? value,
+        setValue: handleChange,
+        min,
+        max,
+        type,
+      }}
     >
       {children}
     </StepperContext.Provider>
@@ -126,12 +135,8 @@ interface StepperInputProps extends ComponentProps<typeof Input> {
   editable?: boolean
 }
 
-function StepperInput({
-  editable = true,
-  className,
-  ...props
-}: StepperInputProps) {
-  const { value, setValue } = useStepper()
+function StepperInput({ className, ...props }: StepperInputProps) {
+  const { value, setValue, type } = useStepper()
   const notEditableClass = css({
     p: '0',
     border: 'none',
@@ -139,7 +144,7 @@ function StepperInput({
     h: 'fit-content',
     styleOrder: 3,
   })
-
+  const editable = type === 'input'
   const Comp = editable ? Input : 'div'
 
   return (

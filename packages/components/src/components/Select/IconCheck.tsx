@@ -3,7 +3,6 @@ import { ComponentProps } from 'react'
 export function IconCheck({ ...props }: ComponentProps<'svg'>) {
   return (
     <svg
-      color="white"
       fill="none"
       height="10"
       viewBox="0 0 12 10"

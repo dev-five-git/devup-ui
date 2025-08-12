@@ -50,6 +50,8 @@ interface SelectProps extends ComponentProps<'div'> {
     primary?: string
     border?: string
     inputBackground?: string
+    inputDisabledBackground?: string
+    inputDisabledText?: string
     base10?: string
     title?: string
     selectDisabled?: string
@@ -134,6 +136,8 @@ export function Select({
           title: colors?.title,
           selectDisabled: colors?.selectDisabled,
           primaryBg: colors?.primaryBg,
+          inputDisabledBackground: colors?.inputDisabledBackground,
+          inputDisabledText: colors?.inputDisabledText,
         }}
         typography={typography}
         {...props}
@@ -193,10 +197,12 @@ export function SelectTrigger({
 
 interface SelectContainerProps extends ComponentProps<'div'> {
   showConfirmButton?: boolean
+  confirmButtonText?: string
 }
 export function SelectContainer({
   children,
   showConfirmButton,
+  confirmButtonText = '완료',
   ...props
 }: SelectContainerProps) {
   const { open, setOpen, type } = useSelect()
@@ -238,7 +244,7 @@ export function SelectContainer({
             onClick={() => setOpen(false)}
             variant="primary"
           >
-            완료
+            {confirmButtonText}
           </Button>
         </Flex>
       )}
@@ -300,7 +306,7 @@ export function SelectOption({
         }
       }
       alignItems="center"
-      borderRadius="8px"
+      borderRadius="6px"
       color={
         disabled
           ? 'var(--selectDisabled, light-dark(#C4C5D1, #45464D))'
@@ -330,9 +336,11 @@ export function SelectOption({
           checkbox: (
             <Box
               bg={
-                isSelected
-                  ? 'var(--primary, light-dark(#674DC7, #8163E1)'
-                  : 'var(--border, light-dark(#E4E4E4, #434343))'
+                disabled
+                  ? 'var(--inputDisabledBackground, light-dark(#F0F0F3, #414244))'
+                  : isSelected
+                    ? 'var(--primary, light-dark(#674DC7, #8163E1)'
+                    : 'var(--border, light-dark(#E4E4E4, #434343))'
               }
               borderRadius="4px"
               boxSize="18px"
@@ -342,6 +350,9 @@ export function SelectOption({
               {isSelected && (
                 <IconCheck
                   className={css({
+                    color: disabled
+                      ? 'var(--inputDisabledText, light-dark(#E5E5E5, #373737))'
+                      : '#FFF',
                     position: 'absolute',
                     top: '55%',
                     left: '50%',

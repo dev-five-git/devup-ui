@@ -260,6 +260,25 @@ describe('Select', () => {
     })
   })
 
+  it('should have disabled check color when type is checkbox and the option is disabled', () => {
+    const { container } = render(
+      <Select defaultValue={['Option 1']} type="checkbox">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer>
+          <SelectOption disabled value="Option 1">
+            Option 1
+          </SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option1 = container.querySelector('[data-value="Option 1"]')
+    expect(option1?.querySelector('svg')).toHaveClass(
+      'color-0-var(--inputDisabledText,light-dark(#E5E5E5,#373737))--255',
+    )
+  })
+
   it('should show confirm button when type is checkbox and showConfirmButton is true', () => {
     const { container } = render(
       <Select type="checkbox">

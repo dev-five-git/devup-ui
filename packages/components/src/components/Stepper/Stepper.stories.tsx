@@ -29,7 +29,7 @@ export const Default: Story = {
     <Stepper {...args}>
       <StepperContainer>
         <StepperDecreaseButton />
-        <StepperInput editable={false} />
+        <StepperInput />
         <StepperIncreaseButton />
       </StepperContainer>
     </Stepper>

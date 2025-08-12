@@ -72,7 +72,7 @@ describe('Input', () => {
   })
 
   it('should be able to render with error message', () => {
-    const { container } = render(<Input errorMessage="Error message" />)
+    const { container } = render(<Input error errorMessage="Error message" />)
     expect(
       container.querySelector('[aria-label="error-message"]'),
     ).toBeInTheDocument()
@@ -110,6 +110,7 @@ describe('Input', () => {
         classNames={{
           errorMessage: 'error-message',
         }}
+        error
         errorMessage="Error message"
       />,
     )
