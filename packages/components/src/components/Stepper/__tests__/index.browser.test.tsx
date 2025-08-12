@@ -51,6 +51,17 @@ describe('Stepper', () => {
     expect(input).toHaveAttribute('data-value', '10')
   })
 
+  it('should not change inner value by clicking the number when type is text', () => {
+    const { container } = render(
+      <Stepper type="text">
+        <StepperInput />
+      </Stepper>,
+    )
+    const input = container.querySelector('[aria-label="Stepper value"]')
+    expect(input?.nodeName).toBe('DIV')
+    expect(input).toHaveAttribute('data-value', '0')
+  })
+
   it('should have disabled decrease button when value is at min', () => {
     const { container } = render(
       <Stepper>
