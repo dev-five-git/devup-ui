@@ -3,7 +3,7 @@
 exports[`Stepper > should render 1`] = `
 <div>
   <div
-    class="display-0-flex--0 align-items-0-center--1 gap-0-20px--1 "
+    class="display-0-flex--0 align-items-0-center--1 gap-0-8px--1 "
   >
     <button
       aria-disabled="true"
@@ -41,7 +41,7 @@ exports[`Stepper > should render 1`] = `
     >
       <input
         aria-label="Stepper value"
-        class="width-0-80px--2 height-0-50px--2 text-align-0-center--2 padding-bottom-0-10px--2 padding-top-0-10px--2 padding-right-0-12px--2 padding-left-0-12px--2 border-radius-0-6px--2 display-0-none-1599573265477977541-2 color-0-var(--inputDisabledText,light-dark(#D6D7DE,#373737))-7704306251139592248-1 background-0-var(--inputDisabledBg,light-dark(#F0F0F3,#414244))-14172363753176421546-1 border-0-1px solid var(--border,light-dark(#E4E4E4,#434343))-14172363753176421546-1 color-0-var(--inputDisabledText,light-dark(#D6D7DE,#373737))-14172363753176421546-1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-16231282139879731451-1 border-0-1px solid var(--primary,light-dark(#674DC7,#8163E1))-16231282139879731451-1 outline-0-none-16231282139879731451-1 border-0-1px solid var(--primary,light-dark(#674DC7,#8163E1))-8380715471663921674-1 color-0-var(--inputPlaceholder,light-dark(#A9A8AB,#CBCBCB))-15878565022192187906-1 background-0-var(--inputBg,light-dark(#FFF,#2E2E2E))--1 border-radius-0-8px--1 border-style-0-solid--1 border-width-0-1px--1 padding-bottom-0-12px--1 padding-top-0-12px--1 transition-0-all .1s ease-in-out--1 border-color-0-var(--border,light-dark(#E4E4E4,#434343))--1 padding-left-0-12px--1 padding-right-0-12px--1 "
+        class="width-0-60px--2 text-align-0-center--2 border-radius-0-6px--2 display-0-none-1599573265477977541-2 color-0-var(--inputDisabledText,light-dark(#D6D7DE,#373737))-7704306251139592248-1 background-0-var(--inputDisabledBg,light-dark(#F0F0F3,#414244))-14172363753176421546-1 border-0-1px solid var(--border,light-dark(#E4E4E4,#434343))-14172363753176421546-1 color-0-var(--inputDisabledText,light-dark(#D6D7DE,#373737))-14172363753176421546-1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-16231282139879731451-1 border-0-1px solid var(--primary,light-dark(#674DC7,#8163E1))-16231282139879731451-1 outline-0-none-16231282139879731451-1 border-0-1px solid var(--primary,light-dark(#674DC7,#8163E1))-8380715471663921674-1 color-0-var(--inputPlaceholder,light-dark(#A9A8AB,#CBCBCB))-15878565022192187906-1 background-0-var(--inputBg,light-dark(#FFF,#2E2E2E))--1 border-radius-0-8px--1 border-style-0-solid--1 border-width-0-1px--1 padding-bottom-0-12px--1 padding-top-0-12px--1 transition-0-all .1s ease-in-out--1 border-color-0-var(--border,light-dark(#E4E4E4,#434343))--1 padding-left-0-12px--1 padding-right-0-12px--1 "
         data-value="0"
         type="number"
         value="0"

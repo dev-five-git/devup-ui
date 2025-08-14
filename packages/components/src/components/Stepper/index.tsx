@@ -73,7 +73,7 @@ function Stepper({
 }
 
 function StepperContainer(props: ComponentProps<'div'>) {
-  return <Flex alignItems="center" gap="20px" styleOrder={1} {...props} />
+  return <Flex alignItems="center" gap="8px" styleOrder={1} {...props} />
 }
 
 function StepperDecreaseButton({ ...props }: ComponentProps<typeof Button>) {
@@ -154,11 +154,8 @@ function StepperInput({ className, ...props }: StepperInputProps) {
       className={clsx(
         css({
           styleOrder: 2,
-          w: '80px',
-          h: '50px',
+          w: '60px',
           textAlign: 'center',
-          py: '10px',
-          px: '12px',
           borderRadius: '6px',
           selectors: {
             '&::-webkit-outer-spin-button, &::-webkit-inner-spin-button': {
