@@ -184,6 +184,7 @@ export function SelectTrigger({
       className={clsx(
         css({
           borderRadius: '8px',
+          styleOrder: 2,
         }),
         className,
       )}
