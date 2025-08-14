@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.8
+
+### Patch Changes
+
+- 3fd00d6: Fix SelectTrigger styleOrder
+
 ## 0.1.7
 
 ### Patch Changes
