@@ -5,6 +5,7 @@ describe('export', () => {
       Button: expect.any(Function),
       Input: expect.any(Function),
       Stepper: expect.any(Function),
+      Select: expect.any(Function),
     })
   })
 })
