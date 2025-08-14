@@ -184,6 +184,7 @@ export function SelectTrigger({
       className={clsx(
         css({
           borderRadius: '8px',
+          styleOrder: 2,
         }),
         className,
       )}
@@ -224,6 +225,7 @@ export function SelectContainer({
       transform="translateY(100%)"
       userSelect="none"
       w="232px"
+      zIndex={1}
       {...props}
     >
       {children}
