@@ -1,5 +1,12 @@
 # @devup-ui/components
 
+## 0.1.7
+
+### Patch Changes
+
+- 10ed114: Fix exports. Fix Stepper.
+- fd19288: Fix exports
+
 ## 0.1.6
 
 ### Patch Changes
