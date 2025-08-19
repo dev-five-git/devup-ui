@@ -40,11 +40,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 for (idx, p) in array.elements.iter_mut().enumerate() {
                     if let ArrayExpressionElement::SpreadElement(sp) = p {
                         etc = Some(sp.argument.clone_in(ast_builder.allocator));
-                    } else if idx as f64 == num {
+                    } else if idx as f64 == num
+                        && let Some(p) = p.as_expression_mut()
+                    {
                         return extract_style_from_expression(
                             ast_builder,
                             name,
-                            p.to_expression_mut(),
+                            p,
                             level,
                             selector,
                         );
@@ -97,18 +99,12 @@ pub(super) fn extract_style_from_member_expression<'a>(
                             ),
                         ))),
                     );
-                } else {
+                } else if let Some(p) = p.as_expression_mut() {
                     map.insert(
                         idx.to_string(),
                         Box::new(ExtractStyleProp::StaticArray(
-                            extract_style_from_expression(
-                                ast_builder,
-                                name,
-                                p.to_expression_mut(),
-                                level,
-                                selector,
-                            )
-                            .styles,
+                            extract_style_from_expression(ast_builder, name, p, level, selector)
+                                .styles,
                         )),
                     );
                 }
