@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box styleVars={} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+---
+ToBTreeSet {
+    styles: {},
+    code: "<div />;\n",
+}

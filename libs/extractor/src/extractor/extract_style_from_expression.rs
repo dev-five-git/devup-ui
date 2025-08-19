@@ -474,16 +474,18 @@ pub fn extract_style_from_expression<'a>(
                 let mut props = vec![];
 
                 for (idx, element) in array.elements.iter_mut().enumerate() {
-                    props.extend(
-                        extract_style_from_expression(
-                            ast_builder,
-                            name,
-                            element.to_expression_mut(),
-                            idx as u8,
-                            selector,
-                        )
-                        .styles,
-                    );
+                    if let Some(element) = element.as_expression_mut() {
+                        props.extend(
+                            extract_style_from_expression(
+                                ast_builder,
+                                name,
+                                element,
+                                idx as u8,
+                                selector,
+                            )
+                            .styles,
+                        );
+                    }
                 }
                 ExtractResult {
                     styles: vec![ExtractStyleProp::StaticArray(props)],

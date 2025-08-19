@@ -51,9 +51,10 @@ pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> 
         JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
             &Expression::StringLiteral(sl.clone_in(&Allocator::default())),
         ),
-        JSXAttributeValue::ExpressionContainer(ec) => {
-            get_number_by_literal_expression(ec.expression.to_expression())
-        }
+        JSXAttributeValue::ExpressionContainer(ec) => ec
+            .expression
+            .as_expression()
+            .and_then(get_number_by_literal_expression),
         _ => None,
     }
 }
