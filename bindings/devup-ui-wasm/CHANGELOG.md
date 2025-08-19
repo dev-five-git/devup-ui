@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.28
+
+### Patch Changes
+
+- e1416f8: Exclude elision in array
+
 ## 1.0.27
 
 ### Patch Changes
