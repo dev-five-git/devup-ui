@@ -6,8 +6,8 @@ use oxc_ast::AstBuilder;
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, JSXAttributeItem, JSXAttributeValue, JSXExpression, LogicalOperator,
-    ObjectPropertyKind, PropertyKey, PropertyKind, TemplateElementValue,
+    Expression, JSXAttributeItem, JSXAttributeValue, LogicalOperator, ObjectPropertyKind,
+    PropertyKey, PropertyKind, TemplateElementValue,
 };
 use oxc_span::SPAN;
 
@@ -99,18 +99,10 @@ pub fn modify_props<'a>(
                     && (ident.name == "className" || ident.name == "style")
                 {
                     let value = match &value {
-                        JSXAttributeValue::ExpressionContainer(container) => {
-                            if matches!(container.expression, JSXExpression::EmptyExpression(_)) {
-                                None
-                            } else {
-                                Some(
-                                    container
-                                        .expression
-                                        .to_expression()
-                                        .clone_in(ast_builder.allocator),
-                                )
-                            }
-                        }
+                        JSXAttributeValue::ExpressionContainer(container) => container
+                            .expression
+                            .as_expression()
+                            .map(|expression| expression.clone_in(ast_builder.allocator)),
                         JSXAttributeValue::StringLiteral(literal) => {
                             Some(ast_builder.expression_string_literal(SPAN, literal.value, None))
                         }

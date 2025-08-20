@@ -154,7 +154,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             } = extract_style_from_expression(
                                 &self.ast,
                                 None,
-                                call.arguments[0].to_expression_mut(),
+                                if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+                                    &mut spread.argument
+                                } else {
+                                    call.arguments[0].to_expression_mut()
+                                },
                                 0,
                                 &None,
                             );
@@ -185,7 +189,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             let KeyframesExtractResult { keyframes } =
                                 extract_keyframes_from_expression(
                                     &self.ast,
-                                    call.arguments[0].to_expression_mut(),
+                                    if let Argument::SpreadElement(spread) = &mut call.arguments[0]
+                                    {
+                                        &mut spread.argument
+                                    } else {
+                                        call.arguments[0].to_expression_mut()
+                                    },
                                 );
 
                             let name = keyframes.extract().to_string();
@@ -199,7 +208,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 style_order,
                             } = extract_global_style_from_expression(
                                 &self.ast,
-                                call.arguments[0].to_expression_mut(),
+                                if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+                                    &mut spread.argument
+                                } else {
+                                    call.arguments[0].to_expression_mut()
+                                },
                                 &self.filename,
                             );
                             // already set style order
@@ -513,10 +526,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if property_name == "styleVars" {
                             if let Some(value) = attr.value.as_ref()
                                 && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                && let Some(expression) = expr.expression.as_expression()
                             {
-                                style_vars = Some(
-                                    expr.expression.to_expression().clone_in(self.ast.allocator),
-                                );
+                                style_vars = Some(expression.clone_in(self.ast.allocator));
                             }
                             continue;
                         }

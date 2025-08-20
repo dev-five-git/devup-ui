@@ -4,6 +4,18 @@ describe('export', () => {
     expect({ ...index }).toEqual({
       Button: expect.any(Function),
       Input: expect.any(Function),
+      Stepper: expect.any(Function),
+      Select: expect.any(Function),
+      SelectContainer: expect.any(Function),
+      SelectDivider: expect.any(Function),
+      SelectOption: expect.any(Function),
+      SelectTrigger: expect.any(Function),
+      StepperContainer: expect.any(Function),
+      StepperDecreaseButton: expect.any(Function),
+      StepperIncreaseButton: expect.any(Function),
+      StepperInput: expect.any(Function),
+      useSelect: expect.any(Function),
+      useStepper: expect.any(Function),
     })
   })
 })

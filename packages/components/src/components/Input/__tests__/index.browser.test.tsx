@@ -72,7 +72,7 @@ describe('Input', () => {
   })
 
   it('should be able to render with error message', () => {
-    const { container } = render(<Input errorMessage="Error message" />)
+    const { container } = render(<Input error errorMessage="Error message" />)
     expect(
       container.querySelector('[aria-label="error-message"]'),
     ).toBeInTheDocument()
@@ -110,6 +110,7 @@ describe('Input', () => {
         classNames={{
           errorMessage: 'error-message',
         }}
+        error
         errorMessage="Error message"
       />,
     )
@@ -154,6 +155,16 @@ describe('Input', () => {
       target: { value: 'test' },
     })
     expect(onChange).toHaveBeenCalledWith(expect.any(Object))
+  })
+
+  it('should call onClear props when click clear button', () => {
+    const onClear = vi.fn()
+    const { container } = render(<Input onClear={onClear} />)
+    fireEvent.change(container.querySelector('input')!, {
+      target: { value: 'test' },
+    })
+    fireEvent.click(container.querySelector('[aria-label="clear-button"]')!)
+    expect(onClear).toHaveBeenCalled()
   })
 })
 
