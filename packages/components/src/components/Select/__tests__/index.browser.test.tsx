@@ -374,7 +374,12 @@ describe('Select', () => {
 
   it('should render with options properties', () => {
     const { container } = render(
-      <Select options={[{ label: 'Option 1', value: 'Option 1' }]}>
+      <Select
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { value: 'Option 2' },
+        ]}
+      >
         Select
       </Select>,
     )
@@ -382,6 +387,27 @@ describe('Select', () => {
     fireEvent.click(selectToggle!)
     const option1 = container.querySelector('[data-value="Option 1"]')
     expect(option1).toBeInTheDocument()
+  })
+
+  it('should call onChange function when it is provided to SelectOption', () => {
+    const onValueChange = vi.fn()
+    const { container } = render(
+      <Select
+        onChange={onValueChange}
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { value: 'Option 2' },
+        ]}
+      >
+        Select
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option2 = container.querySelector('[data-value="Option 2"]')
+    expect(option2).toBeInTheDocument()
+    fireEvent.click(option2!)
+    expect(onValueChange).toHaveBeenCalledWith('Option 2')
   })
 
   it('should render with x and y properties', () => {
@@ -393,6 +419,15 @@ describe('Select', () => {
           <SelectOption value="Option 2">Option 2</SelectOption>
         </SelectContainer>
       </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
+
+  it('should render with overflow screen', () => {
+    const { container } = render(
+      <Flex alignItems="flex-end" h="100vh" justifyContent="center" w="100vw">
+        <Select>{children}</Select>
+      </Flex>,
     )
     expect(container).toMatchSnapshot()
   })
