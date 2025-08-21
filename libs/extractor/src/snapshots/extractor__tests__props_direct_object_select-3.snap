@@ -43,5 +43,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 d1 ${{\n\t\"a\": \"d3\",\n\t\"b\": \"d4\"\n}[\"some\"]}`} style={{ \"--d2\": any[\"some\"] }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a b ${{\n\t\"a\": \"d\",\n\t\"b\": \"e\"\n}[\"some\"]}`} style={{ \"--c\": any[\"some\"] }} />;\n",
 }

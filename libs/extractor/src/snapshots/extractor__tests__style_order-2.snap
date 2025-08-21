@@ -67,5 +67,5 @@ ToBTreeSet {
             "header",
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn r(\"div\", { children: [\n\t\te(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"d0 d1 d2\"\n\t\t}),\n\t\te(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\te(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d3 d4\"\n\t\t})\n\t] });\n}\nexport { c as Lib };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { jsxs as r, jsx as e } from \"react/jsx-runtime\";\nfunction c() {\n\treturn r(\"div\", { children: [\n\t\te(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"a b c\"\n\t\t}),\n\t\te(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\te(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d e\"\n\t\t})\n\t] });\n}\nexport { c as Lib };\n",
 }
