@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.10
+
+### Patch Changes
+
+- 1f836c5: Fix select
+
 ## 0.1.9
 
 ### Patch Changes
