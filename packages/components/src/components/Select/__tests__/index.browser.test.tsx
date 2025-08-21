@@ -437,4 +437,30 @@ describe('Select', () => {
     )
     expect(container).toMatchSnapshot()
   })
+  it('should render with overflow screen', () => {
+    const { container } = render(
+      <Select
+        className={css({
+          pos: 'fixed',
+          bottom: '0px',
+        })}
+      >
+        {children}
+      </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
+  it('should render with overflow screen', () => {
+    const { container } = render(
+      <Select
+        className={css({
+          pos: 'fixed',
+          right: '0px',
+        })}
+      >
+        {children}
+      </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
 })
