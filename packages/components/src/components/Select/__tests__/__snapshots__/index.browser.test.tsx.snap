@@ -25,6 +25,35 @@ exports[`Select > should render 1`] = `
 </div>
 `;
 
+exports[`Select > should render with overflow screen 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 align-items-0-flex-end--255 height-0-100vh--255 justify-content-0-center--255 width-0-100vw--255"
+  >
+    <div
+      class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+    >
+      <button
+        aria-expanded="false"
+        aria-label="Select toggle"
+        class="border-radius-0-8px--2 outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-16px--1 padding-left-0-16px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+        type="button"
+      >
+        <div
+          class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+        >
+          <div
+            class=" line-height-0-1.2--255 min-height-0-1.2em--255 "
+          >
+            Select
+          </div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
 exports[`Select > should render with x and y properties 1`] = `
 <div>
   <div
