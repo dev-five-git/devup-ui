@@ -54,9 +54,18 @@ function DefaultComponent(
   props: Omit<ComponentProps<typeof Select>, 'children'>,
 ) {
   return (
-    <Select {...props} defaultValue={['Option 1']} onChange={() => {}}>
+    <Select
+      {...props}
+      className={css({
+        pos: 'fixed',
+        bottom: '0px',
+        right: '0px',
+      })}
+      defaultValue={['Option 1']}
+      onChange={() => {}}
+    >
       <SelectTrigger>Select2</SelectTrigger>
-      <SelectContainer x={10} y={10}>
+      <SelectContainer>
         <SelectOption disabled value="Option 1">
           Option 1
         </SelectOption>

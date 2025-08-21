@@ -425,9 +425,15 @@ describe('Select', () => {
 
   it('should render with overflow screen', () => {
     const { container } = render(
-      <Flex alignItems="flex-end" h="100vh" justifyContent="center" w="100vw">
-        <Select>{children}</Select>
-      </Flex>,
+      <Select
+        className={css({
+          pos: 'fixed',
+          bottom: '0px',
+          right: '0px',
+        })}
+      >
+        {children}
+      </Select>,
     )
     expect(container).toMatchSnapshot()
   })
