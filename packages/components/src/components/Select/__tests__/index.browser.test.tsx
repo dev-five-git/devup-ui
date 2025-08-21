@@ -383,4 +383,17 @@ describe('Select', () => {
     const option1 = container.querySelector('[data-value="Option 1"]')
     expect(option1).toBeInTheDocument()
   })
+
+  it('should render with x and y properties', () => {
+    const { container } = render(
+      <Select>
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer x={10} y={10}>
+          <SelectOption value="Option 1">Option 1</SelectOption>
+          <SelectOption value="Option 2">Option 2</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
 })

@@ -205,11 +205,15 @@ export function SelectTrigger({
 interface SelectContainerProps extends ComponentProps<'div'> {
   showConfirmButton?: boolean
   confirmButtonText?: string
+  x?: number
+  y?: number
 }
 export function SelectContainer({
   children,
   showConfirmButton,
   confirmButtonText = '완료',
+  x = 0,
+  y = 0,
   ...props
 }: SelectContainerProps) {
   const { open, setOpen, type, ref } = useSelect()
@@ -223,14 +227,18 @@ export function SelectContainer({
 
         // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
         const updatePosition = () => {
-          const { height, x, y } = combobox.getBoundingClientRect()
+          const {
+            height,
+            x: comboboxX,
+            y: comboboxY,
+          } = combobox.getBoundingClientRect()
 
-          if (el.offsetHeight + y > window.innerHeight)
-            el.style.bottom = `${window.innerHeight - y + 10}px`
-          else el.style.top = `${y + height + 10}px`
-          if (el.offsetWidth + x > window.innerWidth)
-            el.style.left = `${x - el.offsetWidth + combobox.offsetWidth}px`
-          else el.style.left = `${x}px`
+          if (el.offsetHeight + comboboxY + y > window.innerHeight)
+            el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
+          else el.style.top = `${comboboxY + height + 10 + y}px`
+          if (el.offsetWidth + comboboxX + x > window.innerWidth)
+            el.style.left = `${comboboxX - el.offsetWidth + combobox.offsetWidth + x}px`
+          else el.style.left = `${comboboxX + x}px`
         }
 
         // 최초 위치 설정
