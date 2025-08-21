@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.29
+
+### Patch Changes
+
+- 2d51bf8: Optimize class gen logic
+
 ## 1.0.28
 
 ### Patch Changes
