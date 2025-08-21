@@ -94,7 +94,7 @@ describe('Select', () => {
   it('should call onValueChange function when it is provided', () => {
     const onValueChange = vi.fn()
     const { container } = render(
-      <Select onValueChange={onValueChange} type="radio">
+      <Select onChange={onValueChange} type="radio">
         {children}
       </Select>,
     )
@@ -370,5 +370,17 @@ describe('Select', () => {
     )
     const svg = container.querySelector('svg')
     expect(svg).not.toBeInTheDocument()
+  })
+
+  it('should render with options properties', () => {
+    const { container } = render(
+      <Select options={[{ label: 'Option 1', value: 'Option 1' }]}>
+        Select
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option1 = container.querySelector('[data-value="Option 1"]')
+    expect(option1).toBeInTheDocument()
   })
 })

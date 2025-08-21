@@ -43,6 +43,11 @@ export const ControlledCheckboxStory: Story = {
   render: () => <ControlledCheckbox />,
 }
 
+export const SelectWithOptionsStory: Story = {
+  args: {},
+  render: () => <SelectWithOptions />,
+}
+
 export default meta
 
 function DefaultComponent(
@@ -50,8 +55,11 @@ function DefaultComponent(
 ) {
   return (
     <Select {...props} defaultValue={['Option 1']} onValueChange={() => {}}>
-      <SelectTrigger>Select</SelectTrigger>
-      <SelectContainer>
+      <SelectTrigger>Select2</SelectTrigger>
+      <SelectContainer
+      // x={10}
+      // y={10}
+      >
         <SelectOption disabled value="Option 1">
           Option 1
         </SelectOption>
@@ -69,13 +77,7 @@ function DefaultComponent(
               </Flex>
             </SelectOption>
           </SelectTrigger>
-          <SelectContainer
-            className={css({
-              right: '0',
-              top: '0',
-              transform: 'translateX(100%)',
-            })}
-          >
+          <SelectContainer>
             <SelectOption value="Option 6">Option 6</SelectOption>
             <SelectOption value="Option 7">Option 7</SelectOption>
           </SelectContainer>
@@ -198,5 +200,27 @@ function ControlledRadio() {
         </Select>
       </SelectContainer>
     </Select>
+  )
+}
+
+function SelectWithOptions() {
+  return (
+    <>
+      <Select
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { label: 'Option 2', value: 'Option 2', disabled: true },
+          {
+            label: 'Option 3',
+            value: 'Option 3',
+            onClick: () => {
+              console.log('Option 3')
+            },
+          },
+        ]}
+      >
+        title
+      </Select>
+    </>
   )
 }
