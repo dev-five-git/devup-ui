@@ -424,43 +424,25 @@ describe('Select', () => {
   })
 
   it('should render with overflow screen', () => {
-    const { container } = render(
-      <Select
-        className={css({
-          pos: 'fixed',
-          bottom: '0px',
-          right: '0px',
-        })}
-      >
-        {children}
-      </Select>,
-    )
-    expect(container).toMatchSnapshot()
-  })
-  it('should render with overflow screen', () => {
-    const { container } = render(
-      <Select
-        className={css({
-          pos: 'fixed',
-          bottom: '0px',
-        })}
-      >
-        {children}
-      </Select>,
-    )
-    expect(container).toMatchSnapshot()
-  })
-  it('should render with overflow screen', () => {
-    const { container } = render(
-      <Select
-        className={css({
-          pos: 'fixed',
-          right: '0px',
-        })}
-      >
-        {children}
-      </Select>,
-    )
+    const { container, rerender } = render(<Select>{children}</Select>)
+
+    // open selectContainer
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+
+    const selectContainer = container.querySelector(
+      '[aria-label="Select container"]',
+    )! as HTMLDivElement
+
+    // happy-dom defualt viewport 1024x768
+    // offsetHeight > 768px
+    vi.spyOn(selectContainer, 'offsetHeight', 'get').mockReturnValue(800)
+    // offsetWidth > 1024px
+    vi.spyOn(selectContainer, 'offsetWidth', 'get').mockReturnValue(1100)
+
+    // rerender
+    rerender(<Select>{children}</Select>)
+
     expect(container).toMatchSnapshot()
   })
 })

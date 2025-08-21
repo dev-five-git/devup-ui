@@ -236,6 +236,7 @@ export function SelectContainer({
           if (el.offsetHeight + comboboxY + y > window.innerHeight)
             el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
           else el.style.top = `${comboboxY + height + 10 + y}px`
+
           if (el.offsetWidth + comboboxX + x > window.innerWidth)
             el.style.left = `${comboboxX - el.offsetWidth + combobox.offsetWidth + x}px`
           else el.style.left = `${comboboxX + x}px`
