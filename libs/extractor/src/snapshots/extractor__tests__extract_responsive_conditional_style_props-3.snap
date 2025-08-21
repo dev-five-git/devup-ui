@@ -50,5 +50,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"d0\" : \"d0 d2 d4 d6\"} style={{\n\t\"--d1\": a === b ? c : d,\n\t\"--d3\": e,\n\t\"--d5\": f\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"a\" : \"a c e g\"} style={{\n\t\"--b\": a === b ? c : d,\n\t\"--d\": e,\n\t\"--f\": f\n}} />;\n",
 }

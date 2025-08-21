@@ -21,11 +21,11 @@
     "@types/node": "^24.3.0",
     "happy-dom": "^18.0.1",
     "@testing-library/react": "^16.3.0",
-    "@testing-library/jest-dom": "^6.7.0",
+    "@testing-library/jest-dom": "^6.8.0",
     "@devup-ui/vite-plugin": "workspace:*"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.15.0",
   "resolutions": {
     "vite": "^6"
   }

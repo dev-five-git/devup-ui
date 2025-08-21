@@ -42,7 +42,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.4",
+    "next": "^15.5",
     "browserslist": "latest"
   },
   "devDependencies": {
