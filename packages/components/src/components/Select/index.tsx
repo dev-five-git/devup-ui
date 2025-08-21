@@ -228,16 +228,27 @@ export function SelectContainer({
         // 요소가 움직일 때마다(스크롤, 리사이즈 등) 위치를 갱신하도록 이벤트를 등록합니다.
         const updatePosition = () => {
           const {
+            width,
             height,
             x: comboboxX,
             y: comboboxY,
+            top,
+            left,
           } = combobox.getBoundingClientRect()
 
-          if (el.offsetHeight + comboboxY + y > window.innerHeight)
+          const isOverflowBottom =
+            el.offsetHeight + top + window.scrollY + height + y >
+            document.documentElement.scrollHeight
+
+          const isOverflowRight =
+            el.offsetWidth + left + window.scrollX + width + x >
+            document.documentElement.scrollWidth
+
+          if (isOverflowBottom)
             el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
           else el.style.top = `${comboboxY + height + 10 + y}px`
 
-          if (el.offsetWidth + comboboxX + x > window.innerWidth)
+          if (isOverflowRight)
             el.style.left = `${comboboxX - el.offsetWidth + combobox.offsetWidth + x}px`
           else el.style.left = `${comboboxX + x}px`
         }
