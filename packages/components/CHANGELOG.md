@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.9
+
+### Patch Changes
+
+- df94872: Fix select component container
+
 ## 0.1.8
 
 ### Patch Changes
