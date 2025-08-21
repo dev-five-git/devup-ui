@@ -14,8 +14,9 @@ describe('export', () => {
       StepperDecreaseButton: expect.any(Function),
       StepperIncreaseButton: expect.any(Function),
       StepperInput: expect.any(Function),
-      useSelect: expect.any(Function),
       useStepper: expect.any(Function),
+      SelectContext: expect.any(Object),
+      useSelect: expect.any(Function),
     })
   })
 })

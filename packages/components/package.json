@@ -22,7 +22,8 @@
     "lint": "eslint",
     "build": "tsc && vite build",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "package": "pnpm pack --pack-destination \"../../dist\""
   },
   "publishConfig": {
     "access": "public"
