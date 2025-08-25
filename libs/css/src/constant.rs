@@ -28,6 +28,7 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgClip" => &["background-clip"],
     "bgColor" => &["background-color"],
     "bgImage" => &["background-image"],
+    "bgImg" => &["background-image"],
     "bgOrigin" => &["background-origin"],
     "bgPosition" => &["background-position"],
     "bgPositionX" => &["background-position-x"],
@@ -38,6 +39,7 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgRepeat" => &["background-repeat"],
     "bgSize" => &["background-size"],
     "bgBlendMode" => &["background-blend-mode"],
+    "backgroundImg" => &["background-image"],
     "animationDir" => &["animation-direction"],
     "flexDir" => &["flex-direction"],
     "pos" => &["position"],
@@ -68,6 +70,8 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
     "objectPos" => &["object-position"],
     "offsetPos" => &["offset-position"],
+    "maskPos" => &["mask-position"],
+    "maskImg" => &["mask-image"],
 };
 pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
     "font-family",
