@@ -68,6 +68,8 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
     "objectPos" => &["object-position"],
     "offsetPos" => &["offset-position"],
+    "maskPos" => &["mask-position"],
+    "maskImg" => &["mask-image"],
 };
 pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
     "font-family",
