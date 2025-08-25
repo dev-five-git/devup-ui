@@ -1,5 +1,12 @@
 # @devup-ui/components
 
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [6c25c5d]
+  - @devup-ui/react@1.0.16
+
 ## 0.1.10
 
 ### Patch Changes
