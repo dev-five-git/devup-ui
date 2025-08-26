@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.30
+
+### Patch Changes
+
+- 5a854ba: Update wasm
+
 ## 1.0.29
 
 ### Patch Changes
