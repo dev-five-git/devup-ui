@@ -1,26 +1,23 @@
 'use client'
-
-import { DevupTheme } from '@devup-ui/react'
+import type { DevupTheme } from '../types/theme'
 
 type Theme = keyof DevupTheme | null
 type StoreChangeEvent = (newTheme: Theme) => void
 
 const initTheme = null
 
-export const themeStore = (() => {
+export function createThemeStore() {
   if (typeof window === 'undefined')
     return {
       get: () => initTheme,
       set: () => {},
       subscribe: () => () => {},
     }
-  const el = document.documentElement
 
+  const el = document.documentElement
   const subscribers: Set<StoreChangeEvent> = new Set()
   let theme: Theme = initTheme
-  const get = () => {
-    return theme
-  }
+  const get = () => theme
   const set = (newTheme: Theme) => {
     theme = newTheme
     subscribers.forEach((subscriber) => subscriber(theme))
@@ -33,25 +30,18 @@ export const themeStore = (() => {
   }
 
   const mo = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (
-        mutation.type === 'attributes' &&
-        mutation.target instanceof HTMLElement
-      ) {
-        set(mutation.target.getAttribute('data-theme') as Theme)
-      }
-    })
+    for (const m of mutations)
+      if (m.type === 'attributes' && m.target instanceof HTMLElement)
+        set(m.target.getAttribute('data-theme') as Theme)
   })
-
   mo.observe(el, {
     attributes: true,
     attributeFilter: ['data-theme'],
     subtree: false,
   })
-
   return {
     get,
     set,
     subscribe,
   }
-})()
+}

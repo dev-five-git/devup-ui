@@ -1,7 +1,10 @@
 'use client'
 
 import { useSyncExternalStore } from 'react'
-import { themeStore } from 'src/stores/themeStore'
+
+import { createThemeStore } from '../stores/theme-store'
+
+const themeStore = createThemeStore()
 
 export function useTheme() {
   const theme = useSyncExternalStore(
