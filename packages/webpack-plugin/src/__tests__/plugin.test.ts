@@ -48,7 +48,7 @@ describe('devupUIPlugin', () => {
       expect(
         new DevupUIWebpackPlugin({
           package: 'new-package',
-          cssFile: 'new-css-file',
+          cssDir: 'new-css-file',
           devupPath: 'new-devup-path',
           interfacePath: 'new-interface-path',
           watch: false,
@@ -163,7 +163,7 @@ describe('devupUIPlugin', () => {
       vi.mocked(mkdirSync)
 
       const plugin = new DevupUIWebpackPlugin({
-        cssFile: 'css',
+        cssDir: 'css',
       })
       plugin.apply({
         options: {

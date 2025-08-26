@@ -1,15 +1,16 @@
 import { writeFile } from 'node:fs/promises'
-import { dirname, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 
 import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
   package: string
-  cssFile: string
+  cssDir: string
   sheetFile: string
   classMapFile: string
   watch: boolean
+  splitCss: boolean
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -17,34 +18,40 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     const {
       watch,
       package: libPackage,
-      cssFile,
+      cssDir,
       sheetFile,
       classMapFile,
+      splitCss,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
 
     try {
-      let rel = relative(dirname(this.resourcePath), cssFile).replaceAll(
+      let rel = relative(dirname(this.resourcePath), cssDir).replaceAll(
         '\\',
         '/',
       )
       if (!rel.startsWith('./')) rel = `./${rel}`
-      const { code, css, map } = codeExtract(
+      const { code, css, map, css_file } = codeExtract(
         id,
         source.toString(),
         libPackage,
         rel,
+        splitCss,
       )
       const sourceMap = map ? JSON.parse(map) : null
-      if (css && watch) {
+      if (css) {
         const content = `${this.resourcePath} ${Date.now()}`
-        if (this._compiler) (this._compiler as any).__DEVUP_CACHE = content
+        if (watch && this._compiler)
+          (this._compiler as any).__DEVUP_CACHE = content
         // should be reset css
         Promise.all([
-          writeFile(cssFile, `/* ${content} */`),
-          writeFile(sheetFile, exportSheet()),
-          writeFile(classMapFile, exportClassMap()),
+          writeFile(
+            join(cssDir, basename(css_file)),
+            watch ? `/* ${content} */` : css,
+          ),
+          watch ? writeFile(sheetFile, exportSheet()) : null,
+          watch ? writeFile(classMapFile, exportClassMap()) : null,
         ])
           .catch(console.error)
           .finally(() => callback(null, code, sourceMap))

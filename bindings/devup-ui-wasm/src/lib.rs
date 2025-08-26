@@ -1,4 +1,5 @@
 use css::class_map::{get_class_map, set_class_map};
+use css::file_map::{get_file_map, get_filename_by_file_num};
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
@@ -18,6 +19,9 @@ pub struct Output {
     styles: HashSet<ExtractStyleValue>,
     map: Option<String>,
     default_collected: bool,
+    split_css: bool,
+    filename: String,
+    css_file: String,
 }
 #[wasm_bindgen]
 extern "C" {
@@ -40,6 +44,11 @@ impl Output {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn css_file(&self) -> String {
+        self.css_file.clone()
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn map(&self) -> Option<String> {
         self.map.clone()
     }
@@ -52,7 +61,11 @@ impl Output {
         for style in self.styles.iter() {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let (cls, _) = match style.extract() {
+                    let (cls, _) = match style.extract(if self.split_css {
+                        Some(self.filename.as_str())
+                    } else {
+                        None
+                    }) {
                         Some(StyleProperty::ClassName(cls)) => (cls, None),
                         Some(StyleProperty::Variable {
                             class_name,
@@ -68,12 +81,21 @@ impl Output {
                         st.value(),
                         st.selector(),
                         st.style_order(),
+                        if self.split_css {
+                            Some(self.filename.as_str())
+                        } else {
+                            None
+                        },
                     ) {
                         collected = true;
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
-                    let (cls, variable) = match style.extract() {
+                    let (cls, variable) = match style.extract(if self.split_css {
+                        Some(self.filename.as_str())
+                    } else {
+                        None
+                    }) {
                         Some(StyleProperty::ClassName(cls)) => (cls, None),
                         Some(StyleProperty::Variable {
                             class_name,
@@ -89,6 +111,11 @@ impl Output {
                         &format!("var({})", variable.unwrap()),
                         dy.selector(),
                         dy.style_order(),
+                        if self.split_css {
+                            Some(self.filename.as_str())
+                        } else {
+                            None
+                        },
                     ) {
                         collected = true;
                     }
@@ -96,7 +123,13 @@ impl Output {
 
                 ExtractStyleValue::Keyframes(keyframes) => {
                     if sheet.add_keyframes(
-                        &keyframes.extract().to_string(),
+                        &keyframes
+                            .extract(if self.split_css {
+                                Some(self.filename.as_str())
+                            } else {
+                                None
+                            })
+                            .to_string(),
                         keyframes
                             .keyframes
                             .iter()
@@ -115,6 +148,11 @@ impl Output {
                                 )
                             })
                             .collect(),
+                        if self.split_css {
+                            Some(self.filename.as_str())
+                        } else {
+                            None
+                        },
                     ) {
                         collected = true;
                     }
@@ -138,7 +176,11 @@ impl Output {
             return None;
         }
 
-        Some(sheet.create_css())
+        Some(sheet.create_css(if self.split_css {
+            Some(self.filename.as_str())
+        } else {
+            None
+        }))
     }
 }
 
@@ -179,12 +221,27 @@ pub fn export_class_map() -> Result<String, JsValue> {
     serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(e.to_string().as_str()))
 }
 
+#[wasm_bindgen(js_name = "importFileMap")]
+pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
+    set_class_map(
+        serde_wasm_bindgen::from_value(sheet_object)
+            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
+    );
+    Ok(())
+}
+
+#[wasm_bindgen(js_name = "exportFileMap")]
+pub fn export_file_map() -> Result<String, JsValue> {
+    serde_json::to_string(&get_file_map()).map_err(|e| JsValue::from_str(e.to_string().as_str()))
+}
+
 #[wasm_bindgen(js_name = "codeExtract")]
 pub fn code_extract(
     filename: &str,
     code: &str,
     package: &str,
-    css_file: &str,
+    css_dir: String,
+    split_css: bool,
 ) -> Result<Output, JsValue> {
     let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
 
@@ -193,7 +250,8 @@ pub fn code_extract(
         code,
         ExtractOption {
             package: package.to_string(),
-            css_file: Some(css_file.to_string()),
+            css_dir,
+            split_css,
         },
     ) {
         Ok(output) => Ok(Output {
@@ -201,6 +259,9 @@ pub fn code_extract(
             styles: output.styles,
             map: output.map,
             default_collected: sheet.rm_global_css(filename),
+            split_css,
+            filename: filename.to_string(),
+            css_file: output.css_file,
         }),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
@@ -222,9 +283,9 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 }
 
 #[wasm_bindgen(js_name = "getCss")]
-pub fn get_css() -> Result<String, JsValue> {
+pub fn get_css(file_num: Option<usize>) -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.create_css())
+    Ok(sheet.create_css(file_num.map(|num| get_filename_by_file_num(num)).as_deref()))
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
@@ -259,7 +320,7 @@ mod tests {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
         }
-        assert_eq!(get_css().unwrap(), "");
+        assert_eq!(get_css(None).unwrap(), "");
 
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -274,7 +335,7 @@ mod tests {
             sheet.set_theme(theme);
         }
 
-        assert_debug_snapshot!(get_css().unwrap());
+        assert_debug_snapshot!(get_css(None).unwrap());
     }
 
     #[test]

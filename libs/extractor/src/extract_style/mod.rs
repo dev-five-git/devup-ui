@@ -12,5 +12,5 @@ use crate::extract_style::style_property::StyleProperty;
 
 pub trait ExtractStyleProperty {
     /// extract style properties
-    fn extract(&self) -> StyleProperty;
+    fn extract(&self, filename: Option<&str>) -> StyleProperty;
 }

@@ -12,6 +12,7 @@ export interface DevupUIRsbuildPluginOptions {
   extractCss: boolean
   debug: boolean
   include: string[]
+  splitCss: boolean
 }
 
 let globalCss = ''
@@ -22,6 +23,7 @@ export const DevupUIRsbuildPlugin = ({
   extractCss = true,
   interfacePath = 'df',
   cssFile = resolve(interfacePath, 'devup-ui.css'),
+  splitCss = true,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
   name: 'devup-ui-rsbuild-plugin',
 
@@ -60,7 +62,7 @@ export const DevupUIRsbuildPlugin = ({
           code: retCode,
           css,
           map,
-        } = codeExtract(resourcePath, code, libPackage, cssFile)
+        } = codeExtract(resourcePath, code, libPackage, cssFile, splitCss)
 
         if (css && globalCss.length < css.length) {
           globalCss = css

@@ -20,10 +20,14 @@ export interface DevupUIPluginOptions {
   extractCss: boolean
   debug: boolean
   include: string[]
+  splitCss: boolean
 }
 
 function writeDataFiles(
-  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
+  options: Omit<
+    DevupUIPluginOptions,
+    'extractCss' | 'debug' | 'include' | 'splitCss'
+  >,
 ) {
   if (!existsSync(options.interfacePath)) mkdirSync(options.interfacePath)
   if (existsSync(options.devupPath)) {
@@ -61,6 +65,7 @@ export function DevupUI({
   extractCss = true,
   debug = false,
   include = [],
+  splitCss = true,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
   try {
@@ -163,7 +168,7 @@ export function DevupUI({
         code: retCode,
         css,
         map,
-      } = codeExtract(fileName, code, libPackage, cssFile)
+      } = codeExtract(fileName, code, libPackage, cssFile, splitCss)
 
       if (css && globalCss.length < css.length) {
         globalCss = css

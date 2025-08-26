@@ -21,12 +21,13 @@ import { type Compiler } from 'webpack'
 
 export interface DevupUIWebpackPluginOptions {
   package: string
-  cssFile: string
+  cssDir: string
   devupPath: string
   interfacePath: string
   watch: boolean
   debug: boolean
   include: string[]
+  splitCss: boolean
 }
 
 export class DevupUIWebpackPlugin {
@@ -36,23 +37,25 @@ export class DevupUIWebpackPlugin {
     package: libPackage = '@devup-ui/react',
     devupPath = 'devup.json',
     interfacePath = 'df',
-    cssFile = resolve(interfacePath, 'devup-ui.css'),
+    cssDir = resolve(interfacePath, 'devup-ui'),
     watch = false,
     debug = false,
     include = [],
+    splitCss = true,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
-      cssFile,
+      cssDir,
       devupPath,
       interfacePath,
       watch,
       debug,
       include,
+      splitCss,
     }
   }
 
-  writeDataFiles() {
+  async writeDataFiles() {
     registerTheme(
       JSON.parse(readFileSync(this.options.devupPath, 'utf-8'))?.['theme'],
     )
@@ -73,10 +76,9 @@ export class DevupUIWebpackPlugin {
       )
     }
 
-    if (this.options.watch) {
-      writeFileSync(this.options.cssFile, `/* ${Date.now()} */`, {
-        encoding: 'utf-8',
-      })
+    if (this.options.watch && !existsSync(this.options.cssDir)) {
+      mkdirSync(this.options.cssDir, { recursive: true })
+      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), '')
     }
   }
 
@@ -135,9 +137,10 @@ export class DevupUIWebpackPlugin {
         compilation.fileDependencies.add(resolve(this.options.devupPath))
       })
     }
-    // Create an empty CSS file
-    if (!existsSync(this.options.cssFile))
-      writeFileSync(this.options.cssFile, '', { encoding: 'utf-8' })
+    if (!existsSync(this.options.cssDir)) {
+      mkdirSync(this.options.cssDir, { recursive: true })
+      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), '')
+    }
 
     compiler.options.plugins.push(
       new compiler.webpack.DefinePlugin({
@@ -148,7 +151,9 @@ export class DevupUIWebpackPlugin {
       compiler.hooks.done.tap('DevupUIWebpackPlugin', (stats) => {
         if (!stats.hasErrors()) {
           // write css file
-          writeFileSync(this.options.cssFile, getCss(), { encoding: 'utf-8' })
+          writeFileSync(join(this.options.cssDir, 'devup-ui.css'), getCss(), {
+            encoding: 'utf-8',
+          })
         }
       })
     }
@@ -169,16 +174,17 @@ export class DevupUIWebpackPlugin {
             ),
             options: {
               package: this.options.package,
-              cssFile: this.options.cssFile,
+              cssDir: this.options.cssDir,
               sheetFile,
               classMapFile,
               watch: this.options.watch,
+              splitCss: this.options.splitCss,
             },
           },
         ],
       },
       {
-        test: this.options.cssFile,
+        test: this.options.cssDir,
         enforce: 'pre',
         use: [
           {

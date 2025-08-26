@@ -18,6 +18,7 @@ pub fn modify_prop_object<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -54,6 +55,7 @@ pub fn modify_prop_object<'a>(
         styles,
         style_order,
         &spread_props,
+        filename,
     ) {
         props.push(ast_builder.object_property_kind_object_property(
             SPAN,
@@ -65,9 +67,14 @@ pub fn modify_prop_object<'a>(
             false,
         ));
     }
-    if let Some(ex) =
-        get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
-    {
+    if let Some(ex) = get_style_expression(
+        ast_builder,
+        &style_prop,
+        styles,
+        &style_vars,
+        &spread_props,
+        filename,
+    ) {
         props.push(ast_builder.object_property_kind_object_property(
             SPAN,
             PropertyKind::Init,
@@ -86,6 +93,7 @@ pub fn modify_props<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -131,6 +139,7 @@ pub fn modify_props<'a>(
         styles,
         style_order,
         &spread_props,
+        filename,
     ) {
         props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
@@ -142,9 +151,14 @@ pub fn modify_props<'a>(
             }),
         ));
     }
-    if let Some(ex) =
-        get_style_expression(ast_builder, &style_prop, styles, &style_vars, &spread_props)
-    {
+    if let Some(ex) = get_style_expression(
+        ast_builder,
+        &style_prop,
+        styles,
+        &style_vars,
+        &spread_props,
+        filename,
+    ) {
         props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
             ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
@@ -159,6 +173,7 @@ pub fn get_class_name_expression<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     spread_props: &[Expression<'a>],
+    filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     // should modify class name prop
     merge_string_expressions(
@@ -167,7 +182,7 @@ pub fn get_class_name_expression<'a>(
             class_name_prop
                 .as_ref()
                 .map(|class_name| convert_class_name(ast_builder, class_name)),
-            gen_class_names(ast_builder, styles, style_order),
+            gen_class_names(ast_builder, styles, style_order, filename),
         ]
         .into_iter()
         .flatten()
@@ -202,11 +217,12 @@ pub fn get_style_expression<'a>(
     styles: &[ExtractStyleProp<'a>],
     style_vars: &Option<Expression<'a>>,
     spread_props: &[Expression<'a>],
+    filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     merge_object_expressions(
         ast_builder,
         [
-            gen_styles(ast_builder, styles),
+            gen_styles(ast_builder, styles, filename),
             style_vars
                 .as_ref()
                 .map(|style_vars| convert_style_vars(ast_builder, style_vars)),

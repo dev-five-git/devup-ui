@@ -96,7 +96,7 @@ impl ExtractStaticStyle {
 }
 
 impl ExtractStyleProperty for ExtractStaticStyle {
-    fn extract(&self) -> StyleProperty {
+    fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
         let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
             self.value.to_string()
@@ -114,6 +114,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
             Some(&v),
             s.as_deref(),
             self.style_order,
+            filename,
         ))
     }
 }

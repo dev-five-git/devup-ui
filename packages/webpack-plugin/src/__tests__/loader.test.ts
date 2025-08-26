@@ -38,6 +38,7 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: '{}',
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -74,6 +75,7 @@ describe('devupUILoader', () => {
       css: undefined,
       free: vi.fn(),
       map: undefined,
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -126,6 +128,7 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: undefined,
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
