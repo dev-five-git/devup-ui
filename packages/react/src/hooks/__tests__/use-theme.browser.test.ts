@@ -22,6 +22,7 @@ describe('useTheme', () => {
     newUnmount()
     unmount()
   })
+
   it('should return theme when already set', async () => {
     const { useTheme } = await import('../use-theme')
     document.documentElement.setAttribute('data-theme', 'dark')
