@@ -13,6 +13,7 @@ import {
   getDefaultTheme,
   getThemeInterface,
   importClassMap,
+  importFileMap,
   importSheet,
   registerTheme,
   setDebug,
@@ -96,6 +97,7 @@ export class DevupUIWebpackPlugin {
 
     const sheetFile = join(this.options.interfacePath, 'sheet.json')
     const classMapFile = join(this.options.interfacePath, 'classMap.json')
+    const fileMapFile = join(this.options.interfacePath, 'fileMap.json')
     if (this.options.watch) {
       try {
         // load sheet
@@ -103,6 +105,8 @@ export class DevupUIWebpackPlugin {
           importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
         if (existsSync(classMapFile))
           importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
+        if (existsSync(fileMapFile))
+          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
       } catch (error) {
         console.error(error)
       }
@@ -177,6 +181,7 @@ export class DevupUIWebpackPlugin {
               cssDir: this.options.cssDir,
               sheetFile,
               classMapFile,
+              fileMapFile,
               watch: this.options.watch,
               splitCss: this.options.splitCss,
             },

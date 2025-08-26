@@ -1,7 +1,12 @@
 import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
 
-import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  exportClassMap,
+  exportFileMap,
+  exportSheet,
+} from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
 export interface DevupUILoaderOptions {
@@ -21,6 +26,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       cssDir,
       sheetFile,
       classMapFile,
+      fileMapFile,
       splitCss,
     } = this.getOptions()
     const callback = this.async()
@@ -52,6 +58,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           ),
           watch ? writeFile(sheetFile, exportSheet()) : null,
           watch ? writeFile(classMapFile, exportClassMap()) : null,
+          watch ? writeFile(fileMapFile, exportFileMap()) : null,
         ])
           .catch(console.error)
           .finally(() => callback(null, code, sourceMap))
