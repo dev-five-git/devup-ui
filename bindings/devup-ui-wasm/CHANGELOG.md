@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.31
+
+### Patch Changes
+
+- 48a67da: Add webkit lineclamp to maintain value
+
 ## 1.0.30
 
 ### Patch Changes
