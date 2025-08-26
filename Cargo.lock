@@ -274,6 +274,7 @@ dependencies = [
 name = "devup-ui-wasm"
 version = "0.1.0"
 dependencies = [
+ "bimap",
  "console_error_panic_hook",
  "css",
  "extractor",

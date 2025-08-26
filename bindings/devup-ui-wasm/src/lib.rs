@@ -1,5 +1,5 @@
 use css::class_map::{get_class_map, set_class_map};
-use css::file_map::{get_file_map, get_filename_by_file_num};
+use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
@@ -223,7 +223,7 @@ pub fn export_class_map() -> Result<String, JsValue> {
 
 #[wasm_bindgen(js_name = "importFileMap")]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(
+    set_file_map(
         serde_wasm_bindgen::from_value(sheet_object)
             .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
     );

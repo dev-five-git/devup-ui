@@ -77,10 +77,12 @@ export class DevupUIWebpackPlugin {
       )
     }
 
-    if (this.options.watch && !existsSync(this.options.cssDir)) {
+    if (!existsSync(this.options.cssDir))
       mkdirSync(this.options.cssDir, { recursive: true })
-      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), '')
-    }
+    if (this.options.watch)
+      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), getCss(), {
+        encoding: 'utf-8',
+      })
   }
 
   apply(compiler: Compiler) {
@@ -141,10 +143,13 @@ export class DevupUIWebpackPlugin {
         compilation.fileDependencies.add(resolve(this.options.devupPath))
       })
     }
-    if (!existsSync(this.options.cssDir)) {
+    if (!existsSync(this.options.cssDir))
       mkdirSync(this.options.cssDir, { recursive: true })
-      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), '')
-    }
+
+    if (this.options.watch)
+      writeFileSync(join(this.options.cssDir, 'devup-ui.css'), getCss(), {
+        encoding: 'utf-8',
+      })
 
     compiler.options.plugins.push(
       new compiler.webpack.DefinePlugin({

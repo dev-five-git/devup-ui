@@ -14,6 +14,7 @@ export interface DevupUILoaderOptions {
   cssDir: string
   sheetFile: string
   classMapFile: string
+  fileMapFile: string
   watch: boolean
   splitCss: boolean
 }
