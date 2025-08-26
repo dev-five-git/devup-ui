@@ -2,7 +2,6 @@ import { renderHook, waitFor } from '@testing-library/react'
 
 beforeEach(() => {
   vi.resetModules()
-  vi.resetAllMocks()
 })
 
 describe('useTheme', () => {
