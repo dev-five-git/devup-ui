@@ -84,7 +84,12 @@ export default function HomePage() {
         <VStack alignItems="center" gap="50px" maxW="800px" mx="auto">
           <VStack alignItems="center" gap="24px">
             <Image h="50px" src="/icon.svg" w="52px" />
-            <Text color="$title" textAlign="center" typography="h1">
+            <Text
+              WebkitLineClamp={2}
+              color="$title"
+              textAlign="center"
+              typography="h1"
+            >
               Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
             </Text>
             <Text color="$text" textAlign="center" typography="h6Reg">

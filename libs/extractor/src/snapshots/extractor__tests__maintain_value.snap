@@ -16,7 +16,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "-webkit-line-clamp",
-                value: "16px",
+                value: "4",
                 level: 0,
                 selector: None,
                 style_order: None,
