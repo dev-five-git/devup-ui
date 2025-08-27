@@ -21,5 +21,5 @@ pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "animation-iteration-count",
     "tab-size",
     "moz-tab-size",
-    "webkit-line-clamp"
+    "-webkit-line-clamp"
 };
