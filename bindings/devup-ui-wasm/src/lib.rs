@@ -177,7 +177,7 @@ impl Output {
         }
 
         Some(sheet.create_css(if self.split_css {
-            Some(self.filename.as_str())
+            Some(&self.filename)
         } else {
             None
         }))
@@ -197,42 +197,42 @@ pub fn is_debug() -> bool {
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 pub fn export_sheet() -> Result<String, JsValue> {
     serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap())
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
     set_class_map(
         serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
     );
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportClassMap")]
 pub fn export_class_map() -> Result<String, JsValue> {
-    serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(e.to_string().as_str()))
+    serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
     set_file_map(
         serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
     );
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportFileMap")]
 pub fn export_file_map() -> Result<String, JsValue> {
-    serde_json::to_string(&get_file_map()).map_err(|e| JsValue::from_str(e.to_string().as_str()))
+    serde_json::to_string(&get_file_map()).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "codeExtract")]
