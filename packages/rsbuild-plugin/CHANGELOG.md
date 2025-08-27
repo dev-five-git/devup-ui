@@ -1,5 +1,12 @@
 # @devup-ui/rsbuild-plugin
 
+## 1.0.28
+
+### Patch Changes
+
+- Updated dependencies [93f182c]
+  - @devup-ui/wasm@1.0.32
+
 ## 1.0.27
 
 ### Patch Changes

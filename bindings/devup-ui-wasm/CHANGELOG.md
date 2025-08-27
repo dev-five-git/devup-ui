@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.32
+
+### Patch Changes
+
+- 93f182c: Fix webkit-line-clamp issue
+
 ## 1.0.31
 
 ### Patch Changes
