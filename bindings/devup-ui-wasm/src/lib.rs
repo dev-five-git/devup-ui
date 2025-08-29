@@ -285,7 +285,7 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = "getCss")]
 pub fn get_css(file_num: Option<usize>) -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.create_css(file_num.map(|num| get_filename_by_file_num(num)).as_deref()))
+    Ok(sheet.create_css(file_num.map(get_filename_by_file_num).as_deref()))
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]

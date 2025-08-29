@@ -11,7 +11,6 @@ mod selector_separator;
 pub mod style_selector;
 pub mod utils;
 
-use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::class_map::GLOBAL_CLASS_MAP;
@@ -75,14 +74,14 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
         let filename = filename.unwrap_or_default().to_string();
         let class_num = map
             .entry(filename.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .get(&key)
-            .map(|v| format!("{}", num_to_nm_base(*v)))
+            .map(|v| num_to_nm_base(*v).to_string())
             .unwrap_or_else(|| {
-                let m = map.entry(filename.to_string()).or_insert_with(HashMap::new);
+                let m = map.entry(filename.to_string()).or_default();
                 let len = m.len();
                 m.insert(key, len);
-                format!("{}", num_to_nm_base(len))
+                num_to_nm_base(len).to_string()
             });
         if !filename.is_empty() {
             format!(
@@ -139,11 +138,11 @@ pub fn sheet_to_classname(
         let filename = filename.map(|v| v.to_string()).unwrap_or_default();
         let clas_num = map
             .entry(filename.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .get(&key)
             .map(|v| num_to_nm_base(*v))
             .unwrap_or_else(|| {
-                let m = map.entry(filename.to_string()).or_insert_with(HashMap::new);
+                let m = map.entry(filename.to_string()).or_default();
                 let len = m.len();
                 m.insert(key, len);
                 num_to_nm_base(len)
@@ -184,11 +183,11 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
         map.entry("".to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .get(&key)
             .map(|v| format!("--{}", num_to_nm_base(*v)))
             .unwrap_or_else(|| {
-                let m = map.entry("".to_string()).or_insert_with(HashMap::new);
+                let m = map.entry("".to_string()).or_default();
                 let len = m.len();
                 m.insert(key, len);
                 format!("--{}", num_to_nm_base(len))

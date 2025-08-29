@@ -25,7 +25,7 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
     let mut map = GLOBAL_FILE_MAP.lock().unwrap();
     let len = map.len();
     if !map.contains_left(filename) {
-        map.insert(filename.to_string(), len as usize);
+        map.insert(filename.to_string(), len);
     }
     *map.get_by_left(filename).unwrap()
 }

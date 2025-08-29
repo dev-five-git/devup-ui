@@ -101,6 +101,7 @@ impl ExtractStyle for StyleSheetCss {
 }
 
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, HashSet<StyleSheetProperty>>>;
+type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
 
 fn deserialize_btree_map_u8<'de, D>(
     deserializer: D,
@@ -135,7 +136,7 @@ pub struct StyleSheet {
     pub properties: BTreeMap<String, PropertyMap>,
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
     #[serde(default)]
-    pub keyframes: BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>,
+    pub keyframes: KeyframesMap,
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
@@ -147,6 +148,7 @@ pub struct StyleSheet {
 }
 
 impl StyleSheet {
+    #[allow(clippy::too_many_arguments)]
     pub fn add_property(
         &mut self,
         class_name: &str,
@@ -341,10 +343,7 @@ impl StyleSheet {
             css.push_str("@import \"./devup-ui.css\";");
         }
 
-        if let Some(keyframes) = self
-            .keyframes
-            .get(&filename.unwrap_or_default().to_string())
-        {
+        if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
             for (name, map) in keyframes {
                 css.push_str(&format!(
                     "@keyframes {name}{{{}}}",
@@ -363,10 +362,7 @@ impl StyleSheet {
         }
 
         // order
-        if let Some(maps) = self
-            .properties
-            .get(&filename.unwrap_or_default().to_string())
-        {
+        if let Some(maps) = self.properties.get(filename.unwrap_or_default()) {
             for (_, map) in maps.iter() {
                 for (level, props) in map.iter() {
                     let (mut global_props, rest): (Vec<_>, Vec<_>) =
