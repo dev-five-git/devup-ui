@@ -138,10 +138,6 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(mkdirSync).toHaveBeenCalledWith('df')
-      // expect(writeFileSync).toHaveBeenCalledWith(
-      //   resolve('df', 'devup-ui', 'devup-ui.css'),
-      //   '/* devup-ui */',
-      // )
       expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
   })
