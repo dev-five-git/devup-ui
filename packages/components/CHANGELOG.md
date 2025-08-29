@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.13
+
+### Patch Changes
+
+- 9045f57: Feat split css
+
 ## 0.1.12
 
 ### Patch Changes

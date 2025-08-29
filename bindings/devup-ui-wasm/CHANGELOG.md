@@ -1,5 +1,12 @@
 # @devup-ui/wasm
 
+## 1.0.33
+
+### Patch Changes
+
+- 2247d57: Optimize keyframe name
+- 9045f57: Feat split css
+
 ## 1.0.32
 
 ### Patch Changes
