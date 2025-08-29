@@ -1,0 +1,25 @@
+{
+  "name": "next-devup-ui-single-benchmark",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --experimental-debug-memory-usage",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "next": "^15.5.2",
+    "@devup-ui/react": "workspace:*"
+  },
+  "devDependencies": {
+    "@devup-ui/next-plugin": "workspace:*",
+    "typescript": "^5",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19"
+  }
+}

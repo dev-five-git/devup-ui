@@ -20,6 +20,11 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-devup-ui-single/.next'))
+    rmSync('./benchmark/next-devup-ui-single/.next', {
+      recursive: true,
+      force: true,
+    })
   if (existsSync('./benchmark/next-mui/.next'))
     rmSync('./benchmark/next-mui/.next', {
       recursive: true,
@@ -27,6 +32,11 @@ function clearBuildFile() {
     })
   if (existsSync('./benchmark/next-devup-ui/df'))
     rmSync('./benchmark/next-devup-ui/df', {
+      recursive: true,
+      force: true,
+    })
+  if (existsSync('./benchmark/next-devup-ui-single/df'))
+    rmSync('./benchmark/next-devup-ui-single/df', {
       recursive: true,
       force: true,
     })
@@ -81,3 +91,13 @@ execSync('pnpm -F next-devup-ui-benchmark build', {
 })
 console.timeEnd('devup-ui')
 console.info('devup-ui', checkDirSize('./benchmark/next-devup-ui/.next'))
+
+console.time('devup-ui-single')
+execSync('pnpm -F next-devup-ui-single-benchmark build', {
+  stdio: 'inherit',
+})
+console.timeEnd('devup-ui-single')
+console.info(
+  'devup-ui-single',
+  checkDirSize('./benchmark/next-devup-ui-single/.next'),
+)
