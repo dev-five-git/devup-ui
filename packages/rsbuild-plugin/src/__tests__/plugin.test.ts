@@ -1,8 +1,13 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
-import { codeExtract, getThemeInterface } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  getDefaultTheme,
+  getThemeInterface,
+  registerTheme,
+} from '@devup-ui/wasm'
 import { vi } from 'vitest'
 
 import { DevupUI } from '../plugin'
@@ -34,8 +39,10 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(typeof plugin.setup).toBe('function')
 
     const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig,
     } as any)
     expect(transform).toHaveBeenCalled()
   })
@@ -51,8 +58,10 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig,
     } as any)
   })
 
@@ -66,8 +75,10 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig,
     } as any)
   })
 
@@ -104,8 +115,10 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig,
     } as any)
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
@@ -130,8 +143,10 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig,
     } as any)
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
@@ -182,6 +197,7 @@ const App = () => <Box></Box>`,
     const transform = vi.fn()
     await plugin.setup({
       transform,
+      modifyRsbuildConfig: vi.fn(),
     } as any)
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
@@ -219,5 +235,106 @@ const App = () => <Box></Box>`,
       code: `<div></div>`,
       map: undefined,
     })
+  })
+  it.each(
+    createTestMatrix({
+      watch: [true, false],
+      existsDevupFile: [true, false],
+      existsDistDir: [true, false],
+      existsSheetFile: [true, false],
+      existsClassMapFile: [true, false],
+      existsFileMapFile: [true, false],
+      existsCssDir: [true, false],
+      getDefaultTheme: ['theme', ''],
+      singleCss: [true, false],
+    }),
+  )('should write data files', async (options) => {
+    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
+    vi.mocked(getThemeInterface).mockReturnValue('interface code')
+    vi.mocked(getDefaultTheme).mockReturnValue(options.getDefaultTheme)
+    vi.mocked(existsSync).mockImplementation((path) => {
+      if (path === 'devup.json') return options.existsDevupFile
+      if (path === 'df') return options.existsDistDir
+      if (path === resolve('df', 'devup-ui')) return options.existsCssDir
+      if (path === join('df', 'sheet.json')) return options.existsSheetFile
+      if (path === join('df', 'classMap.json'))
+        return options.existsClassMapFile
+      if (path === join('df', 'fileMap.json')) return options.existsFileMapFile
+      return false
+    })
+    const plugin = DevupUI({ singleCss: options.singleCss })
+    await (plugin as any).setup({
+      transform: vi.fn(),
+      renderChunk: vi.fn(),
+      generateBundle: vi.fn(),
+      closeBundle: vi.fn(),
+      resolve: vi.fn(),
+      load: vi.fn(),
+      modifyRsbuildConfig: vi.fn(),
+      watchChange: vi.fn(),
+      resolveId: vi.fn(),
+    } as any)
+    if (options.existsDevupFile) {
+      expect(readFile).toHaveBeenCalledWith('devup.json', 'utf-8')
+      expect(registerTheme).toHaveBeenCalledWith({})
+      expect(getThemeInterface).toHaveBeenCalledWith(
+        '@devup-ui/react',
+        'DevupThemeColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
+      expect(writeFile).toHaveBeenCalledWith(
+        join('df', 'theme.d.ts'),
+        'interface code',
+        'utf-8',
+      )
+    } else {
+      expect(registerTheme).toHaveBeenCalledWith({})
+    }
+
+    const modifyRsbuildConfig = vi.fn()
+    await (plugin as any).setup({
+      transform: vi.fn(),
+      renderChunk: vi.fn(),
+      generateBundle: vi.fn(),
+      closeBundle: vi.fn(),
+      resolve: vi.fn(),
+      modifyRsbuildConfig,
+      load: vi.fn(),
+      watchChange: vi.fn(),
+      resolveId: vi.fn(),
+    } as any)
+    if (options.getDefaultTheme) {
+      expect(modifyRsbuildConfig).toHaveBeenCalledWith(expect.any(Function))
+      const config = {
+        source: {
+          define: {},
+        },
+      }
+      modifyRsbuildConfig.mock.calls[0][0](config)
+      expect(config).toEqual({
+        source: {
+          define: {
+            'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(
+              options.getDefaultTheme,
+            ),
+          },
+        },
+      })
+    } else {
+      expect(modifyRsbuildConfig).toHaveBeenCalledWith(expect.any(Function))
+      const config = {
+        source: {
+          define: {},
+        },
+      }
+      modifyRsbuildConfig.mock.calls[0][0](config)
+      expect(config).toEqual({
+        source: {
+          define: {},
+        },
+      })
+    }
   })
 })

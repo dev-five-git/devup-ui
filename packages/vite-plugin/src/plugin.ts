@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   codeExtract,
@@ -10,7 +10,7 @@ import {
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
-import { normalizePath, type PluginOption, type UserConfig } from 'vite'
+import { type PluginOption, type UserConfig } from 'vite'
 
 export interface DevupUIPluginOptions {
   package: string
@@ -23,11 +23,13 @@ export interface DevupUIPluginOptions {
   singleCss: boolean
 }
 
+function getFileNumByFilename(filename: string) {
+  if (filename.endsWith('devup-ui.css')) return null
+  return parseInt(filename.split('devup-ui-')[1].split('.')[0])
+}
+
 async function writeDataFiles(
-  options: Omit<
-    DevupUIPluginOptions,
-    'extractCss' | 'debug' | 'include' | 'singleCss'
-  >,
+  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
 ) {
   try {
     const content = existsSync(options.devupFile)
@@ -57,11 +59,17 @@ async function writeDataFiles(
     console.error(error)
     registerTheme({})
   }
-  if (!existsSync(options.cssDir))
-    await mkdir(options.cssDir, { recursive: true })
+  await Promise.all([
+    !existsSync(options.cssDir)
+      ? mkdir(options.cssDir, { recursive: true })
+      : Promise.resolve(),
+    !options.singleCss
+      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss())
+      : Promise.resolve(),
+  ])
 }
 
-let globalCss = ''
+const cssMap: Map<number | null, string> = new Map()
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
@@ -77,11 +85,14 @@ export function DevupUI({
   return {
     name: 'devup-ui',
     async configResolved() {
+      if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+      await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeDataFiles({
         package: libPackage,
         cssDir,
         devupFile,
         distDir,
+        singleCss,
       })
     },
     config() {
@@ -129,23 +140,21 @@ export function DevupUI({
             cssDir,
             devupFile,
             distDir,
+            singleCss,
           })
         } catch (error) {
           console.error(error)
         }
       }
     },
-    resolveId(id) {
-      if (
-        singleCss &&
-        normalizePath(id) === normalizePath(join(cssDir, 'devup-ui.css'))
-      )
-        return `devup-ui.css?t=${Date.now().toString() + globalCss.length}`
-    },
     load(id) {
-      if (singleCss && id.split('?')[0] === 'devup-ui.css')
-        // for no share env like storybook
-        return (globalCss = getCss())
+      const fileName = basename(id).split('?')[0]
+      if (fileName.startsWith('devup-ui') && fileName.endsWith('.css')) {
+        const fileNum = getFileNumByFilename(id)
+        const css = getCss(fileNum)
+        cssMap.set(fileNum, css)
+        return css
+      }
     },
     enforce: 'pre',
     async transform(code, id) {
@@ -163,21 +172,27 @@ export function DevupUI({
         return
       }
 
+      let rel = relative(dirname(id), cssDir).replaceAll('\\', '/')
+      if (!rel.startsWith('./')) rel = `./${rel}`
+
       const {
         code: retCode,
         css,
         map,
         css_file,
-      } = codeExtract(fileName, code, libPackage, cssDir, singleCss)
+      } = codeExtract(fileName, code, libPackage, rel, singleCss)
 
       if (css) {
-        if (globalCss.length < css.length) globalCss = css
+        const fileNum = getFileNumByFilename(css_file)
+        const prevCss = cssMap.get(fileNum)
+        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
         await writeFile(
           join(cssDir, basename(css_file)),
           `/* ${id} ${Date.now()} */`,
           'utf-8',
         )
       }
+      // console.log('transform', retCode)
       return {
         code: retCode,
         map,
@@ -190,7 +205,9 @@ export function DevupUI({
         (file) => file.includes('devup-ui') && file.endsWith('.css'),
       )
       if (cssFile && 'source' in bundle[cssFile]) {
-        bundle[cssFile].source = globalCss
+        const fileNum = getFileNumByFilename(cssFile)
+        const css = cssMap.get(fileNum)
+        if (css) bundle[cssFile].source = css
       }
     },
   }

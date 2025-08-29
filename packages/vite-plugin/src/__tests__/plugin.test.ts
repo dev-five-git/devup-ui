@@ -33,7 +33,6 @@ describe('devupUIVitePlugin', () => {
       name: 'devup-ui',
       config: expect.any(Function),
       load: expect.any(Function),
-      resolveId: expect.any(Function),
       watchChange: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
@@ -73,6 +72,7 @@ describe('devupUIVitePlugin', () => {
       existsFileMapFile: [true, false],
       existsCssDir: [true, false],
       getDefaultTheme: ['theme', ''],
+      singleCss: [true, false],
     }),
   )('should write data files', async (options) => {
     vi.mocked(writeFile).mockResolvedValueOnce(undefined)
@@ -89,7 +89,7 @@ describe('devupUIVitePlugin', () => {
       if (path === join('df', 'fileMap.json')) return options.existsFileMapFile
       return false
     })
-    const plugin = DevupUI({})
+    const plugin = DevupUI({ singleCss: options.singleCss })
     await (plugin as any).configResolved()
     if (options.existsDevupFile) {
       expect(readFile).toHaveBeenCalledWith('devup.json', 'utf-8')
@@ -131,7 +131,11 @@ describe('devupUIVitePlugin', () => {
     const plugin = DevupUI({})
     await (plugin as any).configResolved()
     expect(registerTheme).toHaveBeenCalledWith({})
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(writeFile).toHaveBeenCalledWith(
+      join('df', '.gitignore'),
+      '*',
+      'utf-8',
+    )
   })
 
   it('should watch change', async () => {
@@ -164,27 +168,11 @@ describe('devupUIVitePlugin', () => {
     expect(console.error).toHaveBeenCalledWith(expect.any(Error))
   })
 
-  it.each(
-    createTestMatrix({
-      singleCss: [true, false],
-    }),
-  )('should resolveId', (options) => {
-    const plugin = DevupUI(options)
-    expect(
-      (plugin as any).resolveId(resolve('df', 'devup-ui', 'devup-ui.css')),
-    ).toEqual(options.singleCss ? expect.any(String) : undefined)
-  })
-
-  it.each(
-    createTestMatrix({
-      singleCss: [true, false],
-    }),
-  )('should load', (options) => {
+  it('should load', () => {
     vi.mocked(getCss).mockReturnValue('css code')
-    const plugin = DevupUI(options)
-    expect((plugin as any).load('devup-ui.css')).toEqual(
-      options.singleCss ? expect.any(String) : undefined,
-    )
+    const plugin = DevupUI({})
+    expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
+    expect((plugin as any).load('devup-ui-10.css')).toEqual(expect.any(String))
   })
 
   it.each(

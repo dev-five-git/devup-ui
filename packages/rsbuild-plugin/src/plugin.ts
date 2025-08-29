@@ -4,6 +4,8 @@ import { basename, join, resolve } from 'node:path'
 
 import {
   codeExtract,
+  getCss,
+  getDefaultTheme,
   getThemeInterface,
   registerTheme,
   setDebug,
@@ -26,7 +28,7 @@ let globalCss = ''
 async function writeDataFiles(
   options: Omit<
     DevupUIRsbuildPluginOptions,
-    'extractCss' | 'debug' | 'include' | 'singleCss'
+    'extractCss' | 'debug' | 'include'
   >,
 ) {
   try {
@@ -44,9 +46,11 @@ async function writeDataFiles(
       )
 
       if (interfaceCode) {
-        await writeFile(join(options.distDir, 'theme.d.ts'), interfaceCode, {
-          encoding: 'utf-8',
-        })
+        await writeFile(
+          join(options.distDir, 'theme.d.ts'),
+          interfaceCode,
+          'utf-8',
+        )
       }
     } else {
       registerTheme({})
@@ -55,8 +59,14 @@ async function writeDataFiles(
     console.error(error)
     registerTheme({})
   }
-  if (!existsSync(options.cssDir))
-    await mkdir(options.cssDir, { recursive: true })
+  await Promise.all([
+    !existsSync(options.cssDir)
+      ? mkdir(options.cssDir, { recursive: true })
+      : Promise.resolve(),
+    !options.singleCss
+      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss())
+      : Promise.resolve(),
+  ])
 }
 
 export const DevupUI = ({
@@ -72,11 +82,16 @@ export const DevupUI = ({
   name: 'devup-ui-rsbuild-plugin',
   async setup(api) {
     setDebug(debug)
+
+    if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+    await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+
     await writeDataFiles({
       package: libPackage,
       cssDir,
       devupFile,
       distDir,
+      singleCss,
     })
     if (!extractCss) return
 
@@ -86,6 +101,19 @@ export const DevupUI = ({
       },
       () => globalCss,
     )
+
+    api.modifyRsbuildConfig((config) => {
+      const theme = getDefaultTheme()
+      if (theme) {
+        config.source ??= {}
+        config.source.define = {
+          'process.env.DEVUP_UI_DEFAULT_THEME':
+            JSON.stringify(getDefaultTheme()),
+          ...config.source.define,
+        }
+      }
+      return config
+    })
 
     api.transform(
       {
