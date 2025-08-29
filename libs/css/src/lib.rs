@@ -107,7 +107,7 @@ pub fn sheet_to_classname(
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "{}-{}-{}-{}-{}-{}",
+            "{}-{}-{}-{}-{}{}",
             property.trim(),
             level,
             optimize_value(value.unwrap_or_default()),
@@ -119,17 +119,21 @@ pub fn sheet_to_classname(
                 hasher.finish().to_string()
             },
             style_order.unwrap_or(255),
-            filename.unwrap_or_default()
+            filename
+                .map(|v| format!("-{}", get_file_num_by_filename(v)))
+                .unwrap_or_default(),
         )
     } else {
         let key = format!(
-            "{}-{}-{}-{}-{}-{}",
+            "{}-{}-{}-{}-{}{}",
             property.trim(),
             level,
             optimize_value(value.unwrap_or_default()),
             selector.unwrap_or_default().trim(),
             style_order.unwrap_or(255),
-            filename.unwrap_or_default()
+            filename
+                .map(|v| format!("-{}", get_file_num_by_filename(v)))
+                .unwrap_or_default(),
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
         let filename = filename.map(|v| v.to_string()).unwrap_or_default();
@@ -321,7 +325,7 @@ mod tests {
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
             assert_eq!(
-                map.get("").unwrap().get("background-0-#FF000080--255-"),
+                map.get("").unwrap().get("background-0-#FF000080--255"),
                 Some(&2)
             );
         }
@@ -337,10 +341,7 @@ mod tests {
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(
-                map.get("").unwrap().get("background-0-#FFF--255-"),
-                Some(&3)
-            );
+            assert_eq!(map.get("").unwrap().get("background-0-#FFF--255"), Some(&3));
         }
 
         assert_eq!(
@@ -356,7 +357,7 @@ mod tests {
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
             assert_eq!(
-                map.get("").unwrap().get("background-0-#FFFA--255-"),
+                map.get("").unwrap().get("background-0-#FFFA--255"),
                 Some(&4)
             );
         }
@@ -524,19 +525,19 @@ mod tests {
         set_debug(true);
         assert_eq!(
             sheet_to_classname("background", 0, None, None, None, None),
-            "background-0---255-"
+            "background-0---255"
         );
         assert_eq!(
             sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
-            "background-0-red-12448419602614487988-255-"
+            "background-0-red-12448419602614487988-255"
         );
         assert_eq!(
             sheet_to_classname("background", 1, None, None, None, None),
-            "background-1---255-"
+            "background-1---255"
         );
         assert_eq!(
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
-            "background-1-red-12448419602614487988-255-"
+            "background-1-red-12448419602614487988-255"
         );
     }
 

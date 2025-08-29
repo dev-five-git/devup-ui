@@ -29,15 +29,16 @@ export function DevupUI(
     config.turbopack.rules ??= {}
     const {
       package: libPackage = '@devup-ui/react',
-      interfacePath = 'df',
-      cssDir = resolve(interfacePath, 'devup-ui'),
-      splitCss = true,
+      distDir = 'df',
+      cssDir = resolve(distDir, 'devup-ui'),
+      singleCss = false,
     } = options
 
-    const sheetFile = join(interfacePath, 'sheet.json')
-    const classMapFile = join(interfacePath, 'classMap.json')
-    const gitignoreFile = join(interfacePath, '.gitignore')
-    if (!existsSync(interfacePath)) mkdirSync(interfacePath)
+    const sheetFile = join(distDir, 'sheet.json')
+    const classMapFile = join(distDir, 'classMap.json')
+    const fileMapFile = join(distDir, 'fileMap.json')
+    const gitignoreFile = join(distDir, '.gitignore')
+    if (!existsSync(distDir)) mkdirSync(distDir)
     if (!existsSync(cssDir)) mkdirSync(cssDir)
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
     const rules: NonNullable<typeof config.turbopack.rules> = {
@@ -57,8 +58,9 @@ export function DevupUI(
             cssDir,
             sheetFile,
             classMapFile,
+            fileMapFile,
             watch: process.env.NODE_ENV === 'development',
-            splitCss,
+            singleCss,
           },
         },
       ],
@@ -70,7 +72,7 @@ export function DevupUI(
   const { webpack } = config
   config.webpack = (config, _options) => {
     options.cssDir ??= resolve(
-      _options.dev ? (options.interfacePath ?? 'df') : '.next/cache',
+      _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       `devup-ui_${_options.buildId}`,
     )
     config.plugins.push(

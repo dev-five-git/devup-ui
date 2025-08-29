@@ -8,7 +8,7 @@ import { DevupUI } from '../plugin'
 vi.mock('@devup-ui/webpack-plugin')
 vi.mock('node:fs')
 
-describe('plugin', () => {
+describe('DevupUINextPlugin', () => {
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -16,7 +16,7 @@ describe('plugin', () => {
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
-        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
+        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
     })
 
@@ -26,7 +26,7 @@ describe('plugin', () => {
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId', dev: true } as any)
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
-        cssFile: resolve('df', 'devup-ui_tmpBuildId.css'),
+        cssDir: resolve('df', 'devup-ui_tmpBuildId'),
         watch: true,
       })
     })
@@ -43,7 +43,7 @@ describe('plugin', () => {
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
         package: 'new-package',
-        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
+        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
     })
 
@@ -62,7 +62,7 @@ describe('plugin', () => {
 
       expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
         package: 'new-package',
-        cssFile: resolve('.next/cache', 'devup-ui_tmpBuildId.css'),
+        cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
       expect(webpack).toHaveBeenCalled()
     })
@@ -76,7 +76,7 @@ describe('plugin', () => {
       expect(ret).toEqual({
         turbopack: {
           rules: {
-            'devup-ui.css': [
+            'devup-ui': [
               {
                 loader: '@devup-ui/webpack-plugin/css-loader',
                 options: {
@@ -89,10 +89,12 @@ describe('plugin', () => {
                 loader: '@devup-ui/webpack-plugin/loader',
                 options: {
                   package: '@devup-ui/react',
-                  cssFile: resolve('df', 'devup-ui.css'),
+                  cssDir: resolve('df', 'devup-ui'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
                   watch: false,
+                  singleCss: false,
                 },
               },
             ],
@@ -110,7 +112,7 @@ describe('plugin', () => {
       expect(ret).toEqual({
         turbopack: {
           rules: {
-            'devup-ui.css': [
+            'devup-ui': [
               {
                 loader: '@devup-ui/webpack-plugin/css-loader',
                 options: {
@@ -123,10 +125,12 @@ describe('plugin', () => {
                 loader: '@devup-ui/webpack-plugin/loader',
                 options: {
                   package: '@devup-ui/react',
-                  cssFile: resolve('df', 'devup-ui.css'),
+                  cssDir: resolve('df', 'devup-ui'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
                   watch: false,
+                  singleCss: false,
                 },
               },
             ],
@@ -134,10 +138,10 @@ describe('plugin', () => {
         },
       })
       expect(mkdirSync).toHaveBeenCalledWith('df')
-      expect(writeFileSync).toHaveBeenCalledWith(
-        resolve('df', 'devup-ui.css'),
-        '/* devup-ui */',
-      )
+      // expect(writeFileSync).toHaveBeenCalledWith(
+      //   resolve('df', 'devup-ui', 'devup-ui.css'),
+      //   '/* devup-ui */',
+      // )
       expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
   })

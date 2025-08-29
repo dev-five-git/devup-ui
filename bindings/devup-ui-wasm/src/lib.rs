@@ -19,7 +19,7 @@ pub struct Output {
     styles: HashSet<ExtractStyleValue>,
     map: Option<String>,
     default_collected: bool,
-    split_css: bool,
+    single_css: bool,
     filename: String,
     css_file: String,
 }
@@ -61,7 +61,7 @@ impl Output {
         for style in self.styles.iter() {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let (cls, _) = match style.extract(if self.split_css {
+                    let (cls, _) = match style.extract(if !self.single_css {
                         Some(self.filename.as_str())
                     } else {
                         None
@@ -81,7 +81,7 @@ impl Output {
                         st.value(),
                         st.selector(),
                         st.style_order(),
-                        if self.split_css {
+                        if !self.single_css {
                             Some(self.filename.as_str())
                         } else {
                             None
@@ -91,7 +91,7 @@ impl Output {
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
-                    let (cls, variable) = match style.extract(if self.split_css {
+                    let (cls, variable) = match style.extract(if !self.single_css {
                         Some(self.filename.as_str())
                     } else {
                         None
@@ -111,7 +111,7 @@ impl Output {
                         &format!("var({})", variable.unwrap()),
                         dy.selector(),
                         dy.style_order(),
-                        if self.split_css {
+                        if !self.single_css {
                             Some(self.filename.as_str())
                         } else {
                             None
@@ -124,7 +124,7 @@ impl Output {
                 ExtractStyleValue::Keyframes(keyframes) => {
                     if sheet.add_keyframes(
                         &keyframes
-                            .extract(if self.split_css {
+                            .extract(if !self.single_css {
                                 Some(self.filename.as_str())
                             } else {
                                 None
@@ -148,7 +148,7 @@ impl Output {
                                 )
                             })
                             .collect(),
-                        if self.split_css {
+                        if !self.single_css {
                             Some(self.filename.as_str())
                         } else {
                             None
@@ -176,7 +176,7 @@ impl Output {
             return None;
         }
 
-        Some(sheet.create_css(if self.split_css {
+        Some(sheet.create_css(if !self.single_css {
             Some(&self.filename)
         } else {
             None
@@ -241,7 +241,7 @@ pub fn code_extract(
     code: &str,
     package: &str,
     css_dir: String,
-    split_css: bool,
+    single_css: bool,
 ) -> Result<Output, JsValue> {
     let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
 
@@ -251,7 +251,7 @@ pub fn code_extract(
         ExtractOption {
             package: package.to_string(),
             css_dir,
-            split_css,
+            single_css,
         },
     ) {
         Ok(output) => Ok(Output {
@@ -259,7 +259,7 @@ pub fn code_extract(
             styles: output.styles,
             map: output.map,
             default_collected: sheet.rm_global_css(filename),
-            split_css,
+            single_css,
             filename: filename.to_string(),
             css_file: output.css_file,
         }),

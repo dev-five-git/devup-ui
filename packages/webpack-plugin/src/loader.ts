@@ -16,7 +16,7 @@ export interface DevupUILoaderOptions {
   classMapFile: string
   fileMapFile: string
   watch: boolean
-  splitCss: boolean
+  singleCss: boolean
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -28,7 +28,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       sheetFile,
       classMapFile,
       fileMapFile,
-      splitCss,
+      singleCss,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -38,13 +38,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         '\\',
         '/',
       )
+
       if (!rel.startsWith('./')) rel = `./${rel}`
       const { code, css, map, css_file } = codeExtract(
         id,
         source.toString(),
         libPackage,
         rel,
-        splitCss,
+        singleCss,
       )
       const sourceMap = map ? JSON.parse(map) : null
       if (css) {

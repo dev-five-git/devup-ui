@@ -56,7 +56,7 @@
     "@rsbuild/core": "*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.4.15",
+    "@rsbuild/core": "^1.5.1",
     "vite": "^7.1.3",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",

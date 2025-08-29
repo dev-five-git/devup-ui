@@ -83,7 +83,7 @@ pub struct ExtractOutput {
 pub struct ExtractOption {
     pub package: String,
     pub css_dir: String,
-    pub split_css: bool,
+    pub single_css: bool,
 }
 
 pub fn extract(
@@ -92,14 +92,14 @@ pub fn extract(
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     let source_type = SourceType::from_path(filename)?;
-    let css_file = if option.split_css {
+    let css_file = if option.single_css {
+        format!("{}/devup-ui.css", option.css_dir)
+    } else {
         format!(
             "{}/devup-ui-{}.css",
             option.css_dir,
             get_file_num_by_filename(filename)
         )
-    } else {
-        format!("{}/devup-ui.css", option.css_dir)
     };
     if !code.contains(option.package.as_str()) {
         // skip if not using package
@@ -125,7 +125,7 @@ pub fn extract(
         filename,
         &option.package,
         &css_file,
-        if option.split_css {
+        if !option.single_css {
             Some(filename.to_string())
         } else {
             None
@@ -189,7 +189,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 },
             )
             .unwrap()
@@ -203,7 +203,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 },
             )
             .unwrap()
@@ -222,7 +222,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false,
+                    single_css: true,
                 }
             )
             .unwrap()
@@ -238,7 +238,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -258,7 +258,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -274,7 +274,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -288,7 +288,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -304,7 +304,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -318,7 +318,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -382,7 +382,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -397,7 +397,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -412,7 +412,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -428,7 +428,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -444,7 +444,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -460,7 +460,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -482,7 +482,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -505,7 +505,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -527,7 +527,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -547,7 +547,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -563,7 +563,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -579,7 +579,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -595,7 +595,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -610,7 +610,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -632,7 +632,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -648,7 +648,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -668,7 +668,7 @@ mod tests {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -702,7 +702,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -722,7 +722,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -741,7 +741,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -755,7 +755,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -775,7 +775,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -791,7 +791,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -807,7 +807,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -823,7 +823,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -843,7 +843,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -859,7 +859,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -875,7 +875,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -895,7 +895,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -911,7 +911,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -927,7 +927,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -943,7 +943,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -959,7 +959,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -979,7 +979,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -999,7 +999,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1019,7 +1019,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1035,7 +1035,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1055,7 +1055,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1071,7 +1071,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1091,7 +1091,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1107,7 +1107,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1123,7 +1123,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1139,7 +1139,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1155,7 +1155,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1171,7 +1171,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1187,7 +1187,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1203,7 +1203,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1219,7 +1219,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1239,7 +1239,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1255,7 +1255,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1271,7 +1271,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1287,7 +1287,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1303,7 +1303,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1319,7 +1319,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1339,7 +1339,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1355,7 +1355,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1375,7 +1375,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1391,7 +1391,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1407,7 +1407,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1423,7 +1423,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1439,7 +1439,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1455,7 +1455,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1471,7 +1471,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1487,7 +1487,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1507,7 +1507,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1523,7 +1523,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1539,7 +1539,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1555,7 +1555,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1575,7 +1575,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1591,7 +1591,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1607,7 +1607,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1623,7 +1623,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1642,7 +1642,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1658,7 +1658,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1680,7 +1680,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1715,7 +1715,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1735,7 +1735,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1755,7 +1755,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1775,7 +1775,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1795,7 +1795,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1815,7 +1815,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1833,7 +1833,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1858,7 +1858,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1878,7 +1878,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1894,7 +1894,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1910,7 +1910,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1926,7 +1926,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1942,7 +1942,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1958,7 +1958,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1974,7 +1974,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -1996,7 +1996,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2016,7 +2016,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2039,7 +2039,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2061,7 +2061,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2086,7 +2086,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2110,7 +2110,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2133,7 +2133,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2162,7 +2162,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2186,7 +2186,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2212,7 +2212,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2238,7 +2238,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2264,7 +2264,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2290,7 +2290,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2312,7 +2312,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2330,7 +2330,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2346,7 +2346,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2365,7 +2365,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2387,7 +2387,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2407,7 +2407,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2429,7 +2429,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2451,7 +2451,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2469,7 +2469,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2488,7 +2488,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2506,7 +2506,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2527,7 +2527,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2543,7 +2543,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2559,7 +2559,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2575,7 +2575,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2596,7 +2596,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2623,7 +2623,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2639,7 +2639,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2655,7 +2655,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2672,7 +2672,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2688,7 +2688,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2704,7 +2704,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2720,7 +2720,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2746,7 +2746,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2771,7 +2771,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2791,7 +2791,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2811,7 +2811,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2827,7 +2827,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2843,7 +2843,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2863,7 +2863,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2879,7 +2879,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2895,7 +2895,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2914,7 +2914,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2930,7 +2930,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2946,7 +2946,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2967,7 +2967,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -2985,7 +2985,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 },
             )
             .unwrap_err()
@@ -3001,7 +3001,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 },
             )
             .unwrap_err()
@@ -3022,7 +3022,7 @@ import clsx from 'clsx'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3038,7 +3038,7 @@ useTheme();
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3077,7 +3077,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3112,7 +3112,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3129,7 +3129,7 @@ e(o, { className: "a", bg: "red" })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3146,7 +3146,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" } })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3163,7 +3163,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3174,16 +3174,16 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),split_css:false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),split_css:false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),split_css:false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),split_css:false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true }).unwrap()));
     }
 
     #[test]
@@ -3199,7 +3199,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false,
+                    single_css: true,
                 }
             )
             .unwrap()
@@ -3219,7 +3219,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3235,7 +3235,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3251,7 +3251,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3271,7 +3271,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3287,7 +3287,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3303,7 +3303,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3323,7 +3323,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3358,7 +3358,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3378,7 +3378,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3394,7 +3394,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3410,7 +3410,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3426,7 +3426,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3442,7 +3442,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3461,7 +3461,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3477,7 +3477,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3493,7 +3493,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3509,7 +3509,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3525,7 +3525,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3541,7 +3541,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3557,7 +3557,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3577,7 +3577,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3593,7 +3593,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3609,7 +3609,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3625,7 +3625,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3649,7 +3649,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3665,7 +3665,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3685,7 +3685,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3701,7 +3701,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3717,7 +3717,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3733,7 +3733,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3752,7 +3752,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3768,7 +3768,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3784,7 +3784,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3824,7 +3824,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3844,7 +3844,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3860,7 +3860,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3876,7 +3876,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3892,7 +3892,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3912,7 +3912,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3927,7 +3927,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3947,7 +3947,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3963,7 +3963,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -3982,7 +3982,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4002,7 +4002,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4018,7 +4018,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4037,7 +4037,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4053,7 +4053,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4073,7 +4073,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4093,7 +4093,7 @@ export default function Card({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4117,7 +4117,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4137,7 +4137,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4153,7 +4153,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4173,7 +4173,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4193,7 +4193,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4215,7 +4215,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4238,7 +4238,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4257,7 +4257,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4277,7 +4277,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4309,7 +4309,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4329,7 +4329,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4345,7 +4345,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4361,7 +4361,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4377,7 +4377,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4393,7 +4393,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4413,7 +4413,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4433,7 +4433,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4448,7 +4448,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4471,7 +4471,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4495,7 +4495,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4515,7 +4515,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4535,7 +4535,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4559,7 +4559,7 @@ import {Button} from '@devup/ui'
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4595,7 +4595,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4611,7 +4611,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4627,7 +4627,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4643,7 +4643,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4666,7 +4666,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4690,7 +4690,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4706,7 +4706,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4733,7 +4733,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4756,7 +4756,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4779,7 +4779,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4801,7 +4801,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4819,7 +4819,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4838,7 +4838,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4856,7 +4856,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4874,7 +4874,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4892,7 +4892,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4910,7 +4910,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4928,7 +4928,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4949,7 +4949,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4965,7 +4965,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -4985,7 +4985,7 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5006,7 +5006,7 @@ e(o, { styleVars: { c: "yellow" } })
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5030,7 +5030,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5050,7 +5050,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5070,7 +5070,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5090,7 +5090,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5110,7 +5110,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5130,7 +5130,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5150,7 +5150,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5166,7 +5166,7 @@ globalCss(...{})
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5182,7 +5182,7 @@ globalCss(...{div: {bg: "red"}})
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5199,7 +5199,7 @@ globalCss(...{div: {bg: "red"}, ...{span: {bg: "blue"}}})
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5223,7 +5223,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5239,7 +5239,7 @@ globalCss()
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5255,7 +5255,7 @@ globalCss(1)
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5284,7 +5284,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5317,7 +5317,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5350,7 +5350,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5391,7 +5391,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5415,7 +5415,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5433,7 +5433,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5451,7 +5451,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5470,7 +5470,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5491,7 +5491,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5507,7 +5507,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5523,7 +5523,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5540,7 +5540,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5562,7 +5562,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5580,7 +5580,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5598,7 +5598,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5631,7 +5631,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5655,7 +5655,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5678,7 +5678,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5700,7 +5700,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5724,7 +5724,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5748,7 +5748,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5787,7 +5787,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5809,7 +5809,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5827,7 +5827,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5849,7 +5849,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5868,7 +5868,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5886,7 +5886,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5905,7 +5905,7 @@ globalCss({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5921,7 +5921,7 @@ globalCss({})
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5937,7 +5937,7 @@ globalCss()
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5960,7 +5960,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -5980,7 +5980,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6000,7 +6000,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6020,7 +6020,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6040,7 +6040,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6060,7 +6060,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6080,7 +6080,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6100,7 +6100,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6136,7 +6136,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6156,7 +6156,7 @@ keyframes(...{
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6179,7 +6179,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6223,7 +6223,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6269,7 +6269,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: false
+                    single_css: true
                 }
             )
             .unwrap()
@@ -6289,7 +6289,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: true
+                    single_css: false
                 }
             )
             .unwrap()
@@ -6303,7 +6303,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: true
+                    single_css: false
                 }
             )
             .unwrap()
@@ -6318,7 +6318,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: true
+                    single_css: false
                 }
             )
             .unwrap()
@@ -6332,7 +6332,7 @@ keyframes({
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
-                    split_css: true
+                    single_css: false
                 }
             )
             .unwrap()

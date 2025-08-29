@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, join, resolve } from 'node:path'
 
 import {
   codeExtract,
@@ -14,77 +14,76 @@ import { normalizePath, type PluginOption, type UserConfig } from 'vite'
 
 export interface DevupUIPluginOptions {
   package: string
-  cssFile: string
-  devupPath: string
-  interfacePath: string
+  cssDir: string
+  devupFile: string
+  distDir: string
   extractCss: boolean
   debug: boolean
   include: string[]
-  splitCss: boolean
+  singleCss: boolean
 }
 
-function writeDataFiles(
+async function writeDataFiles(
   options: Omit<
     DevupUIPluginOptions,
-    'extractCss' | 'debug' | 'include' | 'splitCss'
+    'extractCss' | 'debug' | 'include' | 'singleCss'
   >,
 ) {
-  if (!existsSync(options.interfacePath)) mkdirSync(options.interfacePath)
-  if (existsSync(options.devupPath)) {
-    registerTheme(
-      JSON.parse(readFileSync(options.devupPath, 'utf-8'))?.['theme'],
-    )
-    const interfaceCode = getThemeInterface(
-      options.package,
-      'DevupThemeColors',
-      'DevupThemeTypography',
-      'DevupTheme',
-    )
-    if (interfaceCode) {
-      writeFileSync(join(options.interfacePath, 'theme.d.ts'), interfaceCode, {
-        encoding: 'utf-8',
-      })
+  try {
+    const content = existsSync(options.devupFile)
+      ? await readFile(options.devupFile, 'utf-8')
+      : undefined
+
+    if (content) {
+      registerTheme(JSON.parse(content)?.['theme'] ?? {})
+      const interfaceCode = getThemeInterface(
+        options.package,
+        'DevupThemeColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
+
+      if (interfaceCode) {
+        await writeFile(
+          join(options.distDir, 'theme.d.ts'),
+          interfaceCode,
+          'utf-8',
+        )
+      }
+    } else {
+      registerTheme({})
     }
+  } catch (error) {
+    console.error(error)
+    registerTheme({})
   }
-  if (!existsSync(options.cssFile))
-    writeFileSync(options.cssFile, '', {
-      encoding: 'utf-8',
-    })
-  writeFileSync(join(options.interfacePath, '.gitignore'), '*', {
-    encoding: 'utf-8',
-  })
+  if (!existsSync(options.cssDir))
+    await mkdir(options.cssDir, { recursive: true })
 }
 
 let globalCss = ''
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
-  devupPath = 'devup.json',
-  interfacePath = 'df',
-  cssFile = resolve(interfacePath, 'devup-ui.css'),
+  devupFile = 'devup.json',
+  distDir = 'df',
+  cssDir = resolve(distDir, 'devup-ui'),
   extractCss = true,
   debug = false,
   include = [],
-  splitCss = true,
+  singleCss = false,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
-  try {
-    writeDataFiles({
-      package: libPackage,
-      cssFile,
-      devupPath,
-      interfacePath,
-    })
-  } catch (error) {
-    console.error(error)
-  }
-  const theme = getDefaultTheme()
-  const define: Record<string, string> = {}
-  if (theme) {
-    define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
-  }
   return {
     name: 'devup-ui',
+    async configResolved() {
+      await writeDataFiles({
+        package: libPackage,
+        cssDir,
+        devupFile,
+        distDir,
+      })
+    },
     config() {
       const theme = getDefaultTheme()
       const define: Record<string, string> = {}
@@ -94,7 +93,7 @@ export function DevupUI({
       const ret: Omit<UserConfig, 'plugins'> = {
         server: {
           watch: {
-            ignored: [`!${devupPath}`],
+            ignored: [`!${devupFile}`],
           },
         },
         define,
@@ -108,7 +107,7 @@ export function DevupUI({
             output: {
               manualChunks(id) {
                 // merge devup css files
-                if (id.startsWith('devup-ui.css')) {
+                if (singleCss && id.endsWith('devup-ui.css')) {
                   return `devup-ui.css`
                 }
               },
@@ -121,15 +120,15 @@ export function DevupUI({
     apply() {
       return true
     },
-    watchChange(id) {
-      if (resolve(id) !== resolve(devupPath)) return
-      if (existsSync(devupPath)) {
+    async watchChange(id) {
+      if (resolve(id) !== resolve(devupFile)) return
+      if (existsSync(devupFile)) {
         try {
-          writeDataFiles({
+          await writeDataFiles({
             package: libPackage,
-            cssFile,
-            devupPath,
-            interfacePath,
+            cssDir,
+            devupFile,
+            distDir,
           })
         } catch (error) {
           console.error(error)
@@ -137,11 +136,14 @@ export function DevupUI({
       }
     },
     resolveId(id) {
-      if (normalizePath(id) === normalizePath(cssFile))
+      if (
+        singleCss &&
+        normalizePath(id) === normalizePath(join(cssDir, 'devup-ui.css'))
+      )
         return `devup-ui.css?t=${Date.now().toString() + globalCss.length}`
     },
     load(id) {
-      if (id.split('?')[0] === 'devup-ui.css')
+      if (singleCss && id.split('?')[0] === 'devup-ui.css')
         // for no share env like storybook
         return (globalCss = getCss())
     },
@@ -150,31 +152,31 @@ export function DevupUI({
       if (!extractCss) return
 
       const fileName = id.split('?')[0]
+      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
       if (
-        include.length
-          ? new RegExp(
-              `node_modules(?!(${include
-                .map((i) => `.*${i}`)
-                .join('|')
-                .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-            ).test(fileName)
-          : id.includes('node_modules')
+        new RegExp(
+          `node_modules(?!.*(${['@devup-ui', ...include]
+            .join('|')
+            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+        ).test(fileName)
       ) {
         return
       }
-      if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
 
       const {
         code: retCode,
         css,
         map,
-      } = codeExtract(fileName, code, libPackage, cssFile, splitCss)
+        css_file,
+      } = codeExtract(fileName, code, libPackage, cssDir, singleCss)
 
-      if (css && globalCss.length < css.length) {
-        globalCss = css
-        await writeFile(cssFile, `/* ${id} ${Date.now()} */`, {
-          encoding: 'utf-8',
-        })
+      if (css) {
+        if (globalCss.length < css.length) globalCss = css
+        await writeFile(
+          join(cssDir, basename(css_file)),
+          `/* ${id} ${Date.now()} */`,
+          'utf-8',
+        )
       }
       return {
         code: retCode,

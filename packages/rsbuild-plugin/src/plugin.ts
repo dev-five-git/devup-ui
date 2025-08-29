@@ -1,43 +1,88 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, join, resolve } from 'node:path'
 
-import { codeExtract } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  getThemeInterface,
+  registerTheme,
+  setDebug,
+} from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
 
 export interface DevupUIRsbuildPluginOptions {
   package: string
-  cssFile: string
-  devupPath: string
-  interfacePath: string
+  cssDir: string
+  devupFile: string
+  distDir: string
   extractCss: boolean
   debug: boolean
   include: string[]
-  splitCss: boolean
+  singleCss: boolean
 }
 
 let globalCss = ''
 
-export const DevupUIRsbuildPlugin = ({
+async function writeDataFiles(
+  options: Omit<
+    DevupUIRsbuildPluginOptions,
+    'extractCss' | 'debug' | 'include' | 'singleCss'
+  >,
+) {
+  try {
+    const content = existsSync(options.devupFile)
+      ? await readFile(options.devupFile, 'utf-8')
+      : undefined
+
+    if (content) {
+      registerTheme(JSON.parse(content)?.['theme'] ?? {})
+      const interfaceCode = getThemeInterface(
+        options.package,
+        'DevupThemeColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
+
+      if (interfaceCode) {
+        await writeFile(join(options.distDir, 'theme.d.ts'), interfaceCode, {
+          encoding: 'utf-8',
+        })
+      }
+    } else {
+      registerTheme({})
+    }
+  } catch (error) {
+    console.error(error)
+    registerTheme({})
+  }
+  if (!existsSync(options.cssDir))
+    await mkdir(options.cssDir, { recursive: true })
+}
+
+export const DevupUI = ({
   include = [],
   package: libPackage = '@devup-ui/react',
   extractCss = true,
-  interfacePath = 'df',
-  cssFile = resolve(interfacePath, 'devup-ui.css'),
-  splitCss = true,
+  distDir = 'df',
+  cssDir = resolve(distDir, 'devup-ui'),
+  devupFile = 'devup.json',
+  debug = false,
+  singleCss = false,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
   name: 'devup-ui-rsbuild-plugin',
-
   async setup(api) {
-    if (!extractCss) return
-    await mkdir(interfacePath, { recursive: true })
-    await writeFile(join(interfacePath, '.gitignore'), '*', {
-      encoding: 'utf-8',
+    setDebug(debug)
+    await writeDataFiles({
+      package: libPackage,
+      cssDir,
+      devupFile,
+      distDir,
     })
-    await writeFile(cssFile, '')
+    if (!extractCss) return
 
     api.transform(
       {
-        test: cssFile,
+        test: cssDir,
       },
       () => globalCss,
     )
@@ -48,27 +93,27 @@ export const DevupUIRsbuildPlugin = ({
       },
       async ({ code, resourcePath }) => {
         if (
-          include.length
-            ? new RegExp(
-                `node_modules(?!(${include
-                  .map((i) => `.*${i}`)
-                  .join('|')
-                  .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-              ).test(resourcePath)
-            : resourcePath.includes('node_modules')
+          new RegExp(
+            `node_modules(?!.*(${['@devup-ui', ...include]
+              .join('|')
+              .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+          ).test(resourcePath)
         )
           return code
         const {
           code: retCode,
           css,
           map,
-        } = codeExtract(resourcePath, code, libPackage, cssFile, splitCss)
+          css_file,
+        } = codeExtract(resourcePath, code, libPackage, cssDir, singleCss)
 
-        if (css && globalCss.length < css.length) {
-          globalCss = css
-          await writeFile(cssFile, `/* ${resourcePath} ${Date.now()} */`, {
-            encoding: 'utf-8',
-          })
+        if (css) {
+          if (globalCss.length < css.length) globalCss = css
+          await writeFile(
+            join(cssDir, basename(css_file)),
+            `/* ${resourcePath} ${Date.now()} */`,
+            'utf-8',
+          )
         }
         return {
           code: retCode,

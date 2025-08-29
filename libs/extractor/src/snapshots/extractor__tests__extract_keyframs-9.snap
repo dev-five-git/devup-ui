@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { keyframes } from \"@devup-ui/core\";\n\nkeyframes({\n  [`0`]: { opacity: 0 },\n  [`50`]: { opacity: 0.5 },\n  [`100`]: { opacity: 1 }\n});\nkeyframes({\n  [`0%`]: { opacity: 0 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n});\nkeyframes({\n  [`1%`]: { opacity: 0 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n});\nkeyframes({\n  [`0%`]: { opacity: 1 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_file: None, split_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { keyframes } from \"@devup-ui/core\";\n\nkeyframes({\n  [`0`]: { opacity: 0 },\n  [`50`]: { opacity: 0.5 },\n  [`100`]: { opacity: 1 }\n});\nkeyframes({\n  [`0%`]: { opacity: 0 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n});\nkeyframes({\n  [`1%`]: { opacity: 0 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n});\nkeyframes({\n  [`0%`]: { opacity: 1 },\n  [`50%`]: { opacity: 0.5 },\n  [`100%`]: { opacity: 1 }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_file: None, single_css: true\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
