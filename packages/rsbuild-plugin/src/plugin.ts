@@ -1,44 +1,119 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, join, resolve } from 'node:path'
 
-import { codeExtract } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  getCss,
+  getDefaultTheme,
+  getThemeInterface,
+  registerTheme,
+  setDebug,
+} from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
 
 export interface DevupUIRsbuildPluginOptions {
   package: string
-  cssFile: string
-  devupPath: string
-  interfacePath: string
+  cssDir: string
+  devupFile: string
+  distDir: string
   extractCss: boolean
   debug: boolean
   include: string[]
+  singleCss: boolean
 }
 
 let globalCss = ''
 
-export const DevupUIRsbuildPlugin = ({
+async function writeDataFiles(
+  options: Omit<
+    DevupUIRsbuildPluginOptions,
+    'extractCss' | 'debug' | 'include'
+  >,
+) {
+  try {
+    const content = existsSync(options.devupFile)
+      ? await readFile(options.devupFile, 'utf-8')
+      : undefined
+
+    if (content) {
+      registerTheme(JSON.parse(content)?.['theme'] ?? {})
+      const interfaceCode = getThemeInterface(
+        options.package,
+        'DevupThemeColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
+
+      if (interfaceCode) {
+        await writeFile(
+          join(options.distDir, 'theme.d.ts'),
+          interfaceCode,
+          'utf-8',
+        )
+      }
+    } else {
+      registerTheme({})
+    }
+  } catch (error) {
+    console.error(error)
+    registerTheme({})
+  }
+  await Promise.all([
+    !existsSync(options.cssDir)
+      ? mkdir(options.cssDir, { recursive: true })
+      : Promise.resolve(),
+    !options.singleCss
+      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss())
+      : Promise.resolve(),
+  ])
+}
+
+export const DevupUI = ({
   include = [],
   package: libPackage = '@devup-ui/react',
   extractCss = true,
-  interfacePath = 'df',
-  cssFile = resolve(interfacePath, 'devup-ui.css'),
+  distDir = 'df',
+  cssDir = resolve(distDir, 'devup-ui'),
+  devupFile = 'devup.json',
+  debug = false,
+  singleCss = false,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
   name: 'devup-ui-rsbuild-plugin',
-
   async setup(api) {
-    if (!extractCss) return
-    await mkdir(interfacePath, { recursive: true })
-    await writeFile(join(interfacePath, '.gitignore'), '*', {
-      encoding: 'utf-8',
+    setDebug(debug)
+
+    if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
+    await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+
+    await writeDataFiles({
+      package: libPackage,
+      cssDir,
+      devupFile,
+      distDir,
+      singleCss,
     })
-    await writeFile(cssFile, '')
+    if (!extractCss) return
 
     api.transform(
       {
-        test: cssFile,
+        test: cssDir,
       },
       () => globalCss,
     )
+
+    api.modifyRsbuildConfig((config) => {
+      const theme = getDefaultTheme()
+      if (theme) {
+        config.source ??= {}
+        config.source.define = {
+          'process.env.DEVUP_UI_DEFAULT_THEME':
+            JSON.stringify(getDefaultTheme()),
+          ...config.source.define,
+        }
+      }
+      return config
+    })
 
     api.transform(
       {
@@ -46,27 +121,27 @@ export const DevupUIRsbuildPlugin = ({
       },
       async ({ code, resourcePath }) => {
         if (
-          include.length
-            ? new RegExp(
-                `node_modules(?!(${include
-                  .map((i) => `.*${i}`)
-                  .join('|')
-                  .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-              ).test(resourcePath)
-            : resourcePath.includes('node_modules')
+          new RegExp(
+            `node_modules(?!.*(${['@devup-ui', ...include]
+              .join('|')
+              .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+          ).test(resourcePath)
         )
           return code
         const {
           code: retCode,
           css,
           map,
-        } = codeExtract(resourcePath, code, libPackage, cssFile)
+          css_file,
+        } = codeExtract(resourcePath, code, libPackage, cssDir, singleCss)
 
-        if (css && globalCss.length < css.length) {
-          globalCss = css
-          await writeFile(cssFile, `/* ${resourcePath} ${Date.now()} */`, {
-            encoding: 'utf-8',
-          })
+        if (css) {
+          if (globalCss.length < css.length) globalCss = css
+          await writeFile(
+            join(cssDir, basename(css_file)),
+            `/* ${resourcePath} ${Date.now()} */`,
+            'utf-8',
+          )
         }
         return {
           code: retCode,

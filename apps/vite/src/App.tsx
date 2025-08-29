@@ -14,7 +14,7 @@ export default function App() {
         hello
         <Lib />
       </Box>
-      <Text color="#777777"></Text>
+      <Text fontWeight="bold">wf</Text>
       <Text color="#777"></Text>
       <Text color="#777"></Text>
       <Text typography="header">typo</Text>

@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { keyframes } from \"@devup-ui/core\";\nkeyframes({\n  [`0`]: { opacity: 0 },\n  [`50`]: { opacity: 0.5 },\n  [`100`]: { opacity: 1 }\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { keyframes } from \"@devup-ui/core\";\nkeyframes({\n  [`0`]: { opacity: 0 },\n  [`50`]: { opacity: 0.5 },\n  [`100`]: { opacity: 1 }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_file: None, single_css: true\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
@@ -38,5 +38,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n\"k0\";\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n\"a\";\n",
 }

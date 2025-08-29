@@ -101,24 +101,31 @@ impl ExtractStyle for StyleSheetCss {
 }
 
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, HashSet<StyleSheetProperty>>>;
+type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
 
-fn deserialize_btree_map_u8<'de, D>(deserializer: D) -> Result<PropertyMap, D::Error>
+fn deserialize_btree_map_u8<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, PropertyMap>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let mut result = BTreeMap::new();
-    for (key, value) in
-        BTreeMap::<String, BTreeMap<String, HashSet<StyleSheetProperty>>>::deserialize(
-            deserializer,
-        )?
+    let mut result: BTreeMap<String, PropertyMap> = BTreeMap::new();
+    for (key, value) in BTreeMap::<
+        String,
+        BTreeMap<String, BTreeMap<String, HashSet<StyleSheetProperty>>>,
+    >::deserialize(deserializer)?
     {
-        let mut tmp_map = BTreeMap::new();
+        let mut tmp_map: PropertyMap = BTreeMap::new();
 
         for (key, value) in value.into_iter() {
-            tmp_map.insert(key.parse().map_err(Error::custom)?, value);
+            let mut inner_tmp_map = BTreeMap::new();
+            for (key, value) in value.into_iter() {
+                inner_tmp_map.insert(key.parse().map_err(Error::custom)?, value);
+            }
+            tmp_map.insert(key.parse().map_err(Error::custom)?, inner_tmp_map);
         }
 
-        result.insert(key.parse().map_err(Error::custom)?, tmp_map);
+        result.insert(key, tmp_map);
     }
 
     Ok(result)
@@ -126,10 +133,10 @@ where
 #[derive(Default, Deserialize, Serialize, Debug)]
 pub struct StyleSheet {
     #[serde(deserialize_with = "deserialize_btree_map_u8")]
-    pub properties: PropertyMap,
+    pub properties: BTreeMap<String, PropertyMap>,
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
     #[serde(default)]
-    pub keyframes: BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>,
+    pub keyframes: KeyframesMap,
     #[serde(default)]
     pub global_css_files: BTreeSet<String>,
     #[serde(default)]
@@ -141,6 +148,7 @@ pub struct StyleSheet {
 }
 
 impl StyleSheet {
+    #[allow(clippy::too_many_arguments)]
     pub fn add_property(
         &mut self,
         class_name: &str,
@@ -149,6 +157,7 @@ impl StyleSheet {
         value: &str,
         selector: Option<&StyleSelector>,
         style_order: Option<u8>,
+        filename: Option<&str>,
     ) -> bool {
         // register global css file for cache
         if let Some(StyleSelector::Global(_, file)) = selector {
@@ -156,6 +165,8 @@ impl StyleSheet {
         }
 
         self.properties
+            .entry(filename.unwrap_or_default().to_string())
+            .or_default()
             .entry(style_order.unwrap_or(255))
             .or_default()
             .entry(level)
@@ -198,8 +209,14 @@ impl StyleSheet {
         &mut self,
         name: &str,
         keyframes: BTreeMap<String, Vec<(String, String)>>,
+        filename: Option<&str>,
     ) -> bool {
-        let map = self.keyframes.entry(name.to_string()).or_default();
+        let map = self
+            .keyframes
+            .entry(filename.unwrap_or_default().to_string())
+            .or_default()
+            .entry(name.to_string())
+            .or_default();
         if map == &keyframes {
             return false;
         }
@@ -217,7 +234,12 @@ impl StyleSheet {
 
         self.font_faces.remove(file);
 
-        for map in self.properties.values_mut() {
+        for map in self
+            .properties
+            .entry("".to_string())
+            .or_default()
+            .values_mut()
+        {
             for props in map.values_mut() {
                 props.retain(|prop| {
                     if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
@@ -285,160 +307,174 @@ impl StyleSheet {
         }
     }
 
-    pub fn create_css(&self) -> String {
+    pub fn create_css(&self, filename: Option<&str>) -> String {
         let mut css = self
             .imports
             .values()
             .flatten()
             .map(|import| format!("@import \"{import}\";"))
             .collect::<String>();
-        css.push_str(&self.theme.to_css());
 
-        for (name, map) in self.keyframes.iter() {
-            css.push_str(&format!(
-                "@keyframes {name}{{{}}}",
-                map.iter()
-                    .map(|(key, props)| format!(
-                        "{key}{{{}}}",
-                        props
+        let write_global = filename.is_none();
+
+        if write_global {
+            css.push_str(&self.theme.to_css());
+            for (_, font_faces) in self.font_faces.iter() {
+                for font_face in font_faces.iter() {
+                    css.push_str(&format!(
+                        "@font-face{{{}}}",
+                        font_face
                             .iter()
                             .map(|(key, value)| format!("{key}:{value}"))
                             .collect::<Vec<String>>()
                             .join(";")
-                    ))
-                    .collect::<String>()
-            ));
+                    ));
+                }
+            }
+
+            // global css
+            for (_, _css) in self.css.iter() {
+                for _css in _css.iter() {
+                    css.push_str(&_css.extract());
+                }
+            }
+        } else {
+            // import global css
+            css.push_str("@import \"./devup-ui.css\";");
         }
 
-        for (_, font_faces) in self.font_faces.iter() {
-            for font_face in font_faces.iter() {
+        if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
+            for (name, map) in keyframes {
                 css.push_str(&format!(
-                    "@font-face{{{}}}",
-                    font_face
-                        .iter()
-                        .map(|(key, value)| format!("{key}:{value}"))
-                        .collect::<Vec<String>>()
-                        .join(";")
+                    "@keyframes {name}{{{}}}",
+                    map.iter()
+                        .map(|(key, props)| format!(
+                            "{key}{{{}}}",
+                            props
+                                .iter()
+                                .map(|(key, value)| format!("{key}:{value}"))
+                                .collect::<Vec<String>>()
+                                .join(";")
+                        ))
+                        .collect::<String>()
                 ));
             }
         }
 
-        for (_, _css) in self.css.iter() {
-            for _css in _css.iter() {
-                css.push_str(&_css.extract());
-            }
-        }
-
         // order
-        for (_, map) in self.properties.iter() {
-            for (level, props) in map.iter() {
-                let (mut global_props, rest): (Vec<_>, Vec<_>) = props
-                    .iter()
-                    .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
-                global_props.sort();
-                let (mut medias, mut sorted_props): (Vec<&StyleSheetProperty>, Vec<_>) =
-                    rest.iter().partition(|prop| {
-                        matches!(
-                            prop.selector,
-                            Some(StyleSelector::Media {
-                                query: _,
-                                selector: _
-                            })
-                        )
-                    });
-                sorted_props.sort();
-                medias.sort();
-                let medias = {
-                    let mut map = BTreeMap::new();
-                    for prop in medias {
-                        if let Some(StyleSelector::Media { query, .. }) = &prop.selector {
-                            map.entry(query).or_insert_with(Vec::new).push(prop);
-                        }
-                    }
-                    map
-                };
-
-                let break_point = if *level == 0 {
-                    None
-                } else {
-                    Some(
-                        self.theme
-                            .breakpoints
-                            .iter()
-                            .enumerate()
-                            .find(|(idx, _)| (*idx as u8) == *level)
-                            .map(|(_, bp)| *bp)
-                            .unwrap_or_else(|| self.theme.breakpoints.last().cloned().unwrap_or(0)),
-                    )
-                };
-
-                if !global_props.is_empty() {
-                    // 같은 selector 끼리 모아서 CSS를 생성해야 함
-                    use std::collections::BTreeMap;
-                    let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
-                    for prop in global_props {
-                        if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map.entry(selector.clone()).or_default().push(prop);
-                        }
-                    }
-                    let mut inner_css = String::new();
-                    for (selector, props) in selector_map {
-                        // props는 같은 selector를 가진 property들의 Vec
-                        inner_css.push_str(&format!(
-                            "{}{{{}}}",
-                            selector,
-                            props
-                                .into_iter()
-                                .map(|prop| format!("{}:{}", prop.property, prop.value))
-                                .collect::<Vec<String>>()
-                                .join(";")
-                        ));
-                    }
-                    css.push_str(
-                        if let Some(break_point) = break_point {
-                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
-                        } else {
-                            inner_css
-                        }
-                        .as_str(),
-                    );
-                }
-
-                if !sorted_props.is_empty() {
-                    let inner_css = sorted_props
-                        .into_iter()
-                        .map(ExtractStyle::extract)
-                        .collect::<String>();
-                    css.push_str(
-                        if let Some(break_point) = break_point {
-                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
-                        } else {
-                            inner_css
-                        }
-                        .as_str(),
-                    );
-                }
-                for (media, props) in medias {
-                    let inner_css = props
-                        .into_iter()
-                        .map(ExtractStyle::extract)
-                        .collect::<String>();
-                    css.push_str(
-                        if let Some(break_point) = break_point {
-                            format!("@media(min-width:{break_point}px)and {media}{{{inner_css}}}")
-                        } else {
-                            format!(
-                                "@media{}{{{}}}",
-                                if media.starts_with("(") {
-                                    media.clone()
-                                } else {
-                                    format!(" {media}")
-                                },
-                                inner_css.as_str()
+        if let Some(maps) = self.properties.get(filename.unwrap_or_default()) {
+            for (_, map) in maps.iter() {
+                for (level, props) in map.iter() {
+                    let (mut global_props, rest): (Vec<_>, Vec<_>) =
+                        props.iter().partition(|prop| {
+                            matches!(prop.selector, Some(StyleSelector::Global(_, _)))
+                        });
+                    global_props.sort();
+                    let (mut medias, mut sorted_props): (Vec<&StyleSheetProperty>, Vec<_>) =
+                        rest.iter().partition(|prop| {
+                            matches!(
+                                prop.selector,
+                                Some(StyleSelector::Media {
+                                    query: _,
+                                    selector: _
+                                })
                             )
+                        });
+                    sorted_props.sort();
+                    medias.sort();
+                    let medias = {
+                        let mut map = BTreeMap::new();
+                        for prop in medias {
+                            if let Some(StyleSelector::Media { query, .. }) = &prop.selector {
+                                map.entry(query).or_insert_with(Vec::new).push(prop);
+                            }
                         }
-                        .as_str(),
-                    );
+                        map
+                    };
+
+                    let break_point = if *level == 0 {
+                        None
+                    } else {
+                        Some(
+                            self.theme
+                                .breakpoints
+                                .iter()
+                                .enumerate()
+                                .find(|(idx, _)| (*idx as u8) == *level)
+                                .map(|(_, bp)| *bp)
+                                .unwrap_or_else(|| {
+                                    self.theme.breakpoints.last().cloned().unwrap_or(0)
+                                }),
+                        )
+                    };
+
+                    if !global_props.is_empty() {
+                        let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
+                        for prop in global_props {
+                            if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
+                                selector_map.entry(selector.clone()).or_default().push(prop);
+                            }
+                        }
+                        let mut inner_css = String::new();
+                        for (selector, props) in selector_map {
+                            inner_css.push_str(&format!(
+                                "{}{{{}}}",
+                                selector,
+                                props
+                                    .into_iter()
+                                    .map(|prop| format!("{}:{}", prop.property, prop.value))
+                                    .collect::<Vec<String>>()
+                                    .join(";")
+                            ));
+                        }
+                        css.push_str(
+                            if let Some(break_point) = break_point {
+                                format!("@media(min-width:{break_point}px){{{inner_css}}}")
+                            } else {
+                                inner_css
+                            }
+                            .as_str(),
+                        );
+                    }
+
+                    if !sorted_props.is_empty() {
+                        let inner_css = sorted_props
+                            .into_iter()
+                            .map(ExtractStyle::extract)
+                            .collect::<String>();
+                        css.push_str(
+                            if let Some(break_point) = break_point {
+                                format!("@media(min-width:{break_point}px){{{inner_css}}}")
+                            } else {
+                                inner_css
+                            }
+                            .as_str(),
+                        );
+                    }
+                    for (media, props) in medias {
+                        let inner_css = props
+                            .into_iter()
+                            .map(ExtractStyle::extract)
+                            .collect::<String>();
+                        css.push_str(
+                            if let Some(break_point) = break_point {
+                                format!(
+                                    "@media(min-width:{break_point}px)and {media}{{{inner_css}}}"
+                                )
+                            } else {
+                                format!(
+                                    "@media{}{{{}}}",
+                                    if media.starts_with("(") {
+                                        media.clone()
+                                    } else {
+                                        format!(" {media}")
+                                    },
+                                    inner_css.as_str()
+                                )
+                            }
+                            .as_str(),
+                        );
+                    }
                 }
             }
         }
@@ -472,14 +508,14 @@ mod tests {
     #[test]
     fn test_create_css_sort_test() {
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background-color", 1, "red", None, None);
-        sheet.add_property("test", "background", 1, "some", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background-color", 1, "red", None, None, None);
+        sheet.add_property("test", "background", 1, "some", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "border", 0, "1px solid", None, None);
-        sheet.add_property("test", "border-color", 0, "red", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "border", 0, "1px solid", None, None, None);
+        sheet.add_property("test", "border-color", 0, "red", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
     #[test]
     fn test_create_css_with_selector_sort_test() {
@@ -491,12 +527,13 @@ mod tests {
             "red",
             Some(&"hover".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "background-color", 1, "some", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background-color", 1, "some", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background-color", 1, "red", None, None);
+        sheet.add_property("test", "background-color", 1, "red", None, None, None);
         sheet.add_property(
             "test",
             "background-color",
@@ -504,30 +541,31 @@ mod tests {
             "some",
             Some(&"hover".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background-color", 1, "red", None, None);
-        sheet.add_property("test", "background", 1, "some", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background-color", 1, "red", None, None, None);
+        sheet.add_property("test", "background", 1, "some", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
     #[test]
     fn test_create_css_with_basic_sort_test() {
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background-color", 1, "red", None, Some(0));
-        sheet.add_property("test", "background", 1, "some", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background-color", 1, "red", None, Some(0), None);
+        sheet.add_property("test", "background", 1, "some", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "border", 0, "1px solid", None, None);
-        sheet.add_property("test", "border-color", 0, "red", None, Some(0));
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "border", 0, "1px solid", None, None, None);
+        sheet.add_property("test", "border-color", 0, "red", None, Some(0), None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "display", 0, "flex", None, Some(0));
-        sheet.add_property("test", "display", 0, "block", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "display", 0, "flex", None, Some(0), None);
+        sheet.add_property("test", "display", 0, "block", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -540,33 +578,42 @@ mod tests {
             "red",
             Some(&"hover".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "background-color", 1, "some", None, Some(0));
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background-color", 1, "some", None, Some(0), None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "display", 0, "flex", None, Some(0));
-        sheet.add_property("test", "display", 0, "none", None, None);
-        sheet.add_property("test", "display", 2, "flex", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "display", 0, "flex", None, Some(0), None);
+        sheet.add_property("test", "display", 0, "none", None, None, None);
+        sheet.add_property("test", "display", 2, "flex", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
     fn test_create_css() {
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "margin", 1, "40px", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "margin", 1, "40px", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_css("test.tsx", "div {display:flex;}");
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "margin", 2, "40px", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "margin", 2, "40px", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background", 0, "red", Some(&"hover".into()), None);
+        sheet.add_property(
+            "test",
+            "background",
+            0,
+            "red",
+            Some(&"hover".into()),
+            None,
+            None,
+        );
         sheet.add_property(
             "test",
             "background",
@@ -574,8 +621,9 @@ mod tests {
             "blue",
             Some(&"active".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -584,6 +632,7 @@ mod tests {
             0,
             "red",
             Some(&StyleSelector::from("group-focus-visible")),
+            None,
             None,
         );
         sheet.add_property(
@@ -593,8 +642,9 @@ mod tests {
             "blue",
             Some(&StyleSelector::from("group-focus-visible")),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -603,6 +653,7 @@ mod tests {
             0,
             "red",
             Some(&StyleSelector::from("group-focus-visible")),
+            None,
             None,
         );
         sheet.add_property(
@@ -612,8 +663,9 @@ mod tests {
             "blue",
             Some(&StyleSelector::from("hover")),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -623,6 +675,7 @@ mod tests {
             "red",
             Some(&"*:hover &".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -631,8 +684,9 @@ mod tests {
             "blue",
             Some(&StyleSelector::from("group-focus-visible")),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -642,8 +696,9 @@ mod tests {
             "red",
             Some(&["theme-dark", "hover"].into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -653,8 +708,9 @@ mod tests {
             "red",
             Some(&["wrong", "hover"].into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -664,8 +720,9 @@ mod tests {
             "red",
             Some(&"*[disabled='true'] &:hover".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -675,8 +732,9 @@ mod tests {
             "red",
             Some(&"&[disabled='true']".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -686,8 +744,9 @@ mod tests {
             "red",
             Some(&"&[disabled='true'], &[disabled='true']".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -695,51 +754,51 @@ mod tests {
         let mut sheet = StyleSheet::default();
         sheet.add_css("test.tsx", "div {display:flex;}");
         sheet.add_css("test2.tsx", "div {display:flex;}");
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         sheet.rm_global_css("test.tsx");
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         sheet.rm_global_css("wrong.tsx");
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
     fn test_style_order_create_css() {
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "margin-left", 0, "40px", None, Some(1));
-        sheet.add_property("test", "margin-right", 0, "40px", None, Some(1));
+        sheet.add_property("test", "margin-left", 0, "40px", None, Some(1), None);
+        sheet.add_property("test", "margin-right", 0, "40px", None, Some(1), None);
 
-        sheet.add_property("test", "margin-left", 1, "40px", None, Some(1));
-        sheet.add_property("test", "margin-right", 1, "40px", None, Some(1));
-        sheet.add_property("test", "margin-left", 1, "44px", None, Some(1));
-        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1));
-        sheet.add_property("test", "margin-left", 1, "40px", None, Some(1));
-        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1));
-        sheet.add_property("test", "margin-left", 1, "44px", None, Some(1));
-        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1));
-        sheet.add_property("test", "margin-left", 1, "50px", None, Some(2));
-        sheet.add_property("test", "margin-right", 1, "50px", None, Some(2));
-        sheet.add_property("test", "margin-left", 1, "60px", None, None);
-        sheet.add_property("test", "margin-right", 1, "60px", None, None);
-        sheet.add_property("test", "margin-left", 0, "70px", None, None);
-        sheet.add_property("test", "margin-right", 0, "70px", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "margin-left", 1, "40px", None, Some(1), None);
+        sheet.add_property("test", "margin-right", 1, "40px", None, Some(1), None);
+        sheet.add_property("test", "margin-left", 1, "44px", None, Some(1), None);
+        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1), None);
+        sheet.add_property("test", "margin-left", 1, "40px", None, Some(1), None);
+        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1), None);
+        sheet.add_property("test", "margin-left", 1, "44px", None, Some(1), None);
+        sheet.add_property("test", "margin-right", 1, "44px", None, Some(1), None);
+        sheet.add_property("test", "margin-left", 1, "50px", None, Some(2), None);
+        sheet.add_property("test", "margin-right", 1, "50px", None, Some(2), None);
+        sheet.add_property("test", "margin-left", 1, "60px", None, None, None);
+        sheet.add_property("test", "margin-right", 1, "60px", None, None, None);
+        sheet.add_property("test", "margin-left", 0, "70px", None, None, None);
+        sheet.add_property("test", "margin-right", 0, "70px", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "background", 0, "red", None, Some(3));
-        sheet.add_property("test", "background", 0, "blue", None, Some(17));
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "background", 0, "red", None, Some(3), None);
+        sheet.add_property("test", "background", 0, "blue", None, Some(17), None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
     fn wrong_breakpoint() {
         let mut sheet = StyleSheet::default();
-        sheet.add_property("test", "margin-left", 10, "40px", None, None);
-        sheet.add_property("test", "margin-right", 10, "40px", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "margin-left", 10, "40px", None, None, None);
+        sheet.add_property("test", "margin-right", 10, "40px", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -752,6 +811,7 @@ mod tests {
             "40px",
             Some(&"group-hover".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -759,6 +819,7 @@ mod tests {
             1,
             "40px",
             Some(&"group-hover".into()),
+            None,
             None,
         );
         sheet.add_property(
@@ -768,6 +829,7 @@ mod tests {
             "50px",
             Some(&"group-hover".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -776,8 +838,9 @@ mod tests {
             "50px",
             Some(&"group-hover".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -790,6 +853,7 @@ mod tests {
             "40px",
             Some(&"theme-dark".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -797,6 +861,7 @@ mod tests {
             0,
             "40px",
             Some(&"theme-dark".into()),
+            None,
             None,
         );
         sheet.add_property(
@@ -806,6 +871,7 @@ mod tests {
             "40px",
             Some(&"theme-dark".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -814,6 +880,7 @@ mod tests {
             "40px",
             Some(&"theme-dark".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -821,6 +888,7 @@ mod tests {
             0,
             "50px",
             Some(&"theme-light".into()),
+            None,
             None,
         );
         sheet.add_property(
@@ -830,8 +898,9 @@ mod tests {
             "50px",
             Some(&"theme-light".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -841,6 +910,7 @@ mod tests {
             "50px",
             Some(&"theme-light".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -849,15 +919,17 @@ mod tests {
             "50px",
             Some(&"theme-light".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "margin-left", 0, "41px", None, None);
-        sheet.add_property("test", "margin-right", 0, "41px", None, None);
+        sheet.add_property("test", "margin-left", 0, "41px", None, None, None);
+        sheet.add_property("test", "margin-right", 0, "41px", None, None, None);
         sheet.add_property(
             "test",
             "margin-left",
             0,
             "51px",
             Some(&"theme-light".into()),
+            None,
             None,
         );
         sheet.add_property(
@@ -867,10 +939,11 @@ mod tests {
             "51px",
             Some(&"theme-light".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "margin-left", 0, "42px", None, None);
-        sheet.add_property("test", "margin-right", 0, "42px", None, None);
-        assert_debug_snapshot!(sheet.create_css());
+        sheet.add_property("test", "margin-left", 0, "42px", None, None, None);
+        sheet.add_property("test", "margin-right", 0, "42px", None, None, None);
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -880,6 +953,7 @@ mod tests {
             "50px",
             Some(&["theme-light", "active"].into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -887,6 +961,7 @@ mod tests {
             0,
             "50px",
             Some(&["theme-light", "active"].into()),
+            None,
             None,
         );
         sheet.add_property(
@@ -896,6 +971,7 @@ mod tests {
             "50px",
             Some(&["theme-light", "hover"].into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -904,8 +980,9 @@ mod tests {
             "50px",
             Some(&["theme-light", "hover"].into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -918,6 +995,7 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -926,14 +1004,24 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "margin-top", 0, "40px", Some(&"print".into()), None);
+        sheet.add_property(
+            "test",
+            "margin-top",
+            0,
+            "40px",
+            Some(&"print".into()),
+            None,
+            None,
+        );
         sheet.add_property(
             "test",
             "margin-bottom",
             0,
             "40px",
             Some(&"print".into()),
+            None,
             None,
         );
 
@@ -944,6 +1032,7 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -952,8 +1041,17 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "margin-top", 1, "40px", Some(&"print".into()), None);
+        sheet.add_property(
+            "test",
+            "margin-top",
+            1,
+            "40px",
+            Some(&"print".into()),
+            None,
+            None,
+        );
         sheet.add_property(
             "test",
             "margin-bottom",
@@ -961,8 +1059,9 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -972,6 +1071,7 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -980,11 +1080,12 @@ mod tests {
             "40px",
             Some(&"print".into()),
             None,
+            None,
         );
-        sheet.add_property("test", "margin-top", 0, "40px", None, None);
-        sheet.add_property("test", "margin-bottom", 0, "40px", None, None);
+        sheet.add_property("test", "margin-top", 0, "40px", None, None, None);
+        sheet.add_property("test", "margin-bottom", 0, "40px", None, None, None);
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -1000,6 +1101,7 @@ mod tests {
                 selector: Some("&:hover".to_string()),
             }),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -1011,9 +1113,10 @@ mod tests {
                 selector: Some("&:hover".to_string()),
             }),
             None,
+            None,
         );
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -1022,16 +1125,18 @@ mod tests {
             let sheet: StyleSheet = serde_json::from_str(
                 r##"{
             "properties": {
-                "255": {
-                    "0": [
-                        {
-                            "className": "test",
-                            "property": "mx",
-                            "value": "40px",
-                            "selector": null,
-                            "basic": false
-                        }
-                    ]
+                "": {
+                    "255": {
+                        "0": [
+                            {
+                                "className": "test",
+                                "property": "mx",
+                                "value": "40px",
+                                "selector": null,
+                                "basic": false
+                            }
+                        ]
+                    }
                 }
             },
             "css": {},
@@ -1101,8 +1206,9 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
         let mut sheet = StyleSheet::default();
         sheet.add_property(
             "test",
@@ -1114,8 +1220,9 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
 
@@ -1129,6 +1236,7 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             None,
+            None,
         );
         sheet.add_property(
             "test",
@@ -1140,8 +1248,9 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             None,
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1154,6 +1263,7 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             Some(0),
+            None,
         );
         sheet.add_property(
             "test",
@@ -1165,8 +1275,9 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             Some(255),
+            None,
         );
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         sheet.add_property(
             "test",
@@ -1178,6 +1289,7 @@ mod tests {
                 "test2.tsx".to_string(),
             )),
             Some(255),
+            None,
         );
 
         sheet.add_property(
@@ -1187,10 +1299,11 @@ mod tests {
             "red",
             Some(&StyleSelector::Selector("&:hover".to_string())),
             Some(255),
+            None,
         );
 
         sheet.rm_global_css("test.tsx");
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1203,6 +1316,7 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             Some(0),
+            None,
         );
         sheet.add_property(
             "test",
@@ -1214,12 +1328,13 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             Some(0),
+            None,
         );
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         sheet.rm_global_css("test.tsx");
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1232,6 +1347,7 @@ mod tests {
                 "test.tsx".to_string(),
             )),
             Some(0),
+            None,
         );
         sheet.add_property(
             "test",
@@ -1243,12 +1359,13 @@ mod tests {
                 "test2.tsx".to_string(),
             )),
             Some(0),
+            None,
         );
 
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
 
         sheet.rm_global_css("test.tsx");
-        assert_debug_snapshot!(sheet.create_css());
+        assert_debug_snapshot!(sheet.create_css(None));
     }
 
     #[test]
@@ -1259,19 +1376,19 @@ mod tests {
             sheet.add_import("test2.tsx", "@devup-ui/core/css/global2.css");
             sheet.add_import("test3.tsx", "@devup-ui/core/css/global3.css");
             sheet.add_import("test4.tsx", "@devup-ui/core/css/global4.css");
-            assert_debug_snapshot!(sheet.create_css());
+            assert_debug_snapshot!(sheet.create_css(None));
         }
         {
             let mut sheet = StyleSheet::default();
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
             sheet.add_import("test.tsx", "@devup-ui/core/css/new-global.css");
-            assert_debug_snapshot!(sheet.create_css());
+            assert_debug_snapshot!(sheet.create_css(None));
         }
         {
             let mut sheet = StyleSheet::default();
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
-            assert_debug_snapshot!(sheet.create_css());
+            assert_debug_snapshot!(sheet.create_css(None));
         }
     }
 
@@ -1361,8 +1478,8 @@ mod tests {
             vec![(String::from("opacity"), String::from("1"))],
         );
 
-        sheet.add_keyframes("fadeIn", keyframes);
-        let past = sheet.create_css();
+        sheet.add_keyframes("fadeIn", keyframes, None);
+        let past = sheet.create_css(None);
         assert_debug_snapshot!(past);
 
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
@@ -1390,9 +1507,9 @@ mod tests {
             vec![(String::from("opacity"), String::from("1"))],
         );
 
-        sheet.add_keyframes("fadeIn", keyframes);
+        sheet.add_keyframes("fadeIn", keyframes, None);
 
-        let now = sheet.create_css();
+        let now = sheet.create_css(None);
         assert_debug_snapshot!(now);
         assert_eq!(past, now);
     }
@@ -1410,7 +1527,7 @@ mod tests {
 
         sheet.add_font_face("test.tsx", &font_face_props);
 
-        let css = sheet.create_css();
+        let css = sheet.create_css(None);
         assert!(css.contains("@font-face"));
         assert!(css.contains("font-family:Roboto"));
         assert!(css.contains("src:url('/fonts/Roboto-Regular.ttf')"));

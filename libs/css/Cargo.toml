@@ -9,6 +9,7 @@ phf = { version = "0.13", features = ["macros"] }
 serial_test = "3.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
 regex = "1.11.2"
+bimap = { version = "0.6.3" }
 
 [dev-dependencies]
 rstest = "0.26.1"

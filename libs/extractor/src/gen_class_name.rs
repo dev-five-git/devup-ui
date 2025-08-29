@@ -11,12 +11,13 @@ pub fn gen_class_names<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
+    filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     merge_expression_for_class_name(
         ast_builder,
         style_props
             .iter_mut()
-            .filter_map(|st| gen_class_name(ast_builder, st, style_order))
+            .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
             .rev()
             .collect(),
     )
@@ -26,13 +27,14 @@ fn gen_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
     style_prop: &mut ExtractStyleProp<'a>,
     style_order: Option<u8>,
+    filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     match style_prop {
         ExtractStyleProp::Static(st) => {
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
-            let target = st.extract();
+            let target = st.extract(filename);
 
             Some(ast_builder.expression_string_literal(
                 SPAN,
@@ -47,7 +49,7 @@ fn gen_class_name<'a>(
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
             res.iter_mut()
-                .filter_map(|st| gen_class_name(ast_builder, st, style_order))
+                .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
                 .collect(),
         ),
         ExtractStyleProp::Conditional {
@@ -58,12 +60,14 @@ fn gen_class_name<'a>(
         } => {
             let consequent = consequent
                 .as_mut()
-                .and_then(|ref mut con| gen_class_name(ast_builder, con.as_mut(), style_order))
+                .and_then(|ref mut con| {
+                    gen_class_name(ast_builder, con.as_mut(), style_order, filename)
+                })
                 .unwrap_or_else(|| ast_builder.expression_string_literal(SPAN, "", None));
 
             let alternate = alternate
                 .as_mut()
-                .and_then(|ref mut alt| gen_class_name(ast_builder, alt, style_order))
+                .and_then(|ref mut alt| gen_class_name(ast_builder, alt, style_order, filename))
                 .unwrap_or_else(|| ast_builder.expression_string_literal(SPAN, "", None));
             if is_same_expression(&consequent, &alternate) {
                 Some(consequent)
@@ -87,21 +91,25 @@ fn gen_class_name<'a>(
                     ast_builder.expression_object(
                         SPAN,
                         ast_builder.vec_from_iter(map.iter_mut().filter_map(|(key, value)| {
-                            gen_class_name(ast_builder, value.as_mut(), style_order).map(|expr| {
-                                ast_builder.object_property_kind_object_property(
-                                    SPAN,
-                                    PropertyKind::Init,
-                                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            gen_class_name(ast_builder, value.as_mut(), style_order, filename).map(
+                                |expr| {
+                                    ast_builder.object_property_kind_object_property(
                                         SPAN,
-                                        ast_builder.atom(key),
-                                        None,
-                                    )),
-                                    expr,
-                                    false,
-                                    false,
-                                    false,
-                                )
-                            })
+                                        PropertyKind::Init,
+                                        PropertyKey::StringLiteral(
+                                            ast_builder.alloc_string_literal(
+                                                SPAN,
+                                                ast_builder.atom(key),
+                                                None,
+                                            ),
+                                        ),
+                                        expr,
+                                        false,
+                                        false,
+                                        false,
+                                    )
+                                },
+                            )
                         })),
                     ),
                     expression.clone_in(ast_builder.allocator),

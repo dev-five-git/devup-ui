@@ -1,6 +1,12 @@
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
-import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  exportClassMap,
+  exportFileMap,
+  exportSheet,
+} from '@devup-ui/wasm'
 
 import devupUILoader from '../loader'
 
@@ -20,10 +26,12 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         sheetFile: 'sheetFile',
         classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
         watch: true,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -32,12 +40,14 @@ describe('devupUILoader', () => {
     }
     vi.mocked(exportSheet).mockReturnValue('sheet')
     vi.mocked(exportClassMap).mockReturnValue('classMap')
+    vi.mocked(exportFileMap).mockReturnValue('fileMap')
 
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
       free: vi.fn(),
       map: '{}',
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -47,13 +57,18 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
     )
     await vi.waitFor(() => {
       expect(t.async()).toHaveBeenCalledWith(null, 'code', {})
+      expect(writeFile).toHaveBeenCalledWith(
+        join('cssFile', 'cssFile'),
+        '/* index.tsx 0 */',
+      )
+      expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
+      expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
+      expect(writeFile).toHaveBeenCalledWith('fileMapFile', 'fileMap')
     })
-    expect(writeFile).toHaveBeenCalledWith('cssFile', '/* index.tsx 0 */')
-    expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
-    expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
 
     expect(t._compiler.__DEVUP_CACHE).toBe('index.tsx 0')
   })
@@ -62,8 +77,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: false,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -74,6 +90,7 @@ describe('devupUILoader', () => {
       css: undefined,
       free: vi.fn(),
       map: undefined,
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -83,6 +100,7 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
     )
     expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
@@ -94,8 +112,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: false,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -114,8 +133,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: true,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -126,6 +146,7 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: undefined,
+      css_file: 'cssFile',
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -135,6 +156,29 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
     )
+  })
+
+  it('should load with nowatch', () => {
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      }),
+      async: vi.fn().mockReturnValue(vi.fn()),
+      resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
+    }
+    vi.mocked(codeExtract).mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: vi.fn(),
+      map: undefined,
+      css_file: 'cssFile',
+    })
+    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
   })
 })
