@@ -1,5 +1,15 @@
 # @devup-ui/next-plugin
 
+## 1.0.34
+
+### Patch Changes
+
+- 9045f57: Feat split css
+- 9045f57: Update option
+- Updated dependencies [9045f57]
+- Updated dependencies [9045f57]
+  - @devup-ui/webpack-plugin@1.0.33
+
 ## 1.0.33
 
 ### Patch Changes

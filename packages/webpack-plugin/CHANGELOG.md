@@ -1,5 +1,15 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.33
+
+### Patch Changes
+
+- 9045f57: Feat split css
+- 9045f57: Update option
+- Updated dependencies [2247d57]
+- Updated dependencies [9045f57]
+  - @devup-ui/wasm@1.0.33
+
 ## 1.0.32
 
 ### Patch Changes
