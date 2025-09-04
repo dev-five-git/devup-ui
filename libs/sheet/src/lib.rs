@@ -561,7 +561,7 @@ impl StyleSheet {
                     _base_styles.iter().for_each(|prop| {
                         base_styles
                             .entry(*prop.0)
-                            .or_insert_with(HashSet::new)
+                            .or_default()
                             .extend(prop.1.clone());
                     });
                 }
