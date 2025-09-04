@@ -146,6 +146,8 @@ mod tests {
 
     #[rstest]
     #[case("0px", "0")]
+    #[case("0.12px", ".12px")]
+    #[case("-0.12px", "-.12px")]
     #[case("0.0px", "0")]
     #[case("0.0em", "0")]
     #[case("0.0rem", "0")]

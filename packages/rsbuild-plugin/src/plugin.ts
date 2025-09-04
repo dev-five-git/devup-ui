@@ -64,7 +64,7 @@ async function writeDataFiles(
       ? mkdir(options.cssDir, { recursive: true })
       : Promise.resolve(),
     !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss())
+      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
       : Promise.resolve(),
   ])
 }
@@ -132,17 +132,40 @@ export const DevupUI = ({
           code: retCode,
           css,
           map,
-          css_file,
-        } = codeExtract(resourcePath, code, libPackage, cssDir, singleCss)
+          cssFile,
+          updatedBaseStyle,
+        } = codeExtract(
+          resourcePath,
+          code,
+          libPackage,
+          cssDir,
+          singleCss,
+          false,
+          true,
+        )
+        const promises: Promise<void>[] = []
+        if (updatedBaseStyle) {
+          // update base style
+          promises.push(
+            writeFile(
+              join(cssDir, 'devup-ui.css'),
+              getCss(null, false),
+              'utf-8',
+            ),
+          )
+        }
 
         if (css) {
           if (globalCss.length < css.length) globalCss = css
-          await writeFile(
-            join(cssDir, basename(css_file)),
-            `/* ${resourcePath} ${Date.now()} */`,
-            'utf-8',
+          promises.push(
+            writeFile(
+              join(cssDir, basename(cssFile!)),
+              `/* ${resourcePath} ${Date.now()} */`,
+              'utf-8',
+            ),
           )
         }
+        await Promise.all(promises)
         return {
           code: retCode,
           map,

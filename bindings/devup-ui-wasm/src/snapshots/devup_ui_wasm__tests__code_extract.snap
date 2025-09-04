@@ -1,5 +1,5 @@
 ---
 source: bindings/devup-ui-wasm/src/lib.rs
-expression: get_css().unwrap()
+expression: get_css(None).unwrap()
 ---
-":root{color-scheme:light;--primary:light-dark(#FFF,#000)}:root[data-theme=dark]{color-scheme:dark}"
+"@layer t;@layer t{:root{color-scheme:light;--primary:light-dark(#FFF,#000)}:root[data-theme=dark]{color-scheme:dark}}"

@@ -6,6 +6,7 @@ import {
   exportClassMap,
   exportFileMap,
   exportSheet,
+  getCss,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -40,28 +41,42 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       )
 
       if (!rel.startsWith('./')) rel = `./${rel}`
-      const { code, css, map, css_file } = codeExtract(
+      const { code, css, map, cssFile, updatedBaseStyle } = codeExtract(
         id,
         source.toString(),
         libPackage,
         rel,
         singleCss,
+        false,
+        true,
       )
       const sourceMap = map ? JSON.parse(map) : null
+      const promises: Promise<void>[] = []
+      if (updatedBaseStyle) {
+        // update base style
+        promises.push(
+          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
+        )
+      }
       if (css) {
         const content = `${this.resourcePath} ${Date.now()}`
         if (watch && this._compiler)
           (this._compiler as any).__DEVUP_CACHE = content
         // should be reset css
-        Promise.all([
+        promises.push(
           writeFile(
-            join(cssDir, basename(css_file)),
+            join(cssDir, basename(cssFile!)),
             watch ? `/* ${content} */` : css,
           ),
-          watch ? writeFile(sheetFile, exportSheet()) : null,
-          watch ? writeFile(classMapFile, exportClassMap()) : null,
-          watch ? writeFile(fileMapFile, exportFileMap()) : null,
-        ])
+        )
+        if (watch) {
+          promises.push(
+            writeFile(sheetFile, exportSheet()),
+            writeFile(classMapFile, exportClassMap()),
+            writeFile(fileMapFile, exportFileMap()),
+          )
+        }
+        Promise.all(promises)
           .catch(console.error)
           .finally(() => callback(null, code, sourceMap))
         return

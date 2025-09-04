@@ -188,7 +188,11 @@ const App = () => <Box></Box>`,
 const App = () => <Box></Box>`,
     )
   })
-  it('should transform with include', async () => {
+  it.each(
+    createTestMatrix({
+      updatedBaseStyle: [true, false],
+    }),
+  )('should transform with include', async (options) => {
     const plugin = DevupUI({
       include: ['lib'],
     })
@@ -209,8 +213,11 @@ const App = () => <Box></Box>`,
     vi.mocked(codeExtract).mockReturnValue({
       code: '<div></div>',
       css: '.devup-ui-1 { color: red; }',
-      css_file: 'devup-ui.css',
-    } as any)
+      cssFile: 'devup-ui.css',
+      map: undefined,
+      updatedBaseStyle: options.updatedBaseStyle,
+      free: vi.fn(),
+    })
     const ret = await transform.mock.calls[1][1]({
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
@@ -220,6 +227,14 @@ const App = () => <Box></Box>`,
       code: '<div></div>',
       map: undefined,
     })
+
+    if (options.updatedBaseStyle) {
+      expect(writeFile).toHaveBeenCalledWith(
+        resolve('df', 'devup-ui', 'devup-ui.css'),
+        expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),
+        'utf-8',
+      )
+    }
     expect(writeFile).toHaveBeenCalledWith(
       resolve('df', 'devup-ui', 'devup-ui.css'),
       expect.stringMatching(/\/\* src\/App\.tsx \d+ \*\//),

@@ -2,4 +2,4 @@
 source: libs/sheet/src/theme.rs
 expression: css
 ---
-":root{color-scheme:light;--primary:light-dark(#000,#FFF)}:root[data-theme=dark]{color-scheme:dark}.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5}@media(min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5}}"
+":root{color-scheme:light;--primary:light-dark(#000,#FFF)}:root[data-theme=dark]{color-scheme:dark}.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:.5}@media(min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:.5}.typo-default1{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:.5}}"

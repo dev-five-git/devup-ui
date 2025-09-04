@@ -39,13 +39,13 @@ describe('devupUIVitePlugin', () => {
       apply: expect.any(Function),
       generateBundle: expect.any(Function),
       configResolved: expect.any(Function),
+      resolveId: expect.any(Function),
     })
     expect((plugin as any).apply()).toBe(true)
   })
   it.each(
     globalThis.createTestMatrix({
       debug: [true, false],
-      singleCss: [true, false],
       extractCss: [true, false],
     }),
   )('should apply options', async (options) => {
@@ -56,7 +56,7 @@ describe('devupUIVitePlugin', () => {
         (plugin as any)
           .config()
           .build.rollupOptions.output.manualChunks('devup-ui.css', 'code'),
-      ).toEqual(options.singleCss ? 'devup-ui.css' : undefined)
+      ).toEqual('devup-ui.css')
     } else {
       expect((plugin as any).config().build).toBeUndefined()
     }
@@ -178,14 +178,18 @@ describe('devupUIVitePlugin', () => {
   it.each(
     createTestMatrix({
       extractCss: [true, false],
+      updatedBaseStyle: [true, false],
     }),
   )('should transform', async (options) => {
     vi.mocked(getCss).mockReturnValue('css code')
     vi.mocked(codeExtract).mockReturnValue({
       css: 'css code',
       code: 'code',
-      css_file: 'devup-ui.css',
-    } as any)
+      cssFile: 'devup-ui.css',
+      map: undefined,
+      updatedBaseStyle: options.updatedBaseStyle,
+      free: vi.fn(),
+    })
 
     const plugin = DevupUI(options)
 
@@ -210,8 +214,18 @@ describe('devupUIVitePlugin', () => {
       vi.mocked(codeExtract).mockReturnValue({
         css: 'css code test next',
         code: 'code',
-        css_file: 'devup-ui.css',
-      } as any)
+        cssFile: 'devup-ui.css',
+        map: undefined,
+        updatedBaseStyle: options.updatedBaseStyle,
+        free: vi.fn(),
+      })
+      expect(writeFile).toHaveBeenCalledWith(
+        join(resolve('df', 'devup-ui'), 'devup-ui.css'),
+        expect.stringMatching(
+          /\/\* node_modules[/\\]@devup-ui[/\\]hello[/\\]index\.tsx \d+ \*\//,
+        ),
+        'utf-8',
+      )
       expect(
         await (plugin as any).transform(
           'code',
@@ -219,6 +233,21 @@ describe('devupUIVitePlugin', () => {
         ),
       ).toEqual({ code: 'code' })
     }
+    expect(await (plugin as any).load('devup-ui.css')).toEqual(
+      expect.any(String),
+    )
+
+    vi.mocked(codeExtract).mockReturnValue({
+      css: 'long css code',
+      code: 'long code',
+      cssFile: 'devup-ui.css',
+      map: undefined,
+      updatedBaseStyle: options.updatedBaseStyle,
+      free: vi.fn(),
+    })
+    expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
+      options.extractCss ? { code: 'long code' } : undefined,
+    )
   })
 
   it.each(
@@ -229,7 +258,7 @@ describe('devupUIVitePlugin', () => {
     vi.mocked(getCss).mockReturnValue('css code test')
     const plugin = DevupUI({ extractCss: options.extractCss, singleCss: true })
     const bundle = {
-      'devup-ui.css': { source: 'css code' },
+      'devup-ui.css': { source: 'css code', name: 'devup-ui.css' },
     } as any
     ;(plugin as any).load('devup-ui.css')
     await (plugin as any).generateBundle({}, bundle)
@@ -238,5 +267,31 @@ describe('devupUIVitePlugin', () => {
     } else {
       expect(bundle['devup-ui.css'].source).toEqual('css code')
     }
+  })
+  it('should resolveId', () => {
+    vi.mocked(getCss).mockReturnValue('css code')
+    {
+      const plugin = DevupUI({})
+      expect(
+        (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
+      ).toEqual(expect.any(String))
+    }
+
+    {
+      const plugin = DevupUI({
+        cssDir: '',
+      })
+      expect((plugin as any).resolveId('devup-ui.css')).toEqual(
+        expect.any(String),
+      )
+    }
+  })
+  it('should resolve id with cssMap', () => {
+    vi.mocked(getCss).mockReturnValue('css code')
+    const plugin = DevupUI({})
+    ;(plugin as any).load('devup-ui.css')
+    expect(
+      (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
+    ).toEqual(expect.any(String))
   })
 })
