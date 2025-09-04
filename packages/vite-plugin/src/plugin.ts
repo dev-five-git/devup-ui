@@ -64,12 +64,10 @@ async function writeDataFiles(
       ? mkdir(options.cssDir, { recursive: true })
       : Promise.resolve(),
     !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss())
+      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
       : Promise.resolve(),
   ])
 }
-
-const cssMap: Map<number | null, string> = new Map()
 
 export function DevupUI({
   package: libPackage = '@devup-ui/react',
@@ -82,6 +80,7 @@ export function DevupUI({
   singleCss = false,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
+  const cssMap = new Map()
   return {
     name: 'devup-ui',
     async configResolved() {
@@ -118,7 +117,7 @@ export function DevupUI({
             output: {
               manualChunks(id) {
                 // merge devup css files
-                if (singleCss && id.endsWith('devup-ui.css')) {
+                if (id.split('?')[0].endsWith('devup-ui.css')) {
                   return `devup-ui.css`
                 }
               },
@@ -147,11 +146,23 @@ export function DevupUI({
         }
       }
     },
+    resolveId(id, importer) {
+      if (
+        id.includes('devup-ui.css') &&
+        resolve(importer ? join(dirname(importer), id) : id) ===
+          resolve(join(cssDir, 'devup-ui.css'))
+      ) {
+        return join(
+          cssDir,
+          `devup-ui.css?t=${Date.now().toString() + (cssMap.get(null)?.length ?? 0)}`,
+        )
+      }
+    },
     load(id) {
       const fileName = basename(id).split('?')[0]
       if (fileName.startsWith('devup-ui') && fileName.endsWith('.css')) {
-        const fileNum = getFileNumByFilename(id)
-        const css = getCss(fileNum)
+        const fileNum = getFileNumByFilename(fileName)
+        const css = getCss(fileNum, false)
         cssMap.set(fileNum, css)
         return css
       }
@@ -179,20 +190,32 @@ export function DevupUI({
         code: retCode,
         css,
         map,
-        css_file,
-      } = codeExtract(fileName, code, libPackage, rel, singleCss)
+        cssFile,
+        updatedBaseStyle,
+        // import main css in code
+      } = codeExtract(fileName, code, libPackage, rel, singleCss, true, false)
+      const promises: Promise<void>[] = []
 
-      if (css) {
-        const fileNum = getFileNumByFilename(css_file)
-        const prevCss = cssMap.get(fileNum)
-        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
-        await writeFile(
-          join(cssDir, basename(css_file)),
-          `/* ${id} ${Date.now()} */`,
-          'utf-8',
+      if (updatedBaseStyle) {
+        // update base style
+        promises.push(
+          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
         )
       }
-      // console.log('transform', retCode)
+
+      if (css) {
+        const fileNum = getFileNumByFilename(cssFile!)
+        const prevCss = cssMap.get(fileNum)
+        if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
+        promises.push(
+          writeFile(
+            join(cssDir, basename(cssFile!)),
+            `/* ${id} ${Date.now()} */`,
+            'utf-8',
+          ),
+        )
+      }
+      await Promise.all(promises)
       return {
         code: retCode,
         map,
@@ -202,12 +225,10 @@ export function DevupUI({
       if (!extractCss) return
 
       const cssFile = Object.keys(bundle).find(
-        (file) => file.includes('devup-ui') && file.endsWith('.css'),
+        (file) => bundle[file].name === 'devup-ui.css',
       )
       if (cssFile && 'source' in bundle[cssFile]) {
-        const fileNum = getFileNumByFilename(cssFile)
-        const css = cssMap.get(fileNum)
-        if (css) bundle[cssFile].source = css
+        bundle[cssFile].source = cssMap.get(null)!
       }
     },
   }

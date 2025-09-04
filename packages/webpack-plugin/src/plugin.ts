@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
@@ -58,10 +58,10 @@ export class DevupUIWebpackPlugin {
     this.fileMapFile = join(this.options.distDir, 'fileMap.json')
   }
 
-  async writeDataFiles() {
+  writeDataFiles() {
     try {
       const content = existsSync(this.options.devupFile)
-        ? await readFile(this.options.devupFile, 'utf-8')
+        ? readFileSync(this.options.devupFile, 'utf-8')
         : undefined
 
       if (content) {
@@ -74,7 +74,7 @@ export class DevupUIWebpackPlugin {
         )
 
         if (interfaceCode) {
-          await writeFile(
+          writeFileSync(
             join(this.options.distDir, 'theme.d.ts'),
             interfaceCode,
             {
@@ -89,61 +89,40 @@ export class DevupUIWebpackPlugin {
       console.error(error)
       registerTheme({})
     }
-
-    await Promise.all([
-      !existsSync(this.options.cssDir)
-        ? mkdir(this.options.cssDir, { recursive: true })
-        : Promise.resolve(),
-      this.options.watch
-        ? writeFile(join(this.options.cssDir, 'devup-ui.css'), getCss())
-        : Promise.resolve(),
-    ])
+    if (!existsSync(this.options.cssDir))
+      mkdirSync(this.options.cssDir, { recursive: true })
+    if (this.options.watch)
+      writeFileSync(
+        join(this.options.cssDir, 'devup-ui.css'),
+        getCss(null, false),
+      )
   }
 
   apply(compiler: Compiler) {
     setDebug(this.options.debug)
-    let initialized = false
     const existsDevup = existsSync(this.options.devupFile)
-    compiler.hooks[this.options.watch ? 'watchRun' : 'beforeRun'].tapPromise(
-      'DevupUIWebpackPlugin',
-      async () => {
-        if (initialized) return
-        initialized = true
-        // read devup.json
-        if (!existsSync(this.options.distDir))
-          await mkdir(this.options.distDir, { recursive: true })
-        await writeFile(join(this.options.distDir, '.gitignore'), '*', 'utf-8')
+    // read devup.json
+    if (!existsSync(this.options.distDir))
+      mkdirSync(this.options.distDir, { recursive: true })
+    writeFileSync(join(this.options.distDir, '.gitignore'), '*', 'utf-8')
 
-        if (this.options.watch) {
-          try {
-            // load sheet
-            await Promise.all([
-              existsSync(this.sheetFile)
-                ? readFile(this.sheetFile, 'utf-8').then((content) =>
-                    importSheet(JSON.parse(content)),
-                  )
-                : Promise.resolve(),
-              existsSync(this.classMapFile)
-                ? readFile(this.classMapFile, 'utf-8').then((content) =>
-                    importClassMap(JSON.parse(content)),
-                  )
-                : Promise.resolve(),
-              existsSync(this.fileMapFile)
-                ? readFile(this.fileMapFile, 'utf-8').then((content) =>
-                    importFileMap(JSON.parse(content)),
-                  )
-                : Promise.resolve(),
-            ])
-          } catch (error) {
-            console.error(error)
-            importSheet({})
-            importClassMap({})
-            importFileMap({})
-          }
-        }
-        await this.writeDataFiles()
-      },
-    )
+    if (this.options.watch) {
+      try {
+        // load sheet
+        if (existsSync(this.sheetFile))
+          importSheet(JSON.parse(readFileSync(this.sheetFile, 'utf-8')))
+        if (existsSync(this.classMapFile))
+          importClassMap(JSON.parse(readFileSync(this.classMapFile, 'utf-8')))
+        if (existsSync(this.fileMapFile))
+          importFileMap(JSON.parse(readFileSync(this.fileMapFile, 'utf-8')))
+      } catch (error) {
+        console.error(error)
+        importSheet({})
+        importClassMap({})
+        importFileMap({})
+      }
+    }
+    this.writeDataFiles()
 
     if (this.options.watch) {
       let lastModifiedTime: number | null = null
@@ -153,7 +132,7 @@ export class DevupUIWebpackPlugin {
 
           const modifiedTime = stats.mtimeMs
           if (lastModifiedTime && lastModifiedTime !== modifiedTime)
-            await this.writeDataFiles()
+            this.writeDataFiles()
 
           lastModifiedTime = modifiedTime
         }
@@ -175,7 +154,7 @@ export class DevupUIWebpackPlugin {
           // write css file
           await writeFile(
             join(this.options.cssDir, 'devup-ui.css'),
-            getCss(),
+            getCss(null, false),
             'utf-8',
           )
         }

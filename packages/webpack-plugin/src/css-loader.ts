@@ -14,7 +14,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<{
 }> = function (source, map, meta) {
   const { watch } = this.getOptions()
   const fileNum = getFileNumByFilename(this.resourcePath)
-  if (!watch) return this.callback(null, getCss(fileNum))
+  if (!watch) return this.callback(null, getCss(fileNum, true))
   const stringSource =
     (this._compiler as any)?.__DEVUP_CACHE || source.toString()
 
@@ -23,6 +23,6 @@ const devupUICssLoader: RawLoaderDefinitionFunction<{
     return
   }
   prevTime = stringSource
-  this.callback(null, (prevData = getCss(fileNum)), map, meta)
+  this.callback(null, (prevData = getCss(fileNum, true)), map, meta)
 }
 export default devupUICssLoader

@@ -7,6 +7,7 @@
     "build": "rsbuild build",
     "dev": "rsbuild dev --open",
     "preview": "rsbuild preview",
+    "start": "npx serve ./dist",
     "lint": "tsc && eslint"
   },
   "dependencies": {
@@ -15,7 +16,7 @@
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.5.1",
+    "@rsbuild/core": "^1.5.3",
     "@rsbuild/plugin-react": "^1.4.0",
     "@devup-ui/rsbuild-plugin": "workspace:*"
   }

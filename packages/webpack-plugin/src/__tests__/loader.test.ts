@@ -6,6 +6,7 @@ import {
   exportClassMap,
   exportFileMap,
   exportSheet,
+  getCss,
 } from '@devup-ui/wasm'
 
 import devupUILoader from '../loader'
@@ -19,7 +20,11 @@ beforeEach(() => {
 })
 
 describe('devupUILoader', () => {
-  it('should extract code with css', async () => {
+  it.each(
+    createTestMatrix({
+      updatedBaseStyle: [true, false],
+    }),
+  )('should extract code with css', async (options) => {
     const _compiler = {
       __DEVUP_CACHE: '',
     }
@@ -41,13 +46,15 @@ describe('devupUILoader', () => {
     vi.mocked(exportSheet).mockReturnValue('sheet')
     vi.mocked(exportClassMap).mockReturnValue('classMap')
     vi.mocked(exportFileMap).mockReturnValue('fileMap')
+    vi.mocked(getCss).mockReturnValue('css')
 
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
       free: vi.fn(),
       map: '{}',
-      css_file: 'cssFile',
+      cssFile: 'cssFile',
+      updatedBaseStyle: options.updatedBaseStyle,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -58,7 +65,22 @@ describe('devupUILoader', () => {
       'package',
       './cssFile',
       true,
+      false,
+      true,
     )
+    if (options.updatedBaseStyle) {
+      expect(writeFile).toHaveBeenCalledWith(
+        join('cssFile', 'devup-ui.css'),
+        'css',
+        'utf-8',
+      )
+    } else {
+      expect(writeFile).not.toHaveBeenCalledWith(
+        join('cssFile', 'devup-ui.css'),
+        'css',
+        'utf-8',
+      )
+    }
     await vi.waitFor(() => {
       expect(t.async()).toHaveBeenCalledWith(null, 'code', {})
       expect(writeFile).toHaveBeenCalledWith(
@@ -90,7 +112,8 @@ describe('devupUILoader', () => {
       css: undefined,
       free: vi.fn(),
       map: undefined,
-      css_file: 'cssFile',
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -100,6 +123,8 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
       true,
     )
     expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
@@ -146,7 +171,8 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: undefined,
-      css_file: 'cssFile',
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -156,6 +182,8 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
       true,
     )
   })
@@ -177,7 +205,8 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: undefined,
-      css_file: 'cssFile',
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
   })

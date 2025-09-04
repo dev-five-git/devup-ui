@@ -2,4 +2,4 @@
 source: bindings/devup-ui-wasm/src/lib.rs
 expression: theme.to_css()
 ---
-":root{color-scheme:light;--primary:light-dark(#000,#FFF)}:root[data-theme=dark]{color-scheme:dark}.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:0.5em}@media(min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:0.5em}}@media(min-width:768px){.typo-default{font-family:Arial;font-size:24px;line-height:1.5;letter-spacing:0.5em}}"
+":root{color-scheme:light;--primary:light-dark(#000,#FFF)}:root[data-theme=dark]{color-scheme:dark}.typo-default{font-family:Arial;font-size:16px;font-weight:400;line-height:1.5;letter-spacing:.5em}@media(min-width:480px){.typo-default{font-family:Arial;font-size:24px;font-weight:400;line-height:1.5;letter-spacing:.5em}}@media(min-width:768px){.typo-default{font-family:Arial;font-size:24px;line-height:1.5;letter-spacing:.5em}}"

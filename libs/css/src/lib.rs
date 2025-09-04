@@ -103,6 +103,12 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> String {
+    // base style
+    let filename = if style_order == Some(0) {
+        None
+    } else {
+        filename
+    };
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
@@ -149,7 +155,8 @@ pub fn sheet_to_classname(
             });
         if !filename.is_empty() {
             format!(
-                "{}-{}",
+                // avoid g-ad class (google ad)
+                "{}_{}",
                 num_to_nm_base(get_file_num_by_filename(&filename)),
                 clas_num
             )

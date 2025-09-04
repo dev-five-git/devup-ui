@@ -49,7 +49,7 @@ pub struct DevupVisitor<'a> {
     jsx_object: Option<String>,
     package: String,
     split_filename: Option<String>,
-    pub css_file: String,
+    pub css_files: Vec<String>,
     pub styles: HashSet<ExtractStyleValue>,
 }
 
@@ -58,7 +58,7 @@ impl<'a> DevupVisitor<'a> {
         allocator: &'a Allocator,
         filename: &str,
         package: &str,
-        css_file: &str,
+        css_files: Vec<String>,
         split_filename: Option<String>,
     ) -> Self {
         Self {
@@ -67,7 +67,7 @@ impl<'a> DevupVisitor<'a> {
             imports: HashMap::new(),
             jsx_imports: HashMap::new(),
             package: package.to_string(),
-            css_file: css_file.to_string(),
+            css_files,
             styles: HashSet::new(),
             import_object: None,
             jsx_object: None,
@@ -100,20 +100,22 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     fn visit_program(&mut self, it: &mut Program<'a>) {
         walk_program(self, it);
         if !self.styles.is_empty() {
-            it.body.insert(
-                0,
-                Statement::ImportDeclaration(
-                    self.ast.alloc_import_declaration::<Option<WithClause>>(
-                        SPAN,
-                        None,
-                        self.ast
-                            .string_literal(SPAN, self.ast.atom(&self.css_file), None),
-                        None,
-                        None,
-                        ImportOrExportKind::Value,
+            for css_file in self.css_files.iter().rev() {
+                it.body.insert(
+                    0,
+                    Statement::ImportDeclaration(
+                        self.ast.alloc_import_declaration::<Option<WithClause>>(
+                            SPAN,
+                            None,
+                            self.ast
+                                .string_literal(SPAN, self.ast.atom(&css_file), None),
+                            None,
+                            None,
+                            ImportOrExportKind::Value,
+                        ),
                     ),
-                ),
-            );
+                );
+            }
         }
 
         for i in (0..it.body.len()).rev() {
