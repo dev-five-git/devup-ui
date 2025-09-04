@@ -107,8 +107,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.ast.alloc_import_declaration::<Option<WithClause>>(
                             SPAN,
                             None,
-                            self.ast
-                                .string_literal(SPAN, self.ast.atom(&css_file), None),
+                            self.ast.string_literal(SPAN, self.ast.atom(css_file), None),
                             None,
                             None,
                             ImportOrExportKind::Value,
