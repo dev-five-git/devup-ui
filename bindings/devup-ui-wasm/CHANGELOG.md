@@ -1,5 +1,19 @@
 # @devup-ui/wasm
 
+## 1.0.34
+
+### Patch Changes
+
+- 629ad44: Optimized typography CSS values
+
+  Merged base component CSS to avoid duplicate generation
+
+  Introduced @layer to ensure style order consistency in CSS split mode
+
+  Downgraded nm base to avoid issues with g-ad class (display: none when AdBlock is enabled)
+
+  Fixed global CSS logic issue in CSS split mode
+
 ## 1.0.33
 
 ### Patch Changes
