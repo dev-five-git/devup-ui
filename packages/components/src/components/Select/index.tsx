@@ -247,9 +247,9 @@ export function SelectContainer({
             el.style.bottom = `${window.innerHeight - comboboxY + 10}px`
           else el.style.top = `${comboboxY + height + 10 + y}px`
 
-          if (isOverflowRight)
+          if (isOverflowRight) {
             el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
-          else el.style.left = `${comboboxX + x}px`
+          } else el.style.left = `${comboboxX + x}px`
         }
 
         // 최초 위치 설정
