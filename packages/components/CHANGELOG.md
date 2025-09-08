@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.14
+
+### Patch Changes
+
+- 39d4e4b: Fix Select overflow position
+
 ## 0.1.13
 
 ### Patch Changes
