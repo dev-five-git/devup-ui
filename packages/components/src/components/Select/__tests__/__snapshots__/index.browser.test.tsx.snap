@@ -49,7 +49,7 @@ exports[`Select > should render with overflow screen 1`] = `
     <div
       aria-label="Select container"
       class="display-0-flex--0 flex-direction-0-column--0 background-0-var(--inputBg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid var(--border,light-dark(#E4E4E4,#434343))--1 border-radius-0-8px--1 bottom-0--4px--1 box-shadow-0-0 2px 2px 0 var(--base10,light-dark(#0000001A,#FFFFFF1A))--1 height-0-fit-content--1 width-0-fit-content--1 gap-0-6px--1 min-width-0-232px--1 padding-0-10px--1 position-0-fixed--1 user-select-0-none--1 z-index-0-1--1 "
-      style="top: 10px; left: -1100px; bottom: 778px;"
+      style="top: 10px; left: 0px; bottom: 778px;"
     >
       <div
         class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1  color-0-var(--selectDisabled,light-dark(#C4C5D1,#45464D))--1 cursor-0-default--1 font-weight-0-400--1 gap-0-0--1 "
