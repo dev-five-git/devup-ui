@@ -248,7 +248,7 @@ export function SelectContainer({
           else el.style.top = `${comboboxY + height + 10 + y}px`
 
           if (isOverflowRight)
-            el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth + x, x)}px`
+            el.style.left = `${Math.max(comboboxX - el.offsetWidth + combobox.offsetWidth, 0) + x}px`
           else el.style.left = `${comboboxX + x}px`
         }
 
