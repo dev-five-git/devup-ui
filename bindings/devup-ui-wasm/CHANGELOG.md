@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.35
+
+### Patch Changes
+
+- d3b8502: Fix globalCss hot reload issue
+
 ## 1.0.34
 
 ### Patch Changes
