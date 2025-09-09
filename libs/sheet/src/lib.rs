@@ -228,7 +228,7 @@ impl StyleSheet {
         true
     }
 
-    pub fn rm_global_css(&mut self, file: &str) -> bool {
+    pub fn rm_global_css(&mut self, file: &str, single_css: bool) -> bool {
         if !self.global_css_files.contains(file) {
             return false;
         }
@@ -236,10 +236,11 @@ impl StyleSheet {
         self.css.remove(file);
 
         self.font_faces.remove(file);
+        let property_key = if single_css { "" } else { file }.to_string();
 
         for map in self
             .properties
-            .entry("".to_string())
+            .entry(property_key.clone())
             .or_default()
             .values_mut()
         {
@@ -259,11 +260,11 @@ impl StyleSheet {
         }
         if self
             .properties
-            .get("")
+            .get(&property_key)
             .and_then(|v| if v.is_empty() { None } else { Some(()) })
             .is_none()
         {
-            self.properties.remove("");
+            self.properties.remove(&property_key);
         }
         true
     }
@@ -934,11 +935,11 @@ mod tests {
         sheet.add_css("test2.tsx", "div {display:flex;}");
         assert_debug_snapshot!(sheet.create_css(None, false));
 
-        sheet.rm_global_css("test.tsx");
+        sheet.rm_global_css("test.tsx", true);
 
         assert_debug_snapshot!(sheet.create_css(None, false));
 
-        sheet.rm_global_css("wrong.tsx");
+        sheet.rm_global_css("wrong.tsx", true);
 
         assert_debug_snapshot!(sheet.create_css(None, false));
     }
@@ -1480,7 +1481,7 @@ mod tests {
             None,
         );
 
-        sheet.rm_global_css("test.tsx");
+        sheet.rm_global_css("test.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, false));
 
         let mut sheet = StyleSheet::default();
@@ -1511,7 +1512,7 @@ mod tests {
 
         assert_debug_snapshot!(sheet.create_css(None, false));
 
-        sheet.rm_global_css("test.tsx");
+        sheet.rm_global_css("test.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, false));
 
         let mut sheet = StyleSheet::default();
@@ -1542,7 +1543,7 @@ mod tests {
 
         assert_debug_snapshot!(sheet.create_css(None, false));
 
-        sheet.rm_global_css("test.tsx");
+        sheet.rm_global_css("test.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, false));
     }
 
