@@ -43,7 +43,7 @@ impl Output {
         import_main_css: bool,
     ) -> Self {
         let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-        let default_collected = sheet.rm_global_css(&filename);
+        let default_collected = sheet.rm_global_css(&filename, single_css);
         let (collected, updated_base_style) = sheet.update_styles(&styles, &filename, single_css);
         Self {
             code,
