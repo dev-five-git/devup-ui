@@ -49,7 +49,7 @@ impl Output {
             code,
             map,
             css_file,
-            updated_base_style,
+            updated_base_style: updated_base_style || default_collected,
             css: {
                 if !collected && !default_collected {
                     None

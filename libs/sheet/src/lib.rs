@@ -239,7 +239,7 @@ impl StyleSheet {
 
         for map in self
             .properties
-            .entry("".to_string())
+            .entry(file.to_string())
             .or_default()
             .values_mut()
         {
@@ -259,11 +259,11 @@ impl StyleSheet {
         }
         if self
             .properties
-            .get("")
+            .get(file)
             .and_then(|v| if v.is_empty() { None } else { Some(()) })
             .is_none()
         {
-            self.properties.remove("");
+            self.properties.remove(file);
         }
         true
     }
