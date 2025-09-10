@@ -67,11 +67,9 @@ export function RadioGroup({
   return (
     <Flex
       className={classNames?.container}
-      style={{
-        flexDirection: variant === 'button' ? 'row' : direction,
-        gap: variant === 'button' ? 0 : direction === 'row' ? '30px' : '16px',
-        ...styles?.container,
-      }}
+      flexDir={variant === 'button' ? 'row' : direction}
+      gap={variant === 'button' ? 0 : direction === 'row' ? '30px' : '16px'}
+      style={styles?.container}
     >
       {options.map(({ value: optionValue, label }, idx) => {
         const stringValue = String(optionValue)
