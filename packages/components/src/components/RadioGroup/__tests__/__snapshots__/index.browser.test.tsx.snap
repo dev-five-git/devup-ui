@@ -3,8 +3,8 @@
 exports[`RadioGroup > should RadioGroup snapshot 1`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 30px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
@@ -41,8 +41,8 @@ exports[`RadioGroup > should RadioGroup snapshot 1`] = `
 exports[`RadioGroup > should RadioGroup snapshot 2`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: column; gap: 16px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
@@ -79,8 +79,8 @@ exports[`RadioGroup > should RadioGroup snapshot 2`] = `
 exports[`RadioGroup > should RadioGroup snapshot 3`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 30px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       aria-disabled="true"
@@ -123,8 +123,8 @@ exports[`RadioGroup > should RadioGroup snapshot 3`] = `
 exports[`RadioGroup > should RadioGroup snapshot 4`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: column; gap: 16px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
   >
     <label
       aria-disabled="true"
@@ -167,8 +167,8 @@ exports[`RadioGroup > should RadioGroup snapshot 4`] = `
 exports[`RadioGroup > should RadioGroup snapshot 5`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 0;"
+    class=" display-0-flex--0 flex-direction-0-row--255 gap-0-0--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255    "
@@ -207,8 +207,8 @@ exports[`RadioGroup > should RadioGroup snapshot 5`] = `
 exports[`RadioGroup > should RadioGroup snapshot 6`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 0;"
+    class=" display-0-flex--0 flex-direction-0-row--255 gap-0-0--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       aria-disabled="true"
@@ -253,8 +253,8 @@ exports[`RadioGroup > should RadioGroup snapshot 6`] = `
 exports[`RadioGroup > should RadioGroup snapshot 7`] = `
 <div>
   <div
-    class="className display-0-flex--0"
-    style="flex-direction: row; gap: 30px;"
+    class="className display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
@@ -291,8 +291,8 @@ exports[`RadioGroup > should RadioGroup snapshot 7`] = `
 exports[`RadioGroup > should RadioGroup snapshot 8`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 30px; width: 500px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row; width: 500px;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
@@ -329,8 +329,8 @@ exports[`RadioGroup > should RadioGroup snapshot 8`] = `
 exports[`RadioGroup > should RadioGroup snapshot 9`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 30px;"
+    class=" display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
@@ -371,8 +371,8 @@ exports[`RadioGroup > should RadioGroup snapshot 9`] = `
 exports[`RadioGroup > should RadioGroup snapshot 10`] = `
 <div>
   <div
-    class=" display-0-flex--0"
-    style="flex-direction: row; gap: 0;"
+    class=" display-0-flex--0 flex-direction-0-row--255 gap-0-0--255"
+    style="--flex-direction-0-: row;"
   >
     <label
       class="cursor-0-default-7839325038755874321-255    "
