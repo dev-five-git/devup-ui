@@ -1,7 +1,9 @@
 pub mod class_map;
 mod constant;
 pub mod debug;
+pub mod file_map;
 pub mod is_special_property;
+mod num_to_nm_base;
 pub mod optimize_multi_css_value;
 pub mod optimize_value;
 pub mod rm_css_comment;
@@ -14,6 +16,8 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::class_map::GLOBAL_CLASS_MAP;
 use crate::constant::{COLOR_HASH, F_SPACE_RE, GLOBAL_STYLE_PROPERTY, ZERO_RE};
 use crate::debug::is_debug;
+use crate::file_map::get_file_num_by_filename;
+use crate::num_to_nm_base::num_to_nm_base;
 use crate::optimize_value::optimize_value;
 use crate::style_selector::StyleSelector;
 use crate::utils::to_kebab_case;
@@ -61,17 +65,33 @@ pub fn disassemble_property(property: &str) -> Vec<String> {
         })
 }
 
-pub fn keyframes_to_keyframes_name(keyframes: &str) -> String {
+pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
     if is_debug() {
         format!("k-{keyframes}")
     } else {
         let key = format!("k-{keyframes}");
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(&key).map(|v| format!("k{v}")).unwrap_or_else(|| {
-            let len = map.len();
-            map.insert(key, len as i32);
-            format!("k{}", map.len() - 1)
-        })
+        let filename = filename.unwrap_or_default().to_string();
+        let class_num = map
+            .entry(filename.to_string())
+            .or_default()
+            .get(&key)
+            .map(|v| num_to_nm_base(*v).to_string())
+            .unwrap_or_else(|| {
+                let m = map.entry(filename.to_string()).or_default();
+                let len = m.len();
+                m.insert(key, len);
+                num_to_nm_base(len).to_string()
+            });
+        if !filename.is_empty() {
+            format!(
+                "{}-{}",
+                num_to_nm_base(get_file_num_by_filename(&filename)),
+                class_num
+            )
+        } else {
+            class_num
+        }
     }
 }
 
@@ -81,11 +101,18 @@ pub fn sheet_to_classname(
     value: Option<&str>,
     selector: Option<&str>,
     style_order: Option<u8>,
+    filename: Option<&str>,
 ) -> String {
+    // base style
+    let filename = if style_order == Some(0) {
+        None
+    } else {
+        filename
+    };
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "{}-{}-{}-{}-{}",
+            "{}-{}-{}-{}-{}{}",
             property.trim(),
             level,
             optimize_value(value.unwrap_or_default()),
@@ -96,23 +123,46 @@ pub fn sheet_to_classname(
                 selector.hash(&mut hasher);
                 hasher.finish().to_string()
             },
-            style_order.unwrap_or(255)
+            style_order.unwrap_or(255),
+            filename
+                .map(|v| format!("-{}", get_file_num_by_filename(v)))
+                .unwrap_or_default(),
         )
     } else {
         let key = format!(
-            "{}-{}-{}-{}-{}",
+            "{}-{}-{}-{}-{}{}",
             property.trim(),
             level,
             optimize_value(value.unwrap_or_default()),
             selector.unwrap_or_default().trim(),
-            style_order.unwrap_or(255)
+            style_order.unwrap_or(255),
+            filename
+                .map(|v| format!("-{}", get_file_num_by_filename(v)))
+                .unwrap_or_default(),
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(&key).map(|v| format!("d{v}")).unwrap_or_else(|| {
-            let len = map.len();
-            map.insert(key, len as i32);
-            format!("d{}", map.len() - 1)
-        })
+        let filename = filename.map(|v| v.to_string()).unwrap_or_default();
+        let clas_num = map
+            .entry(filename.to_string())
+            .or_default()
+            .get(&key)
+            .map(|v| num_to_nm_base(*v))
+            .unwrap_or_else(|| {
+                let m = map.entry(filename.to_string()).or_default();
+                let len = m.len();
+                m.insert(key, len);
+                num_to_nm_base(len)
+            });
+        if !filename.is_empty() {
+            format!(
+                // avoid g-ad class (google ad)
+                "{}_{}",
+                num_to_nm_base(get_file_num_by_filename(&filename)),
+                clas_num
+            )
+        } else {
+            clas_num
+        }
     }
 }
 
@@ -139,11 +189,16 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
             selector.unwrap_or_default().trim()
         );
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.get(&key).map(|v| format!("--d{v}")).unwrap_or_else(|| {
-            let len = map.len();
-            map.insert(key, len as i32);
-            format!("--d{}", map.len() - 1)
-        })
+        map.entry("".to_string())
+            .or_default()
+            .get(&key)
+            .map(|v| format!("--{}", num_to_nm_base(*v)))
+            .unwrap_or_else(|| {
+                let m = map.entry("".to_string()).or_default();
+                let len = m.len();
+                m.insert(key, len);
+                format!("--{}", num_to_nm_base(len))
+            })
     }
 }
 
@@ -164,15 +219,15 @@ mod tests {
     fn test_sheet_to_variable_name() {
         reset_class_map();
         set_debug(false);
-        assert_eq!(sheet_to_variable_name("background", 0, None), "--d0");
+        assert_eq!(sheet_to_variable_name("background", 0, None), "--a");
         assert_eq!(
             sheet_to_variable_name("background", 0, Some("hover")),
-            "--d1"
+            "--b"
         );
-        assert_eq!(sheet_to_variable_name("background", 1, None), "--d2");
+        assert_eq!(sheet_to_variable_name("background", 1, None), "--c");
         assert_eq!(
             sheet_to_variable_name("background", 1, Some("hover")),
-            "--d3"
+            "--d"
         );
     }
 
@@ -204,89 +259,120 @@ mod tests {
         set_debug(false);
         reset_class_map();
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), None, None),
-            "d0"
+            sheet_to_classname("background", 0, Some("red"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
-            "d1"
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
+            "b"
         );
-        assert_eq!(sheet_to_classname("background", 1, None, None, None), "d2");
         assert_eq!(
-            sheet_to_classname("background", 1, None, Some("hover"), None),
-            "d3"
+            sheet_to_classname("background", 1, None, None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 1, None, Some("hover"), None, None),
+            "d"
         );
 
         reset_class_map();
         assert_eq!(
-            sheet_to_classname("background", 0, None, None, None),
-            sheet_to_classname("background", 0, None, None, None)
+            sheet_to_classname("background", 0, None, None, None, None),
+            sheet_to_classname("background", 0, None, None, None, None)
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), None, None),
-            sheet_to_classname("background", 0, Some("red"), None, None),
+            sheet_to_classname("background", 0, Some("red"), None, None, None),
+            sheet_to_classname("background", 0, Some("red"), None, None, None),
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), None, None),
-            sheet_to_classname("  background  ", 0, Some("  red  "), None, None),
+            sheet_to_classname("background", 0, Some("red"), None, None, None),
+            sheet_to_classname("  background  ", 0, Some("  red  "), None, None, None),
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), None, None),
-            sheet_to_classname("  background  ", 0, Some("red;"), None, None),
+            sheet_to_classname("background", 0, Some("red"), None, None, None),
+            sheet_to_classname("  background  ", 0, Some("red;"), None, None, None),
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
-            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None),
+            sheet_to_classname(
+                "background",
+                0,
+                Some("rgba(255, 0, 0,    0.5)"),
+                None,
+                None,
+                None
+            ),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,0.5)"), None, None, None),
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
-            sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None),
+            sheet_to_classname(
+                "background",
+                0,
+                Some("rgba(255, 0, 0,    0.5)"),
+                None,
+                None,
+                None
+            ),
+            sheet_to_classname("background", 0, Some("rgba(255,0,0,.5)"), None, None, None),
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("rgba(255, 0, 0,    0.5)"), None, None),
-            sheet_to_classname("background", 0, Some("#FF000080"), None, None),
+            sheet_to_classname(
+                "background",
+                0,
+                Some("rgba(255, 0, 0,    0.5)"),
+                None,
+                None,
+                None
+            ),
+            sheet_to_classname("background", 0, Some("#FF000080"), None, None, None),
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-#FF000080--255"), Some(&2));
+            assert_eq!(
+                map.get("").unwrap().get("background-0-#FF000080--255"),
+                Some(&2)
+            );
         }
         assert_eq!(
-            sheet_to_classname("background", 0, Some("#fff"), None, None),
-            sheet_to_classname("  background  ", 0, Some("#FFF"), None, None),
+            sheet_to_classname("background", 0, Some("#fff"), None, None, None),
+            sheet_to_classname("  background  ", 0, Some("#FFF"), None, None, None),
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
-            sheet_to_classname("background", 0, Some("#FFF"), None, None),
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None, None),
+            sheet_to_classname("background", 0, Some("#FFF"), None, None, None),
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-#FFF--255"), Some(&3));
+            assert_eq!(map.get("").unwrap().get("background-0-#FFF--255"), Some(&3));
         }
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("#ffffff"), None, None),
-            sheet_to_classname("background", 0, Some("#FFFFFF"), None, None),
+            sheet_to_classname("background", 0, Some("#ffffff"), None, None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFF"), None, None, None),
         );
 
         assert_eq!(
-            sheet_to_classname("background", 0, Some("#ffffffAA"), None, None),
-            sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None),
+            sheet_to_classname("background", 0, Some("#ffffffAA"), None, None, None),
+            sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None, None),
         );
 
         {
             let map = GLOBAL_CLASS_MAP.lock().unwrap();
-            assert_eq!(map.get("background-0-#FFFA--255"), Some(&4));
+            assert_eq!(
+                map.get("").unwrap().get("background-0-#FFFA--255"),
+                Some(&4)
+            );
         }
         assert_eq!(
             sheet_to_classname(
                 "background",
                 0,
                 Some("color-mix(in srgb,var(--primary) 80%,    #000 20%)"),
+                None,
                 None,
                 None
             ),
@@ -295,123 +381,147 @@ mod tests {
                 0,
                 Some("color-mix(in srgb,    var(--primary) 80%, #000000 20%)"),
                 None,
+                None,
                 None
             ),
         );
 
         reset_class_map();
-        assert_eq!(sheet_to_classname("background", 0, None, None, None), "d0");
         assert_eq!(
-            sheet_to_classname("background", 0, None, None, Some(1)),
-            "d1"
+            sheet_to_classname("background", 0, None, None, None, None),
+            "a"
+        );
+        assert_eq!(
+            sheet_to_classname("background", 0, None, None, Some(1), None),
+            "b"
         );
 
         reset_class_map();
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0px"), None, None),
-            "d0"
+            sheet_to_classname("width", 0, Some("0px"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0em"), None, None),
-            "d0"
+            sheet_to_classname("width", 0, Some("0em"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0rem"), None, None),
-            "d0"
+            sheet_to_classname("width", 0, Some("0rem"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0vh"), None, None),
-            "d0"
-        );
-        assert_eq!(sheet_to_classname("width", 0, Some("0%"), None, None), "d0");
-        assert_eq!(
-            sheet_to_classname("width", 0, Some("0dvh"), None, None),
-            "d0"
+            sheet_to_classname("width", 0, Some("0vh"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0dvw"), None, None),
-            "d0"
+            sheet_to_classname("width", 0, Some("0%"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("width", 0, Some("0vw"), None, None),
-            "d0"
-        );
-        assert_eq!(sheet_to_classname("width", 0, Some("0"), None, None), "d0");
-        assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0px red"), None, None),
-            "d1"
+            sheet_to_classname("width", 0, Some("0dvh"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0% red"), None, None),
-            "d1"
+            sheet_to_classname("width", 0, Some("0dvw"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0em red"), None, None),
-            "d1"
+            sheet_to_classname("width", 0, Some("0vw"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0rem red"), None, None),
-            "d1"
+            sheet_to_classname("width", 0, Some("0"), None, None, None),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0vh red"), None, None),
-            "d1"
+            sheet_to_classname("border", 0, Some("solid 0px red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0vw red"), None, None),
-            "d1"
+            sheet_to_classname("border", 0, Some("solid 0% red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None),
-            "d1"
+            sheet_to_classname("border", 0, Some("solid 0em red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None),
-            "d1"
-        );
-
-        assert_eq!(
-            sheet_to_classname("test", 0, Some("0px 0"), None, None),
-            "d2"
+            sheet_to_classname("border", 0, Some("solid 0rem red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0em 0"), None, None),
-            "d2"
+            sheet_to_classname("border", 0, Some("solid 0vh red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0rem 0"), None, None),
-            "d2"
+            sheet_to_classname("border", 0, Some("solid 0vw red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0vh 0"), None, None),
-            "d2"
+            sheet_to_classname("border", 0, Some("solid 0dvh red"), None, None, None),
+            "b"
         );
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0vw 0"), None, None),
-            "d2"
-        );
-        assert_eq!(
-            sheet_to_classname("test", 0, Some("0dvh 0"), None, None),
-            "d2"
+            sheet_to_classname("border", 0, Some("solid 0dvw red"), None, None, None),
+            "b"
         );
 
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0 0vh"), None, None),
-            "d2"
+            sheet_to_classname("test", 0, Some("0px 0"), None, None, None),
+            "c"
         );
         assert_eq!(
-            sheet_to_classname("test", 0, Some("0 0vw"), None, None),
-            "d2"
+            sheet_to_classname("test", 0, Some("0em 0"), None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0rem 0"), None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vh 0"), None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0vw 0"), None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0dvh 0"), None, None, None),
+            "c"
+        );
+
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vh"), None, None, None),
+            "c"
+        );
+        assert_eq!(
+            sheet_to_classname("test", 0, Some("0 0vw"), None, None, None),
+            "c"
         );
 
         reset_class_map();
         assert_eq!(
-            sheet_to_classname("transition", 0, Some("all 0.3s ease-in-out"), None, None),
-            "d0"
+            sheet_to_classname(
+                "transition",
+                0,
+                Some("all 0.3s ease-in-out"),
+                None,
+                None,
+                None
+            ),
+            "a"
         );
         assert_eq!(
-            sheet_to_classname("transition", 0, Some("all .3s ease-in-out"), None, None),
-            "d0"
+            sheet_to_classname(
+                "transition",
+                0,
+                Some("all .3s ease-in-out"),
+                None,
+                None,
+                None
+            ),
+            "a"
         );
     }
 
@@ -420,19 +530,19 @@ mod tests {
     fn test_debug_sheet_to_classname() {
         set_debug(true);
         assert_eq!(
-            sheet_to_classname("background", 0, None, None, None),
+            sheet_to_classname("background", 0, None, None, None, None),
             "background-0---255"
         );
         assert_eq!(
-            sheet_to_classname("background", 0, Some("red"), Some("hover"), None),
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
             "background-0-red-12448419602614487988-255"
         );
         assert_eq!(
-            sheet_to_classname("background", 1, None, None, None),
+            sheet_to_classname("background", 1, None, None, None, None),
             "background-1---255"
         );
         assert_eq!(
-            sheet_to_classname("background", 1, Some("red"), Some("hover"), None),
+            sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
             "background-1-red-12448419602614487988-255"
         );
     }
@@ -509,7 +619,10 @@ mod tests {
     #[serial]
     fn test_set_class_map() {
         let mut map = HashMap::new();
-        map.insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
+        map.insert("".to_string(), HashMap::new());
+        map.get_mut("")
+            .unwrap()
+            .insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
         set_class_map(map);
         assert_eq!(get_class_map().len(), 1);
     }
@@ -519,12 +632,15 @@ mod tests {
     fn test_keyframes_to_keyframes_name() {
         reset_class_map();
         set_debug(false);
-        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
-        assert_eq!(keyframes_to_keyframes_name("spin"), "k0");
-        assert_eq!(keyframes_to_keyframes_name("spin2"), "k1");
+        assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
+        assert_eq!(keyframes_to_keyframes_name("spin", None), num_to_nm_base(0));
+        assert_eq!(
+            keyframes_to_keyframes_name("spin2", None),
+            num_to_nm_base(1)
+        );
         reset_class_map();
         set_debug(true);
-        assert_eq!(keyframes_to_keyframes_name("spin"), "k-spin");
-        assert_eq!(keyframes_to_keyframes_name("spin1"), "k-spin1");
+        assert_eq!(keyframes_to_keyframes_name("spin", None), "k-spin");
+        assert_eq!(keyframes_to_keyframes_name("spin1", None), "k-spin1");
     }
 }

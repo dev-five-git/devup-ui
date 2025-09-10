@@ -1,7 +1,7 @@
-import { defineConfig } from '@rsbuild/core';
-import { pluginReact } from '@rsbuild/plugin-react';
-import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin';
+import { DevupUI } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+import { pluginReact } from '@rsbuild/plugin-react'
 
 export default defineConfig({
-  plugins: [pluginReact(), DevupUIRsbuildPlugin()],
-});
+  plugins: [pluginReact(), DevupUI()],
+})

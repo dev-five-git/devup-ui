@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "types": ["vite/client", "vitest/importMeta", "vitest/globals"],
+    "types": [
+      "vite/client",
+      "vitest/importMeta",
+      "vitest/globals"
+    ],
     "strict": true,
     "target": "ESNext",
     "declaration": true,
@@ -22,5 +26,14 @@
     "noEmit": true,
     "baseUrl": ".",
     "jsx": "react-jsx"
-  }
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "../../vitest.setup.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

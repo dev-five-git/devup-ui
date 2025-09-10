@@ -1,5 +1,43 @@
 # @devup-ui/components
 
+## 0.1.14
+
+### Patch Changes
+
+- 39d4e4b: Fix Select overflow position
+
+## 0.1.13
+
+### Patch Changes
+
+- 9045f57: Feat split css
+
+## 0.1.12
+
+### Patch Changes
+
+- Updated dependencies [554b56e]
+  - @devup-ui/react@1.0.17
+
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [6c25c5d]
+  - @devup-ui/react@1.0.16
+
+## 0.1.10
+
+### Patch Changes
+
+- 1f836c5: Fix select
+
+## 0.1.9
+
+### Patch Changes
+
+- df94872: Fix select component container
+
 ## 0.1.8
 
 ### Patch Changes

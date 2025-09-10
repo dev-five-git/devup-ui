@@ -65,5 +65,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d0 d1 d2 ${{\n\t\"0\": \"d3\",\n\t\"1\": \"d4\",\n\t\"2\": \"d5\"\n}[categoryId - 1]}`}>\n          </div>;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`a b c ${{\n\t\"0\": \"d\",\n\t\"1\": \"e\",\n\t\"2\": \"f\"\n}[categoryId - 1]}`}>\n          </div>;\n",
 }

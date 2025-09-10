@@ -6,7 +6,6 @@ export {
   SelectDivider,
   SelectOption,
   SelectTrigger,
-  useSelect,
 } from './components/Select'
 export {
   Stepper,
@@ -16,3 +15,5 @@ export {
   StepperInput,
   useStepper,
 } from './components/Stepper'
+export { SelectContext, useSelect } from './contexts/useSelect'
+export type { SelectType, SelectValue } from './types/select'

@@ -50,5 +50,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d3 d4 ${a ? \"d0 d1\" : \"d2\"}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={`d e ${a ? \"a b\" : \"c\"}`} />;\n",
 }

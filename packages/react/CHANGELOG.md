@@ -1,5 +1,17 @@
 # @devup-ui/react
 
+## 1.0.17
+
+### Patch Changes
+
+- 554b56e: Update useTheme
+
+## 1.0.16
+
+### Patch Changes
+
+- 6c25c5d: Add maskPos, maskImg
+
 ## 1.0.15
 
 ### Patch Changes

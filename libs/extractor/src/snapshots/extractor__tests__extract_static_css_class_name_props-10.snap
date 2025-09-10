@@ -83,5 +83,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<Box className={\"d0 d1 d2 d3 d4 d5\"} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<Box className={\"a b c d e f\"} />;\n",
 }

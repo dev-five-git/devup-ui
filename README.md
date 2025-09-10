@@ -42,6 +42,12 @@ npm install @devup-ui/next-plugin
 
 # on vite
 npm install @devup-ui/vite-plugin
+
+# on rsbuild
+npm install @devup-ui/rsbuild-plugin
+
+# on webpack
+npm install @devup-ui/webpack-plugin
 ```
 
 ## Features

@@ -10,11 +10,8 @@ const withMDX = createMDX({
 })
 
 export default withMDX(
-  DevupUI(
-    {
-      pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
-      output: 'export',
-    },
-    { include: ['@devup-ui/components', '@devup-ui/reset-css'] },
-  ),
+  DevupUI({
+    pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
+    output: 'export',
+  }),
 )

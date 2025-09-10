@@ -24,6 +24,7 @@ export default defineConfig({
           include: ['packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
           exclude: ['packages/*/src/**/__tests__/**/*.browser.test.{ts,tsx}'],
           globals: true,
+          setupFiles: ['./vitest.setup.ts'],
           environment: 'node',
         },
       },
@@ -34,11 +35,12 @@ export default defineConfig({
           environment: 'happy-dom',
           globals: true,
           css: true,
-          setupFiles: ['@testing-library/jest-dom/vitest'],
+          setupFiles: ['./vitest.setup.ts', '@testing-library/jest-dom/vitest'],
         },
         plugins: [
           DevupUI({
             debug: true,
+            singleCss: true,
           }),
         ],
       },

@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: sheet.create_css()
+expression: sheet.create_css(None)
 ---
-"@media(min-width:480px){div{background-color:blue}}div{background-color:red}"
+"@layer b;@layer b{@media(min-width:480px){div{background-color:blue}}}div{background-color:red}"

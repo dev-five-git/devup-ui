@@ -4,11 +4,17 @@ import type { RawLoaderDefinitionFunction } from 'webpack'
 let prevData = ''
 let prevTime = ''
 
+function getFileNumByFilename(filename: string) {
+  if (filename.endsWith('devup-ui.css')) return null
+  return parseInt(filename.split('devup-ui-')[1].split('.')[0])
+}
+
 const devupUICssLoader: RawLoaderDefinitionFunction<{
   watch: boolean
 }> = function (source, map, meta) {
   const { watch } = this.getOptions()
-  if (!watch) return this.callback(null, getCss())
+  const fileNum = getFileNumByFilename(this.resourcePath)
+  if (!watch) return this.callback(null, getCss(fileNum, true))
   const stringSource =
     (this._compiler as any)?.__DEVUP_CACHE || source.toString()
 
@@ -17,6 +23,6 @@ const devupUICssLoader: RawLoaderDefinitionFunction<{
     return
   }
   prevTime = stringSource
-  this.callback(null, (prevData = getCss()), map, meta)
+  this.callback(null, (prevData = getCss(fileNum, true)), map, meta)
 }
 export default devupUICssLoader

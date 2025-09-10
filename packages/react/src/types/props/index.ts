@@ -8,6 +8,7 @@ import type { DevupUiBoxModelProps } from './box-model'
 import type { DevupUiBoxSizingProps } from './box-sizing'
 import type { DevupUiFlexProps } from './flex'
 import type { DevupUiImageProps } from './image'
+import type { DevupUiMaskProps } from './mask'
 import type { DevupUiMotionPathProps } from './motion-path'
 import type { DevupUiPositionProps } from './position'
 import type { DevupSelectorProps, DevupThemeSelectorProps } from './selector'
@@ -22,6 +23,7 @@ export interface DevupShortcutsProps
     DevupUiImageProps,
     DevupUiMotionPathProps,
     DevupUiPositionProps,
+    DevupUiMaskProps,
     DevupUiTextProps {}
 
 export type DevupCommonProps = Merge<

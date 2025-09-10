@@ -48,23 +48,31 @@ pub struct DevupVisitor<'a> {
     util_imports: HashMap<String, Rc<UtilType>>,
     jsx_object: Option<String>,
     package: String,
-    pub css_file: String,
+    split_filename: Option<String>,
+    pub css_files: Vec<String>,
     pub styles: HashSet<ExtractStyleValue>,
 }
 
 impl<'a> DevupVisitor<'a> {
-    pub fn new(allocator: &'a Allocator, filename: &str, package: &str, css_file: &str) -> Self {
+    pub fn new(
+        allocator: &'a Allocator,
+        filename: &str,
+        package: &str,
+        css_files: Vec<String>,
+        split_filename: Option<String>,
+    ) -> Self {
         Self {
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
             imports: HashMap::new(),
             jsx_imports: HashMap::new(),
             package: package.to_string(),
-            css_file: css_file.to_string(),
+            css_files,
             styles: HashSet::new(),
             import_object: None,
             jsx_object: None,
             util_imports: HashMap::new(),
+            split_filename,
         }
     }
 }
@@ -92,20 +100,21 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     fn visit_program(&mut self, it: &mut Program<'a>) {
         walk_program(self, it);
         if !self.styles.is_empty() {
-            it.body.insert(
-                0,
-                Statement::ImportDeclaration(
-                    self.ast.alloc_import_declaration::<Option<WithClause>>(
-                        SPAN,
-                        None,
-                        self.ast
-                            .string_literal(SPAN, self.ast.atom(&self.css_file), None),
-                        None,
-                        None,
-                        ImportOrExportKind::Value,
+            for css_file in self.css_files.iter().rev() {
+                it.body.insert(
+                    0,
+                    Statement::ImportDeclaration(
+                        self.ast.alloc_import_declaration::<Option<WithClause>>(
+                            SPAN,
+                            None,
+                            self.ast.string_literal(SPAN, self.ast.atom(css_file), None),
+                            None,
+                            None,
+                            ImportOrExportKind::Value,
+                        ),
                     ),
-                ),
-            );
+                );
+            }
         }
 
         for i in (0..it.body.len()).rev() {
@@ -168,8 +177,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     .expression_string_literal(SPAN, self.ast.atom(""), None)
                             } else {
                                 // css can not reachable
-                                let class_name =
-                                    gen_class_names(&self.ast, &mut styles, style_order);
+                                let class_name = gen_class_names(
+                                    &self.ast,
+                                    &mut styles,
+                                    style_order,
+                                    self.split_filename.as_deref(),
+                                );
 
                                 // already set style order
                                 self.styles
@@ -197,7 +210,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     },
                                 );
 
-                            let name = keyframes.extract().to_string();
+                            let name = keyframes
+                                .extract(self.split_filename.as_deref())
+                                .to_string();
                             self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                             self.ast
                                 .expression_string_literal(SPAN, self.ast.atom(&name), None)
@@ -249,6 +264,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             })
                             .collect::<Vec<_>>(),
                         None,
+                        self.split_filename.as_deref(),
                     );
 
                     if let Some(cls) = class_name {
@@ -266,7 +282,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     let keyframes = ExtractKeyframes {
                         keyframes: keyframes_to_keyframes_style(&css_str),
                     };
-                    let name = keyframes.extract().to_string();
+                    let name = keyframes
+                        .extract(self.split_filename.as_deref())
+                        .to_string();
 
                     self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                     *it = self
@@ -363,6 +381,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut props_styles,
                         style_order,
                         style_vars,
+                        self.split_filename.as_deref(),
                     );
                 }
 
@@ -551,7 +570,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
-            modify_props(&self.ast, attrs, &mut props_styles, style_order, style_vars);
+            modify_props(
+                &self.ast,
+                attrs,
+                &mut props_styles,
+                style_order,
+                style_vars,
+                self.split_filename.as_deref(),
+            );
 
             props_styles
                 .iter()

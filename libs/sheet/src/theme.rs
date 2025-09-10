@@ -246,29 +246,31 @@ impl Theme {
                 if let Some(t) = t {
                     let css_content = [
                         t.font_family
-                            .clone()
-                            .map(|v| format!("font-family:{v}"))
+                            .as_ref()
+                            .map(|v| format!("font-family:{}", optimize_value(v)))
                             .unwrap_or("".to_string()),
                         t.font_size
-                            .clone()
-                            .map(|v| format!("font-size:{v}"))
+                            .as_ref()
+                            .map(|v| format!("font-size:{}", optimize_value(v)))
                             .unwrap_or("".to_string()),
                         t.font_weight
-                            .clone()
-                            .map(|v| format!("font-weight:{v}"))
+                            .as_ref()
+                            .map(|v| format!("font-weight:{}", optimize_value(v)))
                             .unwrap_or("".to_string()),
                         t.line_height
-                            .clone()
-                            .map(|v| format!("line-height:{v}"))
+                            .as_ref()
+                            .map(|v| format!("line-height:{}", optimize_value(v)))
                             .unwrap_or("".to_string()),
                         t.letter_spacing
-                            .clone()
-                            .map(|v| format!("letter-spacing:{v}"))
+                            .as_ref()
+                            .map(|v| format!("letter-spacing:{}", optimize_value(v)))
                             .unwrap_or("".to_string()),
                     ]
                     .iter()
-                    .map(|v| v.trim())
-                    .filter(|v| !v.is_empty())
+                    .filter_map(|v| {
+                        let v = v.trim();
+                        if v.is_empty() { None } else { Some(v) }
+                    })
                     .collect::<Vec<&str>>()
                     .join(";");
 

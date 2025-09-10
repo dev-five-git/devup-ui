@@ -8,13 +8,14 @@ use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
+    filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     if style_props.is_empty() {
         return None;
     }
     let properties: Vec<_> = style_props
         .iter()
-        .flat_map(|style| gen_style(ast_builder, style))
+        .flat_map(|style| gen_style(ast_builder, style, filename))
         .rev()
         .collect();
     if properties.is_empty() {
@@ -28,6 +29,7 @@ pub fn gen_styles<'a>(
 fn gen_style<'a>(
     ast_builder: &AstBuilder<'a>,
     style: &ExtractStyleProp<'a>,
+    filename: Option<&str>,
 ) -> Vec<ObjectPropertyKind<'a>> {
     let mut properties = vec![];
     match style {
@@ -36,7 +38,7 @@ fn gen_style<'a>(
                 variable_name,
                 identifier,
                 ..
-            }) = st.extract()
+            }) = st.extract(filename)
             {
                 properties.push(ast_builder.object_property_kind_object_property(
                     SPAN,
@@ -57,7 +59,7 @@ fn gen_style<'a>(
             properties.append(
                 &mut res
                     .iter()
-                    .flat_map(|r| gen_style(ast_builder, r))
+                    .flat_map(|r| gen_style(ast_builder, r, filename))
                     .rev()
                     .collect(),
             );
@@ -71,48 +73,52 @@ fn gen_style<'a>(
                 return vec![];
             }
             (None, Some(c)) => {
-                gen_style(ast_builder, c).into_iter().for_each(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ast_builder.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator),
-                            ast_builder.expression_conditional(
+                gen_style(ast_builder, c, filename)
+                    .into_iter()
+                    .for_each(|p| {
+                        if let ObjectPropertyKind::ObjectProperty(p) = p {
+                            properties.push(ast_builder.object_property_kind_object_property(
                                 SPAN,
-                                condition.clone_in(ast_builder.allocator),
-                                ast_builder.expression_identifier(SPAN, "undefined"),
-                                p.value.clone_in(ast_builder.allocator),
-                            ),
-                            false,
-                            false,
-                            false,
-                        ))
-                    }
-                });
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                ast_builder.expression_conditional(
+                                    SPAN,
+                                    condition.clone_in(ast_builder.allocator),
+                                    ast_builder.expression_identifier(SPAN, "undefined"),
+                                    p.value.clone_in(ast_builder.allocator),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ))
+                        }
+                    });
             }
             (Some(c), None) => {
-                gen_style(ast_builder, c).into_iter().for_each(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ast_builder.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator),
-                            ast_builder.expression_conditional(
+                gen_style(ast_builder, c, filename)
+                    .into_iter()
+                    .for_each(|p| {
+                        if let ObjectPropertyKind::ObjectProperty(p) = p {
+                            properties.push(ast_builder.object_property_kind_object_property(
                                 SPAN,
-                                condition.clone_in(ast_builder.allocator),
-                                p.value.clone_in(ast_builder.allocator),
-                                ast_builder.expression_identifier(SPAN, "undefined"),
-                            ),
-                            false,
-                            false,
-                            false,
-                        ))
-                    }
-                });
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                ast_builder.expression_conditional(
+                                    SPAN,
+                                    condition.clone_in(ast_builder.allocator),
+                                    p.value.clone_in(ast_builder.allocator),
+                                    ast_builder.expression_identifier(SPAN, "undefined"),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ))
+                        }
+                    });
             }
             (Some(c), Some(a)) => {
-                let collect_c = gen_style(ast_builder, c);
-                let collect_a = gen_style(ast_builder, a);
+                let collect_c = gen_style(ast_builder, c, filename);
+                let collect_a = gen_style(ast_builder, a, filename);
                 if collect_c.is_empty() && collect_a.is_empty() {
                     return vec![];
                 }
@@ -189,7 +195,7 @@ fn gen_style<'a>(
                     variable_name,
                     identifier,
                     ..
-                }) = style.extract()
+                }) = style.extract(filename)
                 {
                     properties.push(ast_builder.object_property_kind_object_property(
                         SPAN,
@@ -215,7 +221,7 @@ fn gen_style<'a>(
                         variable_name,
                         identifier,
                         ..
-                    }) = style.extract()
+                    }) = style.extract(filename)
                     {
                         tmp_map
                             .entry(variable_name)
