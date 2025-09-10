@@ -41,7 +41,13 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       )
 
       if (!rel.startsWith('./')) rel = `./${rel}`
-      const { code, css, map, cssFile, updatedBaseStyle } = codeExtract(
+      const {
+        code,
+        css = '',
+        map,
+        cssFile,
+        updatedBaseStyle,
+      } = codeExtract(
         id,
         source.toString(),
         libPackage,
@@ -58,7 +64,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
         )
       }
-      if (css) {
+      if (cssFile) {
         const content = `${this.resourcePath} ${Date.now()}`
         if (watch && this._compiler)
           (this._compiler as any).__DEVUP_CACHE = content
