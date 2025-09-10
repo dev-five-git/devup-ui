@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"d0\" : \"\"} style={{ \"--d1\": a === b ? a : undefined }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className={a === b ? \"a\" : \"\"} style={{ \"--b\": a === b ? a : undefined }} />;\n",
 }

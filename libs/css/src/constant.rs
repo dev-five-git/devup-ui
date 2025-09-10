@@ -28,6 +28,7 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgClip" => &["background-clip"],
     "bgColor" => &["background-color"],
     "bgImage" => &["background-image"],
+    "bgImg" => &["background-image"],
     "bgOrigin" => &["background-origin"],
     "bgPosition" => &["background-position"],
     "bgPositionX" => &["background-position-x"],
@@ -38,6 +39,7 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bgRepeat" => &["background-repeat"],
     "bgSize" => &["background-size"],
     "bgBlendMode" => &["background-blend-mode"],
+    "backgroundImg" => &["background-image"],
     "animationDir" => &["animation-direction"],
     "flexDir" => &["flex-direction"],
     "pos" => &["position"],
@@ -68,6 +70,8 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "borderRightRadius" => &["border-top-right-radius", "border-bottom-right-radius"],
     "objectPos" => &["object-position"],
     "offsetPos" => &["offset-position"],
+    "maskPos" => &["mask-position"],
+    "maskImg" => &["mask-image"],
 };
 pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
     "font-family",
@@ -158,3 +162,13 @@ pub(super) static F_RGBA_RE: Lazy<Regex> =
 
 pub(super) static F_RGB_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
+
+pub(super) static N_BASE_ARRAY: [char; 26] = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z',
+];
+
+pub(super) static M_BASE_ARRAY: [char; 36] = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+];

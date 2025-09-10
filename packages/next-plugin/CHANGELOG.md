@@ -1,5 +1,63 @@
 # @devup-ui/next-plugin
 
+## 1.0.36
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.35
+
+## 1.0.35
+
+### Patch Changes
+
+- 629ad44: Optimized typography CSS values
+
+  Merged base component CSS to avoid duplicate generation
+
+  Introduced @layer to ensure style order consistency in CSS split mode
+
+  Downgraded nm base to avoid issues with g-ad class (display: none when AdBlock is enabled)
+
+  Fixed global CSS logic issue in CSS split mode
+
+- Updated dependencies [629ad44]
+- Updated dependencies [629ad44]
+  - @devup-ui/webpack-plugin@1.0.34
+
+## 1.0.34
+
+### Patch Changes
+
+- 9045f57: Feat split css
+- 9045f57: Update option
+- Updated dependencies [9045f57]
+- Updated dependencies [9045f57]
+  - @devup-ui/webpack-plugin@1.0.33
+
+## 1.0.33
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.32
+
+## 1.0.32
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.31
+
+## 1.0.31
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.30
+
+## 1.0.30
+
+### Patch Changes
+
+- @devup-ui/webpack-plugin@1.0.29
+
 ## 1.0.29
 
 ### Patch Changes

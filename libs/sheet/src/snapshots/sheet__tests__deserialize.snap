@@ -4,13 +4,15 @@ expression: sheet
 ---
 StyleSheet {
     properties: {
-        255: {
-            0: {
-                StyleSheetProperty {
-                    class_name: "test",
-                    property: "mx",
-                    value: "40px",
-                    selector: None,
+        "": {
+            255: {
+                0: {
+                    StyleSheetProperty {
+                        class_name: "test",
+                        property: "mx",
+                        value: "40px",
+                        selector: None,
+                    },
                 },
             },
         },

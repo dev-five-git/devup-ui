@@ -43,14 +43,19 @@ export const ControlledCheckboxStory: Story = {
   render: () => <ControlledCheckbox />,
 }
 
+export const SelectWithOptionsStory: Story = {
+  args: {},
+  render: () => <SelectWithOptions />,
+}
+
 export default meta
 
 function DefaultComponent(
   props: Omit<ComponentProps<typeof Select>, 'children'>,
 ) {
   return (
-    <Select {...props} defaultValue={['Option 1']} onValueChange={() => {}}>
-      <SelectTrigger>Select</SelectTrigger>
+    <Select {...props} defaultValue={['Option 1']} onChange={() => {}}>
+      <SelectTrigger>Select2</SelectTrigger>
       <SelectContainer>
         <SelectOption disabled value="Option 1">
           Option 1
@@ -69,13 +74,7 @@ function DefaultComponent(
               </Flex>
             </SelectOption>
           </SelectTrigger>
-          <SelectContainer
-            className={css({
-              right: '0',
-              top: '0',
-              transform: 'translateX(100%)',
-            })}
-          >
+          <SelectContainer>
             <SelectOption value="Option 6">Option 6</SelectOption>
             <SelectOption value="Option 7">Option 7</SelectOption>
           </SelectContainer>
@@ -105,7 +104,7 @@ function ControlledCheckbox() {
   }
 
   return (
-    <Select onValueChange={handleChange} type="checkbox" value={value}>
+    <Select onChange={handleChange} type="checkbox" value={value}>
       <SelectTrigger>Select {value}</SelectTrigger>
       <SelectContainer showConfirmButton>
         <SelectOption value="Option 1">Option 1</SelectOption>
@@ -113,11 +112,7 @@ function ControlledCheckbox() {
         <SelectDivider />
         <SelectOption value="Option 3">Option 3</SelectOption>
         <SelectOption value="Option 4">Option 4</SelectOption>
-        <Select
-          onValueChange={handleSubChange}
-          type="checkbox"
-          value={subValue}
-        >
+        <Select onChange={handleSubChange} type="checkbox" value={subValue}>
           <SelectTrigger asChild>
             <SelectOption showCheck={false}>
               <Flex alignItems="center" justifyContent="space-between" w="100%">
@@ -151,7 +146,7 @@ function ControlledRadio() {
     setSubValue(value)
   }
   return (
-    <Select onValueChange={handleChange} type="radio" value={value}>
+    <Select onChange={handleChange} type="radio" value={value}>
       <SelectTrigger>Select {value}</SelectTrigger>
       <SelectContainer>
         <SelectOption value="Option 1">Option 1</SelectOption>
@@ -159,7 +154,7 @@ function ControlledRadio() {
         <SelectDivider />
         <SelectOption value="Option 3">Option 3</SelectOption>
         <SelectOption value="Option 4">Option 4</SelectOption>
-        <Select onValueChange={handleSubChange} type="radio" value={subValue}>
+        <Select onChange={handleSubChange} type="radio" value={subValue}>
           <SelectTrigger asChild>
             <SelectOption showCheck={false}>
               <Flex alignItems="center" justifyContent="space-between" w="100%">
@@ -198,5 +193,27 @@ function ControlledRadio() {
         </Select>
       </SelectContainer>
     </Select>
+  )
+}
+
+function SelectWithOptions() {
+  return (
+    <>
+      <Select
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { label: 'Option 2', value: 'Option 2', disabled: true },
+          {
+            label: 'Option 3',
+            value: 'Option 3',
+            onClick: () => {
+              console.info('Option 3')
+            },
+          },
+        ]}
+      >
+        title
+      </Select>
+    </>
   )
 }

@@ -19,4 +19,6 @@ export interface DevupUiBackgroundProps {
   bgRepeat?: ResponsiveValue<Property.BackgroundRepeat>
   bgSize?: ResponsiveValue<Property.BackgroundSize>
   bgBlendMode?: ResponsiveValue<Property.BackgroundBlendMode>
+  backgroundImg?: ResponsiveValue<Property.BackgroundImage>
+  bgImg?: ResponsiveValue<Property.BackgroundImage>
 }

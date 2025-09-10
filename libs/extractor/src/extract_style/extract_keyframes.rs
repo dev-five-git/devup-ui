@@ -15,10 +15,10 @@ pub struct ExtractKeyframes {
 }
 
 impl ExtractStyleProperty for ExtractKeyframes {
-    fn extract(&self) -> StyleProperty {
+    fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let mut hasher = DefaultHasher::new();
         self.keyframes.hash(&mut hasher);
         let hash_key = hasher.finish().to_string();
-        StyleProperty::ClassName(keyframes_to_keyframes_name(&hash_key))
+        StyleProperty::ClassName(keyframes_to_keyframes_name(&hash_key, filename))
     }
 }

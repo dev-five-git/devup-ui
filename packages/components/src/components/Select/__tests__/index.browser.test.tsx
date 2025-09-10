@@ -94,7 +94,7 @@ describe('Select', () => {
   it('should call onValueChange function when it is provided', () => {
     const onValueChange = vi.fn()
     const { container } = render(
-      <Select onValueChange={onValueChange} type="radio">
+      <Select onChange={onValueChange} type="radio">
         {children}
       </Select>,
     )
@@ -370,5 +370,79 @@ describe('Select', () => {
     )
     const svg = container.querySelector('svg')
     expect(svg).not.toBeInTheDocument()
+  })
+
+  it('should render with options properties', () => {
+    const { container } = render(
+      <Select
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { value: 'Option 2' },
+        ]}
+      >
+        Select
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option1 = container.querySelector('[data-value="Option 1"]')
+    expect(option1).toBeInTheDocument()
+  })
+
+  it('should call onChange function when it is provided to SelectOption', () => {
+    const onValueChange = vi.fn()
+    const { container } = render(
+      <Select
+        onChange={onValueChange}
+        options={[
+          { label: 'Option 1', value: 'Option 1' },
+          { value: 'Option 2' },
+        ]}
+      >
+        Select
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option2 = container.querySelector('[data-value="Option 2"]')
+    expect(option2).toBeInTheDocument()
+    fireEvent.click(option2!)
+    expect(onValueChange).toHaveBeenCalledWith('Option 2')
+  })
+
+  it('should render with x and y properties', () => {
+    const { container } = render(
+      <Select>
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer x={10} y={10}>
+          <SelectOption value="Option 1">Option 1</SelectOption>
+          <SelectOption value="Option 2">Option 2</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
+
+  it('should render with overflow screen', () => {
+    const { container, rerender } = render(<Select>{children}</Select>)
+
+    // open selectContainer
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+
+    const selectContainer = container.querySelector(
+      '[aria-label="Select container"]',
+    )! as HTMLDivElement
+
+    // happy-dom defualt viewport 1024x768
+    // offsetHeight > 768px
+    vi.spyOn(selectContainer, 'offsetHeight', 'get').mockReturnValue(800)
+    // offsetWidth > 1024px
+    vi.spyOn(selectContainer, 'offsetWidth', 'get').mockReturnValue(1100)
+
+    // rerender
+    rerender(<Select>{children}</Select>)
+
+    expect(container).toMatchSnapshot()
   })
 })

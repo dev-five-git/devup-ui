@@ -3,7 +3,120 @@
 exports[`Select > should render 1`] = `
 <div>
   <div
-    class="display-0-inline-block--1 position-0-relative--1 box-sizing-0-border-box-1137980104803605758-1  "
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+  >
+    <button
+      aria-expanded="false"
+      aria-label="Select toggle"
+      class="border-radius-0-8px--2 outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-16px--1 padding-left-0-16px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+      type="button"
+    >
+      <div
+        class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <div
+          class=" line-height-0-1.2--255 min-height-0-1.2em--255 "
+        >
+          Select
+        </div>
+      </div>
+    </button>
+  </div>
+</div>
+`;
+
+exports[`Select > should render with overflow screen 1`] = `
+<div>
+  <div
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+  >
+    <button
+      aria-expanded="true"
+      aria-label="Select toggle"
+      class="border-radius-0-8px--2 outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-16px--1 padding-left-0-16px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+      type="button"
+    >
+      <div
+        class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <div
+          class=" line-height-0-1.2--255 min-height-0-1.2em--255 "
+        >
+          Select
+        </div>
+      </div>
+    </button>
+    <div
+      aria-label="Select container"
+      class="display-0-flex--0 flex-direction-0-column--0 background-0-var(--inputBg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid var(--border,light-dark(#E4E4E4,#434343))--1 border-radius-0-8px--1 bottom-0--4px--1 box-shadow-0-0 2px 2px 0 var(--base10,light-dark(#0000001A,#FFFFFF1A))--1 height-0-fit-content--1 width-0-fit-content--1 gap-0-6px--1 min-width-0-232px--1 padding-0-10px--1 position-0-fixed--1 user-select-0-none--1 z-index-0-1--1 "
+      style="top: 10px; left: 0px; bottom: 778px;"
+    >
+      <div
+        class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1  color-0-var(--selectDisabled,light-dark(#C4C5D1,#45464D))--1 cursor-0-default--1 font-weight-0-400--1 gap-0-0--1 "
+        data-value="Option 1"
+      >
+        Option 1
+      </div>
+      <div
+        class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-8380715471663921674-1 color-0-var(--title,light-dark(#1A1A1A,#FAFAFA))--1 cursor-0-pointer--1 font-weight-0-400--1 gap-0-0--1 "
+        data-value="Option 2"
+      >
+        Option 2
+      </div>
+      <div
+        class="background-0-var(--border,light-dark(#E4E4E4,#434343))--1 height-0-1px--1 width-0-100%--1 "
+      />
+      <div
+        class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-8380715471663921674-1 color-0-var(--title,light-dark(#1A1A1A,#FAFAFA))--1 cursor-0-pointer--1 font-weight-0-400--1 gap-0-0--1 "
+        data-value="Option 3"
+      >
+        Option 3
+      </div>
+      <div
+        class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1  color-0-var(--selectDisabled,light-dark(#C4C5D1,#45464D))--1 cursor-0-default--1 font-weight-0-400--1 gap-0-0--1 "
+        data-value="Option 4"
+      >
+        Option 4
+      </div>
+      <div
+        class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+      >
+        <div
+          aria-expanded="false"
+          aria-label="Select toggle"
+          class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-8380715471663921674-1 color-0-var(--title,light-dark(#1A1A1A,#FAFAFA))--1 cursor-0-pointer--1 font-weight-0-400--1 gap-0-6px--1 "
+        >
+          <div
+            class="display-0-flex--0 align-items-0-center--255 justify-content-0-space-between--255 width-0-100%--255"
+          >
+            Option 5
+            <svg
+              class="color-0-#8B8E9C--1"
+              fill="none"
+              height="16"
+              viewBox="0 0 16 16"
+              width="16"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                clip-rule="evenodd"
+                d="M6.1953 12.4714C5.93495 12.211 5.93495 11.7889 6.1953 11.5286L9.7239 7.99996L6.1953 4.47136C5.93495 4.21102 5.93495 3.78891 6.1953 3.52856C6.45565 3.26821 6.87776 3.26821 7.13811 3.52856L11.1381 7.52856C11.3985 7.7889 11.3985 8.21101 11.1381 8.47136L7.13811 12.4714C6.87776 12.7317 6.45565 12.7317 6.1953 12.4714Z"
+                fill="currentColor"
+                fill-rule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Select > should render with x and y properties 1`] = `
+<div>
+  <div
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
   >
     <button
       aria-expanded="false"

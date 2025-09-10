@@ -131,5 +131,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<button className={`${className || \"\"} ${{\n\t\"default\": \"d0\",\n\t\"primary\": \"d1\"\n}[variant] || \"\"} ${{\n\t\"false\": {\n\t\t\"lg\": \"d2\",\n\t\t\"md\": \"d3\",\n\t\t\"sm\": \"d4\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"d5\",\n\t\t\"md\": \"d6\",\n\t\t\"sm\": \"d7\"\n\t}[size] || \"\"\n}[(!!icon).toString()]} ${{\n\t\"false\": {\n\t\t\"lg\": \"d8\",\n\t\t\"md\": \"d9\",\n\t\t\"sm\": \"d10\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"d11\",\n\t\t\"md\": \"d12\",\n\t\t\"sm\": \"d13\"\n\t}[size] || \"\"\n}[(!!icon).toString()]}`} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<button className={`${className || \"\"} ${{\n\t\"default\": \"a\",\n\t\"primary\": \"b\"\n}[variant] || \"\"} ${{\n\t\"false\": {\n\t\t\"lg\": \"c\",\n\t\t\"md\": \"d\",\n\t\t\"sm\": \"e\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"f\",\n\t\t\"md\": \"g\",\n\t\t\"sm\": \"h\"\n\t}[size] || \"\"\n}[(!!icon).toString()]} ${{\n\t\"false\": {\n\t\t\"lg\": \"i\",\n\t\t\"md\": \"j\",\n\t\t\"sm\": \"k\"\n\t}[size] || \"\",\n\t\"true\": {\n\t\t\"lg\": \"l\",\n\t\t\"md\": \"m\",\n\t\t\"sm\": \"n\"\n\t}[size] || \"\"\n}[(!!icon).toString()]}`} />;\n",
 }

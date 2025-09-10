@@ -20,6 +20,7 @@ describe('devupUICssLoader', () => {
     devupUICssLoader.bind({
       callback,
       addContextDependency,
+      resourcePath: 'devup-ui.css',
       getOptions: () => ({ watch: false }),
     } as any)(Buffer.from('data'), '')
     expect(callback).toBeCalledWith(null, 'get css')
@@ -34,6 +35,7 @@ describe('devupUICssLoader', () => {
       callback,
       addContextDependency,
       getOptions: () => ({ watch: true }),
+      resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
     expect(callback).toBeCalledWith(null, 'get css', '', undefined)
     expect(getCss).toBeCalledTimes(1)
@@ -42,6 +44,7 @@ describe('devupUICssLoader', () => {
       callback,
       addContextDependency,
       getOptions: () => ({ watch: true }),
+      resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
 
     expect(getCss).toBeCalledTimes(0)
@@ -55,6 +58,7 @@ describe('devupUICssLoader', () => {
         __DEVUP_CACHE: 'data',
       },
       getOptions: () => ({ watch: true }),
+      resourcePath: 'devup-ui-10.css',
     } as any)(Buffer.from(''), '')
 
     expect(getCss).toBeCalledTimes(0)

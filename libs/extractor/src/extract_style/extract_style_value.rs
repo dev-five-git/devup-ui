@@ -17,11 +17,11 @@ pub enum ExtractStyleValue {
 }
 
 impl ExtractStyleValue {
-    pub fn extract(&self) -> Option<StyleProperty> {
+    pub fn extract(&self, filename: Option<&str>) -> Option<StyleProperty> {
         match self {
-            ExtractStyleValue::Static(style) => Some(style.extract()),
-            ExtractStyleValue::Dynamic(style) => Some(style.extract()),
-            ExtractStyleValue::Keyframes(keyframes) => Some(keyframes.extract()),
+            ExtractStyleValue::Static(style) => Some(style.extract(filename)),
+            ExtractStyleValue::Dynamic(style) => Some(style.extract(filename)),
+            ExtractStyleValue::Keyframes(keyframes) => Some(keyframes.extract(filename)),
             ExtractStyleValue::Typography(typo) => {
                 Some(StyleProperty::ClassName(format!("typo-{typo}")))
             }
@@ -68,33 +68,33 @@ mod tests {
     fn test_extract() {
         let style = ExtractStaticStyle::new("margin", "10px", 0, None);
         let value = ExtractStyleValue::Static(style);
-        let extracted = value.extract();
+        let extracted = value.extract(None);
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
         let style = ExtractDynamicStyle::new("margin", 0, "10px", None);
         let value = ExtractStyleValue::Dynamic(style);
-        let extracted = value.extract();
+        let extracted = value.extract(None);
         assert!(matches!(extracted, Some(StyleProperty::Variable { .. })));
 
         let keyframes = ExtractKeyframes::default();
         let value = ExtractStyleValue::Keyframes(keyframes);
-        let extracted = value.extract();
+        let extracted = value.extract(None);
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
         let value = ExtractStyleValue::Typography("body1".to_string());
-        let extracted = value.extract();
+        let extracted = value.extract(None);
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
         let value = ExtractStyleValue::Css(ExtractCss {
             css: "".to_string(),
             file: "".to_string(),
         });
-        assert!(value.extract().is_none());
+        assert!(value.extract(None).is_none());
 
         let value = ExtractStyleValue::Import(ExtractImport {
             url: "".to_string(),
             file: "".to_string(),
         });
-        assert!(value.extract().is_none());
+        assert!(value.extract(None).is_none());
     }
 }

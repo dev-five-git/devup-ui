@@ -20,5 +20,6 @@ pub(super) static MAINTAIN_VALUE_PROPERTIES: phf::Set<&str> = phf_set! {
     "grid-row-end",
     "animation-iteration-count",
     "tab-size",
-    "moz-tab-size"
+    "moz-tab-size",
+    "-webkit-line-clamp"
 };

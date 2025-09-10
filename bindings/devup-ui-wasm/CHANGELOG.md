@@ -1,5 +1,56 @@
 # @devup-ui/wasm
 
+## 1.0.35
+
+### Patch Changes
+
+- d3b8502: Fix globalCss hot reload issue
+
+## 1.0.34
+
+### Patch Changes
+
+- 629ad44: Optimized typography CSS values
+
+  Merged base component CSS to avoid duplicate generation
+
+  Introduced @layer to ensure style order consistency in CSS split mode
+
+  Downgraded nm base to avoid issues with g-ad class (display: none when AdBlock is enabled)
+
+  Fixed global CSS logic issue in CSS split mode
+
+## 1.0.33
+
+### Patch Changes
+
+- 2247d57: Optimize keyframe name
+- 9045f57: Feat split css
+
+## 1.0.32
+
+### Patch Changes
+
+- 93f182c: Fix webkit-line-clamp issue
+
+## 1.0.31
+
+### Patch Changes
+
+- 48a67da: Add webkit lineclamp to maintain value
+
+## 1.0.30
+
+### Patch Changes
+
+- 5a854ba: Update wasm
+
+## 1.0.29
+
+### Patch Changes
+
+- 2d51bf8: Optimize class gen logic
+
 ## 1.0.28
 
 ### Patch Changes

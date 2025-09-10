@@ -1,6 +1,13 @@
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
-import { codeExtract, exportClassMap, exportSheet } from '@devup-ui/wasm'
+import {
+  codeExtract,
+  exportClassMap,
+  exportFileMap,
+  exportSheet,
+  getCss,
+} from '@devup-ui/wasm'
 
 import devupUILoader from '../loader'
 
@@ -13,17 +20,23 @@ beforeEach(() => {
 })
 
 describe('devupUILoader', () => {
-  it('should extract code with css', async () => {
+  it.each(
+    createTestMatrix({
+      updatedBaseStyle: [true, false],
+    }),
+  )('should extract code with css', async (options) => {
     const _compiler = {
       __DEVUP_CACHE: '',
     }
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         sheetFile: 'sheetFile',
         classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
         watch: true,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -32,12 +45,16 @@ describe('devupUILoader', () => {
     }
     vi.mocked(exportSheet).mockReturnValue('sheet')
     vi.mocked(exportClassMap).mockReturnValue('classMap')
+    vi.mocked(exportFileMap).mockReturnValue('fileMap')
+    vi.mocked(getCss).mockReturnValue('css')
 
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
       free: vi.fn(),
       map: '{}',
+      cssFile: 'cssFile',
+      updatedBaseStyle: options.updatedBaseStyle,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -47,13 +64,33 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
+      true,
     )
+    if (options.updatedBaseStyle) {
+      expect(writeFile).toHaveBeenCalledWith(
+        join('cssFile', 'devup-ui.css'),
+        'css',
+        'utf-8',
+      )
+    } else {
+      expect(writeFile).not.toHaveBeenCalledWith(
+        join('cssFile', 'devup-ui.css'),
+        'css',
+        'utf-8',
+      )
+    }
     await vi.waitFor(() => {
       expect(t.async()).toHaveBeenCalledWith(null, 'code', {})
+      expect(writeFile).toHaveBeenCalledWith(
+        join('cssFile', 'cssFile'),
+        '/* index.tsx 0 */',
+      )
+      expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
+      expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
+      expect(writeFile).toHaveBeenCalledWith('fileMapFile', 'fileMap')
     })
-    expect(writeFile).toHaveBeenCalledWith('cssFile', '/* index.tsx 0 */')
-    expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
-    expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
 
     expect(t._compiler.__DEVUP_CACHE).toBe('index.tsx 0')
   })
@@ -62,8 +99,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: false,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -74,6 +112,8 @@ describe('devupUILoader', () => {
       css: undefined,
       free: vi.fn(),
       map: undefined,
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -83,6 +123,9 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
+      true,
     )
     expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
@@ -94,8 +137,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: false,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -114,8 +158,9 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssFile: 'cssFile',
+        cssDir: 'cssFile',
         watch: true,
+        singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
       resourcePath: 'index.tsx',
@@ -126,6 +171,8 @@ describe('devupUILoader', () => {
       css: 'css',
       free: vi.fn(),
       map: undefined,
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -135,6 +182,32 @@ describe('devupUILoader', () => {
       'code',
       'package',
       './cssFile',
+      true,
+      false,
+      true,
     )
+  })
+
+  it('should load with nowatch', () => {
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+      }),
+      async: vi.fn().mockReturnValue(vi.fn()),
+      resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
+    }
+    vi.mocked(codeExtract).mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: vi.fn(),
+      map: undefined,
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
+    })
+    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
   })
 })

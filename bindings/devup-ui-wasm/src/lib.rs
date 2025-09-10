@@ -1,7 +1,6 @@
 use css::class_map::{get_class_map, set_class_map};
-use extractor::extract_style::ExtractStyleProperty;
+use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::extract_style::style_property::StyleProperty;
 use extractor::{ExtractOption, extract};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
@@ -15,9 +14,10 @@ static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
 #[wasm_bindgen]
 pub struct Output {
     code: String,
-    styles: HashSet<ExtractStyleValue>,
     map: Option<String>,
-    default_collected: bool,
+    css_file: Option<String>,
+    updated_base_style: bool,
+    css: Option<String>,
 }
 #[wasm_bindgen]
 extern "C" {
@@ -33,112 +33,61 @@ extern "C" {
 
 #[wasm_bindgen]
 impl Output {
+    fn new(
+        code: String,
+        styles: HashSet<ExtractStyleValue>,
+        map: Option<String>,
+        single_css: bool,
+        filename: String,
+        css_file: Option<String>,
+        import_main_css: bool,
+    ) -> Self {
+        let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+        let default_collected = sheet.rm_global_css(&filename, single_css);
+        let (collected, updated_base_style) = sheet.update_styles(&styles, &filename, single_css);
+        Self {
+            code,
+            map,
+            css_file,
+            updated_base_style: updated_base_style || default_collected,
+            css: {
+                if !collected && !default_collected {
+                    None
+                } else {
+                    Some(sheet.create_css(
+                        if !single_css { Some(&filename) } else { None },
+                        import_main_css,
+                    ))
+                }
+            },
+        }
+    }
+
     /// Get the code
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "code")]
     pub fn code(&self) -> String {
         self.code.clone()
     }
 
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "cssFile")]
+    pub fn css_file(&self) -> Option<String> {
+        self.css_file.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "map")]
     pub fn map(&self) -> Option<String> {
         self.map.clone()
     }
 
+    #[wasm_bindgen(getter, js_name = "updatedBaseStyle")]
+    pub fn updated_base_style(&self) -> bool {
+        self.updated_base_style
+    }
+
     /// Get the css
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "css")]
     pub fn css(&self) -> Option<String> {
-        let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-        let mut collected = false;
-        for style in self.styles.iter() {
-            match style {
-                ExtractStyleValue::Static(st) => {
-                    let (cls, _) = match style.extract() {
-                        Some(StyleProperty::ClassName(cls)) => (cls, None),
-                        Some(StyleProperty::Variable {
-                            class_name,
-                            variable_name,
-                            ..
-                        }) => (class_name, Some(variable_name)),
-                        None => continue,
-                    };
-                    if sheet.add_property(
-                        &cls,
-                        st.property(),
-                        st.level(),
-                        st.value(),
-                        st.selector(),
-                        st.style_order(),
-                    ) {
-                        collected = true;
-                    }
-                }
-                ExtractStyleValue::Dynamic(dy) => {
-                    let (cls, variable) = match style.extract() {
-                        Some(StyleProperty::ClassName(cls)) => (cls, None),
-                        Some(StyleProperty::Variable {
-                            class_name,
-                            variable_name,
-                            ..
-                        }) => (class_name, Some(variable_name)),
-                        None => continue,
-                    };
-                    if sheet.add_property(
-                        &cls,
-                        dy.property(),
-                        dy.level(),
-                        &format!("var({})", variable.unwrap()),
-                        dy.selector(),
-                        dy.style_order(),
-                    ) {
-                        collected = true;
-                    }
-                }
-
-                ExtractStyleValue::Keyframes(keyframes) => {
-                    if sheet.add_keyframes(
-                        &keyframes.extract().to_string(),
-                        keyframes
-                            .keyframes
-                            .iter()
-                            .map(|(key, value)| {
-                                (
-                                    key.clone(),
-                                    value
-                                        .iter()
-                                        .map(|style| {
-                                            (
-                                                style.property().to_string(),
-                                                style.value().to_string(),
-                                            )
-                                        })
-                                        .collect::<Vec<(String, String)>>(),
-                                )
-                            })
-                            .collect(),
-                    ) {
-                        collected = true;
-                    }
-                }
-                ExtractStyleValue::Css(cs) => {
-                    if sheet.add_css(&cs.file, &cs.css) {
-                        collected = true;
-                    }
-                }
-                ExtractStyleValue::Typography(_) => {}
-                ExtractStyleValue::Import(st) => {
-                    sheet.add_import(&st.file, &st.url);
-                }
-                ExtractStyleValue::FontFace(font) => {
-                    sheet.add_font_face(&font.file, &font.properties);
-                }
-            }
-        }
-
-        if !collected && !self.default_collected {
-            return None;
-        }
-
-        Some(sheet.create_css())
+        self.css.clone()
     }
 }
 
@@ -155,28 +104,42 @@ pub fn is_debug() -> bool {
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 pub fn export_sheet() -> Result<String, JsValue> {
     serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap())
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
     set_class_map(
         serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
     );
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportClassMap")]
 pub fn export_class_map() -> Result<String, JsValue> {
-    serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(e.to_string().as_str()))
+    serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen(js_name = "importFileMap")]
+pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
+    set_file_map(
+        serde_wasm_bindgen::from_value(sheet_object)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
+    );
+    Ok(())
+}
+
+#[wasm_bindgen(js_name = "exportFileMap")]
+pub fn export_file_map() -> Result<String, JsValue> {
+    serde_json::to_string(&get_file_map()).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "codeExtract")]
@@ -184,24 +147,30 @@ pub fn code_extract(
     filename: &str,
     code: &str,
     package: &str,
-    css_file: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
 ) -> Result<Output, JsValue> {
-    let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-
     match extract(
         filename,
         code,
         ExtractOption {
             package: package.to_string(),
-            css_file: Some(css_file.to_string()),
+            css_dir,
+            single_css,
+            import_main_css: import_main_css_in_code,
         },
     ) {
-        Ok(output) => Ok(Output {
-            code: output.code,
-            styles: output.styles,
-            map: output.map,
-            default_collected: sheet.rm_global_css(filename),
-        }),
+        Ok(output) => Ok(Output::new(
+            output.code,
+            output.styles,
+            output.map,
+            single_css,
+            filename.to_string(),
+            output.css_file,
+            import_main_css_in_css,
+        )),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
 }
@@ -222,9 +191,12 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 }
 
 #[wasm_bindgen(js_name = "getCss")]
-pub fn get_css() -> Result<String, JsValue> {
+pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.create_css())
+    Ok(sheet.create_css(
+        file_num.map(get_filename_by_file_num).as_deref(),
+        import_main_css,
+    ))
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
@@ -259,7 +231,7 @@ mod tests {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
         }
-        assert_eq!(get_css().unwrap(), "");
+        assert_eq!(get_css(None, false).unwrap(), "");
 
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -274,7 +246,7 @@ mod tests {
             sheet.set_theme(theme);
         }
 
-        assert_debug_snapshot!(get_css().unwrap());
+        assert_debug_snapshot!(get_css(None, false).unwrap());
     }
 
     #[test]

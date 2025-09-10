@@ -14,5 +14,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Button } from \"@devup/ui\";\n<div className=\"d0\" />;\n<Button bg=\"red\" background=\"red\" />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\nimport { Button } from \"@devup/ui\";\n<div className=\"a\" />;\n<Button bg=\"red\" background=\"red\" />;\n",
 }
