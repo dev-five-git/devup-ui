@@ -188,7 +188,7 @@ export function DevupUI({
 
       const {
         code: retCode,
-        css,
+        css = '',
         map,
         cssFile,
         updatedBaseStyle,
@@ -203,7 +203,7 @@ export function DevupUI({
         )
       }
 
-      if (css) {
+      if (cssFile) {
         const fileNum = getFileNumByFilename(cssFile!)
         const prevCss = cssMap.get(fileNum)
         if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
