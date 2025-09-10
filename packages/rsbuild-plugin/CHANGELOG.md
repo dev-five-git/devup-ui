@@ -1,5 +1,11 @@
 # @devup-ui/rsbuild-plugin
 
+## 1.0.32
+
+### Patch Changes
+
+- acb5eb0: Fix create file issue
+
 ## 1.0.31
 
 ### Patch Changes

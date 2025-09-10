@@ -1,5 +1,11 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.36
+
+### Patch Changes
+
+- acb5eb0: Fix create file issue
+
 ## 1.0.35
 
 ### Patch Changes
