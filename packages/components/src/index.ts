@@ -1,5 +1,7 @@
 export { Button } from './components/Button'
 export { Input } from './components/Input'
+export { Radio } from './components/Radio'
+export { RadioGroup } from './components/RadioGroup'
 export {
   Select,
   SelectContainer,
