@@ -1,0 +1,411 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`RadioGroup > should RadioGroup snapshot 1`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 30px;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 2`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: column; gap: 16px;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 3`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 30px;"
+  >
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <span
+        aria-disabled="true"
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <span
+        aria-disabled="true"
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 4`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: column; gap: 16px;"
+  >
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <span
+        aria-disabled="true"
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <span
+        aria-disabled="true"
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 5`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 0;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <div
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-6px 0 0 6px--1"
+        data-radio-button="true"
+      >
+        옵션 1
+      </div>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <div
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-0 6px 6px 0--1"
+        data-radio-button="true"
+      >
+        옵션 2
+      </div>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 6`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 0;"
+  >
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <div
+        aria-disabled="true"
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-6px 0 0 6px--1"
+        data-radio-button="true"
+      >
+        옵션 1
+      </div>
+    </label>
+    <label
+      aria-disabled="true"
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        disabled=""
+        type="radio"
+      />
+      <div
+        aria-disabled="true"
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-0 6px 6px 0--1"
+        data-radio-button="true"
+      >
+        옵션 2
+      </div>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 7`] = `
+<div>
+  <div
+    class="className display-0-flex--0"
+    style="flex-direction: row; gap: 30px;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class="classNameLabel color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class="classNameLabel color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 8`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 30px; width: 500px;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 9`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 30px;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+      >
+        옵션 1
+      </span>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255 align-items-0-center--255 cursor-0-pointer--255 display-0-inline-flex--255 gap-0-8px--255"
+    >
+      <input
+        class=" outline-0-1px sold var(--border,var(--primary))-16231282139879731451-1 appearance-0-none--1 background-0-light-dark(#FFF,#2E2E2E)--1 border-0-1px solid--1 border-color-0-$border--1 border-radius-0-100%--1 height-0-18px--1 margin-0-0--1 background-0-var(--checkedBg,var(--primary,light-dark(#FFF,#2E2E2E)))-17129114244782262327-1 border-0-3px solid-17129114244782262327-1 border-color-0-var(--checkedBg,light-dark(#FFF,#2E2E2E))-17129114244782262327-1 box-shadow-0-0 0 0 1px var(--checkedBorder,var(--primary))-17129114244782262327-1 border-0-1px solid var(--hoverBorder,var(--primary))-3290869533418587046-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-3290869533418587046-1 background-color-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-6868913831866299902-1 transition-0-.25s--1 width-0-18px--1"
+        data-radio-input="true"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+        type="radio"
+      />
+      <span
+        class=" color-0-var(--text,light-dark(#000,#FFF))--1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-7839325038755874321-1"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+      >
+        옵션 2
+      </span>
+    </label>
+  </div>
+</div>
+`;
+
+exports[`RadioGroup > should RadioGroup snapshot 10`] = `
+<div>
+  <div
+    class=" display-0-flex--0"
+    style="flex-direction: row; gap: 0;"
+  >
+    <label
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <div
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-6px 0 0 6px--1"
+        data-radio-button="true"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+      >
+        옵션 1
+      </div>
+    </label>
+    <label
+      class="cursor-0-default-7839325038755874321-255    "
+    >
+      <input
+        class=" display-0-none--1 opacity-0-0--1"
+        data-radio-input="true"
+        type="radio"
+      />
+      <div
+        class=" cursor-0-not-allowed-14172363753176421546-1 background-0-var(--bg,light-dark(#FFF,#2E2E2E))--1 border-0-1px solid--1 border-color-0-$border--1 color-0-var(--text,light-dark(#000,#FFF))--1 cursor-0-pointer--1 display-0-flex--1 padding-right-0-32px--1 padding-left-0-32px--1 padding-bottom-0-16px--1 padding-top-0-16px--1 font-weight-0-600-13599873562982711818-1 background-0-var(--checkedBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 80%),color-mix(in srgb,var(--primary) 10%,black 80%)))-13599873562982711818-1 border-color-0-var(--checkedBorder,var(--primary))-13599873562982711818-1 color-0-var(--checkedColor,var(--primary))-13599873562982711818-1 background-0-var(--hoverBg,light-dark(color-mix(in srgb,var(--primary) 10%,white 90%),color-mix(in srgb,var(--primary) 10%,black 90%)))-17878486696247413219-1 border-color-0-var(--hoverBorder,var(--primary))-17878486696247413219-1 background-0-var(--disabledBg,light-dark(#F0F0F3,#47474A))-13062485276290174291-1 color-0-var(--disabledColor,light-dark(#D6D7DE,#373737))-13062485276290174291-1 transition-0-background-color .25s,border-color .25s--1 width-0-fit-content--1 border-radius-0-0 6px 6px 0--1"
+        data-radio-button="true"
+        style="--primary: red; --border: red; --text: red; --bg: red; --hoverBg: red; --hoverBorder: red; --hoverColor: red; --checkedBg: red; --checkedBorder: red; --checkedColor: red; --disabledBg: red; --disabledColor: red;"
+      >
+        옵션 2
+      </div>
+    </label>
+  </div>
+</div>
+`;
