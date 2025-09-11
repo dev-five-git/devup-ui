@@ -1,4 +1,5 @@
 import { act, render } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import { Toggle } from '../index'
 
@@ -61,7 +62,7 @@ describe('Toggle', () => {
   it('should change value when use onChange prop', async () => {
     const onChange = vi.fn()
     const { container } = render(<Toggle onChange={onChange} />)
-    const toggleButton = container.querySelector(`.toggleSwitch`)
+    const toggleButton = container.querySelector(`.toggle-switch`)
     const input = container.querySelector('input')
     toggleButton &&
       (await act(async () => {
