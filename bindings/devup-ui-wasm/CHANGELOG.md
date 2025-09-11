@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.36
+
+### Patch Changes
+
+- f611579: Fix convert kebab issue in selectors
+
 ## 1.0.35
 
 ### Patch Changes

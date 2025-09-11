@@ -1,5 +1,12 @@
 # @devup-ui/vite-plugin
 
+## 1.0.37
+
+### Patch Changes
+
+- Updated dependencies [f611579]
+  - @devup-ui/wasm@1.0.36
+
 ## 1.0.36
 
 ### Patch Changes
