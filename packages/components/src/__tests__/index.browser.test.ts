@@ -19,6 +19,7 @@ describe('export', () => {
       useStepper: expect.any(Function),
       SelectContext: expect.any(Object),
       useSelect: expect.any(Function),
+      Toggle: expect.any(Function),
     })
   })
 })
