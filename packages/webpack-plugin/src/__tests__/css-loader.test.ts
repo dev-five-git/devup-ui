@@ -47,20 +47,17 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
 
-    expect(getCss).toBeCalledTimes(0)
+    expect(getCss).toBeCalledTimes(1)
 
     vi.mocked(getCss).mockReset()
 
     devupUICssLoader.bind({
       callback,
       addContextDependency,
-      _compiler: {
-        __DEVUP_CACHE: 'data',
-      },
       getOptions: () => ({ watch: true }),
       resourcePath: 'devup-ui-10.css',
     } as any)(Buffer.from(''), '')
 
-    expect(getCss).toBeCalledTimes(0)
+    expect(getCss).toBeCalledTimes(1)
   })
 })

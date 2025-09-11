@@ -144,7 +144,7 @@ export function Radio({
           border="1px solid"
           borderColor="$border"
           borderRadius={
-            firstButton ? '6px 0 0 6px' : lastButton ? '0 6px 6px 0' : undefined
+            firstButton ? '8px 0 0 8px' : lastButton ? '0 8px 8px 0' : undefined
           }
           className={className}
           color="var(--text, light-dark(#000, #fff))"
@@ -152,7 +152,7 @@ export function Radio({
           data-radio-button
           display="flex"
           px={8}
-          py={4}
+          py={3}
           selectors={{
             // checked
             '[data-radio-input]:checked + &:not([aria-disabled=true])': {

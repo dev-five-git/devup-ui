@@ -1,5 +1,13 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.37
+
+### Patch Changes
+
+- f611579: Rm css cache for supporting turbopack and split css
+- Updated dependencies [f611579]
+  - @devup-ui/wasm@1.0.36
+
 ## 1.0.36
 
 ### Patch Changes

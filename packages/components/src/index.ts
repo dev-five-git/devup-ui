@@ -17,5 +17,6 @@ export {
   StepperInput,
   useStepper,
 } from './components/Stepper'
+export { Toggle } from './components/Toggle'
 export { SelectContext, useSelect } from './contexts/useSelect'
 export type { SelectType, SelectValue } from './types/select'
