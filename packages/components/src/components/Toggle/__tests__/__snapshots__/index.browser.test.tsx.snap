@@ -133,10 +133,10 @@ exports[`Toggle > should Toggle snapshot 8`] = `
 exports[`Toggle > should Toggle snapshot 9`] = `
 <div>
   <div
-    class="toggle-switch test border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
+    class="toggle-switch test-toggle-wrapper border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
   >
     <div
-      class="testToggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 outline-0-4px solid-5575642944241722847-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-5575642944241722847-255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
+      class="test-toggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 outline-0-4px solid-5575642944241722847-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-5575642944241722847-255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
     />
   </div>
   <input

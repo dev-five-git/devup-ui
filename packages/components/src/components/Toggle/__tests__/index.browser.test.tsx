@@ -29,8 +29,8 @@ describe('Toggle', () => {
     expect(
       render(
         <Toggle
-          className="test"
-          classNames={{ toggle: 'testToggle' }}
+          className="test-toggle-wrapper"
+          classNames={{ toggle: 'test-toggle' }}
           value={true}
           variant="switch"
         />,
