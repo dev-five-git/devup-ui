@@ -14,13 +14,14 @@
   },
   "devDependencies": {
     "eslint-plugin-devup": "^2.0.5",
-    "eslint": "^9.34.0",
+    "eslint": "^9.35.0",
     "vitest": "^3.2.4",
     "@vitest/coverage-v8": "^3.2.4",
-    "@changesets/cli": "^2.29.6",
+    "@changesets/cli": "^2.29.7",
     "@types/node": "^24.3.1",
     "happy-dom": "^18.0.1",
     "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "14.6.1",
     "@testing-library/jest-dom": "^6.8.0",
     "@devup-ui/vite-plugin": "workspace:*"
   },

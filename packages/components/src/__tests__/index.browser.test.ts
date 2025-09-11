@@ -6,6 +6,8 @@ describe('export', () => {
       Input: expect.any(Function),
       Stepper: expect.any(Function),
       Select: expect.any(Function),
+      Radio: expect.any(Function),
+      RadioGroup: expect.any(Function),
       SelectContainer: expect.any(Function),
       SelectDivider: expect.any(Function),
       SelectOption: expect.any(Function),

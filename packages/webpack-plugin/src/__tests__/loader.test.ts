@@ -112,7 +112,7 @@ describe('devupUILoader', () => {
       css: undefined,
       free: vi.fn(),
       map: undefined,
-      cssFile: 'cssFile',
+      cssFile: undefined,
       updatedBaseStyle: false,
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')

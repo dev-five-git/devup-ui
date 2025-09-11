@@ -113,7 +113,7 @@ pub fn extract(
         )
     };
     let mut css_files = vec![css_file.clone()];
-    if option.import_main_css {
+    if option.import_main_css && !option.single_css {
         css_files.insert(0, format!("{}/devup-ui.css", option.css_dir));
     }
     let allocator = Allocator::default();

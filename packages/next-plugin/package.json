@@ -19,7 +19,7 @@
     "webpack"
   ],
   "type": "module",
-  "version": "1.0.36",
+  "version": "1.0.37",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -46,7 +46,7 @@
     "browserslist": "latest"
   },
   "devDependencies": {
-    "vite": "^7.1.4",
+    "vite": "^7.1.5",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
     "typescript": "^5.9.2",
