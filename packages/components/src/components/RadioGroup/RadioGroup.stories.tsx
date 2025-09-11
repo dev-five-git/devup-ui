@@ -9,20 +9,6 @@ export const Default = {
   args: {
     disabled: false,
     name: 'radio',
-    colors: {
-      primary: 'var(--primary)',
-      border: 'var(--border)',
-      text: 'var(--text)',
-      bg: 'var(--bg)',
-      hoverBg: 'var(--hoverBg)',
-      hoverBorder: 'var(--hoverBorder)',
-      hoverColor: 'var(--hoverColor)',
-      checkedBg: 'var(--checkedBg)',
-      checkedBorder: 'var(--checkedBorder)',
-      checkedColor: 'var(--checkedColor)',
-      disabledBg: 'var(--disabledBg)',
-      disabledColor: 'var(--disabledColor)',
-    },
     options: [
       {
         value: '1',
