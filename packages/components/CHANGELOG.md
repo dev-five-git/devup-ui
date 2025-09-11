@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.16
+
+### Patch Changes
+
+- 460f37e: Feat toggle
+
 ## 0.1.15
 
 ### Patch Changes
