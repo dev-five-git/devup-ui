@@ -29,6 +29,32 @@ describe('Toggle', () => {
     expect(
       render(
         <Toggle
+          className="test"
+          classNames={{ toggle: 'testToggle' }}
+          value={true}
+          variant="switch"
+        />,
+      ).container,
+    ).toMatchSnapshot()
+    expect(
+      render(
+        <Toggle
+          style={{
+            backgroundColor: 'blue',
+          }}
+          styles={{
+            toggle: {
+              backgroundColor: 'blue',
+            },
+          }}
+          value={true}
+          variant="switch"
+        />,
+      ).container,
+    ).toMatchSnapshot()
+    expect(
+      render(
+        <Toggle
           colors={{
             primary: 'blue',
             bg: 'blue',
