@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-oxc_parser = "0.86.0"
-oxc_syntax = "0.86.0"
-oxc_span = "0.86.0"
-oxc_allocator = "0.86.0"
-oxc_ast = "0.86.0"
-oxc_ast_visit = "0.86.0"
-oxc_codegen = "0.86.0"
+oxc_parser = "0.87.0"
+oxc_syntax = "0.87.0"
+oxc_span = "0.87.0"
+oxc_allocator = "0.87.0"
+oxc_ast = "0.87.0"
+oxc_ast_visit = "0.87.0"
+oxc_codegen = "0.87.0"
 css = { path = "../css" }
 phf = "0.13"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 
 [dev-dependencies]
-insta = "1.43.1"
+insta = "1.43.2"
 serial_test = "3.2.0"
 rstest = "0.26.1"

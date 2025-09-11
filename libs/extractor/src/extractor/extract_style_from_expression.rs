@@ -185,38 +185,46 @@ pub fn extract_style_from_expression<'a>(
                             level -= 1;
                         }
                         if c == ',' && level == 0 {
-                            part_of_selector.push(&name[last_idx..idx]);
+                            part_of_selector.push(name[last_idx..idx].trim());
                             last_idx = idx + 1;
                         }
                         if idx == name.len() - 1 {
-                            part_of_selector.push(&name[last_idx..]);
+                            part_of_selector.push(name[last_idx..].trim());
                         }
                     }
 
                     let sel = part_of_selector
                         .iter()
                         .map(|name| {
-                            let name = name.trim();
                             if let Some(selector) = selector {
-                                if name.starts_with("_theme") {
-                                    StyleSelector::from([
-                                        to_kebab_case(name.replace("_theme", "theme").as_str())
-                                            .as_str(),
-                                        &selector.to_string(),
-                                    ])
-                                    .to_string()
+                                if name.starts_with("_") {
+                                    if name.starts_with("_theme") {
+                                        StyleSelector::from([
+                                            to_kebab_case(name.replace("_", "").as_str()).as_str(),
+                                            &selector.to_string(),
+                                        ])
+                                        .to_string()
+                                    } else {
+                                        StyleSelector::from([
+                                            &selector.to_string(),
+                                            to_kebab_case(name.replace("_", "").as_str()).as_str(),
+                                        ])
+                                        .to_string()
+                                    }
                                 } else if name.contains("&") {
-                                    to_kebab_case(&name.replace("&", &selector.to_string()))
+                                    name.replace("&", &selector.to_string())
                                 } else {
-                                    StyleSelector::from([
-                                        selector.to_string().replace("_", "").as_str(),
-                                        &to_kebab_case(&name.replace("_", "")),
-                                    ])
-                                    .to_string()
+                                    StyleSelector::from([&selector.to_string(), *name]).to_string()
                                 }
                             } else {
-                                StyleSelector::from(to_kebab_case(&name.replace("_", "")).as_str())
+                                if name.starts_with("_") {
+                                    StyleSelector::from(
+                                        to_kebab_case(&name.replace("_", "")).as_str(),
+                                    )
                                     .to_string()
+                                } else {
+                                    StyleSelector::from(name.replace("_", "").as_str()).to_string()
+                                }
                             }
                         })
                         .collect::<Vec<_>>()
