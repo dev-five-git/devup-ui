@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.18
+
+### Patch Changes
+
+- fae8876: Fix toggle ui
+
 ## 0.1.17
 
 ### Patch Changes
