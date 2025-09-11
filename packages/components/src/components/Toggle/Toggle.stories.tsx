@@ -1,18 +1,27 @@
+import { Meta, StoryObj } from '@storybook/react-vite'
+
 import { Toggle } from './index'
 
-export default {
+type Story = StoryObj<typeof meta>
+
+const meta: Meta<typeof Toggle> = {
   title: 'Devfive/Toggle',
   component: Toggle,
-  tags: ['autodocs'],
+  decorators: [
+    (Story) => (
+      <div style={{ padding: '10px' }}>
+        <Story />
+      </div>
+    ),
+  ],
 }
 
-export const Default = {
+export const Default: Story = {
   args: {
-    disabled: false,
-    variant: 'default',
     defaultValue: false,
-    offText: 'OFF',
-    onText: 'ON',
-    color: 'var(--primary)',
+    variant: 'default',
+    disabled: false,
   },
 }
+
+export default meta

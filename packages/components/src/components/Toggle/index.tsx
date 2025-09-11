@@ -63,7 +63,7 @@ export function Toggle({
         }
         borderRadius="500px"
         boxSizing="border-box"
-        className="toggleSwitch"
+        className={'toggle-switch ' + className}
         cursor="pointer"
         h={isDefault ? '28px' : '8px'}
         justifyContent={resultValue ? 'flex-end' : undefined}
@@ -105,10 +105,12 @@ export function Toggle({
           outline="4px"
           pos="absolute"
           selectors={{
-            '.toggleSwitch:hover[aria-disabled=false] > &': {
-              outline: '4px solid',
-              outlineColor: `var(--switchHoverOutline, light-dark(color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--primary) 50%, transparent)))`,
-            },
+            '.toggle-switch:not([aria-disabled=true]):hover > &': isDefault
+              ? {}
+              : {
+                  outline: '4px solid',
+                  outlineColor: `var(--switchHoverOutline, light-dark(color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--primary) 50%, transparent)))`,
+                },
           }}
           style={styles?.toggle}
           styleVars={{
