@@ -63,13 +63,14 @@ export function Toggle({
         }
         borderRadius="500px"
         boxSizing="border-box"
-        className={'toggle-switch ' + className}
+        className={className}
         cursor="pointer"
         h={isDefault ? '28px' : '8px'}
-        justifyContent={resultValue ? 'flex-end' : undefined}
+        justifyContent={resultValue && 'flex-end'}
         onClick={() => !disabled && handleToggle(resultValue)}
-        p={isDefault ? 1 : undefined}
+        p={!isDefault && 1}
         position="relative"
+        role="group"
         selectors={{
           '&[aria-disabled=true]': {
             cursor: 'not-allowed',
@@ -89,29 +90,27 @@ export function Toggle({
           hoverBg: colors?.hoverBg,
           disabledBg: colors?.disabledBg,
         }}
+        test-id="toggle-wrapper"
         transition=".25s"
         w={isDefault ? '50px' : '40px'}
       >
         <Box
+          _groupHover={
+            !isDefault && {
+              outline: '4px solid',
+              outlineColor: `var(--switchHoverOutline, light-dark(color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--primary) 50%, transparent)))`,
+            }
+          }
           backgroundColor="#fff"
           borderRadius="100%"
           boxSize="20px"
           className={classNames?.toggle}
           filter={
-            isDefault
-              ? undefined
-              : `drop-shadow(0px 0px 3px var(--switchShadow, rgba(0, 0, 0, 0.10)));`
+            !isDefault &&
+            `drop-shadow(0px 0px 3px var(--switchShadow, rgba(0, 0, 0, 0.10)));`
           }
           outline="4px"
           pos="absolute"
-          selectors={{
-            '.toggle-switch:not([aria-disabled=true]):hover > &': isDefault
-              ? {}
-              : {
-                  outline: '4px solid',
-                  outlineColor: `var(--switchHoverOutline, light-dark(color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--primary) 50%, transparent)))`,
-                },
-          }}
           style={styles?.toggle}
           styleVars={{
             primary: colors?.primary,
@@ -119,16 +118,12 @@ export function Toggle({
             switchShadow: colors?.switchShadow,
             switchHoverOutline: colors?.switchHoverOutline,
           }}
-          top={isDefault ? undefined : '-6px'}
-          transform={resultValue ? 'translateX(calc(100% + 2px))' : undefined}
+          top={!isDefault && '-6px'}
+          transform={resultValue && 'translateX(calc(100% + 2px))'}
           transition={isDefault ? '.25s' : 'transform .25s'}
         />
       </Box>
-      <Input
-        defaultValue={String(defaultValue)}
-        type="hidden"
-        value={String(resultValue)}
-      />
+      <Input type="hidden" value={String(resultValue)} />
     </>
   )
 }

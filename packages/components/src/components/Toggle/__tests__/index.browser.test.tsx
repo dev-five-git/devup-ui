@@ -29,7 +29,7 @@ describe('Toggle', () => {
     expect(
       render(
         <Toggle
-          className="test-toggle-wrapper"
+          className="test-toggle-wrapper  "
           classNames={{ toggle: 'test-toggle' }}
           value={true}
           variant="switch"
@@ -87,8 +87,10 @@ describe('Toggle', () => {
 
   it('should change value when use onChange prop', async () => {
     const onChange = vi.fn()
-    const { container } = render(<Toggle onChange={onChange} />)
-    const toggleButton = container.querySelector(`.toggle-switch`)
+    const { container } = render(
+      <Toggle className="test" onChange={onChange} />,
+    )
+    const toggleButton = container.querySelector('.test')
     const input = container.querySelector('input')
     toggleButton &&
       (await act(async () => {
