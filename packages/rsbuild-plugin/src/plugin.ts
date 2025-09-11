@@ -130,7 +130,7 @@ export const DevupUI = ({
           return code
         const {
           code: retCode,
-          css,
+          css = '',
           map,
           cssFile,
           updatedBaseStyle,
@@ -155,11 +155,11 @@ export const DevupUI = ({
           )
         }
 
-        if (css) {
+        if (cssFile) {
           if (globalCss.length < css.length) globalCss = css
           promises.push(
             writeFile(
-              join(cssDir, basename(cssFile!)),
+              join(cssDir, basename(cssFile)),
               `/* ${resourcePath} ${Date.now()} */`,
               'utf-8',
             ),
