@@ -144,3 +144,14 @@ const box = <Box _hover={{bg: ["red", "blue"]}}/>
 // Same
 const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```
+
+## 기여 방법 
+
+rust compiler는 설치되어있다고 가정합니다.
+```sh
+pnpm i
+pnpm build
+cargo install cargo-tarpaulin
+cargo install wasm-pack
+```
+설치 후 `pnpm test` 실행하여 문제가 없는지 확인합니다.

@@ -105,6 +105,7 @@ export function Button({
           },
         }[variant]
       }
+      // Q. how to use dark theme?
       _themeDark={{
         _active: {
           primary: {
