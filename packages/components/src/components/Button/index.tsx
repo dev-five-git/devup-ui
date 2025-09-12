@@ -7,7 +7,7 @@ import {
 } from '@devup-ui/react'
 import { clsx } from 'clsx'
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'default'
   colors?: {
     primary?: string
