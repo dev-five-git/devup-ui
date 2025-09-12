@@ -1,4 +1,5 @@
 import type { Properties } from 'csstype'
+
 import type { ResponsiveValue } from '../responsive-value'
 import type { Merge } from '../utils'
 import type { DevupUiBackgroundProps } from './background'
