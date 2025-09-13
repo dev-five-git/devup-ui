@@ -570,6 +570,7 @@ impl StyleSheet {
         let write_global = filename.is_none();
 
         if write_global {
+            css.insert_str(0, self.create_header().as_str());
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
             let mut base_styles = BTreeMap::<u8, HashSet<StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
@@ -673,11 +674,7 @@ impl StyleSheet {
                 }
             }
         }
-        if css.is_empty() {
-            css
-        } else {
-            format!("{}{}", self.create_header(), css)
-        }
+        css
     }
 }
 
@@ -1533,7 +1530,7 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
 
         sheet.rm_global_css("test.tsx", true);
-        assert_debug_snapshot!(sheet.create_css(None, false));
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
 
         let mut sheet = StyleSheet::default();
         sheet.add_property(
