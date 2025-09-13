@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.37
+
+### Patch Changes
+
+- 88e3a5a: Add css banner
+
 ## 1.0.36
 
 ### Patch Changes
