@@ -543,13 +543,32 @@ impl StyleSheet {
         current_css
     }
 
+    fn create_header(&self) -> String {
+        format!(
+            "/*! devup-ui v{version} | Apache License 2.0 | https://devup-ui.com */",
+            // get version from package.json
+            version = include_str!("../../../bindings/devup-ui-wasm/package.json")
+                .lines()
+                .find(|line| line.contains("\"version\""))
+                .unwrap()
+                .split(":")
+                .nth(1)
+                .unwrap()
+                .trim()
+                .replace("\"", ""),
+        )
+    }
+
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
-        let mut css = self
-            .imports
-            .values()
-            .flatten()
-            .map(|import| format!("@import \"{import}\";"))
-            .collect::<String>();
+        let mut css = format!(
+            "{}{}",
+            self.create_header(),
+            self.imports
+                .values()
+                .flatten()
+                .map(|import| format!("@import \"{import}\";"))
+                .collect::<String>()
+        );
 
         let write_global = filename.is_none();
 
