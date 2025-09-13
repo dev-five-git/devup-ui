@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -64,40 +63,87 @@ function checkDirSize(path) {
 
 clearBuildFile()
 
-console.time('kuma-ui')
+performance.mark('kuma-ui-start')
+console.profile('kuma-ui')
 execSync('pnpm -F next-kuma-ui-benchmark build', {
   stdio: 'inherit',
 })
-console.timeEnd('kuma-ui')
-console.info('kuma-ui', checkDirSize('./benchmark/next-kuma-ui/.next'))
+console.profileEnd('kuma-ui')
+performance.mark('kuma-ui-end')
+performance.measure('kuma-ui', 'kuma-ui-start', 'kuma-ui-end')
 
-console.time('chakra-ui')
+performance.mark('chakra-ui-start')
+console.profile('chakra-ui')
 execSync('pnpm -F next-chakra-ui-benchmark build', {
   stdio: 'inherit',
 })
-console.timeEnd('chakra-ui')
-console.info('chakra-ui', checkDirSize('./benchmark/next-chakra-ui/.next'))
+console.profileEnd('chakra-ui')
+performance.mark('chakra-ui-end')
+performance.measure('chakra-ui', 'chakra-ui-start', 'chakra-ui-end')
 
-console.time('mui')
+performance.mark('mui-start')
+console.profile('mui')
 execSync('pnpm -F next-mui-benchmark build', {
   stdio: 'inherit',
 })
-console.timeEnd('mui')
-console.info('mui', checkDirSize('./benchmark/next-mui/.next'))
+console.profileEnd('mui')
+performance.mark('mui-end')
+performance.measure('mui', 'mui-start', 'mui-end')
 
-console.time('devup-ui')
+performance.mark('devup-ui-start')
+console.profile('devup-ui')
 execSync('pnpm -F next-devup-ui-benchmark build', {
   stdio: 'inherit',
 })
-console.timeEnd('devup-ui')
-console.info('devup-ui', checkDirSize('./benchmark/next-devup-ui/.next'))
+console.profileEnd('devup-ui')
+performance.mark('devup-ui-end')
+performance.measure('devup-ui', 'devup-ui-start', 'devup-ui-end')
 
-console.time('devup-ui-single')
+performance.mark('devup-ui-single-start')
+console.profile('devup-ui-single')
 execSync('pnpm -F next-devup-ui-single-benchmark build', {
   stdio: 'inherit',
 })
-console.timeEnd('devup-ui-single')
+console.profileEnd('devup-ui-single')
+performance.mark('devup-ui-single-end')
+performance.measure(
+  'devup-ui-single',
+  'devup-ui-single-start',
+  'devup-ui-single-end',
+)
+
+console.info(performance.getEntriesByName('kuma-ui'))
+
+console.info(
+  'kuma-ui',
+  checkDirSize('./benchmark/next-kuma-ui/.next').toLocaleString() + 'bytes',
+)
+
+console.info(performance.getEntriesByName('chakra-ui'))
+
+console.info(
+  'chakra-ui',
+  checkDirSize('./benchmark/next-chakra-ui/.next').toLocaleString() + 'bytes',
+)
+
+console.info(performance.getEntriesByName('mui'))
+
+console.info(
+  'mui',
+  checkDirSize('./benchmark/next-mui/.next').toLocaleString() + 'bytes',
+)
+
+console.info(performance.getEntriesByName('devup-ui'))
+
+console.info(
+  'devup-ui',
+  checkDirSize('./benchmark/next-devup-ui/.next').toLocaleString() + 'bytes',
+)
+
+console.info(performance.getEntriesByName('devup-ui-single'))
+
 console.info(
   'devup-ui-single',
-  checkDirSize('./benchmark/next-devup-ui-single/.next'),
+  checkDirSize('./benchmark/next-devup-ui-single/.next').toLocaleString() +
+    'bytes',
 )
