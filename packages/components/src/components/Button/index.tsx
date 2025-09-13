@@ -7,7 +7,7 @@ import {
 } from '@devup-ui/react'
 import { clsx } from 'clsx'
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'default'
   colors?: {
     primary?: string
@@ -105,6 +105,7 @@ export function Button({
           },
         }[variant]
       }
+      // Q. how to use dark theme?
       _themeDark={{
         _active: {
           primary: {
