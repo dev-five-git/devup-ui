@@ -53,6 +53,8 @@ mod tests {
         let got = get_file_map();
         assert_eq!(got.get_by_left("test-key"), Some(&42));
         assert_eq!(got.get_by_right(&42), Some(&"test-key".to_string()));
+        assert_eq!(get_file_num_by_filename("test-key"), 42);
+        assert_eq!(get_filename_by_file_num(42), "test-key");
     }
 
     #[test]
