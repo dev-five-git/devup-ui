@@ -246,7 +246,7 @@ mod tests {
             sheet.set_theme(theme);
         }
 
-        assert_debug_snapshot!(get_css(None, false).unwrap());
+        assert_debug_snapshot!(get_css(None, false).unwrap().split("*/").nth(1).unwrap());
     }
 
     #[test]
