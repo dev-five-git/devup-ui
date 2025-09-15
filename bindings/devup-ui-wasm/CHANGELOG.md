@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.38
+
+### Patch Changes
+
+- 338f974: Fix n, m logic to avoid adblock
+
 ## 1.0.37
 
 ### Patch Changes
