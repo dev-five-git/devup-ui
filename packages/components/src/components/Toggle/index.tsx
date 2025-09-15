@@ -120,7 +120,7 @@ export function Toggle({
           }}
           top={!isDefault && '-6px'}
           transform={resultValue && 'translateX(calc(100% + 2px))'}
-          transition={isDefault ? '.25s' : 'transform .25s'}
+          transition=".25s"
         />
       </Box>
       <Input type="hidden" value={String(resultValue)} />

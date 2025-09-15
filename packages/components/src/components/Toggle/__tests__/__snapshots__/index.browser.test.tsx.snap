@@ -7,7 +7,7 @@ exports[`Toggle > should Toggle snapshot 1`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255     transition-0-.25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
     />
   </div>
   <input
@@ -25,7 +25,7 @@ exports[`Toggle > should Toggle snapshot 2`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255     transition-0-.25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
     />
   </div>
   <input
@@ -42,7 +42,7 @@ exports[`Toggle > should Toggle snapshot 3`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255    transform-0-translateX(calc(100% + 2px))--255 transition-0-.25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255"
     />
   </div>
   <input
@@ -59,7 +59,7 @@ exports[`Toggle > should Toggle snapshot 4`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255    transform-0-translateX(calc(100% + 2px))--255 transition-0-.25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255"
     />
   </div>
   <input
@@ -76,7 +76,7 @@ exports[`Toggle > should Toggle snapshot 5`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255  transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
     />
   </div>
   <input
@@ -94,7 +94,7 @@ exports[`Toggle > should Toggle snapshot 6`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255  transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
     />
   </div>
   <input
@@ -111,7 +111,7 @@ exports[`Toggle > should Toggle snapshot 7`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
     />
   </div>
   <input
@@ -128,7 +128,7 @@ exports[`Toggle > should Toggle snapshot 8`] = `
     role="group"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
     />
   </div>
   <input
@@ -145,7 +145,7 @@ exports[`Toggle > should Toggle snapshot 9`] = `
     role="group"
   >
     <div
-      class="test-toggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
+      class="test-toggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
     />
   </div>
   <input
@@ -163,7 +163,7 @@ exports[`Toggle > should Toggle snapshot 10`] = `
     style="background-color: blue;"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255 transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
       style="background-color: blue;"
     />
   </div>
@@ -182,7 +182,7 @@ exports[`Toggle > should Toggle snapshot 11`] = `
     style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255     transition-0-.25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
       style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;"
     />
   </div>
@@ -201,7 +201,7 @@ exports[`Toggle > should Toggle snapshot 12`] = `
     style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;"
   >
     <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255  transition-0-transform .25s--255"
+      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
       style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;"
     />
   </div>
