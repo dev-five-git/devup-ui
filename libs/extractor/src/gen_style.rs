@@ -118,30 +118,14 @@ fn gen_style<'a>(
             }
             for p in collect_c.iter() {
                 let found = collect_a.iter().any(|q| {
+                    let r = matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name());
                     if let ObjectPropertyKind::ObjectProperty(p) = p
                         && let ObjectPropertyKind::ObjectProperty(q) = q
+                        && r
                     {
-                        let r = p.key.name() == q.key.name();
-                        if r {
-                            properties.push(ast_builder.object_property_kind_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                ast_builder.expression_conditional(
-                                    SPAN,
-                                    condition.clone_in(ast_builder.allocator),
-                                    p.value.clone_in(ast_builder.allocator),
-                                    q.value.clone_in(ast_builder.allocator),
-                                ),
-                                false,
-                                false,
-                                false,
-                            ));
-                        }
-                        r
-                    } else {
-                        false
+                        properties.push(ast_builder.object_property_kind_object_property(SPAN, PropertyKind::Init, p.key.clone_in(ast_builder.allocator), ast_builder.expression_conditional(SPAN, condition.clone_in(ast_builder.allocator), p.value.clone_in(ast_builder.allocator), q.value.clone_in(ast_builder.allocator)), false, false, false));
                     }
+                    r
                 });
                 if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
                     properties.push(ast_builder.object_property_kind_object_property(
@@ -157,15 +141,7 @@ fn gen_style<'a>(
             }
 
             for q in collect_a.iter() {
-                let found = collect_c.iter().any(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(p) = p
-                        && let ObjectPropertyKind::ObjectProperty(q) = q
-                    {
-                        p.key.name() == q.key.name()
-                    } else {
-                        false
-                    }
-                });
+                let found = collect_c.iter().any(|p| matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name()));
                 if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
                     properties.push(ast_builder.object_property_kind_object_property(
                         SPAN,

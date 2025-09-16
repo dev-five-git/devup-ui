@@ -155,7 +155,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                     };
                 } else {
-                    *it = match util_type.as_ref() {
+                    let r = util_type.as_ref();
+                    *it = match r {
                         UtilType::Css => {
                             let ExtractResult {
                                 mut styles,
@@ -585,44 +586,43 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .for_each(|style| self.styles.extend(style.extract()));
             // modify!!
 
-            if let Some(tag) = match tag_name {
-                Expression::StringLiteral(str) => Some(str.value.as_str()),
-                Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
-                _ => {
-                    let mut v =
-                        AsVisitor::new(self.ast.allocator, elem.clone_in(self.ast.allocator));
-                    let mut el = self.ast.expression_statement(SPAN, tag_name);
-                    v.visit_expression_statement(&mut el);
-                    let mut children = oxc_allocator::Vec::new_in(self.ast.allocator);
-                    children.push(JSXChild::ExpressionContainer(
-                        self.ast.alloc_jsx_expression_container(
-                            SPAN,
-                            el.expression.clone_in(self.ast.allocator).into(),
-                        ),
-                    ));
-                    *elem = self.ast.jsx_element(
+            if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {
+                Some(str.value.as_str())
+            } else if let Expression::TemplateLiteral(literal) = tag_name {
+                Some(literal.quasis[0].value.raw.as_str())
+            } else {
+                let mut v = AsVisitor::new(self.ast.allocator, elem.clone_in(self.ast.allocator));
+                let mut el = self.ast.expression_statement(SPAN, tag_name);
+                v.visit_expression_statement(&mut el);
+                let mut children = oxc_allocator::Vec::new_in(self.ast.allocator);
+                children.push(JSXChild::ExpressionContainer(
+                    self.ast.alloc_jsx_expression_container(
                         SPAN,
-                        self.ast.alloc_jsx_opening_element(
+                        el.expression.clone_in(self.ast.allocator).into(),
+                    ),
+                ));
+                *elem = self.ast.jsx_element(
+                    SPAN,
+                    self.ast.alloc_jsx_opening_element(
+                        SPAN,
+                        self.ast
+                            .jsx_element_name_identifier(SPAN, self.ast.atom("")),
+                        Some(self.ast.alloc_ts_type_parameter_instantiation(
+                            SPAN,
+                            oxc_allocator::Vec::new_in(self.ast.allocator),
+                        )),
+                        oxc_allocator::Vec::new_in(self.ast.allocator),
+                    ),
+                    children,
+                    Some(
+                        self.ast.alloc_jsx_closing_element(
                             SPAN,
                             self.ast
                                 .jsx_element_name_identifier(SPAN, self.ast.atom("")),
-                            Some(self.ast.alloc_ts_type_parameter_instantiation(
-                                SPAN,
-                                oxc_allocator::Vec::new_in(self.ast.allocator),
-                            )),
-                            oxc_allocator::Vec::new_in(self.ast.allocator),
                         ),
-                        children,
-                        Some(
-                            self.ast.alloc_jsx_closing_element(
-                                SPAN,
-                                self.ast
-                                    .jsx_element_name_identifier(SPAN, self.ast.atom("")),
-                            ),
-                        ),
-                    );
-                    None
-                }
+                    ),
+                );
+                None
             } {
                 let ident = self
                     .ast
