@@ -34,17 +34,16 @@ fn gen_class_name<'a>(
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);
             }
-            let target = st.extract(filename);
-
-            Some(ast_builder.expression_string_literal(
-                SPAN,
-                ast_builder.atom(match &target {
-                    Some(StyleProperty::ClassName(cls)) => cls,
-                    Some(StyleProperty::Variable { class_name, .. }) => class_name,
-                    None => return None,
-                }),
-                None,
-            ))
+            st.extract(filename).map(|style| {
+                ast_builder.expression_string_literal(
+                    SPAN,
+                    ast_builder.atom(&match style {
+                        StyleProperty::ClassName(cls) => cls,
+                        StyleProperty::Variable { class_name, .. } => class_name,
+                    }),
+                    None,
+                )
+            })
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,

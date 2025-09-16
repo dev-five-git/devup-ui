@@ -32,257 +32,225 @@ fn gen_style<'a>(
     filename: Option<&str>,
 ) -> Vec<ObjectPropertyKind<'a>> {
     let mut properties = vec![];
-    match style {
-        ExtractStyleProp::Static(st) => {
-            if let Some(StyleProperty::Variable {
-                variable_name,
-                identifier,
-                ..
-            }) = st.extract(filename)
-            {
-                properties.push(ast_builder.object_property_kind_object_property(
+    if let ExtractStyleProp::Static(st) = style {
+        if let Some(StyleProperty::Variable {
+            variable_name,
+            identifier,
+            ..
+        }) = st.extract(filename)
+        {
+            properties.push(ast_builder.object_property_kind_object_property(
+                SPAN,
+                PropertyKind::Init,
+                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                     SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.atom(&variable_name),
-                        None,
-                    )),
-                    ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
-                    false,
-                    false,
-                    false,
-                ));
-            }
+                    ast_builder.atom(&variable_name),
+                    None,
+                )),
+                ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
+                false,
+                false,
+                false,
+            ));
         }
-        ExtractStyleProp::StaticArray(res) => {
-            properties.append(
-                &mut res
-                    .iter()
-                    .flat_map(|r| gen_style(ast_builder, r, filename))
-                    .rev()
-                    .collect(),
-            );
-        }
-        ExtractStyleProp::Conditional {
-            condition,
-            consequent,
-            alternate,
-        } => match (consequent, alternate) {
-            (None, None) => {
-                return vec![];
-            }
-            (None, Some(c)) => {
-                gen_style(ast_builder, c, filename)
-                    .into_iter()
-                    .for_each(|p| {
-                        if let ObjectPropertyKind::ObjectProperty(p) = p {
-                            properties.push(ast_builder.object_property_kind_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                ast_builder.expression_conditional(
-                                    SPAN,
-                                    condition.clone_in(ast_builder.allocator),
-                                    ast_builder.expression_identifier(SPAN, "undefined"),
-                                    p.value.clone_in(ast_builder.allocator),
-                                ),
-                                false,
-                                false,
-                                false,
-                            ))
-                        }
-                    });
-            }
-            (Some(c), None) => {
-                gen_style(ast_builder, c, filename)
-                    .into_iter()
-                    .for_each(|p| {
-                        if let ObjectPropertyKind::ObjectProperty(p) = p {
-                            properties.push(ast_builder.object_property_kind_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                ast_builder.expression_conditional(
-                                    SPAN,
-                                    condition.clone_in(ast_builder.allocator),
-                                    p.value.clone_in(ast_builder.allocator),
-                                    ast_builder.expression_identifier(SPAN, "undefined"),
-                                ),
-                                false,
-                                false,
-                                false,
-                            ))
-                        }
-                    });
-            }
-            (Some(c), Some(a)) => {
-                let collect_c = gen_style(ast_builder, c, filename);
-                let collect_a = gen_style(ast_builder, a, filename);
-                if collect_c.is_empty() && collect_a.is_empty() {
-                    return vec![];
-                }
-                for p in collect_c.iter() {
-                    let mut found = false;
-                    for q in collect_a.iter() {
-                        if let (
-                            ObjectPropertyKind::ObjectProperty(p),
-                            ObjectPropertyKind::ObjectProperty(q),
-                        ) = (p, q)
-                            && p.key.name() == q.key.name()
-                        {
-                            found = true;
-                            properties.push(ast_builder.object_property_kind_object_property(
-                                SPAN,
-                                PropertyKind::Init,
-                                p.key.clone_in(ast_builder.allocator),
-                                ast_builder.expression_conditional(
-                                    SPAN,
-                                    condition.clone_in(ast_builder.allocator),
-                                    p.value.clone_in(ast_builder.allocator),
-                                    q.value.clone_in(ast_builder.allocator),
-                                ),
-                                false,
-                                false,
-                                false,
-                            ));
-                            break;
-                        }
-                    }
-                    if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
+    } else if let ExtractStyleProp::StaticArray(res) = style {
+        properties.append(
+            &mut res
+                .iter()
+                .flat_map(|r| gen_style(ast_builder, r, filename))
+                .rev()
+                .collect(),
+        );
+    } else if let ExtractStyleProp::Conditional {
+        condition,
+        consequent,
+        alternate,
+    } = style
+    {
+        let r = (consequent, alternate);
+        if let (None, Some(c)) = r {
+            gen_style(ast_builder, c, filename)
+                .into_iter()
+                .for_each(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p {
                         properties.push(ast_builder.object_property_kind_object_property(
                             SPAN,
                             PropertyKind::Init,
                             p.key.clone_in(ast_builder.allocator),
-                            p.value.clone_in(ast_builder.allocator),
+                            ast_builder.expression_conditional(
+                                SPAN,
+                                condition.clone_in(ast_builder.allocator),
+                                ast_builder.expression_identifier(SPAN, "undefined"),
+                                p.value.clone_in(ast_builder.allocator),
+                            ),
                             false,
                             false,
                             false,
-                        ));
+                        ))
                     }
-                }
-
-                for q in collect_a.iter() {
-                    let mut found = false;
-                    for p in collect_c.iter() {
-                        if let (
-                            ObjectPropertyKind::ObjectProperty(p),
-                            ObjectPropertyKind::ObjectProperty(q),
-                        ) = (p, q)
-                            && p.key.name() == q.key.name()
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
+                });
+        } else if let (Some(c), None) = r {
+            gen_style(ast_builder, c, filename)
+                .into_iter()
+                .for_each(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p {
                         properties.push(ast_builder.object_property_kind_object_property(
                             SPAN,
                             PropertyKind::Init,
-                            q.key.clone_in(ast_builder.allocator),
-                            q.value.clone_in(ast_builder.allocator),
+                            p.key.clone_in(ast_builder.allocator),
+                            ast_builder.expression_conditional(
+                                SPAN,
+                                condition.clone_in(ast_builder.allocator),
+                                p.value.clone_in(ast_builder.allocator),
+                                ast_builder.expression_identifier(SPAN, "undefined"),
+                            ),
+                            false,
+                            false,
+                            false,
+                        ))
+                    }
+                });
+        } else if let (Some(c), Some(a)) = r {
+            let collect_c = gen_style(ast_builder, c, filename);
+            let collect_a = gen_style(ast_builder, a, filename);
+            if collect_c.is_empty() && collect_a.is_empty() {
+                return vec![];
+            }
+            for p in collect_c.iter() {
+                let mut found = false;
+                for q in collect_a.iter() {
+                    if let (
+                        ObjectPropertyKind::ObjectProperty(p),
+                        ObjectPropertyKind::ObjectProperty(q),
+                    ) = (p, q)
+                        && p.key.name() == q.key.name()
+                    {
+                        found = true;
+                        properties.push(ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            p.key.clone_in(ast_builder.allocator),
+                            ast_builder.expression_conditional(
+                                SPAN,
+                                condition.clone_in(ast_builder.allocator),
+                                p.value.clone_in(ast_builder.allocator),
+                                q.value.clone_in(ast_builder.allocator),
+                            ),
                             false,
                             false,
                             false,
                         ));
+                        break;
                     }
                 }
+                if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
+                    properties.push(ast_builder.object_property_kind_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        p.key.clone_in(ast_builder.allocator),
+                        p.value.clone_in(ast_builder.allocator),
+                        false,
+                        false,
+                        false,
+                    ));
+                }
             }
-        },
-        ExtractStyleProp::Expression { styles, .. } => {
-            for style in styles {
+
+            for q in collect_a.iter() {
+                let mut found = false;
+                for p in collect_c.iter() {
+                    if let (
+                        ObjectPropertyKind::ObjectProperty(p),
+                        ObjectPropertyKind::ObjectProperty(q),
+                    ) = (p, q)
+                        && p.key.name() == q.key.name()
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
+                    properties.push(ast_builder.object_property_kind_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        q.key.clone_in(ast_builder.allocator),
+                        q.value.clone_in(ast_builder.allocator),
+                        false,
+                        false,
+                        false,
+                    ));
+                }
+            }
+        }
+    } else if let ExtractStyleProp::MemberExpression { map, expression } = style {
+        let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
+        for (key, value) in map.iter() {
+            for style in value.extract() {
                 if let Some(StyleProperty::Variable {
                     variable_name,
                     identifier,
                     ..
                 }) = style.extract(filename)
                 {
-                    properties.push(ast_builder.object_property_kind_object_property(
-                        SPAN,
-                        PropertyKind::Init,
-                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                            SPAN,
-                            ast_builder.atom(&variable_name),
-                            None,
-                        )),
-                        ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
-                        false,
-                        false,
-                        true,
-                    ));
+                    tmp_map
+                        .entry(variable_name)
+                        .or_default()
+                        .push((key.to_string(), identifier));
                 }
             }
         }
-        ExtractStyleProp::MemberExpression { map, expression } => {
-            let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
-            for (key, value) in map.iter() {
-                for style in value.extract() {
-                    if let Some(StyleProperty::Variable {
-                        variable_name,
-                        identifier,
-                        ..
-                    }) = style.extract(filename)
-                    {
-                        tmp_map
-                            .entry(variable_name)
-                            .or_default()
-                            .push((key.to_string(), identifier));
-                    }
-                }
-            }
 
-            for (key, value) in tmp_map {
-                properties.push(ast_builder.object_property_kind_object_property(
+        for (key, value) in tmp_map {
+            properties.push(ast_builder.object_property_kind_object_property(
+                SPAN,
+                PropertyKind::Init,
+                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                     SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.atom(&key),
-                        None,
-                    )),
-                    if value.len() == 1 {
-                        // do not create object expression when property is single
-                        ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
-                    } else {
-                        Expression::ComputedMemberExpression(
-                            ast_builder.alloc_computed_member_expression(
+                    ast_builder.atom(&key),
+                    None,
+                )),
+                if value.len() == 1 {
+                    // do not create object expression when property is single
+                    ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
+                } else {
+                    Expression::ComputedMemberExpression(
+                        ast_builder.alloc_computed_member_expression(
+                            SPAN,
+                            ast_builder.expression_object(
                                 SPAN,
-                                ast_builder.expression_object(
-                                    SPAN,
-                                    oxc_allocator::Vec::from_iter_in(
-                                        value
-                                            .into_iter()
-                                            .map(|(k, v)| {
-                                                ast_builder.object_property_kind_object_property(
+                                oxc_allocator::Vec::from_iter_in(
+                                    value
+                                        .into_iter()
+                                        .map(|(k, v)| {
+                                            ast_builder.object_property_kind_object_property(
+                                                SPAN,
+                                                PropertyKind::Init,
+                                                ast_builder.property_key_static_identifier(
                                                     SPAN,
-                                                    PropertyKind::Init,
-                                                    ast_builder.property_key_static_identifier(
-                                                        SPAN,
-                                                        ast_builder.atom(&k),
-                                                    ),
-                                                    ast_builder.expression_identifier(
-                                                        SPAN,
-                                                        ast_builder.atom(&v),
-                                                    ),
-                                                    false,
-                                                    false,
-                                                    false,
-                                                )
-                                            })
-                                            .collect::<Vec<_>>(),
-                                        ast_builder.allocator,
-                                    ),
+                                                    ast_builder.atom(&k),
+                                                ),
+                                                ast_builder.expression_identifier(
+                                                    SPAN,
+                                                    ast_builder.atom(&v),
+                                                ),
+                                                false,
+                                                false,
+                                                false,
+                                            )
+                                        })
+                                        .collect::<Vec<_>>(),
+                                    ast_builder.allocator,
                                 ),
-                                expression.clone_in(ast_builder.allocator),
-                                false,
                             ),
-                        )
-                    },
-                    false,
-                    false,
-                    false,
-                ));
-            }
+                            expression.clone_in(ast_builder.allocator),
+                            false,
+                        ),
+                    )
+                },
+                false,
+                false,
+                false,
+            ));
         }
     }
     properties.sort_by_key(|p| {

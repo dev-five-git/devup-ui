@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: "sheet.create_css(None, true).split(\"*/\").nth(1).unwrap()"
 ---
-"@layer b;@font-face{font-family:Roboto;src:url(/fonts/Roboto-Regular.ttf)}div{color:red}@layer b{div{display:var(--e)}}.b{height:var(--c)}.a{width:4px}"
+"@import \"https://test.com/a.css\";@layer b;@font-face{font-family:Roboto;src:url(/fonts/Roboto-Regular.ttf)}div{color:red}@layer b{div{display:var(--g)}.a{display:flex}}@keyframes b{from{opacity:0}to{opacity:1}}.d{height:var(--e)}.c{width:4px}"

@@ -283,59 +283,55 @@ fn merge_string_expressions<'a>(
     let mut other_expressions = vec![];
     let mut prev_str = String::new();
     for ex in expressions.iter() {
-        match ex {
-            Expression::StringLiteral(literal) => {
+        if let Expression::StringLiteral(literal) = ex {
+            let target_prev = prev_str.trim();
+            let target = literal.value.trim();
+            prev_str = format!(
+                "{}{}{}",
+                target_prev,
+                if target_prev.is_empty() { "" } else { " " },
+                target
+            );
+        } else if let Expression::TemplateLiteral(template) = ex {
+            for (idx, q) in template.quasis.iter().enumerate() {
                 let target_prev = prev_str.trim();
-                let target = literal.value.trim();
-                prev_str = format!(
-                    "{}{}{}",
-                    target_prev,
-                    if target_prev.is_empty() { "" } else { " " },
-                    target
-                );
-            }
-            Expression::TemplateLiteral(template) => {
-                for (idx, q) in template.quasis.iter().enumerate() {
-                    let target_prev = prev_str.trim();
-                    let target = q.value.raw.trim();
-                    if idx < template.quasis.len() - 1 {
-                        string_literals.push(format!(
-                            "{}{}{}{}{}",
-                            if !other_expressions.is_empty() || idx > 0 {
-                                " "
-                            } else {
-                                ""
-                            },
-                            target_prev,
-                            if !target_prev.is_empty() { " " } else { "" },
-                            target,
-                            if !target.is_empty() && !target.ends_with("typo-") {
-                                " "
-                            } else {
-                                ""
-                            }
-                        ));
-                    } else {
-                        prev_str = q.value.raw.trim().to_string();
-                    }
+                let target = q.value.raw.trim();
+                if idx < template.quasis.len() - 1 {
+                    string_literals.push(format!(
+                        "{}{}{}{}{}",
+                        if !other_expressions.is_empty() || idx > 0 {
+                            " "
+                        } else {
+                            ""
+                        },
+                        target_prev,
+                        if !target_prev.is_empty() { " " } else { "" },
+                        target,
+                        if !target.is_empty() && !target.ends_with("typo-") {
+                            " "
+                        } else {
+                            ""
+                        }
+                    ));
+                } else {
+                    prev_str = q.value.raw.trim().to_string();
                 }
-                other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
             }
-            ex => {
-                let target_prev = prev_str.trim();
-                string_literals.push(format!(
-                    "{}{}{}",
-                    if !other_expressions.is_empty() {
-                        " "
-                    } else {
-                        ""
-                    },
-                    target_prev,
-                    if !target_prev.is_empty() { " " } else { "" }
-                ));
-                other_expressions.push(ex.clone_in(ast_builder.allocator));
-                prev_str = String::new();
-            }
+            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
+        } else {
+            let target_prev = prev_str.trim();
+            string_literals.push(format!(
+                "{}{}{}",
+                if !other_expressions.is_empty() {
+                    " "
+                } else {
+                    ""
+                },
+                target_prev,
+                if !target_prev.is_empty() { " " } else { "" }
+            ));
+            other_expressions.push(ex.clone_in(ast_builder.allocator));
+            prev_str = String::new();
         }
     }
     string_literals.push(format!(
@@ -432,10 +428,10 @@ pub fn convert_style_vars<'a>(
         for idx in (0..obj.properties.len()).rev() {
             let mut prop = obj.properties.remove(idx);
 
-            if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
-                let name = match &prop.key {
-                    PropertyKey::StaticIdentifier(ident) => ident.name,
-                    PropertyKey::StringLiteral(ident) => ident.value,
+            if let ObjectPropertyKind::ObjectProperty(p) = &mut prop {
+                let name = match &p.key {
+                    PropertyKey::StaticIdentifier(ident) => Some(ident.name),
+                    PropertyKey::StringLiteral(ident) => Some(ident.value),
                     etc => {
                         obj.properties.insert(
                             idx,
@@ -470,25 +466,29 @@ pub fn convert_style_vars<'a>(
                                         ast_builder.allocator,
                                     ),
                                 )),
-                                prop.value.clone_in(ast_builder.allocator),
+                                p.value.clone_in(ast_builder.allocator),
                                 false,
                                 false,
                                 true,
                             ),
                         );
-                        continue;
+                        None
                     }
                 };
 
-                if !name.starts_with("--") {
-                    prop.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.atom(&format!("--{name}")),
-                        None,
-                    ));
+                if let Some(name) = name {
+                    if !name.starts_with("--") {
+                        p.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            SPAN,
+                            ast_builder.atom(&format!("--{name}")),
+                            None,
+                        ));
+                    }
+                    obj.properties.insert(idx, prop);
                 }
+            } else {
+                obj.properties.insert(idx, prop);
             }
-            obj.properties.insert(idx, prop);
         }
     }
     style_vars
