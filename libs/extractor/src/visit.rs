@@ -23,8 +23,9 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPatternKind, CallExpression, Expression,
-    ImportDeclaration, ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, PropertyKey, Statement, VariableDeclarator, WithClause,
+    Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
+    ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, PropertyKey, Statement,
+    VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{

@@ -1,8 +1,6 @@
 use crate::utils::get_string_by_literal_expression;
 use oxc_allocator::{Allocator, CloneIn};
-use oxc_ast::ast::{
-    Expression, JSXElement,
-};
+use oxc_ast::ast::{Expression, JSXElement};
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::walk_expression;
 
