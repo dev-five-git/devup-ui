@@ -22,7 +22,6 @@ impl<'a> AsVisitor<'a> {
 }
 
 fn change_element_name<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, element_name: &str) {
-    println!("change_element_name: {:?}", element);
     let element_name = ast.jsx_element_name_identifier(SPAN, ast.atom(element_name));
     element.opening_element.name = element_name.clone_in(ast.allocator);
     if let Some(el) = &mut element.closing_element {
@@ -36,25 +35,21 @@ impl<'a> VisitMut<'a> for AsVisitor<'a> {
             let mut element = self.element.clone_in(self.ast.allocator);
             change_element_name(&self.ast, &mut element, &element_name);
             *it = Expression::JSXElement(self.ast.alloc(element));
-            return;
         } else if let Expression::Identifier(ident) = it {
             let element_name = ident.name.to_string();
-            if element_name == "undefined" {
-                return;
+            if element_name != "undefined" {
+                let mut element = self.element.clone_in(self.ast.allocator);
+                change_element_name(&self.ast, &mut element, &element_name);
+                *it = Expression::JSXElement(self.ast.alloc(element));
             }
-            let mut element = self.element.clone_in(self.ast.allocator);
-            change_element_name(&self.ast, &mut element, &element_name);
-            *it = Expression::JSXElement(self.ast.alloc(element));
-            return;
         } else if let Expression::ConditionalExpression(conditional) = it {
             self.visit_expression(&mut conditional.consequent);
             self.visit_expression(&mut conditional.alternate);
-            return;
         } else if let Expression::ComputedMemberExpression(member) = it {
             self.visit_expression(&mut member.object);
-            return;
+        } else {
+            walk_expression(self, it);
         }
-        walk_expression(self, it);
     }
 
     fn visit_object_property(&mut self, it: &mut oxc_ast::ast::ObjectProperty<'a>) {
