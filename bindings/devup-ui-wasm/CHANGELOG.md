@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.39
+
+### Patch Changes
+
+- 8ae52ea: Impl Conditional as
+
 ## 1.0.38
 
 ### Patch Changes
