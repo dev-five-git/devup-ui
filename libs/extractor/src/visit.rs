@@ -640,9 +640,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .ast
                     .jsx_element_name_identifier(SPAN, self.ast.atom(tag));
 
-                if let Some(el) = &mut elem.closing_element {
-                    el.name = ident.clone_in(self.ast.allocator);
-                }
                 elem.opening_element.name = ident.clone_in(self.ast.allocator);
                 if let Some(el) = &mut elem.closing_element {
                     el.name = ident
