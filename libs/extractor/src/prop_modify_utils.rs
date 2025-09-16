@@ -28,16 +28,14 @@ pub fn modify_prop_object<'a>(
         match prop {
             ObjectPropertyKind::ObjectProperty(attr) => {
                 if let PropertyKey::StaticIdentifier(ident) = &attr.key {
-                    match ident.name.as_str() {
-                        "className" => {
-                            class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                            continue;
-                        }
-                        "style" => {
-                            style_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                            continue;
-                        }
-                        _ => {}
+                    let name = ident.name.as_str();
+                    if name == "className" {
+                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        continue;
+                    }
+                    if name == "style" {
+                        style_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        continue;
                     }
                 }
                 props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
@@ -123,11 +121,11 @@ pub fn modify_props<'a>(
                         }
                         _ => None,
                     };
-
-                    match ident.name.as_str() {
-                        "className" => class_name_prop = value,
-                        "style" => style_prop = value,
-                        _ => unreachable!(),
+                    let name = ident.name.as_str();
+                    if name == "className" {
+                        class_name_prop = value;
+                    } else if name == "style" {
+                        style_prop = value;
                     }
 
                     continue;

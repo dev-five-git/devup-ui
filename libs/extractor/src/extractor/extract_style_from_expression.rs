@@ -216,10 +216,8 @@ pub fn extract_style_from_expression<'a>(
                                         ])
                                         .to_string()
                                     }
-                                } else if name.contains("&") {
-                                    name.replace("&", &selector.to_string())
                                 } else {
-                                    StyleSelector::from([&selector.to_string(), *name]).to_string()
+                                    name.replace("&", &selector.to_string())
                                 }
                             } else if name.starts_with("_") {
                                 StyleSelector::from(to_kebab_case(&name.replace("_", "")).as_str())

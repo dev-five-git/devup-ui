@@ -228,11 +228,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} id="id" />
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,import_main_css: false,
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
             )
             .unwrap()
         ));
@@ -503,12 +499,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, [key]: "section", ...rest}[key]} w="100%" h="100%" />
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
             )
             .unwrap()
         ));
@@ -520,12 +511,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, ["key"]: "section", ...rest}["key"]} w="100%" h="100%" />
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
             )
             .unwrap()
         ));
@@ -3635,72 +3621,57 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         // conditional as
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
-                    extract(
-                        "test.js",
-                        r#"import { jsx as e } from "react/jsx-runtime";
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? "div" : "section", className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                        ExtractOption {
-                            package: "@devup-ui/core".to_string(),
-                            css_dir: "@devup-ui/core".to_string(),
-                            single_css: true,
-                            import_main_css: false
-                        }
-                    )
-                    .unwrap()
-                ));
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+            )
+            .unwrap()
+        ));
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
-                    extract(
-                        "test.js",
-                        r#"import { jsx as e } from "react/jsx-runtime";
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
         import { Box as o } from "@devup-ui/core";
         e(o, { as: Variable, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                        ExtractOption {
-                            package: "@devup-ui/core".to_string(),
-                            css_dir: "@devup-ui/core".to_string(),
-                            single_css: true,
-                            import_main_css: false
-                        }
-                    )
-                    .unwrap()
-                ));
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+            )
+            .unwrap()
+        ));
 
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
-                    extract(
-                        "test.js",
-                        r#"import { jsx as e } from "react/jsx-runtime";
+            extract(
+                "test.js",
+                r#"import { jsx as e } from "react/jsx-runtime";
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? null : undefined, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                        ExtractOption {
-                            package: "@devup-ui/core".to_string(),
-                            css_dir: "@devup-ui/core".to_string(),
-                            single_css: true,
-                            import_main_css: false
-                        }
-                    )
-                    .unwrap()
-                ));
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
     #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true,import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true,import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true,import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(),single_css:true,import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
     }
 
     #[test]
@@ -3713,11 +3684,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />
         "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,import_main_css: false,
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
             )
             .unwrap()
         ));
@@ -3737,7 +3704,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false,
+                    import_main_css: false
                 }
             )
             .unwrap()
