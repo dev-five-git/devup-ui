@@ -22,6 +22,7 @@ pub struct ExtractResult<'a> {
     pub tag: Option<Expression<'a>>,
     pub style_order: Option<u8>,
     pub style_vars: Option<Expression<'a>>,
+    pub props: Option<Expression<'a>>,
 }
 
 #[derive(Debug)]
