@@ -53,6 +53,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     }
                 }
                 return ExtractResult {
+                    props: None,
                     styles: etc
                         .map(|etc| {
                             vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(

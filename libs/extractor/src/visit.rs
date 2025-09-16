@@ -1,3 +1,4 @@
+use crate::as_visit::AsVisitor;
 use crate::component::ExportVariableKind;
 use crate::css_utils::{css_to_style, keyframes_to_keyframes_style, optimize_css_block};
 use crate::extract_style::ExtractStyleProperty;
@@ -22,9 +23,9 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey, Statement,
-    VariableDeclarator, WithClause,
+    Argument, BindingPatternKind, CallExpression, Expression, ExpressionStatement,
+    ImportDeclaration, ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement,
+    JSXOpeningElement, Program, PropertyKey, Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -346,6 +347,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     tag: _tag,
                     style_order,
                     style_vars,
+                    props,
                 } = extract_style_from_expression(
                     &self.ast,
                     None,
@@ -381,6 +383,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut props_styles,
                         style_order,
                         style_vars,
+                        props,
                         self.split_filename.as_deref(),
                     );
                 }
@@ -511,11 +514,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
         // after run to convert css literal
-
-        let opening_element = &mut elem.opening_element;
-        let component_name = &opening_element.name.to_string();
+        let component_name = &elem.opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
-            let attrs = &mut opening_element.attributes;
+            let attrs = &mut elem.opening_element.attributes;
             let mut tag_name =
                 self.ast
                     .expression_string_literal(SPAN, kind.to_tag().unwrap_or("div"), None);
@@ -525,6 +526,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut duplicate_set = HashSet::new();
             let mut style_order = None;
             let mut style_vars = None;
+            let mut props = None;
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
@@ -537,9 +539,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             continue;
                         }
                         duplicate_set.insert(name.clone());
-                        if &property_name == "styleOrder" {
+                        if property_name == "styleOrder" {
                             style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
                                 .map(|n| n as u8);
+                            continue;
+                        }
+                        if property_name == "props" {
+                            if let Some(value) = attr.value.as_ref()
+                                && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                && let Some(expression) = expr.expression.as_expression()
+                            {
+                                props = Some(expression.clone_in(self.ast.allocator));
+                            }
                             continue;
                         }
                         if property_name == "styleVars" {
@@ -576,6 +587,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 &mut props_styles,
                 style_order,
                 style_vars,
+                props,
                 self.split_filename.as_deref(),
             );
 
@@ -588,7 +600,41 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Some(tag) = match tag_name {
                 Expression::StringLiteral(str) => Some(str.value.as_str()),
                 Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
-                _ => None,
+                _ => {
+                    let mut v =
+                        AsVisitor::new(&self.ast.allocator, elem.clone_in(self.ast.allocator));
+                    let mut el = self.ast.expression_statement(SPAN, tag_name);
+                    v.visit_expression_statement(&mut el);
+                    let mut children = oxc_allocator::Vec::new_in(&self.ast.allocator);
+                    children.push(JSXChild::ExpressionContainer(
+                        self.ast.alloc_jsx_expression_container(
+                            SPAN,
+                            el.expression.clone_in(&self.ast.allocator).into(),
+                        ),
+                    ));
+                    *elem = self.ast.jsx_element(
+                        SPAN,
+                        self.ast.alloc_jsx_opening_element(
+                            SPAN,
+                            self.ast
+                                .jsx_element_name_identifier(SPAN, self.ast.atom("")),
+                            Some(self.ast.alloc_ts_type_parameter_instantiation(
+                                SPAN,
+                                oxc_allocator::Vec::new_in(&self.ast.allocator),
+                            )),
+                            oxc_allocator::Vec::new_in(&self.ast.allocator),
+                        ),
+                        children,
+                        Some(
+                            self.ast.alloc_jsx_closing_element(
+                                SPAN,
+                                self.ast
+                                    .jsx_element_name_identifier(SPAN, self.ast.atom("")),
+                            ),
+                        ),
+                    );
+                    None
+                }
             } {
                 let ident = self
                     .ast
@@ -597,7 +643,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if let Some(el) = &mut elem.closing_element {
                     el.name = ident.clone_in(self.ast.allocator);
                 }
-                opening_element.name = ident;
+                elem.opening_element.name = ident.clone_in(self.ast.allocator);
+                if let Some(el) = &mut elem.closing_element {
+                    el.name = ident
+                }
             }
         }
     }

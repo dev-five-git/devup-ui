@@ -41,6 +41,7 @@ pub fn extract_style_from_expression<'a>(
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
+        let mut props = None;
         return match expression {
             Expression::ObjectExpression(obj) => {
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
@@ -61,6 +62,8 @@ pub fn extract_style_from_expression<'a>(
                                     } else if &property_name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator));
+                                    } else if &property_name == "props" {
+                                        props = Some(prop.value.clone_in(ast_builder.allocator));
                                     } else {
                                         let ExtractResult {
                                             styles, tag: _tag, ..
@@ -103,9 +106,11 @@ pub fn extract_style_from_expression<'a>(
                     tag,
                     style_order,
                     style_vars,
+                    props,
                 }
             }
             Expression::ConditionalExpression(conditional) => ExtractResult {
+                props: None,
                 styles: vec![ExtractStyleProp::Conditional {
                     condition: conditional.test.clone_in(ast_builder.allocator),
                     consequent: Some(Box::new(ExtractStyleProp::StaticArray(
@@ -496,6 +501,7 @@ pub fn extract_style_from_expression<'a>(
                     tag: None,
                     style_order: None,
                     style_vars: None,
+                    props: None,
                 }
             }
             Expression::ConditionalExpression(conditional) => {

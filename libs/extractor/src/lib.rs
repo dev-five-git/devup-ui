@@ -1,3 +1,4 @@
+mod as_visit;
 mod component;
 mod css_utils;
 pub mod extract_style;
@@ -290,6 +291,8 @@ mod tests {
             )
             .unwrap()
         ));
+
+        reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -322,6 +325,8 @@ mod tests {
             )
             .unwrap()
         ));
+
+        reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -337,51 +342,262 @@ mod tests {
             )
             .unwrap()
         ));
-        // assert_debug_snapshot!(extract(
-        //     "test.tsx",
-        //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? "div":"section"} />
-        // "#,
-        //     ExtractOption {
-        //         package: "@devup-ui/core".to_string(),
-        //         css_file: None
-        //     }
-        // )
-        // .unwrap());
-        // assert_debug_snapshot!(extract(
-        //     "test.tsx",
-        //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? undefined:"section"} />
-        // "#,
-        //     ExtractOption {
-        //         package: "@devup-ui/core".to_string(),
-        //         css_file: None
-        //     }
-        // )
-        // .unwrap());
-        //
-        // assert_debug_snapshot!(extract(
-        //     "test.tsx",
-        //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? null:"section"} />
-        // "#,
-        //     ExtractOption {
-        //         package: "@devup-ui/core".to_string(),
-        //         css_file: None
-        //     }
-        // )
-        // .unwrap());
-        // assert_debug_snapshot!(extract(
-        //     "test.tsx",
-        //     r#"import {Box} from '@devup-ui/core'
-        // <Box as={b ? null:undefined} />
-        // "#,
-        //     ExtractOption {
-        //         package: "@devup-ui/core".to_string(),
-        //         css_file: None
-        //     }
-        // )
-        // .unwrap());
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? "div":"section"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? `div`:`section`} w="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? undefined:"section"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? null:"section"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? "section":undefined} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? "section":null} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? null:undefined} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={Variable} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b ? Variable : "section"} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={{A: "section", B: "div", C: Variable, D, [key]: "section", ...rest}[key]} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={{A: "section", B: "div", C: Variable, D, ["key"]: "section", ...rest}["key"]} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={b === 1 ? "section" : "div"} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={["div", "section"][b]} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={["div", "section"][b]} w="100%" h="100%" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        // maintain object expression
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box as={Variable} w="100%" props={{animate:{duration: 1}}} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
     }
     #[test]
     #[serial]
@@ -3397,6 +3613,60 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
             )
             .unwrap()
         ));
+
+        // conditional as
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+                    extract(
+                        "test.js",
+                        r#"import { jsx as e } from "react/jsx-runtime";
+        import { Box as o } from "@devup-ui/core";
+        e(o, { as: b ? "div" : "section", className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
+        "#,
+                        ExtractOption {
+                            package: "@devup-ui/core".to_string(),
+                            css_dir: "@devup-ui/core".to_string(),
+                            single_css: true,
+                            import_main_css: false
+                        }
+                    )
+                    .unwrap()
+                ));
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+                    extract(
+                        "test.js",
+                        r#"import { jsx as e } from "react/jsx-runtime";
+        import { Box as o } from "@devup-ui/core";
+        e(o, { as: Variable, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
+        "#,
+                        ExtractOption {
+                            package: "@devup-ui/core".to_string(),
+                            css_dir: "@devup-ui/core".to_string(),
+                            single_css: true,
+                            import_main_css: false
+                        }
+                    )
+                    .unwrap()
+                ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+                    extract(
+                        "test.js",
+                        r#"import { jsx as e } from "react/jsx-runtime";
+        import { Box as o } from "@devup-ui/core";
+        e(o, { as: b ? null : undefined, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
+        "#,
+                        ExtractOption {
+                            package: "@devup-ui/core".to_string(),
+                            css_dir: "@devup-ui/core".to_string(),
+                            single_css: true,
+                            import_main_css: false
+                        }
+                    )
+                    .unwrap()
+                ));
     }
 
     #[test]

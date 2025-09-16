@@ -18,6 +18,7 @@ pub fn modify_prop_object<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
@@ -85,6 +86,12 @@ pub fn modify_prop_object<'a>(
             false,
         ));
     }
+    if let Some(ex) = props_prop {
+        props.push(
+            ast_builder
+                .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator)),
+        );
+    }
 }
 /// modify JSX props
 pub fn modify_props<'a>(
@@ -93,6 +100,7 @@ pub fn modify_props<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
@@ -101,7 +109,7 @@ pub fn modify_props<'a>(
     for idx in (0..props.len()).rev() {
         let prop = props.remove(idx);
         match prop {
-            Attribute(attr) => {
+            JSXAttributeItem::Attribute(attr) => {
                 if let Identifier(ident) = &attr.name
                     && let Some(value) = &attr.value
                     && (ident.name == "className" || ident.name == "style")
@@ -125,7 +133,7 @@ pub fn modify_props<'a>(
 
                     continue;
                 }
-                props.insert(idx, Attribute(attr));
+                props.insert(idx, JSXAttributeItem::Attribute(attr));
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
                 spread_props.push(spread.argument.clone_in(ast_builder.allocator));
@@ -164,6 +172,14 @@ pub fn modify_props<'a>(
             ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
             Some(ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())),
         ));
+    }
+    if let Some(props_prop) = props_prop {
+        props.push(
+            ast_builder.jsx_attribute_item_spread_attribute(
+                SPAN,
+                props_prop.clone_in(ast_builder.allocator),
+            ),
+        );
     }
 }
 
