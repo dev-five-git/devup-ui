@@ -683,6 +683,7 @@ mod tests {
     use crate::theme::{ColorTheme, Typography};
 
     use super::*;
+    use extractor::{ExtractOption, extract};
     use insta::assert_debug_snapshot;
 
     #[test]
@@ -784,6 +785,12 @@ mod tests {
         sheet.add_property("test", "display", 0, "none", None, None, None);
         sheet.add_property("test", "display", 2, "flex", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_import_css() {
+        let sheet = StyleSheet::default();
+        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
     }
 
     #[test]
@@ -1730,5 +1737,17 @@ mod tests {
         assert!(css.contains("font-weight:400"));
 
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_update_styles() {
+        let mut sheet = StyleSheet::default();
+        sheet.update_styles(&HashSet::new(), "index.tsx", true);
+        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
+
+        let mut sheet = StyleSheet::default();
+        let output = extract("index.tsx", "import {Box,globalCss} from '@devup-ui/core';<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:flex},fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }).unwrap();
+        sheet.update_styles(&output.styles, "index.tsx", true);
+        assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
 }

@@ -531,45 +531,37 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 {
                     let property_name = name.name.to_string();
                     for name in disassemble_property(&property_name) {
-                        if duplicate_set.contains(&name) {
-                            continue;
-                        }
-                        duplicate_set.insert(name.clone());
-                        if property_name == "styleOrder" {
-                            style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
-                                .map(|n| n as u8);
-                            continue;
-                        }
-                        if property_name == "props" {
-                            if let Some(value) = attr.value.as_ref()
-                                && let JSXAttributeValue::ExpressionContainer(expr) = value
-                                && let Some(expression) = expr.expression.as_expression()
-                            {
-                                props = Some(expression.clone_in(self.ast.allocator));
+                        if !duplicate_set.contains(&name) {
+                            duplicate_set.insert(name.clone());
+                            if property_name == "styleOrder" {
+                                style_order =
+                                    jsx_expression_to_number(attr.value.as_ref().unwrap())
+                                        .map(|n| n as u8);
+                            } else if property_name == "props" {
+                                if let Some(value) = attr.value.as_ref()
+                                    && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                    && let Some(expression) = expr.expression.as_expression()
+                                {
+                                    props = Some(expression.clone_in(self.ast.allocator));
+                                }
+                            } else if property_name == "styleVars" {
+                                if let Some(value) = attr.value.as_ref()
+                                    && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                    && let Some(expression) = expr.expression.as_expression()
+                                {
+                                    style_vars = Some(expression.clone_in(self.ast.allocator));
+                                }
+                            } else if let Some(at) = &mut attr.value {
+                                let ExtractResult { styles, tag, .. } =
+                                    extract_style_from_jsx(&self.ast, &name, at);
+                                props_styles.extend(styles.into_iter().rev());
+                                tag_name = tag.unwrap_or(tag_name);
                             }
-                            continue;
-                        }
-                        if property_name == "styleVars" {
-                            if let Some(value) = attr.value.as_ref()
-                                && let JSXAttributeValue::ExpressionContainer(expr) = value
-                                && let Some(expression) = expr.expression.as_expression()
-                            {
-                                style_vars = Some(expression.clone_in(self.ast.allocator));
-                            }
-                            continue;
-                        }
-
-                        if let Some(at) = &mut attr.value {
-                            let ExtractResult { styles, tag, .. } =
-                                extract_style_from_jsx(&self.ast, &name, at);
-                            props_styles.extend(styles.into_iter().rev());
-                            tag_name = tag.unwrap_or(tag_name);
-                            continue;
                         }
                     }
-                    continue;
+                } else {
+                    attrs.insert(i, attr);
                 }
-                attrs.insert(i, attr);
             }
 
             kind.extract()
