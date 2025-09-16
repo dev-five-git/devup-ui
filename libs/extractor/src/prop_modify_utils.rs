@@ -347,23 +347,24 @@ fn merge_string_expressions<'a>(
         ));
     }
 
+    let q = oxc_allocator::Vec::from_iter_in(
+        string_literals.iter().enumerate().map(|(idx, s)| {
+            let tail = idx == string_literals.len() - 1;
+            ast_builder.template_element(
+                SPAN,
+                TemplateElementValue {
+                    raw: ast_builder.atom(s),
+                    cooked: None,
+                },
+                tail,
+            )
+        }),
+        ast_builder.allocator,
+    );
     Some(
         ast_builder.expression_template_literal(
             SPAN,
-            oxc_allocator::Vec::from_iter_in(
-                string_literals.iter().enumerate().map(|(idx, s)| {
-                    let tail = idx == string_literals.len() - 1;
-                    ast_builder.template_element(
-                        SPAN,
-                        TemplateElementValue {
-                            raw: ast_builder.atom(s),
-                            cooked: None,
-                        },
-                        tail,
-                    )
-                }),
-                ast_builder.allocator,
-            ),
+            q,
             oxc_allocator::Vec::from_iter_in(
                 other_expressions
                     .into_iter()
@@ -432,7 +433,7 @@ pub fn convert_style_vars<'a>(
                 let name = match &p.key {
                     PropertyKey::StaticIdentifier(ident) => Some(ident.name),
                     PropertyKey::StringLiteral(ident) => Some(ident.value),
-                    etc => {
+                    _ => {
                         obj.properties.insert(
                             idx,
                             ast_builder.object_property_kind_object_property(
@@ -462,7 +463,7 @@ pub fn convert_style_vars<'a>(
                                         ast_builder.allocator,
                                     ),
                                     oxc_allocator::Vec::from_array_in(
-                                        [etc.to_expression().clone_in(ast_builder.allocator)],
+                                        [p.key.to_expression().clone_in(ast_builder.allocator)],
                                         ast_builder.allocator,
                                     ),
                                 )),
