@@ -117,32 +117,32 @@ fn gen_style<'a>(
                 return vec![];
             }
             for p in collect_c.iter() {
-                let mut found = false;
-                for q in collect_a.iter() {
-                    if let (
-                        ObjectPropertyKind::ObjectProperty(p),
-                        ObjectPropertyKind::ObjectProperty(q),
-                    ) = (p, q)
-                        && p.key.name() == q.key.name()
+                let found = collect_a.iter().any(|q| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p
+                        && let ObjectPropertyKind::ObjectProperty(q) = q
                     {
-                        found = true;
-                        properties.push(ast_builder.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator),
-                            ast_builder.expression_conditional(
+                        let r = p.key.name() == q.key.name();
+                        if r {
+                            properties.push(ast_builder.object_property_kind_object_property(
                                 SPAN,
-                                condition.clone_in(ast_builder.allocator),
-                                p.value.clone_in(ast_builder.allocator),
-                                q.value.clone_in(ast_builder.allocator),
-                            ),
-                            false,
-                            false,
-                            false,
-                        ));
-                        break;
+                                PropertyKind::Init,
+                                p.key.clone_in(ast_builder.allocator),
+                                ast_builder.expression_conditional(
+                                    SPAN,
+                                    condition.clone_in(ast_builder.allocator),
+                                    p.value.clone_in(ast_builder.allocator),
+                                    q.value.clone_in(ast_builder.allocator),
+                                ),
+                                false,
+                                false,
+                                false,
+                            ));
+                        }
+                        r
+                    } else {
+                        false
                     }
-                }
+                });
                 if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
                     properties.push(ast_builder.object_property_kind_object_property(
                         SPAN,
@@ -157,18 +157,15 @@ fn gen_style<'a>(
             }
 
             for q in collect_a.iter() {
-                let mut found = false;
-                for p in collect_c.iter() {
-                    if let (
-                        ObjectPropertyKind::ObjectProperty(p),
-                        ObjectPropertyKind::ObjectProperty(q),
-                    ) = (p, q)
-                        && p.key.name() == q.key.name()
+                let found = collect_c.iter().any(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(p) = p
+                        && let ObjectPropertyKind::ObjectProperty(q) = q
                     {
-                        found = true;
-                        break;
+                        p.key.name() == q.key.name()
+                    } else {
+                        false
                     }
-                }
+                });
                 if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
                     properties.push(ast_builder.object_property_kind_object_property(
                         SPAN,
@@ -201,6 +198,42 @@ fn gen_style<'a>(
         }
 
         for (key, value) in tmp_map {
+            let v = if value.len() == 1 {
+                // do not create object expression when property is single
+                ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
+            } else {
+                Expression::ComputedMemberExpression(
+                    ast_builder.alloc_computed_member_expression(
+                        SPAN,
+                        ast_builder.expression_object(
+                            SPAN,
+                            oxc_allocator::Vec::from_iter_in(
+                                value
+                                    .into_iter()
+                                    .map(|(k, v)| {
+                                        ast_builder.object_property_kind_object_property(
+                                            SPAN,
+                                            PropertyKind::Init,
+                                            ast_builder.property_key_static_identifier(
+                                                SPAN,
+                                                ast_builder.atom(&k),
+                                            ),
+                                            ast_builder
+                                                .expression_identifier(SPAN, ast_builder.atom(&v)),
+                                            false,
+                                            false,
+                                            false,
+                                        )
+                                    })
+                                    .collect::<Vec<_>>(),
+                                ast_builder.allocator,
+                            ),
+                        ),
+                        expression.clone_in(ast_builder.allocator),
+                        false,
+                    ),
+                )
+            };
             properties.push(ast_builder.object_property_kind_object_property(
                 SPAN,
                 PropertyKind::Init,
@@ -209,44 +242,7 @@ fn gen_style<'a>(
                     ast_builder.atom(&key),
                     None,
                 )),
-                if value.len() == 1 {
-                    // do not create object expression when property is single
-                    ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
-                } else {
-                    Expression::ComputedMemberExpression(
-                        ast_builder.alloc_computed_member_expression(
-                            SPAN,
-                            ast_builder.expression_object(
-                                SPAN,
-                                oxc_allocator::Vec::from_iter_in(
-                                    value
-                                        .into_iter()
-                                        .map(|(k, v)| {
-                                            ast_builder.object_property_kind_object_property(
-                                                SPAN,
-                                                PropertyKind::Init,
-                                                ast_builder.property_key_static_identifier(
-                                                    SPAN,
-                                                    ast_builder.atom(&k),
-                                                ),
-                                                ast_builder.expression_identifier(
-                                                    SPAN,
-                                                    ast_builder.atom(&v),
-                                                ),
-                                                false,
-                                                false,
-                                                false,
-                                            )
-                                        })
-                                        .collect::<Vec<_>>(),
-                                    ast_builder.allocator,
-                                ),
-                            ),
-                            expression.clone_in(ast_builder.allocator),
-                            false,
-                        ),
-                    )
-                },
+                v,
                 false,
                 false,
                 false,

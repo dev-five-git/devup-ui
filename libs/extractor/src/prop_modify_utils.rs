@@ -430,51 +430,51 @@ pub fn convert_style_vars<'a>(
             let mut prop = obj.properties.remove(idx);
 
             if let ObjectPropertyKind::ObjectProperty(p) = &mut prop {
-                let name = match &p.key {
-                    PropertyKey::StaticIdentifier(ident) => Some(ident.name),
-                    PropertyKey::StringLiteral(ident) => Some(ident.value),
-                    _ => {
-                        obj.properties.insert(
-                            idx,
-                            ast_builder.object_property_kind_object_property(
+                let name = if let PropertyKey::StaticIdentifier(ident) = &p.key {
+                    Some(ident.name)
+                } else if let PropertyKey::StringLiteral(ident) = &p.key {
+                    Some(ident.value)
+                } else {
+                    obj.properties.insert(
+                        idx,
+                        ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
                                 SPAN,
-                                PropertyKind::Init,
-                                PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
-                                    SPAN,
-                                    oxc_allocator::Vec::from_array_in(
-                                        [
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.atom("--"),
-                                                    cooked: None,
-                                                },
-                                                false,
-                                            ),
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.atom(""),
-                                                    cooked: None,
-                                                },
-                                                true,
-                                            ),
-                                        ],
-                                        ast_builder.allocator,
-                                    ),
-                                    oxc_allocator::Vec::from_array_in(
-                                        [p.key.to_expression().clone_in(ast_builder.allocator)],
-                                        ast_builder.allocator,
-                                    ),
-                                )),
-                                p.value.clone_in(ast_builder.allocator),
-                                false,
-                                false,
-                                true,
-                            ),
-                        );
-                        None
-                    }
+                                oxc_allocator::Vec::from_array_in(
+                                    [
+                                        ast_builder.template_element(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: ast_builder.atom("--"),
+                                                cooked: None,
+                                            },
+                                            false,
+                                        ),
+                                        ast_builder.template_element(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: ast_builder.atom(""),
+                                                cooked: None,
+                                            },
+                                            true,
+                                        ),
+                                    ],
+                                    ast_builder.allocator,
+                                ),
+                                oxc_allocator::Vec::from_array_in(
+                                    [p.key.to_expression().clone_in(ast_builder.allocator)],
+                                    ast_builder.allocator,
+                                ),
+                            )),
+                            p.value.clone_in(ast_builder.allocator),
+                            false,
+                            false,
+                            true,
+                        ),
+                    );
+                    None
                 };
 
                 if let Some(name) = name {

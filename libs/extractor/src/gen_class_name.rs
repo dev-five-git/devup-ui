@@ -35,14 +35,11 @@ fn gen_class_name<'a>(
                 st.set_style_order(style_order);
             }
             st.extract(filename).map(|style| {
-                ast_builder.expression_string_literal(
-                    SPAN,
-                    ast_builder.atom(&match style {
-                        StyleProperty::ClassName(cls) => cls,
-                        StyleProperty::Variable { class_name, .. } => class_name,
-                    }),
-                    None,
-                )
+                let v = ast_builder.atom(&match style {
+                    StyleProperty::ClassName(cls) => cls,
+                    StyleProperty::Variable { class_name, .. } => class_name,
+                });
+                ast_builder.expression_string_literal(SPAN, v, None)
             })
         }
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
@@ -147,25 +144,22 @@ pub fn merge_expression_for_class_name<'a>(
             let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
             for idx in 0..unknown_expr.len() + 1 {
                 let tail = idx == unknown_expr.len();
-                qu.push(ast_builder.template_element(
-                    SPAN,
-                    TemplateElementValue {
-                        raw: ast_builder.atom(if idx == 0 {
-                            if class_name.is_empty() {
-                                ""
-                            } else {
-                                class_name.push(' ');
-                                class_name.as_str()
-                            }
-                        } else if tail {
+                let t = TemplateElementValue {
+                    raw: ast_builder.atom(if idx == 0 {
+                        if class_name.is_empty() {
                             ""
                         } else {
-                            " "
-                        }),
-                        cooked: None,
-                    },
-                    tail,
-                ));
+                            class_name.push(' ');
+                            class_name.as_str()
+                        }
+                    } else if tail {
+                        ""
+                    } else {
+                        " "
+                    }),
+                    cooked: None,
+                };
+                qu.push(ast_builder.template_element(SPAN, t, tail));
             }
 
             Some(ast_builder.expression_template_literal(
