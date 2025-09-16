@@ -23,9 +23,8 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPatternKind, CallExpression, Expression, ExpressionStatement,
-    ImportDeclaration, ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement,
-    JSXOpeningElement, Program, PropertyKey, Statement, VariableDeclarator, WithClause,
+    Argument, BindingPatternKind, CallExpression, Expression,
+    ImportDeclaration, ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, PropertyKey, Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -602,14 +601,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
                 _ => {
                     let mut v =
-                        AsVisitor::new(&self.ast.allocator, elem.clone_in(self.ast.allocator));
+                        AsVisitor::new(self.ast.allocator, elem.clone_in(self.ast.allocator));
                     let mut el = self.ast.expression_statement(SPAN, tag_name);
                     v.visit_expression_statement(&mut el);
-                    let mut children = oxc_allocator::Vec::new_in(&self.ast.allocator);
+                    let mut children = oxc_allocator::Vec::new_in(self.ast.allocator);
                     children.push(JSXChild::ExpressionContainer(
                         self.ast.alloc_jsx_expression_container(
                             SPAN,
-                            el.expression.clone_in(&self.ast.allocator).into(),
+                            el.expression.clone_in(self.ast.allocator).into(),
                         ),
                     ));
                     *elem = self.ast.jsx_element(
@@ -620,9 +619,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 .jsx_element_name_identifier(SPAN, self.ast.atom("")),
                             Some(self.ast.alloc_ts_type_parameter_instantiation(
                                 SPAN,
-                                oxc_allocator::Vec::new_in(&self.ast.allocator),
+                                oxc_allocator::Vec::new_in(self.ast.allocator),
                             )),
-                            oxc_allocator::Vec::new_in(&self.ast.allocator),
+                            oxc_allocator::Vec::new_in(self.ast.allocator),
                         ),
                         children,
                         Some(

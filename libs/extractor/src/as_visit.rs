@@ -1,43 +1,13 @@
-use crate::component::ExportVariableKind;
-use crate::css_utils::{css_to_style, keyframes_to_keyframes_style, optimize_css_block};
-use crate::extract_style::ExtractStyleProperty;
-use crate::extract_style::extract_css::ExtractCss;
-use crate::extract_style::extract_keyframes::ExtractKeyframes;
-use crate::extractor::KeyframesExtractResult;
-use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
-use crate::extractor::{
-    ExtractResult, GlobalExtractResult,
-    extract_global_style_from_expression::extract_global_style_from_expression,
-    extract_style_from_expression::extract_style_from_expression,
-    extract_style_from_jsx::extract_style_from_jsx,
-};
-use crate::gen_class_name::gen_class_names;
-use crate::prop_modify_utils::{modify_prop_object, modify_props};
-use crate::util_type::UtilType;
 use crate::utils::get_string_by_literal_expression;
-use crate::{ExtractStyleProp, ExtractStyleValue};
-use css::disassemble_property;
-use css::is_special_property::is_special_property;
 use oxc_allocator::{Allocator, CloneIn};
-use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
-use oxc_ast::ast::JSXAttributeItem::Attribute;
-use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey, Statement,
-    VariableDeclarator, WithClause,
+    Expression, JSXElement,
 };
 use oxc_ast_visit::VisitMut;
-use oxc_ast_visit::walk_mut::{
-    walk_call_expression, walk_expression, walk_expression_statement, walk_import_declaration,
-    walk_jsx_element, walk_object_property, walk_program, walk_string_literal,
-    walk_variable_declarator, walk_variable_declarators,
-};
-use strum::IntoEnumIterator;
+use oxc_ast_visit::walk_mut::walk_expression;
 
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
-use std::collections::{HashMap, HashSet};
 
 pub struct AsVisitor<'a> {
     ast: AstBuilder<'a>,

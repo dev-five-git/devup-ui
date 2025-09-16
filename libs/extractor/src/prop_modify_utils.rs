@@ -3,7 +3,6 @@ use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
-use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Expression, JSXAttributeItem, JSXAttributeValue, LogicalOperator, ObjectPropertyKind,
