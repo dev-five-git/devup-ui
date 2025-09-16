@@ -44,3 +44,20 @@ export interface DevupComponentProps<T extends React.ElementType>
   as?: T
   styleVars?: Record<string, string | undefined>
 }
+export type DevupComponentBaseProps<T extends React.ElementType> =
+  DevupElementTypeProps<T> & DevupComponentAdditionalProps<T>
+
+export type DevupElementTypeProps<T extends React.ElementType> =
+  T extends string ? React.ComponentProps<T> : object
+
+export type DevupComponentAdditionalProps<
+  T extends React.ElementType,
+  P extends React.ComponentProps<T> = React.ComponentProps<T>,
+> =
+  Partial<P> extends P
+    ? {
+        props?: P
+      }
+    : {
+        props: P
+      }
