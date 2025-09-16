@@ -3672,6 +3672,9 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
     }
 
     #[test]

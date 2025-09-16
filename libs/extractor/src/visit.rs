@@ -448,10 +448,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .insert(import.local.to_string(), import.imported.to_string());
                 }
             }
-            return;
-        }
-
-        if it.source.value == self.package
+        } else if it.source.value == self.package
             && let Some(specifiers) = &mut it.specifiers
         {
             for i in (0..specifiers.len()).rev() {
@@ -506,10 +503,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-            return;
+        } else {
+            walk_import_declaration(self, it);
         }
-
-        walk_import_declaration(self, it);
     }
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);

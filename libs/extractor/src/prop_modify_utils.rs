@@ -31,14 +31,14 @@ pub fn modify_prop_object<'a>(
                     let name = ident.name.as_str();
                     if name == "className" {
                         class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                        continue;
-                    }
-                    if name == "style" {
+                    } else if name == "style" {
                         style_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                        continue;
+                    } else {
+                        props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                     }
+                } else {
+                    props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                 }
-                props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
             }
             ObjectPropertyKind::SpreadProperty(spread) => {
                 spread_props.push(spread.argument.clone_in(ast_builder.allocator));
@@ -111,26 +111,26 @@ pub fn modify_props<'a>(
                     && let Some(value) = &attr.value
                     && (ident.name == "className" || ident.name == "style")
                 {
-                    let value = match &value {
-                        JSXAttributeValue::ExpressionContainer(container) => container
+                    let mut res = None;
+
+                    if let JSXAttributeValue::ExpressionContainer(container) = &value {
+                        res = container
                             .expression
                             .as_expression()
-                            .map(|expression| expression.clone_in(ast_builder.allocator)),
-                        JSXAttributeValue::StringLiteral(literal) => {
-                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None))
-                        }
-                        _ => None,
-                    };
+                            .map(|expression| expression.clone_in(ast_builder.allocator));
+                    } else if let JSXAttributeValue::StringLiteral(literal) = &value {
+                        res =
+                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None));
+                    }
                     let name = ident.name.as_str();
                     if name == "className" {
-                        class_name_prop = value;
+                        class_name_prop = res;
                     } else if name == "style" {
-                        style_prop = value;
+                        style_prop = res;
                     }
-
-                    continue;
+                } else {
+                    props.insert(idx, JSXAttributeItem::Attribute(attr));
                 }
-                props.insert(idx, JSXAttributeItem::Attribute(attr));
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
                 spread_props.push(spread.argument.clone_in(ast_builder.allocator));
