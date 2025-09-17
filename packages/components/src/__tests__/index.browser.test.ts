@@ -20,6 +20,8 @@ describe('export', () => {
       SelectContext: expect.any(Object),
       useSelect: expect.any(Function),
       Toggle: expect.any(Function),
+      Checkbox: expect.any(Function),
+      CheckboxLayer: expect.any(Function),
     })
   })
 })
