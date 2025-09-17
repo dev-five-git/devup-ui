@@ -21,6 +21,7 @@ export const Default: Story = {
   args: {
     children: 'Checkbox',
     disabled: false,
+    checked: true,
   },
 }
 

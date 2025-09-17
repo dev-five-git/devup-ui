@@ -8,11 +8,25 @@ const meta: Meta<typeof CheckboxLayer> = {
   title: 'Devfive/CheckboxLayer',
   component: CheckboxLayer,
   decorators: [
-    (Story) => (
-      <div style={{ padding: '20px' }}>
-        <Story />
-      </div>
-    ),
+    (Story, context) => {
+      const theme =
+        context.parameters.theme || context.globals.theme || 'default'
+      const isDark = theme === 'dark'
+
+      return (
+        <div
+          data-theme={theme}
+          style={{
+            padding: '20px',
+            backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
+            color: isDark ? '#ffffff' : '#000000',
+            minHeight: '200px',
+          }}
+        >
+          <Story />
+        </div>
+      )
+    },
   ],
   argTypes: {
     onCheckboxChange: { action: 'checkbox changed' },
