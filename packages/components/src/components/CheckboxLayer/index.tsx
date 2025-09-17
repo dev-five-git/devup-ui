@@ -24,7 +24,6 @@ export interface CheckBoxLayerProps {
   gap?: number
   onCheckboxChange?: (event: CheckboxChangeEvent) => void
   defaultCheckedIds?: string[]
-  variant?: 'primary' | 'default'
 }
 
 export function CheckboxLayer({
@@ -33,7 +32,6 @@ export function CheckboxLayer({
   gap,
   onCheckboxChange,
   defaultCheckedIds = [],
-  variant = 'primary',
 }: CheckBoxLayerProps) {
   const [checkedIds, setCheckedIds] = useState<string[]>(defaultCheckedIds)
 
@@ -71,7 +69,6 @@ export function CheckboxLayer({
           onChange={(checked) =>
             handleCheckboxChange(checkbox.id, checkbox.value, checked)
           }
-          variant={variant}
         >
           {checkbox.value}
         </Checkbox>
