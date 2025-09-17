@@ -1,0 +1,84 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CheckboxLayer > should render 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-color-mix(in srgb,var(--primary) 20%,#FFF 80%)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary) 100%,#000 15%)-15130211206989154723-1 background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1 border-0-1px solid var(--primary)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary) 10%,#FFF 90%)-8380715471663921674-1 background-0-$contentBackground--1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 color-0-$text--255"
+          style="user-select: none; vertical-align: middle;"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-color-mix(in srgb,var(--primary) 20%,#FFF 80%)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary) 100%,#000 15%)-15130211206989154723-1 background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1 border-0-1px solid var(--primary)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary) 10%,#FFF 90%)-8380715471663921674-1 background-0-$contentBackground--1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 color-0-$text--255"
+          style="user-select: none; vertical-align: middle;"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1   background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1  background-0-$contentBackground--1 cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 color-0-#D6D7DE--255"
+          style="user-select: none; vertical-align: middle;"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
