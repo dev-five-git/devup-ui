@@ -1,3 +1,5 @@
+'use client'
+
 import { Flex } from '@devup-ui/react'
 import { useState } from 'react'
 

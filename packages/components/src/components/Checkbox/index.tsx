@@ -1,3 +1,5 @@
+'use client'
+
 import { Box, css, Flex, getTheme, Input, Text } from '@devup-ui/react'
 import { ComponentProps } from 'react'
 
