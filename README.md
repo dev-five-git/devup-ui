@@ -150,3 +150,21 @@ const box = <Box _hover={{bg: ["red", "blue"]}}/>
 // Same
 const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ```
+
+## How to Contribute
+
+### Requirements
+- Rust compiler installed
+- pnpm package manager installed
+
+### Development Setup
+To set up the development environment, install the following packages:
+```sh
+pnpm i
+pnpm build
+cargo install cargo-tarpaulin
+cargo install wasm-pack
+```
+After installation, run pnpm test to ensure everything works correctly.
+
+
