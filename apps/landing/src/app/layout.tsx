@@ -1,4 +1,4 @@
-import { css, globalCss, ThemeScript } from '@devup-ui/react'
+import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
 import type { Metadata } from 'next'
 
@@ -86,7 +86,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
       </head>
       <body
         className={css({
-          bg: '$background',
+          bg: '$footerBg',
           color: '$text',
         })}
       >
@@ -99,8 +99,10 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           />
         </noscript>
         <SearchModal />
-        <Header />
-        {children}
+        <Box bg="$background">
+          <Header />
+          {children}
+        </Box>
         <Footer />
       </body>
     </html>

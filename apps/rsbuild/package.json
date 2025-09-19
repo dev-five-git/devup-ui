@@ -16,7 +16,7 @@
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.5.6",
+    "@rsbuild/core": "^1.5.7",
     "@rsbuild/plugin-react": "^1.4.0",
     "@devup-ui/rsbuild-plugin": "workspace:*"
   }
