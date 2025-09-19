@@ -1,3 +1,4 @@
+use crate::as_visit::AsVisitor;
 use crate::component::ExportVariableKind;
 use crate::css_utils::{css_to_style, keyframes_to_keyframes_style, optimize_css_block};
 use crate::extract_style::ExtractStyleProperty;
@@ -23,7 +24,7 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXElement, Program, PropertyKey, Statement,
+    ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, PropertyKey, Statement,
     VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
@@ -154,91 +155,85 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                     };
                 } else {
-                    *it = match util_type.as_ref() {
-                        UtilType::Css => {
-                            let ExtractResult {
-                                mut styles,
-                                style_order,
-                                ..
-                            } = extract_style_from_expression(
+                    let r = util_type.as_ref();
+                    *it = if let UtilType::Css = r {
+                        let ExtractResult {
+                            mut styles,
+                            style_order,
+                            ..
+                        } = extract_style_from_expression(
+                            &self.ast,
+                            None,
+                            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+                                &mut spread.argument
+                            } else {
+                                call.arguments[0].to_expression_mut()
+                            },
+                            0,
+                            &None,
+                        );
+
+                        if styles.is_empty() {
+                            self.ast
+                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                        } else {
+                            // css can not reachable
+                            let class_name = gen_class_names(
                                 &self.ast,
-                                None,
-                                if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
-                                    &mut spread.argument
-                                } else {
-                                    call.arguments[0].to_expression_mut()
-                                },
-                                0,
-                                &None,
+                                &mut styles,
+                                style_order,
+                                self.split_filename.as_deref(),
                             );
 
-                            if styles.is_empty() {
+                            // already set style order
+                            self.styles
+                                .extend(styles.into_iter().flat_map(|ex| ex.extract()));
+                            if let Some(cls) = class_name {
+                                cls
+                            } else {
                                 self.ast
                                     .expression_string_literal(SPAN, self.ast.atom(""), None)
-                            } else {
-                                // css can not reachable
-                                let class_name = gen_class_names(
-                                    &self.ast,
-                                    &mut styles,
-                                    style_order,
-                                    self.split_filename.as_deref(),
-                                );
-
-                                // already set style order
-                                self.styles
-                                    .extend(styles.into_iter().flat_map(|ex| ex.extract()));
-                                if let Some(cls) = class_name {
-                                    cls
-                                } else {
-                                    self.ast.expression_string_literal(
-                                        SPAN,
-                                        self.ast.atom(""),
-                                        None,
-                                    )
-                                }
                             }
                         }
-                        UtilType::Keyframes => {
-                            let KeyframesExtractResult { keyframes } =
-                                extract_keyframes_from_expression(
-                                    &self.ast,
-                                    if let Argument::SpreadElement(spread) = &mut call.arguments[0]
-                                    {
-                                        &mut spread.argument
-                                    } else {
-                                        call.arguments[0].to_expression_mut()
-                                    },
-                                );
-
-                            let name = keyframes
-                                .extract(self.split_filename.as_deref())
-                                .to_string();
-                            self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
-                            self.ast
-                                .expression_string_literal(SPAN, self.ast.atom(&name), None)
-                        }
-                        UtilType::GlobalCss => {
-                            let GlobalExtractResult {
-                                styles,
-                                style_order,
-                            } = extract_global_style_from_expression(
+                    } else if let UtilType::Keyframes = r {
+                        let KeyframesExtractResult { keyframes } =
+                            extract_keyframes_from_expression(
                                 &self.ast,
                                 if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
                                     &mut spread.argument
                                 } else {
                                     call.arguments[0].to_expression_mut()
                                 },
-                                &self.filename,
                             );
-                            // already set style order
-                            self.styles.extend(styles.into_iter().flat_map(|mut ex| {
-                                if let ExtractStyleProp::Static(css) = &mut ex {
-                                    css.set_style_order(style_order.unwrap_or(0));
-                                }
-                                ex.extract()
-                            }));
-                            self.ast.expression_identifier(SPAN, self.ast.atom(""))
-                        }
+
+                        let name = keyframes
+                            .extract(self.split_filename.as_deref())
+                            .to_string();
+                        self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+                        self.ast
+                            .expression_string_literal(SPAN, self.ast.atom(&name), None)
+                    } else {
+                        // global
+                        let GlobalExtractResult {
+                            styles,
+                            style_order,
+                        } = extract_global_style_from_expression(
+                            &self.ast,
+                            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+                                &mut spread.argument
+                            } else {
+                                call.arguments[0].to_expression_mut()
+                            },
+                            &self.filename,
+                        );
+                        // already set style order
+                        self.styles.extend(styles.into_iter().flat_map(|mut ex| {
+                            if let ExtractStyleProp::Static(css) = &mut ex {
+                                css.set_style_order(style_order.unwrap_or(0));
+                            }
+                            ex.extract()
+                        }));
+                        self.ast.expression_identifier(SPAN, self.ast.atom(""))
                     }
                 }
             }
@@ -252,56 +247,49 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .iter()
                 .map(|quasi| quasi.value.raw.to_string())
                 .collect::<String>();
-            match css_type.as_ref() {
-                UtilType::Css => {
-                    let styles = css_to_style(&css_str, 0, &None);
-                    let class_name = gen_class_names(
-                        &self.ast,
-                        &mut styles
-                            .iter()
-                            .map(|ex| {
-                                ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone()))
-                            })
-                            .collect::<Vec<_>>(),
-                        None,
-                        self.split_filename.as_deref(),
-                    );
+            let r = css_type.as_ref();
+            *it = if let UtilType::Css = r {
+                let styles = css_to_style(&css_str, 0, &None);
+                let class_name = gen_class_names(
+                    &self.ast,
+                    &mut styles
+                        .iter()
+                        .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone())))
+                        .collect::<Vec<_>>(),
+                    None,
+                    self.split_filename.as_deref(),
+                );
 
-                    if let Some(cls) = class_name {
-                        *it = cls;
-                    } else {
-                        *it = self
-                            .ast
-                            .expression_string_literal(SPAN, self.ast.atom(""), None);
-                    }
-                    // already set style order
-                    self.styles
-                        .extend(styles.into_iter().map(ExtractStyleValue::Static));
+                self.styles
+                    .extend(styles.into_iter().map(ExtractStyleValue::Static));
+                if let Some(cls) = class_name {
+                    cls
+                } else {
+                    self.ast
+                        .expression_string_literal(SPAN, self.ast.atom(""), None)
                 }
-                UtilType::Keyframes => {
-                    let keyframes = ExtractKeyframes {
-                        keyframes: keyframes_to_keyframes_style(&css_str),
-                    };
-                    let name = keyframes
-                        .extract(self.split_filename.as_deref())
-                        .to_string();
+                // already set style order
+            } else if let UtilType::Keyframes = r {
+                let keyframes = ExtractKeyframes {
+                    keyframes: keyframes_to_keyframes_style(&css_str),
+                };
+                let name = keyframes
+                    .extract(self.split_filename.as_deref())
+                    .to_string();
 
-                    self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
-                    *it = self
-                        .ast
-                        .expression_string_literal(SPAN, self.ast.atom(&name), None);
+                self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+                self.ast
+                    .expression_string_literal(SPAN, self.ast.atom(&name), None)
+            } else {
+                let optimized_css = optimize_css_block(&css_str);
+                if !optimized_css.is_empty() {
+                    let css = ExtractStyleValue::Css(ExtractCss {
+                        css: optimized_css,
+                        file: self.filename.clone(),
+                    });
+                    self.styles.insert(css);
                 }
-                UtilType::GlobalCss => {
-                    let optimized_css = optimize_css_block(&css_str);
-                    if !optimized_css.is_empty() {
-                        let css = ExtractStyleValue::Css(ExtractCss {
-                            css: optimized_css,
-                            file: self.filename.clone(),
-                        });
-                        self.styles.insert(css);
-                    }
-                    *it = self.ast.expression_identifier(SPAN, self.ast.atom(""));
-                }
+                self.ast.expression_identifier(SPAN, self.ast.atom(""))
             }
         }
     }
@@ -346,6 +334,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     tag: _tag,
                     style_order,
                     style_vars,
+                    props,
                 } = extract_style_from_expression(
                     &self.ast,
                     None,
@@ -381,6 +370,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut props_styles,
                         style_order,
                         style_vars,
+                        props,
                         self.split_filename.as_deref(),
                     );
                 }
@@ -445,10 +435,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .insert(import.local.to_string(), import.imported.to_string());
                 }
             }
-            return;
-        }
-
-        if it.source.value == self.package
+        } else if it.source.value == self.package
             && let Some(specifiers) = &mut it.specifiers
         {
             for i in (0..specifiers.len()).rev() {
@@ -503,19 +490,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             }
-            return;
+        } else {
+            walk_import_declaration(self, it);
         }
-
-        walk_import_declaration(self, it);
     }
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
         // after run to convert css literal
-
-        let opening_element = &mut elem.opening_element;
-        let component_name = &opening_element.name.to_string();
+        let component_name = &elem.opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
-            let attrs = &mut opening_element.attributes;
+            let attrs = &mut elem.opening_element.attributes;
             let mut tag_name =
                 self.ast
                     .expression_string_literal(SPAN, kind.to_tag().unwrap_or("div"), None);
@@ -525,6 +509,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut duplicate_set = HashSet::new();
             let mut style_order = None;
             let mut style_vars = None;
+            let mut props = None;
             for i in (0..attrs.len()).rev() {
                 let mut attr = attrs.remove(i);
                 if let Attribute(attr) = &mut attr
@@ -533,36 +518,37 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 {
                     let property_name = name.name.to_string();
                     for name in disassemble_property(&property_name) {
-                        if duplicate_set.contains(&name) {
-                            continue;
-                        }
-                        duplicate_set.insert(name.clone());
-                        if &property_name == "styleOrder" {
-                            style_order = jsx_expression_to_number(attr.value.as_ref().unwrap())
-                                .map(|n| n as u8);
-                            continue;
-                        }
-                        if property_name == "styleVars" {
-                            if let Some(value) = attr.value.as_ref()
-                                && let JSXAttributeValue::ExpressionContainer(expr) = value
-                                && let Some(expression) = expr.expression.as_expression()
-                            {
-                                style_vars = Some(expression.clone_in(self.ast.allocator));
+                        if !duplicate_set.contains(&name) {
+                            duplicate_set.insert(name.clone());
+                            if property_name == "styleOrder" {
+                                style_order =
+                                    jsx_expression_to_number(attr.value.as_ref().unwrap())
+                                        .map(|n| n as u8);
+                            } else if property_name == "props" {
+                                if let Some(value) = attr.value.as_ref()
+                                    && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                    && let Some(expression) = expr.expression.as_expression()
+                                {
+                                    props = Some(expression.clone_in(self.ast.allocator));
+                                }
+                            } else if property_name == "styleVars" {
+                                if let Some(value) = attr.value.as_ref()
+                                    && let JSXAttributeValue::ExpressionContainer(expr) = value
+                                    && let Some(expression) = expr.expression.as_expression()
+                                {
+                                    style_vars = Some(expression.clone_in(self.ast.allocator));
+                                }
+                            } else if let Some(at) = &mut attr.value {
+                                let ExtractResult { styles, tag, .. } =
+                                    extract_style_from_jsx(&self.ast, &name, at);
+                                props_styles.extend(styles.into_iter().rev());
+                                tag_name = tag.unwrap_or(tag_name);
                             }
-                            continue;
-                        }
-
-                        if let Some(at) = &mut attr.value {
-                            let ExtractResult { styles, tag, .. } =
-                                extract_style_from_jsx(&self.ast, &name, at);
-                            props_styles.extend(styles.into_iter().rev());
-                            tag_name = tag.unwrap_or(tag_name);
-                            continue;
                         }
                     }
-                    continue;
+                } else {
+                    attrs.insert(i, attr);
                 }
-                attrs.insert(i, attr);
             }
 
             kind.extract()
@@ -576,6 +562,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 &mut props_styles,
                 style_order,
                 style_vars,
+                props,
                 self.split_filename.as_deref(),
             );
 
@@ -585,19 +572,52 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .for_each(|style| self.styles.extend(style.extract()));
             // modify!!
 
-            if let Some(tag) = match tag_name {
-                Expression::StringLiteral(str) => Some(str.value.as_str()),
-                Expression::TemplateLiteral(literal) => Some(literal.quasis[0].value.raw.as_str()),
-                _ => None,
+            if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {
+                Some(str.value.as_str())
+            } else if let Expression::TemplateLiteral(literal) = tag_name {
+                Some(literal.quasis[0].value.raw.as_str())
+            } else {
+                let mut v = AsVisitor::new(self.ast.allocator, elem.clone_in(self.ast.allocator));
+                let mut el = self.ast.expression_statement(SPAN, tag_name);
+                v.visit_expression_statement(&mut el);
+                let mut children = oxc_allocator::Vec::new_in(self.ast.allocator);
+                children.push(JSXChild::ExpressionContainer(
+                    self.ast.alloc_jsx_expression_container(
+                        SPAN,
+                        el.expression.clone_in(self.ast.allocator).into(),
+                    ),
+                ));
+                *elem = self.ast.jsx_element(
+                    SPAN,
+                    self.ast.alloc_jsx_opening_element(
+                        SPAN,
+                        self.ast
+                            .jsx_element_name_identifier(SPAN, self.ast.atom("")),
+                        Some(self.ast.alloc_ts_type_parameter_instantiation(
+                            SPAN,
+                            oxc_allocator::Vec::new_in(self.ast.allocator),
+                        )),
+                        oxc_allocator::Vec::new_in(self.ast.allocator),
+                    ),
+                    children,
+                    Some(
+                        self.ast.alloc_jsx_closing_element(
+                            SPAN,
+                            self.ast
+                                .jsx_element_name_identifier(SPAN, self.ast.atom("")),
+                        ),
+                    ),
+                );
+                None
             } {
                 let ident = self
                     .ast
                     .jsx_element_name_identifier(SPAN, self.ast.atom(tag));
 
+                elem.opening_element.name = ident.clone_in(self.ast.allocator);
                 if let Some(el) = &mut elem.closing_element {
-                    el.name = ident.clone_in(self.ast.allocator);
+                    el.name = ident
                 }
-                opening_element.name = ident;
             }
         }
     }

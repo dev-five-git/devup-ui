@@ -66,7 +66,9 @@ describe('DevupUIRsbuildPlugin', () => {
   })
 
   it('should error when write data files', async () => {
-    vi.mocked(readFile).mockRejectedValueOnce(new Error('error'))
+    const originalConsoleError = console.error
+    console.error = vi.fn()
+    vi.mocked(readFile).mockRejectedValueOnce('error')
     vi.mocked(existsSync).mockImplementation((path) => {
       if (path === 'devup.json') return true
       return false
@@ -80,6 +82,8 @@ describe('DevupUIRsbuildPlugin', () => {
       transform,
       modifyRsbuildConfig,
     } as any)
+    expect(console.error).toHaveBeenCalledWith('error')
+    console.error = originalConsoleError
   })
 
   it('should not register css transform', async () => {

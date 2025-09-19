@@ -19,7 +19,7 @@
     "webpack"
   ],
   "type": "module",
-  "version": "1.0.38",
+  "version": "1.0.42",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"

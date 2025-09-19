@@ -231,7 +231,10 @@ mod tests {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
         }
-        assert_eq!(get_css(None, false).unwrap(), "");
+        assert_eq!(
+            get_css(None, false).unwrap().split("*/").nth(1).unwrap(),
+            ""
+        );
 
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -246,7 +249,7 @@ mod tests {
             sheet.set_theme(theme);
         }
 
-        assert_debug_snapshot!(get_css(None, false).unwrap());
+        assert_debug_snapshot!(get_css(None, false).unwrap().split("*/").nth(1).unwrap());
     }
 
     #[test]

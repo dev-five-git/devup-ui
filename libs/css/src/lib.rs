@@ -155,8 +155,7 @@ pub fn sheet_to_classname(
             });
         if !filename.is_empty() {
             format!(
-                // avoid g-ad class (google ad)
-                "{}_{}",
+                "{}-{}",
                 num_to_nm_base(get_file_num_by_filename(&filename)),
                 clas_num
             )

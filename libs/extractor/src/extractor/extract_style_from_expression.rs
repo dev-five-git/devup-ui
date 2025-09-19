@@ -22,7 +22,7 @@ use oxc_ast::{
     AstBuilder,
     ast::{
         BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, PropertyKey,
-        TemplateElementValue,
+        TemplateElementValue, UnaryOperator,
     },
 };
 use oxc_span::SPAN;
@@ -37,10 +37,12 @@ pub fn extract_style_from_expression<'a>(
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
+    println!("expression: {:?}", expression);
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
         let mut style_vars = None;
+        let mut props = None;
         return match expression {
             Expression::ObjectExpression(obj) => {
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = vec![];
@@ -61,6 +63,8 @@ pub fn extract_style_from_expression<'a>(
                                     } else if &property_name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator));
+                                    } else if &property_name == "props" {
+                                        props = Some(prop.value.clone_in(ast_builder.allocator));
                                     } else {
                                         let ExtractResult {
                                             styles, tag: _tag, ..
@@ -103,9 +107,11 @@ pub fn extract_style_from_expression<'a>(
                     tag,
                     style_order,
                     style_vars,
+                    props,
                 }
             }
             Expression::ConditionalExpression(conditional) => ExtractResult {
+                props: None,
                 styles: vec![ExtractStyleProp::Conditional {
                     condition: conditional.test.clone_in(ast_builder.allocator),
                     consequent: Some(Box::new(ExtractStyleProp::StaticArray(
@@ -211,10 +217,8 @@ pub fn extract_style_from_expression<'a>(
                                         ])
                                         .to_string()
                                     }
-                                } else if name.contains("&") {
-                                    name.replace("&", &selector.to_string())
                                 } else {
-                                    StyleSelector::from([&selector.to_string(), *name]).to_string()
+                                    name.replace("&", &selector.to_string())
                                 }
                             } else if name.starts_with("_") {
                                 StyleSelector::from(to_kebab_case(&name.replace("_", "")).as_str())
@@ -284,8 +288,22 @@ pub fn extract_style_from_expression<'a>(
         }
     } else {
         match expression {
-            Expression::UnaryExpression(_)
-            | Expression::BinaryExpression(_)
+            Expression::UnaryExpression(un) => ExtractResult {
+                styles: if un.operator == UnaryOperator::Void {
+                    vec![]
+                } else {
+                    vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                        ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            &expression_to_code(expression),
+                            selector.clone(),
+                        ),
+                    ))]
+                },
+                ..ExtractResult::default()
+            },
+            Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
             | Expression::CallExpression(_) => ExtractResult {
                 styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
@@ -496,6 +514,7 @@ pub fn extract_style_from_expression<'a>(
                     tag: None,
                     style_order: None,
                     style_vars: None,
+                    props: None,
                 }
             }
             Expression::ConditionalExpression(conditional) => {
