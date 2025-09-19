@@ -29,6 +29,11 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-panda-css/.next'))
+    rmSync('./benchmark/next-panda-css/.next', {
+      recursive: true,
+      force: true,
+    })
   if (existsSync('./benchmark/next-devup-ui/df'))
     rmSync('./benchmark/next-devup-ui/df', {
       recursive: true,
@@ -71,6 +76,15 @@ execSync('pnpm -F next-kuma-ui-benchmark build', {
 console.profileEnd('kuma-ui')
 performance.mark('kuma-ui-end')
 performance.measure('kuma-ui', 'kuma-ui-start', 'kuma-ui-end')
+
+performance.mark('panda-css-start')
+console.profile('panda-css')
+execSync('pnpm -F next-panda-css-benchmark build', {
+  stdio: 'inherit',
+})
+console.profileEnd('panda-css')
+performance.mark('panda-css-end')
+performance.measure('panda-css', 'panda-css-start', 'panda-css-end')
 
 performance.mark('chakra-ui-start')
 console.profile('chakra-ui')
@@ -117,6 +131,13 @@ console.info(performance.getEntriesByName('kuma-ui'))
 console.info(
   'kuma-ui',
   checkDirSize('./benchmark/next-kuma-ui/.next').toLocaleString() + 'bytes',
+)
+
+console.info(performance.getEntriesByName('panda-css'))
+
+console.info(
+  'panda-css',
+  checkDirSize('./benchmark/next-panda-css/.next').toLocaleString() + 'bytes',
 )
 
 console.info(performance.getEntriesByName('chakra-ui'))
