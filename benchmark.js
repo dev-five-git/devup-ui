@@ -4,6 +4,16 @@ import { join } from 'node:path'
 import { execSync } from 'child_process'
 
 function clearBuildFile() {
+  if (existsSync('./benchmark/next-stylex/.next'))
+    rmSync('./benchmark/next-stylex/.next', {
+      recursive: true,
+      force: true,
+    })
+  if (existsSync('./benchmark/next-tailwind/.next'))
+    rmSync('./benchmark/next-tailwind/.next', {
+      recursive: true,
+      force: true,
+    })
   if (existsSync('./benchmark/next-kuma-ui/.next'))
     rmSync('./benchmark/next-kuma-ui/.next', {
       recursive: true,
@@ -68,103 +78,27 @@ function checkDirSize(path) {
 
 clearBuildFile()
 
-performance.mark('kuma-ui-start')
-console.profile('kuma-ui')
-execSync('pnpm -F next-kuma-ui-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('kuma-ui')
-performance.mark('kuma-ui-end')
-performance.measure('kuma-ui', 'kuma-ui-start', 'kuma-ui-end')
+function benchmark(target) {
+  performance.mark(target + '-start')
+  console.profile(target)
+  execSync('pnpm -F next-' + target + '-benchmark build', {
+    stdio: 'inherit',
+  })
+  console.profileEnd(target)
+  performance.mark(target + '-end')
+  performance.measure(target, target + '-start', target + '-end')
+  return `${target} ${(performance.getEntriesByName(target)[0].duration / 1000).toFixed(2).toLocaleString()}s ${checkDirSize('./benchmark/next-' + target + '/.next').toLocaleString()} bytes`
+}
 
-performance.mark('panda-css-start')
-console.profile('panda-css')
-execSync('pnpm -F next-panda-css-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('panda-css')
-performance.mark('panda-css-end')
-performance.measure('panda-css', 'panda-css-start', 'panda-css-end')
+let result = []
 
-performance.mark('chakra-ui-start')
-console.profile('chakra-ui')
-execSync('pnpm -F next-chakra-ui-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('chakra-ui')
-performance.mark('chakra-ui-end')
-performance.measure('chakra-ui', 'chakra-ui-start', 'chakra-ui-end')
+result.push(benchmark('tailwind'))
+result.push(benchmark('stylex'))
+result.push(benchmark('kuma-ui'))
+result.push(benchmark('panda-css'))
+result.push(benchmark('chakra-ui'))
+result.push(benchmark('mui'))
+result.push(benchmark('devup-ui'))
+result.push(benchmark('devup-ui-single'))
 
-performance.mark('mui-start')
-console.profile('mui')
-execSync('pnpm -F next-mui-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('mui')
-performance.mark('mui-end')
-performance.measure('mui', 'mui-start', 'mui-end')
-
-performance.mark('devup-ui-start')
-console.profile('devup-ui')
-execSync('pnpm -F next-devup-ui-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('devup-ui')
-performance.mark('devup-ui-end')
-performance.measure('devup-ui', 'devup-ui-start', 'devup-ui-end')
-
-performance.mark('devup-ui-single-start')
-console.profile('devup-ui-single')
-execSync('pnpm -F next-devup-ui-single-benchmark build', {
-  stdio: 'inherit',
-})
-console.profileEnd('devup-ui-single')
-performance.mark('devup-ui-single-end')
-performance.measure(
-  'devup-ui-single',
-  'devup-ui-single-start',
-  'devup-ui-single-end',
-)
-
-console.info(performance.getEntriesByName('kuma-ui'))
-
-console.info(
-  'kuma-ui',
-  checkDirSize('./benchmark/next-kuma-ui/.next').toLocaleString() + 'bytes',
-)
-
-console.info(performance.getEntriesByName('panda-css'))
-
-console.info(
-  'panda-css',
-  checkDirSize('./benchmark/next-panda-css/.next').toLocaleString() + 'bytes',
-)
-
-console.info(performance.getEntriesByName('chakra-ui'))
-
-console.info(
-  'chakra-ui',
-  checkDirSize('./benchmark/next-chakra-ui/.next').toLocaleString() + 'bytes',
-)
-
-console.info(performance.getEntriesByName('mui'))
-
-console.info(
-  'mui',
-  checkDirSize('./benchmark/next-mui/.next').toLocaleString() + 'bytes',
-)
-
-console.info(performance.getEntriesByName('devup-ui'))
-
-console.info(
-  'devup-ui',
-  checkDirSize('./benchmark/next-devup-ui/.next').toLocaleString() + 'bytes',
-)
-
-console.info(performance.getEntriesByName('devup-ui-single'))
-
-console.info(
-  'devup-ui-single',
-  checkDirSize('./benchmark/next-devup-ui-single/.next').toLocaleString() +
-    'bytes',
-)
+console.info(result.join('\n'))
