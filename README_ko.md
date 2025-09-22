@@ -70,14 +70,17 @@ npm install @devup-ui/vite-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| 라이브러리  |  버전    | 빌드 시간   | 빌드 사이즈        |
-|------------|---------|------------|------------------|
-| kuma-ui               | 1.5.9    | 20,795s    | 65,195,899b     |
-| panda-css             | 1.3.1    | 21,474s    | 60,560,531b     |
-| chakra-ui             | 3.27.0   | 29,269s    | 200,421,009b    |
-| mui                   | 7.3.2    | 21,725s    | 90,287,991b     |
-| devup-ui              | 1.0.18   | 17,629s    | 55,709,618b     |
-| devup-ui(single mode) | 1.0.18   | 17,863s    | 55,693,887b     |
+| 라이브러리                 |  버전    | 빌드 시간    | 빌드 사이즈        |
+|--------------------------|----------|------------|-------------------|
+| tailwindcss              | 4.1.13   | 20.22s     | 57,415,796 bytes  |
+| styleX                   | 0.15.4   | 38.97s     | 76,257,820 bytes  |
+| vanilla-extract          | 1.17.4   | 20.09s     | 59,366,237 bytes  |
+| kuma-ui                  | 1.5.9    | 21.61s     | 67,422,085 bytes  |
+| panda-css                | 1.3.1    | 22.01s     | 62,431,065 bytes  |
+| chakra-ui                | 3.27.0   | 29.99s     | 210,122,493 bytes |
+| mui                      | 7.3.2    | 22.21s     | 94,231,958 bytes  |
+| devup-ui(per-file css)   | 1.0.18   | 18.23s     | 57,440,953 bytes  |
+| devup-ui(single css)     | 1.0.18   | 18.35s     | 57,409,008 bytes  |
 
 ## 작동 원리
 
