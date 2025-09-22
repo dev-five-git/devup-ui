@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.8",
+  "version": "1.0.9",
   "type": "module",
   "scripts": {
     "lint": "eslint",
@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.2",
-    "vite": "^7.1.5",
+    "vite": "^7.1.6",
     "vite-plugin-dts": "^4.5.4",
     "rollup-plugin-preserve-directives": "^0.4.0"
   },

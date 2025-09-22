@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.18
+
+### Patch Changes
+
+- f7ee823: Support props and custom component in as
+
 ## 1.0.17
 
 ### Patch Changes

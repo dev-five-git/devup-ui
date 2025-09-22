@@ -284,25 +284,18 @@ impl StyleSheet {
         for style in styles.iter() {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let (cls, _) =
-                        match style.extract(if !single_css { Some(filename) } else { None }) {
-                            Some(StyleProperty::ClassName(cls)) => (cls, None),
-                            Some(StyleProperty::Variable {
-                                class_name,
-                                variable_name,
-                                ..
-                            }) => (class_name, Some(variable_name)),
-                            None => continue,
-                        };
-                    if self.add_property(
-                        &cls,
-                        st.property(),
-                        st.level(),
-                        st.value(),
-                        st.selector(),
-                        st.style_order(),
-                        if !single_css { Some(filename) } else { None },
-                    ) {
+                    if let Some(StyleProperty::ClassName(cls)) =
+                        style.extract(if !single_css { Some(filename) } else { None })
+                        && self.add_property(
+                            &cls,
+                            st.property(),
+                            st.level(),
+                            st.value(),
+                            st.selector(),
+                            st.style_order(),
+                            if !single_css { Some(filename) } else { None },
+                        )
+                    {
                         collected = true;
                         if st.style_order() == Some(0) {
                             updated_base_style = true;
@@ -310,25 +303,21 @@ impl StyleSheet {
                     }
                 }
                 ExtractStyleValue::Dynamic(dy) => {
-                    let (cls, variable) =
-                        match style.extract(if !single_css { Some(filename) } else { None }) {
-                            Some(StyleProperty::ClassName(cls)) => (cls, None),
-                            Some(StyleProperty::Variable {
-                                class_name,
-                                variable_name,
-                                ..
-                            }) => (class_name, Some(variable_name)),
-                            None => continue,
-                        };
-                    if self.add_property(
-                        &cls,
-                        dy.property(),
-                        dy.level(),
-                        &format!("var({})", variable.unwrap()),
-                        dy.selector(),
-                        dy.style_order(),
-                        if !single_css { Some(filename) } else { None },
-                    ) {
+                    if let Some(StyleProperty::Variable {
+                        class_name,
+                        variable_name,
+                        ..
+                    }) = style.extract(if !single_css { Some(filename) } else { None })
+                        && self.add_property(
+                            &class_name,
+                            dy.property(),
+                            dy.level(),
+                            &format!("var({})", variable_name),
+                            dy.selector(),
+                            dy.style_order(),
+                            if !single_css { Some(filename) } else { None },
+                        )
+                    {
                         collected = true;
                         if dy.style_order() == Some(0) {
                             updated_base_style = true;
@@ -683,6 +672,7 @@ mod tests {
     use crate::theme::{ColorTheme, Typography};
 
     use super::*;
+    use extractor::{ExtractOption, extract};
     use insta::assert_debug_snapshot;
 
     #[test]
@@ -784,6 +774,12 @@ mod tests {
         sheet.add_property("test", "display", 0, "none", None, None, None);
         sheet.add_property("test", "display", 2, "flex", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_import_css() {
+        let sheet = StyleSheet::default();
+        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
     }
 
     #[test]
@@ -1730,5 +1726,17 @@ mod tests {
         assert!(css.contains("font-weight:400"));
 
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_update_styles() {
+        let mut sheet = StyleSheet::default();
+        sheet.update_styles(&HashSet::new(), "index.tsx", true);
+        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
+
+        let mut sheet = StyleSheet::default();
+        let output = extract("index.tsx", "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:flex},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }).unwrap();
+        sheet.update_styles(&output.styles, "index.tsx", true);
+        assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
 }

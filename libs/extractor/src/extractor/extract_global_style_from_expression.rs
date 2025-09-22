@@ -81,31 +81,31 @@ pub fn extract_global_style_from_expression<'a>(
                                 for p in arr.elements.iter() {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
                                         styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
-                                    properties: BTreeMap::from_iter(
-                                        o.properties
-                                            .iter()
-                                            .filter_map(|p| {
-                                                if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                    && let PropertyKey::StaticIdentifier(ident) = &o.key
-                                                    && let Some(s) = get_string_by_literal_expression(&o.value)
-                                                {
-                                                    Some(disassemble_property(&ident.name).iter().map(|p| {
-                                                        let v= if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() };
-                                                        if *p == "src" {
-                                                            (p.to_string(), wrap_url(&v))
+                                            properties: BTreeMap::from_iter(
+                                                o.properties
+                                                    .iter()
+                                                    .filter_map(|p| {
+                                                        if let ObjectPropertyKind::ObjectProperty(o) = p
+                                                            && let PropertyKey::StaticIdentifier(ident) = &o.key
+                                                            && let Some(s) = get_string_by_literal_expression(&o.value)
+                                                        {
+                                                            Some(
+                                                                disassemble_property(&ident.name)
+                                                                    .iter()
+                                                                    .map(|p| {
+                                                                        let v = if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() };
+                                                                        if *p == "src" { (p.to_string(), wrap_url(&v)) } else { (p.to_string(), v) }
+                                                                    })
+                                                                    .collect::<Vec<_>>(),
+                                                            )
+                                                        } else {
+                                                            None
                                                         }
-                                                        else {
-                                                            (p.to_string(), v)
-                                                        }
-                                                    }).collect::<Vec<_>>())
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .flatten(),
-                                    ),
-                                    file: file.to_string(),
-                                })));
+                                                    })
+                                                    .flatten(),
+                                            ),
+                                            file: file.to_string(),
+                                        })));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
                                         let css_styles = css_to_style(
                                             t.quasis

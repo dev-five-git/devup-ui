@@ -18,7 +18,7 @@
     "rsbuild"
   ],
   "type": "module",
-  "version": "1.0.35",
+  "version": "1.0.37",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -56,8 +56,8 @@
     "@rsbuild/core": "*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.5.6",
-    "vite": "^7.1.5",
+    "@rsbuild/core": "^1.5.10",
+    "vite": "^7.1.6",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^3.2.4",
     "typescript": "^5.9.2"

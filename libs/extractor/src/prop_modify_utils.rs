@@ -3,7 +3,6 @@ use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
-use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Expression, JSXAttributeItem, JSXAttributeValue, LogicalOperator, ObjectPropertyKind,
@@ -18,6 +17,7 @@ pub fn modify_prop_object<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
@@ -28,19 +28,17 @@ pub fn modify_prop_object<'a>(
         match prop {
             ObjectPropertyKind::ObjectProperty(attr) => {
                 if let PropertyKey::StaticIdentifier(ident) = &attr.key {
-                    match ident.name.as_str() {
-                        "className" => {
-                            class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                            continue;
-                        }
-                        "style" => {
-                            style_prop = Some(attr.value.clone_in(ast_builder.allocator));
-                            continue;
-                        }
-                        _ => {}
+                    let name = ident.name.as_str();
+                    if name == "className" {
+                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                    } else if name == "style" {
+                        style_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                    } else {
+                        props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                     }
+                } else {
+                    props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                 }
-                props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
             }
             ObjectPropertyKind::SpreadProperty(spread) => {
                 spread_props.push(spread.argument.clone_in(ast_builder.allocator));
@@ -85,6 +83,12 @@ pub fn modify_prop_object<'a>(
             false,
         ));
     }
+    if let Some(ex) = props_prop {
+        props.push(
+            ast_builder
+                .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator)),
+        );
+    }
 }
 /// modify JSX props
 pub fn modify_props<'a>(
@@ -93,6 +97,7 @@ pub fn modify_props<'a>(
     styles: &mut [ExtractStyleProp<'a>],
     style_order: Option<u8>,
     style_vars: Option<Expression<'a>>,
+    props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
 ) {
     let mut class_name_prop = None;
@@ -101,31 +106,31 @@ pub fn modify_props<'a>(
     for idx in (0..props.len()).rev() {
         let prop = props.remove(idx);
         match prop {
-            Attribute(attr) => {
+            JSXAttributeItem::Attribute(attr) => {
                 if let Identifier(ident) = &attr.name
                     && let Some(value) = &attr.value
                     && (ident.name == "className" || ident.name == "style")
                 {
-                    let value = match &value {
-                        JSXAttributeValue::ExpressionContainer(container) => container
+                    let mut res = None;
+
+                    if let JSXAttributeValue::ExpressionContainer(container) = &value {
+                        res = container
                             .expression
                             .as_expression()
-                            .map(|expression| expression.clone_in(ast_builder.allocator)),
-                        JSXAttributeValue::StringLiteral(literal) => {
-                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None))
-                        }
-                        _ => None,
-                    };
-
-                    match ident.name.as_str() {
-                        "className" => class_name_prop = value,
-                        "style" => style_prop = value,
-                        _ => unreachable!(),
+                            .map(|expression| expression.clone_in(ast_builder.allocator));
+                    } else if let JSXAttributeValue::StringLiteral(literal) = &value {
+                        res =
+                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None));
                     }
-
-                    continue;
+                    let name = ident.name.as_str();
+                    if name == "className" {
+                        class_name_prop = res;
+                    } else if name == "style" {
+                        style_prop = res;
+                    }
+                } else {
+                    props.insert(idx, JSXAttributeItem::Attribute(attr));
                 }
-                props.insert(idx, Attribute(attr));
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
                 spread_props.push(spread.argument.clone_in(ast_builder.allocator));
@@ -164,6 +169,14 @@ pub fn modify_props<'a>(
             ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
             Some(ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())),
         ));
+    }
+    if let Some(props_prop) = props_prop {
+        props.push(
+            ast_builder.jsx_attribute_item_spread_attribute(
+                SPAN,
+                props_prop.clone_in(ast_builder.allocator),
+            ),
+        );
     }
 }
 
@@ -270,59 +283,55 @@ fn merge_string_expressions<'a>(
     let mut other_expressions = vec![];
     let mut prev_str = String::new();
     for ex in expressions.iter() {
-        match ex {
-            Expression::StringLiteral(literal) => {
+        if let Expression::StringLiteral(literal) = ex {
+            let target_prev = prev_str.trim();
+            let target = literal.value.trim();
+            prev_str = format!(
+                "{}{}{}",
+                target_prev,
+                if target_prev.is_empty() { "" } else { " " },
+                target
+            );
+        } else if let Expression::TemplateLiteral(template) = ex {
+            for (idx, q) in template.quasis.iter().enumerate() {
                 let target_prev = prev_str.trim();
-                let target = literal.value.trim();
-                prev_str = format!(
-                    "{}{}{}",
-                    target_prev,
-                    if target_prev.is_empty() { "" } else { " " },
-                    target
-                );
-            }
-            Expression::TemplateLiteral(template) => {
-                for (idx, q) in template.quasis.iter().enumerate() {
-                    let target_prev = prev_str.trim();
-                    let target = q.value.raw.trim();
-                    if idx < template.quasis.len() - 1 {
-                        string_literals.push(format!(
-                            "{}{}{}{}{}",
-                            if !other_expressions.is_empty() || idx > 0 {
-                                " "
-                            } else {
-                                ""
-                            },
-                            target_prev,
-                            if !target_prev.is_empty() { " " } else { "" },
-                            target,
-                            if !target.is_empty() && !target.ends_with("typo-") {
-                                " "
-                            } else {
-                                ""
-                            }
-                        ));
-                    } else {
-                        prev_str = q.value.raw.trim().to_string();
-                    }
+                let target = q.value.raw.trim();
+                if idx < template.quasis.len() - 1 {
+                    string_literals.push(format!(
+                        "{}{}{}{}{}",
+                        if !other_expressions.is_empty() || idx > 0 {
+                            " "
+                        } else {
+                            ""
+                        },
+                        target_prev,
+                        if !target_prev.is_empty() { " " } else { "" },
+                        target,
+                        if !target.is_empty() && !target.ends_with("typo-") {
+                            " "
+                        } else {
+                            ""
+                        }
+                    ));
+                } else {
+                    prev_str = q.value.raw.trim().to_string();
                 }
-                other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
             }
-            ex => {
-                let target_prev = prev_str.trim();
-                string_literals.push(format!(
-                    "{}{}{}",
-                    if !other_expressions.is_empty() {
-                        " "
-                    } else {
-                        ""
-                    },
-                    target_prev,
-                    if !target_prev.is_empty() { " " } else { "" }
-                ));
-                other_expressions.push(ex.clone_in(ast_builder.allocator));
-                prev_str = String::new();
-            }
+            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
+        } else {
+            let target_prev = prev_str.trim();
+            string_literals.push(format!(
+                "{}{}{}",
+                if !other_expressions.is_empty() {
+                    " "
+                } else {
+                    ""
+                },
+                target_prev,
+                if !target_prev.is_empty() { " " } else { "" }
+            ));
+            other_expressions.push(ex.clone_in(ast_builder.allocator));
+            prev_str = String::new();
         }
     }
     string_literals.push(format!(
@@ -338,23 +347,24 @@ fn merge_string_expressions<'a>(
         ));
     }
 
+    let q = oxc_allocator::Vec::from_iter_in(
+        string_literals.iter().enumerate().map(|(idx, s)| {
+            let tail = idx == string_literals.len() - 1;
+            ast_builder.template_element(
+                SPAN,
+                TemplateElementValue {
+                    raw: ast_builder.atom(s),
+                    cooked: None,
+                },
+                tail,
+            )
+        }),
+        ast_builder.allocator,
+    );
     Some(
         ast_builder.expression_template_literal(
             SPAN,
-            oxc_allocator::Vec::from_iter_in(
-                string_literals.iter().enumerate().map(|(idx, s)| {
-                    let tail = idx == string_literals.len() - 1;
-                    ast_builder.template_element(
-                        SPAN,
-                        TemplateElementValue {
-                            raw: ast_builder.atom(s),
-                            cooked: None,
-                        },
-                        tail,
-                    )
-                }),
-                ast_builder.allocator,
-            ),
+            q,
             oxc_allocator::Vec::from_iter_in(
                 other_expressions
                     .into_iter()
@@ -419,63 +429,67 @@ pub fn convert_style_vars<'a>(
         for idx in (0..obj.properties.len()).rev() {
             let mut prop = obj.properties.remove(idx);
 
-            if let ObjectPropertyKind::ObjectProperty(prop) = &mut prop {
-                let name = match &prop.key {
-                    PropertyKey::StaticIdentifier(ident) => ident.name,
-                    PropertyKey::StringLiteral(ident) => ident.value,
-                    etc => {
-                        obj.properties.insert(
-                            idx,
-                            ast_builder.object_property_kind_object_property(
+            if let ObjectPropertyKind::ObjectProperty(p) = &mut prop {
+                let name = if let PropertyKey::StaticIdentifier(ident) = &p.key {
+                    Some(ident.name)
+                } else if let PropertyKey::StringLiteral(ident) = &p.key {
+                    Some(ident.value)
+                } else {
+                    obj.properties.insert(
+                        idx,
+                        ast_builder.object_property_kind_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
                                 SPAN,
-                                PropertyKind::Init,
-                                PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
-                                    SPAN,
-                                    oxc_allocator::Vec::from_array_in(
-                                        [
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.atom("--"),
-                                                    cooked: None,
-                                                },
-                                                false,
-                                            ),
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.atom(""),
-                                                    cooked: None,
-                                                },
-                                                true,
-                                            ),
-                                        ],
-                                        ast_builder.allocator,
-                                    ),
-                                    oxc_allocator::Vec::from_array_in(
-                                        [etc.to_expression().clone_in(ast_builder.allocator)],
-                                        ast_builder.allocator,
-                                    ),
-                                )),
-                                prop.value.clone_in(ast_builder.allocator),
-                                false,
-                                false,
-                                true,
-                            ),
-                        );
-                        continue;
-                    }
+                                oxc_allocator::Vec::from_array_in(
+                                    [
+                                        ast_builder.template_element(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: ast_builder.atom("--"),
+                                                cooked: None,
+                                            },
+                                            false,
+                                        ),
+                                        ast_builder.template_element(
+                                            SPAN,
+                                            TemplateElementValue {
+                                                raw: ast_builder.atom(""),
+                                                cooked: None,
+                                            },
+                                            true,
+                                        ),
+                                    ],
+                                    ast_builder.allocator,
+                                ),
+                                oxc_allocator::Vec::from_array_in(
+                                    [p.key.to_expression().clone_in(ast_builder.allocator)],
+                                    ast_builder.allocator,
+                                ),
+                            )),
+                            p.value.clone_in(ast_builder.allocator),
+                            false,
+                            false,
+                            true,
+                        ),
+                    );
+                    None
                 };
 
-                if !name.starts_with("--") {
-                    prop.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.atom(&format!("--{name}")),
-                        None,
-                    ));
+                if let Some(name) = name {
+                    if !name.starts_with("--") {
+                        p.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            SPAN,
+                            ast_builder.atom(&format!("--{name}")),
+                            None,
+                        ));
+                    }
+                    obj.properties.insert(idx, prop);
                 }
+            } else {
+                obj.properties.insert(idx, prop);
             }
-            obj.properties.insert(idx, prop);
         }
     }
     style_vars
