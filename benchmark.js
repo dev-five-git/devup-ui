@@ -9,6 +9,11 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-vanilla-extract/.next'))
+    rmSync('./benchmark/next-vanilla-extract/.next', {
+      recursive: true,
+      force: true,
+    })
   if (existsSync('./benchmark/next-tailwind/.next'))
     rmSync('./benchmark/next-tailwind/.next', {
       recursive: true,
@@ -94,6 +99,7 @@ let result = []
 
 result.push(benchmark('tailwind'))
 result.push(benchmark('stylex'))
+result.push(benchmark('vanilla-extract'))
 result.push(benchmark('kuma-ui'))
 result.push(benchmark('panda-css'))
 result.push(benchmark('chakra-ui'))
