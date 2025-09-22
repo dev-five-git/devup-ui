@@ -1,7 +1,7 @@
 import { SVGProps } from 'react'
 
 type CheckIconProps = SVGProps<SVGSVGElement> & {
-  color: string
+  color?: string
 }
 
 export function CheckIcon({ color, ...props }: CheckIconProps) {

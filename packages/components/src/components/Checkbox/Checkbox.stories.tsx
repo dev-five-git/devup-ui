@@ -1,6 +1,6 @@
 import { Meta, StoryObj } from '@storybook/react-vite'
 
-import { Checkbox } from '.'
+import { Checkbox } from './index'
 
 type Story = StoryObj<typeof meta>
 
@@ -9,11 +9,25 @@ const meta: Meta<typeof Checkbox> = {
   title: 'Devfive/Checkbox',
   component: Checkbox,
   decorators: [
-    (Story) => (
-      <div style={{ padding: '10px' }}>
-        <Story />
-      </div>
-    ),
+    (Story, context) => {
+      const theme =
+        context.parameters.theme || context.globals.theme || 'default'
+      const isDark = theme === 'dark'
+
+      return (
+        <div
+          data-theme={theme}
+          style={{
+            padding: '20px',
+            backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
+            color: isDark ? '#ffffff' : '#000000',
+            minHeight: '200px',
+          }}
+        >
+          <Story />
+        </div>
+      )
+    },
   ],
 }
 
@@ -22,6 +36,7 @@ export const Default: Story = {
     children: 'Checkbox',
     disabled: false,
     checked: true,
+    label: 'Checkbox',
   },
 }
 
