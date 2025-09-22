@@ -38,7 +38,7 @@ const styles = stylex.create({
 })
 
 export default function HomePage() {
-  const [color, setColor] = useState('yellow')
+  const [_, setColor] = useState('yellow')
   const [enabled, setEnabled] = useState(false)
 
   return (
