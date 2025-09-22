@@ -67,7 +67,7 @@ export function CheckboxLayer({
           key={checkbox.id}
           checked={checkedIds.includes(checkbox.id)}
           disabled={checkbox.disabled}
-          label={`${checkbox.id}-${checkbox.label}`} // 고유한 label 생성
+          label={`${checkbox.id}-${checkbox.label}`}
           onChange={(checked) =>
             handleCheckboxChange(checkbox.id, checkbox.value, checked)
           }
