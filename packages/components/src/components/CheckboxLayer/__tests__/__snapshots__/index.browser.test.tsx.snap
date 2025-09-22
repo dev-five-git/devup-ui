@@ -1,5 +1,14 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`CheckboxLayer > should handle empty checkboxes array 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
+  />
+</div>
+`;
+
 exports[`CheckboxLayer > should render 1`] = `
 <div>
   <div
@@ -13,7 +22,7 @@ exports[`CheckboxLayer > should render 1`] = `
         class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
       >
         <input
-          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-color-mix(in srgb,var(--primary) 20%,#FFF 80%)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary) 100%,#000 15%)-15130211206989154723-1 background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1 border-0-1px solid var(--primary)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary) 10%,#FFF 90%)-8380715471663921674-1 background-0-$contentBackground--1 cursor-0-pointer--1 "
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
           id="checkbox1-option-1"
           type="checkbox"
         />
@@ -23,8 +32,7 @@ exports[`CheckboxLayer > should render 1`] = `
         for="checkbox1-option-1"
       >
         <span
-          class="font-size-0-14px--255 color-0-$text--255"
-          style="user-select: none; vertical-align: middle;"
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
         >
           Option 1
         </span>
@@ -37,7 +45,7 @@ exports[`CheckboxLayer > should render 1`] = `
         class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
       >
         <input
-          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-color-mix(in srgb,var(--primary) 20%,#FFF 80%)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary) 100%,#000 15%)-15130211206989154723-1 background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1 border-0-1px solid var(--primary)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary) 10%,#FFF 90%)-8380715471663921674-1 background-0-$contentBackground--1 cursor-0-pointer--1 "
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
           id="checkbox2-option-2"
           type="checkbox"
         />
@@ -47,8 +55,7 @@ exports[`CheckboxLayer > should render 1`] = `
         for="checkbox2-option-2"
       >
         <span
-          class="font-size-0-14px--255 color-0-$text--255"
-          style="user-select: none; vertical-align: middle;"
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
         >
           Option 2
         </span>
@@ -61,7 +68,7 @@ exports[`CheckboxLayer > should render 1`] = `
         class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
       >
         <input
-          class="background-0-$primary-6529705465913413318-1 border-0-none-6529705465913413318-1 accent-color-0-$primary--1 appearance-0-none--1 border-0-1px solid var(--border)--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1   background-0-#F0F0F3-9407739846625397859-1 background-0-#F0F0F3-14172363753176421546-1  background-0-$contentBackground--1 cursor-0-not-allowed--1 "
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
           disabled=""
           id="checkbox3-option-3"
           type="checkbox"
@@ -72,8 +79,407 @@ exports[`CheckboxLayer > should render 1`] = `
         for="checkbox3-option-3"
       >
         <span
-          class="font-size-0-14px--255 color-0-#D6D7DE--255"
-          style="user-select: none; vertical-align: middle;"
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`CheckboxLayer > should render with column layout 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`CheckboxLayer > should render with custom gap 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 "
+    style="--flex-direction-0-: column;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`CheckboxLayer > should render with row layout 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`CheckboxLayer > should use default gap when not provided 1`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-16px--255"
+    style="--flex-direction-0-: column;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
+        >
+          Option 3
+        </span>
+      </label>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`CheckboxLayer > should use default gap when not provided 2`] = `
+<div>
+  <div
+    class="display-0-flex--0 flex-direction-0---255 gap-0-30px--255"
+    style="--flex-direction-0-: row;"
+  >
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox1-option-1"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox1-option-1"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 1
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-light-dark(1px solid var(--primary,#6159D4),1px solid var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
+          id="checkbox2-option-2"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-pointer--255"
+        for="checkbox2-option-2"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
+        >
+          Option 2
+        </span>
+      </label>
+    </div>
+    <div
+      class="display-0-flex--0 align-items-0-center--255 gap-0-8px--255 height-0-fit-content--255"
+    >
+      <div
+        class="height-0-18px--255 position-0-relative--255 width-0-fit-content--255"
+      >
+        <input
+          class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#47474A,#F0F0F3)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-light-dark(1px solid var(--border,#E0E0E0),1px solid var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
+          disabled=""
+          id="checkbox3-option-3"
+          type="checkbox"
+        />
+      </div>
+      <label
+        class="cursor-0-not-allowed--255"
+        for="checkbox3-option-3"
+      >
+        <span
+          class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
         >
           Option 3
         </span>
