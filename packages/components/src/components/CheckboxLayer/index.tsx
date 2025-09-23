@@ -8,7 +8,6 @@ import { Checkbox } from '../Checkbox'
 export interface CheckboxItem {
   id: string
   value: React.ReactNode
-  label: string
   disabled?: boolean
   checked?: boolean
 }
@@ -67,7 +66,6 @@ export function CheckboxLayer({
           key={checkbox.id}
           checked={checkedIds.includes(checkbox.id)}
           disabled={checkbox.disabled}
-          label={`${checkbox.id}-${checkbox.label}`}
           onChange={(checked) =>
             handleCheckboxChange(checkbox.id, checkbox.value, checked)
           }
