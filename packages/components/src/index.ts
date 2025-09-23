@@ -1,6 +1,5 @@
 export { Button } from './components/Button'
 export { Checkbox } from './components/Checkbox'
-export { CheckboxLayer } from './components/CheckboxLayer'
 export { Input } from './components/Input'
 export { Radio } from './components/Radio'
 export { RadioGroup } from './components/RadioGroup'
