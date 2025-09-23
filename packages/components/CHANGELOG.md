@@ -1,5 +1,12 @@
 # @devup-ui/components
 
+## 0.1.21
+
+### Patch Changes
+
+- c09438a: Fix button css
+- e1e827c: Checkbox component has been implemented.
+
 ## 0.1.20
 
 ### Patch Changes
