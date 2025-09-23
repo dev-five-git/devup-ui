@@ -24,12 +24,6 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   ellipsis?: boolean
 }
 
-const buttonTextEllipsis = css({
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-})
-
 export function Button({
   variant = 'default',
   type = 'button',
@@ -247,7 +241,14 @@ export function Button({
           </Center>
         )}
         <Box
-          className={clsx(ellipsis && buttonTextEllipsis)}
+          className={clsx(
+            ellipsis &&
+              css({
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }),
+          )}
           lineHeight="1.2"
           minH="1.2em"
           transform={!!icon && 'translateX(8px)'}
