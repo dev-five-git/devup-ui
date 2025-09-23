@@ -256,6 +256,7 @@ describe('Checkbox', () => {
       border: '#00ff00',
       text: '#0000ff',
       inputBg: '#ffff00',
+      checkIcon: '#000000',
     }
 
     const { container } = render(
@@ -273,6 +274,7 @@ describe('Checkbox', () => {
       border: '#00ff00',
       text: '#0000ff',
       inputBg: '#ffff00',
+      checkIcon: '#000000',
     }
 
     const { container } = render(
@@ -344,12 +346,28 @@ describe('Checkbox', () => {
     })
   })
 
+  it('should apply checkIcon color to CSS variables', () => {
+    const customColors = {
+      checkIcon: '#checkIcon-custom',
+    }
+
+    const { container } = render(
+      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+    )
+
+    const input = container.querySelector('input')
+    expect(input).toHaveStyle({
+      '--checkIcon': '#checkIcon-custom',
+    })
+  })
+
   it('should apply all custom colors to CSS variables', () => {
     const customColors = {
       primary: '#primary-custom',
       border: '#border-custom',
       text: '#text-custom',
       inputBg: '#inputBg-custom',
+      checkIcon: '#checkIcon-custom',
     }
 
     const { container } = render(
@@ -362,6 +380,7 @@ describe('Checkbox', () => {
       '--border': '#border-custom',
       '--text': '#text-custom',
       '--inputBg': '#inputBg-custom',
+      '--checkIcon': '#checkIcon-custom',
     })
   })
 
@@ -374,6 +393,7 @@ describe('Checkbox', () => {
     expect(input?.style.getPropertyValue('--border')).toBe('')
     expect(input?.style.getPropertyValue('--text')).toBe('')
     expect(input?.style.getPropertyValue('--inputBg')).toBe('')
+    expect(input?.style.getPropertyValue('--checkIcon')).toBe('')
   })
 
   it('should work properly with onChange when colors are applied', async () => {
@@ -383,6 +403,7 @@ describe('Checkbox', () => {
       border: '#00ff00',
       text: '#0000ff',
       inputBg: '#ffff00',
+      checkIcon: '#000000',
     }
 
     const { container } = render(

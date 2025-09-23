@@ -12,6 +12,7 @@ interface CheckboxProps
     border?: string
     text?: string
     inputBg?: string
+    checkIcon?: string
   }
 }
 
@@ -75,6 +76,7 @@ export function Checkbox({
             border: colors?.border,
             text: colors?.text,
             inputBg: colors?.inputBg,
+            checkIcon: colors?.checkIcon,
           }}
           type="checkbox"
           {...props}
@@ -83,12 +85,14 @@ export function Checkbox({
           <Box
             as={CheckIcon}
             props={{
-              color: disabled ? 'light-dark(#D6D7DE, #373737)' : '#FFF',
+              color: disabled
+                ? 'light-dark(#D6D7DE, #373737)'
+                : 'var(--checkIcon, #FFF)',
               className: css({
                 left: '50%',
                 pointerEvents: 'none',
                 pos: 'absolute',
-                top: '8px',
+                top: '60%',
                 transform: 'translate(-50%, -50%)',
               }),
             }}
