@@ -22,7 +22,7 @@ use oxc_ast::{
     AstBuilder,
     ast::{
         BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, PropertyKey,
-        TemplateElementValue,
+        TemplateElementValue, UnaryOperator,
     },
 };
 use oxc_span::SPAN;
@@ -37,6 +37,7 @@ pub fn extract_style_from_expression<'a>(
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
+    println!("expression: {:?}", expression);
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
@@ -287,8 +288,22 @@ pub fn extract_style_from_expression<'a>(
         }
     } else {
         match expression {
-            Expression::UnaryExpression(_)
-            | Expression::BinaryExpression(_)
+            Expression::UnaryExpression(un) => ExtractResult {
+                styles: if un.operator == UnaryOperator::Void {
+                    vec![]
+                } else {
+                    vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                        ExtractDynamicStyle::new(
+                            name.unwrap(),
+                            level,
+                            &expression_to_code(expression),
+                            selector.clone(),
+                        ),
+                    ))]
+                },
+                ..ExtractResult::default()
+            },
+            Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
             | Expression::CallExpression(_) => ExtractResult {
                 styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(

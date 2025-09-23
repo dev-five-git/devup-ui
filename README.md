@@ -76,12 +76,17 @@ npm install @devup-ui/webpack-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| Library      | Version  | Build Time | Build Size      |
-|--------------|----------|------------|-----------------|
-| kuma-ui      | 1.5.9    | 20.606s    | 63,248,791b     |
-| chakra-ui    | 3.24.2   | 29.358s    | 195,258,486b    |
-| mui          | 7.3.1    | 21.631s    | 88,332,632b     |
-| devup-ui     | 1.0.15   | 16.873s    | 53,729,988b     |
+| Library                  | Version  | Build Time | Build Size        |
+|--------------------------|----------|------------|-------------------|
+| tailwindcss              | 4.1.13   | 20.22s     | 57,415,796 bytes  |
+| styleX                   | 0.15.4   | 38.97s     | 76,257,820 bytes  |
+| vanilla-extract          | 1.17.4   | 20.09s     | 59,366,237 bytes  |
+| kuma-ui                  | 1.5.9    | 21.61s     | 67,422,085 bytes  |
+| panda-css                | 1.3.1    | 22.01s     | 62,431,065 bytes  |
+| chakra-ui                | 3.27.0   | 29.99s     | 210,122,493 bytes |
+| mui                      | 7.3.2    | 22.21s     | 94,231,958 bytes  |
+| devup-ui(per-file css)   | 1.0.18   | 18.23s     | 57,440,953 bytes  |
+| devup-ui(single css)     | 1.0.18   | 18.35s     | 57,409,008 bytes  |
 
 ## How it works
 
