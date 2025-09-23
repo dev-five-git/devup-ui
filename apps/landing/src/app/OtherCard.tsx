@@ -39,7 +39,7 @@ export function OtherCard({
             ),
           }}
           textDecoration="none"
-        ></Box>
+        />
         <Text color="$captionBold" typography="textL">
           {version}
         </Text>
