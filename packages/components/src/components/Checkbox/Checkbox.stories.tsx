@@ -36,7 +36,6 @@ export const Default: Story = {
     children: 'Checkbox',
     disabled: false,
     checked: true,
-    label: 'Checkbox',
   },
 }
 
