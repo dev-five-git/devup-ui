@@ -1,5 +1,4 @@
-import { Box, css, Flex, Text } from '@devup-ui/react'
-const a = css``
+import { Box, Flex, Text } from '@devup-ui/react'
 
 export function Lib() {
   return (

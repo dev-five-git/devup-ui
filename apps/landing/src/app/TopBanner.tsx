@@ -8,6 +8,7 @@ export function TopBanner() {
   return (
     <VStack
       alignItems="center"
+      // @todo: register backgroundLight
       bg="$backgroundLight"
       pb="100px"
       pt="200px"
