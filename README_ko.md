@@ -153,15 +153,16 @@ const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
 ## 기여 방법
 
 ### 요구 사항
-- Rust 컴파일러 설치
-- pnpm 패키지 매니저 설치
+- [Node.js](https://nodejs.org) (LTS 버전 권장)
+- [Rust](https://rustup.rs) 컴파일러
+- pnpm 패키지 매니저 (`npm install -g pnpm`)
 
-### 개발용 설치
-개발 환경을 위해 아래 패키지들을 설치합니다.
+### 개발 환경 설정
+개발 환경을 위해 아래 패키지들을 설치합니다:
 ```sh
 pnpm i
 pnpm build
 cargo install cargo-tarpaulin
 cargo install wasm-pack
 ```
-설치 후 pnpm test를 실행하여 문제가 없는지 확인합니다.
+설치 후 `pnpm test`를 실행하여 문제가 없는지 확인합니다.
