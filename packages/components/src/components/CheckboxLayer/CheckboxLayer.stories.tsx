@@ -36,7 +36,7 @@ const meta: Meta<typeof CheckboxLayer> = {
 export const RowLayout: Story = {
   args: {
     checkboxes: [
-      { id: 'option1', value: '옵션 1 값', label: '옵션 1' },
+      { id: 'option1', value: '옵션 1 값' },
       {
         id: 'option2',
         value: (
@@ -44,7 +44,6 @@ export const RowLayout: Story = {
             파란색 텍스트
           </span>
         ),
-        label: '옵션 2',
       },
       {
         id: 'option3',
@@ -54,9 +53,8 @@ export const RowLayout: Story = {
             <span>이모지와 텍스트</span>
           </div>
         ),
-        label: '옵션 3',
       },
-      { id: 'option4', value: 42, label: '옵션 4', disabled: true },
+      { id: 'option4', value: 42, disabled: true },
       {
         id: 'option5',
         value: (
@@ -64,7 +62,6 @@ export const RowLayout: Story = {
             버튼 요소
           </button>
         ),
-        label: '옵션 5',
         disabled: true,
         checked: true,
       },
@@ -84,7 +81,7 @@ export const RowLayout: Story = {
 export const ColumnLayout: Story = {
   args: {
     checkboxes: [
-      { id: 'option1', value: '옵션 1 값', label: '옵션 1' },
+      { id: 'option1', value: '옵션 1 값' },
       {
         id: 'option2',
         value: (
@@ -92,7 +89,6 @@ export const ColumnLayout: Story = {
             파란색 텍스트
           </span>
         ),
-        label: '옵션 2',
       },
       {
         id: 'option3',
@@ -102,9 +98,8 @@ export const ColumnLayout: Story = {
             <span>이모지와 텍스트</span>
           </div>
         ),
-        label: '옵션 3',
       },
-      { id: 'option4', value: 42, label: '옵션 4', disabled: true },
+      { id: 'option4', value: 42, disabled: true },
       {
         id: 'option5',
         value: (
@@ -112,7 +107,6 @@ export const ColumnLayout: Story = {
             버튼 요소
           </button>
         ),
-        label: '옵션 5',
         disabled: true,
         checked: true,
       },
