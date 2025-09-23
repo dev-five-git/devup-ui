@@ -18,10 +18,10 @@ export default function HomePage() {
       </p>
       <Box
         component="section"
+        data-testid="box"
         sx={{
           color,
           cursor: 'pointer',
-          dataTestId: 'box',
           fontSize: 32,
           position: 'relative',
           py: '28px',

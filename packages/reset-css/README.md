@@ -42,6 +42,12 @@ npm install @devup-ui/next-plugin
 
 # on vite
 npm install @devup-ui/vite-plugin
+
+# on rsbuild
+npm install @devup-ui/rsbuild-plugin
+
+# on webpack
+npm install @devup-ui/webpack-plugin
 ```
 
 ## Features
@@ -68,13 +74,19 @@ npm install @devup-ui/vite-plugin
 
 ## Comparison Benchmarks
 
-Next.js Build Time and Build Size (AMD Ryzen 9 9950X, 128GB RAM, Windows 11)
+Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| Library   | Build Time | Build Size   |
-|-----------|------------|--------------|
-| kuma-ui   | 20.933s    | 57,295,073b  |
-| chakra-ui | 36.961s    | 129,527,610b |
-| devup-ui  | 15.162s    | 48,047,678b  |
+| Library                  | Version  | Build Time | Build Size        |
+|--------------------------|----------|------------|-------------------|
+| tailwindcss              | 4.1.13   | 20.22s     | 57,415,796 bytes  |
+| styleX                   | 0.15.4   | 38.97s     | 76,257,820 bytes  |
+| vanilla-extract          | 1.17.4   | 20.09s     | 59,366,237 bytes  |
+| kuma-ui                  | 1.5.9    | 21.61s     | 67,422,085 bytes  |
+| panda-css                | 1.3.1    | 22.01s     | 62,431,065 bytes  |
+| chakra-ui                | 3.27.0   | 29.99s     | 210,122,493 bytes |
+| mui                      | 7.3.2    | 22.21s     | 94,231,958 bytes  |
+| devup-ui(per-file css)   | 1.0.18   | 18.23s     | 57,440,953 bytes  |
+| devup-ui(single css)     | 1.0.18   | 18.35s     | 57,409,008 bytes  |
 
 ## How it works
 
