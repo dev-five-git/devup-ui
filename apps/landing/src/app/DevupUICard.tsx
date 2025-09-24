@@ -2,24 +2,26 @@ import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 
 export function DevupUICard() {
   return (
-    <VStack
+    <Flex
       bg="$containerBackground"
       border="1px solid $border"
       borderRadius="20px"
       boxShadow="0 0 8px 0 var(--shadow, rgba(135, 135, 135, 0.25))"
+      flexDir={['row', null, null, null, 'column']}
       gap="60px"
-      justifyContent="center"
+      justifyContent={['space-between', null, null, null, 'center']}
+      mx={[4, null, '40px', null, 0]}
       overflow="hidden"
-      p="30px"
+      p={['24px', null, '30px']}
       pos="relative"
-      w="400px"
+      w={['100%', null, null, null, '400px']}
     >
       <Image
         aspectRatio="1"
         bottom="-30px"
+        left="-50px"
         opacity="0.2"
         pos="absolute"
-        right="200px"
         src="/icons/devup-ui-card.svg"
         w="260px"
       />
@@ -28,7 +30,7 @@ export function DevupUICard() {
           Devup-ui
         </Text>
         <Text color="$text" typography="textL">
-          1.0.18
+          1.0.15
         </Text>
       </VStack>
       <VStack alignItems="flex-end" gap="20px">
@@ -51,7 +53,7 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              18.35s
+              16.8s
             </Text>
           </Flex>
         </VStack>
@@ -74,11 +76,11 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              57.4MB
+              51.2MB
             </Text>
           </Flex>
         </VStack>
       </VStack>
-    </VStack>
+    </Flex>
   )
 }
