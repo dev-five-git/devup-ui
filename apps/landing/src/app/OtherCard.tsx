@@ -1,4 +1,4 @@
-import { Box, Flex, Text, VStack } from '@devup-ui/react'
+import { css, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 
 interface OtherCardProps {
@@ -27,19 +27,17 @@ export function OtherCard({
       p={[6, null, '30px']}
     >
       <VStack gap="8px">
-        <Box
-          as={Link}
-          props={{
-            href: url,
-            target: '_blank',
-            children: (
-              <Text color="$captionBold" typography="h6">
-                {title}
-              </Text>
-            ),
-          }}
-          textDecoration="none"
-        />
+        <Link
+          className={css({
+            textDecoration: 'none',
+          })}
+          href={url}
+          target="_blank"
+        >
+          <Text color="$captionBold" typography="h6">
+            {title}
+          </Text>
+        </Link>
         <Text color="$captionBold" typography="textL">
           {version}
         </Text>
