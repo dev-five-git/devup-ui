@@ -5,7 +5,6 @@ import {
   css,
   type DevupThemeTypography,
 } from '@devup-ui/react'
-import { clsx } from 'clsx'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'default'
@@ -23,12 +22,6 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: React.ReactNode
   ellipsis?: boolean
 }
-
-const buttonTextEllipsis = css({
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-})
 
 export function Button({
   variant = 'default',
@@ -247,7 +240,15 @@ export function Button({
           </Center>
         )}
         <Box
-          className={clsx(ellipsis && buttonTextEllipsis)}
+          className={
+            ellipsis
+              ? css({
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                })
+              : undefined
+          }
           lineHeight="1.2"
           minH="1.2em"
           transform={!!icon && 'translateX(8px)'}

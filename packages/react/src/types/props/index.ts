@@ -53,11 +53,21 @@ export type DevupElementTypeProps<T extends React.ElementType> =
 export type DevupComponentAdditionalProps<
   T extends React.ElementType,
   P extends React.ComponentProps<T> = React.ComponentProps<T>,
-> =
-  Partial<P> extends P
+> = (Partial<P> extends P
+  ? {
+      props?: FilterChildren<P>
+    }
+  : {
+      props: FilterChildren<P>
+    }) &
+  (P extends { children: infer U }
     ? {
-        props?: P
+        children: U
       }
-    : {
-        props: P
-      }
+    : P extends { children?: infer U }
+      ? {
+          children?: U
+        }
+      : object)
+
+type FilterChildren<T> = Omit<T, 'children'>

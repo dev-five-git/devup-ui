@@ -1,7 +1,12 @@
 import { Property } from 'csstype'
 
 import type { ResponsiveValue } from '../../responsive-value'
-import type { DevupCommonProps, DevupComponentProps, DevupProps } from '..'
+import type {
+  DevupCommonProps,
+  DevupComponentAdditionalProps,
+  DevupComponentProps,
+  DevupProps,
+} from '..'
 import type { Selectors } from '../selector'
 
 describe('index', () => {
@@ -101,6 +106,37 @@ describe('index', () => {
       _backdrop: `
       backdrop-filter: blur(10px);
       `,
+    })
+  })
+  it('DevupComponentAdditionalProps', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    function Foo({ children: _ }: { children?: string; c: string }) {
+      return null
+    }
+    assertType<DevupComponentAdditionalProps<typeof Foo>>({
+      props: { c: 'a' },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    function Bar({ children: _ }: { children: string; c: string }) {
+      return null
+    }
+    assertType<DevupComponentAdditionalProps<typeof Bar>>({
+      props: { c: 'a' },
+      children: 'b',
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    function Baz({ children: _ }: { children?: string; c?: string }) {
+      return null
+    }
+    assertType<DevupComponentAdditionalProps<typeof Baz>>({
+      props: { c: 'a' },
+      children: 'b',
+    })
+    assertType<DevupComponentAdditionalProps<typeof Baz>>({})
+    assertType<DevupComponentAdditionalProps<typeof Baz>>({
+      children: 'b',
     })
   })
 })
