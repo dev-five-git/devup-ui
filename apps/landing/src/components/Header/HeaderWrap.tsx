@@ -11,8 +11,8 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
   return (
     <Box
       pos={root ? 'fixed' : 'sticky'}
-      pt={root ? [null, null, 5] : undefined}
-      px={root ? [null, null, 4] : undefined}
+      pt={root ? [null, null, null, 5] : undefined}
+      px={root ? [null, null, null, 4] : undefined}
       top="0"
       transition="all, 0.2s"
       w="100%"
@@ -30,17 +30,17 @@ function HeaderWrapInner({ children }: { children: React.ReactNode }) {
     <Flex
       alignItems="center"
       bg="$containerBackground"
-      borderRadius={root ? [null, null, '16px'] : undefined}
+      borderRadius={root ? [null, null, null, '16px'] : undefined}
       boxShadow={
         root
           ? '0px 2px 8px 0px var(--shadow, rgba(135, 135, 135, 0.25))'
           : '0px 1px 1px 0px var(--shadow, rgba(135, 135, 135, 0.25))'
       }
-      h={['50px', null, '70px']}
+      h={['50px', null, null, '70px']}
       justifyContent="space-between"
       maxW={root ? '1440px' : '100%'}
       mx="auto"
-      px={[null, 5, '20px']}
+      px={[null, null, 5, '20px']}
     >
       {children}
     </Flex>

@@ -28,7 +28,7 @@ export default function StarButton() {
         ).then((res) => res.json())
         setStarCount(data.stargazers_count)
       } catch (error) {
-        console.error(error)
+        if (error !== 'unmounted') console.error(error)
       } finally {
         setStarCount((prev) => (typeof prev === 'number' ? prev : -1))
       }
@@ -36,7 +36,7 @@ export default function StarButton() {
     fetchStarCount()
 
     return () => {
-      abortController.abort()
+      abortController.abort('unmounted')
     }
   }, [])
 
