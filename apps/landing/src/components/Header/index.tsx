@@ -1,4 +1,4 @@
-import { Box, css, Flex } from '@devup-ui/react'
+import { Box, Center, css, Flex } from '@devup-ui/react'
 import Link from 'next/link'
 import { Suspense } from 'react'
 
@@ -14,6 +14,21 @@ import { MobMenu } from './MobMenu'
 import { MobMenuButton } from './MobMenuButton'
 import { MobMenuWrapper } from './MobMenuWrapper'
 import { ThemeSwitch } from './ThemeSwitch'
+function HeaderIconWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <Center
+      _active={{
+        transform: 'translateY(5px)',
+      }}
+      _hover={{
+        scale: 1.05,
+      }}
+      transition="all 0.2s"
+    >
+      {children}
+    </Center>
+  )
+}
 
 export function Header() {
   const top = (
@@ -26,17 +41,25 @@ export function Header() {
           href="https://github.com/dev-five-git/devup-ui"
           target="_blank"
         >
-          <Github />
+          <HeaderIconWrap>
+            <Github />
+          </HeaderIconWrap>
         </Link>
       </Flex>
       <Flex alignItems="center" px="10px">
-        <Discord />
+        <HeaderIconWrap>
+          <Discord />
+        </HeaderIconWrap>
       </Flex>
       <Flex alignItems="center" px="10px">
-        <Kakao />
+        <HeaderIconWrap>
+          <Kakao />
+        </HeaderIconWrap>
       </Flex>
       <Flex alignItems="center" px="10px">
-        <ThemeSwitch />
+        <HeaderIconWrap>
+          <ThemeSwitch />
+        </HeaderIconWrap>
       </Flex>
     </Flex>
   )
@@ -84,7 +107,7 @@ export function Header() {
       </Flex>
       <Flex
         alignItems="center"
-        display={['none', null, 'flex']}
+        display={['none', null, null, 'flex']}
         gap={[null, null, '4px', '10px']}
       >
         <Flex alignItems="center" px={[null, null, '0', '24px']}>
@@ -156,7 +179,7 @@ export function Header() {
       <Flex
         alignItems="center"
         cursor="pointer"
-        display={['flex', null, 'none']}
+        display={['flex', null, null, 'none']}
         gap="10px"
         p="10px"
       >

@@ -2,19 +2,19 @@
     "theme": {
         "colors": {
             "light": {
-                "primary": "#6159D4",
+                "primary": "#5A44FF",
                 "secondary": "#85A5F2",
                 "link": "#006BFF",
                 "text": "#2F2F2F",
-                "background": "#FFFFFF",
-                "containerBackground": "#FFFFFF",
+                "background": "#FFF",
+                "containerBackground": "#FFF",
                 "border": "#E0E0E0",
                 "success": "#4CAF50",
                 "warning": "#FF9800",
                 "error": "#F44336",
                 "info": "#2196F3",
-                "base": "#FFFFFF",
-                "negativeBase": "#000000",
+                "base": "#FFF",
+                "negativeBase": "#000",
                 "title": "#1A1A1A",
                 "caption": "#A9A8B4",
                 "shadow": "#87878740",
@@ -25,9 +25,9 @@
                 "third": "#918AE9",
                 "buttonBlueHover": "#1453AC",
                 "buttonBlueActive": "#19498B",
-                "textReverse": "#FFFFFF",
+                "textReverse": "#FFF",
                 "footerTitle": "#A3A4B4",
-                "footerBg": "#E6E7ED",
+                "footerBg": "#F4F4F6",
                 "footerText": "#51575F",
                 "menuHover": "#F6F4FF",
                 "menuActive": "#EAE8FC",
@@ -38,7 +38,7 @@
                 "kakaoButtonActive": "#B77D00",
                 "imageBorder": "#C8C7D1",
                 "imageDropdown": "#ECECEC",
-                "imagePlaceholder": "#999999",
+                "imagePlaceholder": "#999",
                 "imageDate": "#C9C9C9",
                 "imageDateNone": "#F2F2F2",
                 "imageProgress": "#DADADA",
@@ -47,19 +47,19 @@
                 "starBg": "#F7F8FF"
             },
             "dark": {
-                "primary": "#6670F9",
+                "primary": "#9086FF",
                 "secondary": "#2A4586",
                 "link": "#006BFF",
                 "text": "#EDEDED",
                 "background": "#131313",
-                "containerBackground": "#1E1E1E",
-                "border": "#333333",
+                "containerBackground": "#373639",
+                "border": "#333",
                 "success": "#4CAF50",
                 "warning": "#FF9800",
                 "error": "#F44336",
                 "info": "#2196F3",
-                "base": "#000000",
-                "negativeBase": "#FFFFFF",
+                "base": "#000",
+                "negativeBase": "#FFF",
                 "title": "#FAFAFA",
                 "caption": "#787878",
                 "shadow": "#62626240",
@@ -73,7 +73,7 @@
                 "textReverse": "#2F2F2F",
                 "footerTitle": "#A3A4B4",
                 "footerBg": "#2E303C",
-                "footerText": "#FFFFFF",
+                "footerText": "#FFF",
                 "menuHover": "#3C404B",
                 "menuActive": "#283259",
                 "captionBold": "#9C9BA9",
@@ -86,7 +86,7 @@
                 "imagePlaceholder": "#4C4C4C",
                 "imageDate": "#636363",
                 "imageDateNone": "#343333",
-                "imageProgress": "#444444",
+                "imageProgress": "#444",
                 "imageMenuBg": "#262626",
                 "imageMenuSelect": "#3F3F3F",
                 "starBg": "#232323"
@@ -112,7 +112,8 @@
                     "fontSize": "52px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h6Reg": [
                 {
@@ -133,7 +134,8 @@
                     "fontSize": "24px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "buttonL": [
                 {
@@ -154,7 +156,8 @@
                     "fontSize": "20px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "code": [
                 {
@@ -175,7 +178,8 @@
                     "fontSize": "15px",
                     "lineHeight": 1.5,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "buttonM": [
                 {
@@ -196,7 +200,8 @@
                     "fontSize": "17px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h4": [
                 {
@@ -217,7 +222,8 @@
                     "fontSize": "36px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "body": [
                 {
@@ -238,7 +244,8 @@
                     "fontSize": "16px",
                     "lineHeight": 1.5,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h6": [
                 {
@@ -255,11 +262,12 @@
                 {
                     "fontFamily": "Pretendard",
                     "fontStyle": "normal",
-                    "fontWeight": 700,
+                    "fontWeight": 600,
                     "fontSize": "24px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "textS": {
                 "fontFamily": "Pretendard",
@@ -288,7 +296,8 @@
                     "fontSize": "18px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "buttonLsemiB": [
                 {
@@ -309,7 +318,8 @@
                     "fontSize": "18px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h2": [
                 {
@@ -330,7 +340,8 @@
                     "fontSize": "48px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h3": [
                 {
@@ -351,7 +362,8 @@
                     "fontSize": "42px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "h5": [
                 {
@@ -372,7 +384,8 @@
                     "fontSize": "30px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "buttonS": [
                 {
@@ -393,7 +406,8 @@
                     "fontSize": "15px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "caption": {
                 "fontFamily": "Pretendard",
@@ -422,7 +436,8 @@
                     "fontSize": "12px",
                     "lineHeight": 1.4,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "buttonSmid": [
                 {
@@ -443,7 +458,8 @@
                     "fontSize": "15px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "captionBold": [
                 {
@@ -464,16 +480,31 @@
                     "fontSize": "14px",
                     "lineHeight": 1.3,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
-            "textSbold": {
-                "fontFamily": "Pretendard",
-                "fontStyle": "normal",
-                "fontWeight": 700,
-                "fontSize": "15px",
-                "lineHeight": 1.4,
-                "letterSpacing": "-0.03em"
-            },
+            "textSbold": [
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 700,
+                    "fontSize": "13px",
+                    "lineHeight": 1.4,
+                    "letterSpacing": "-0.03em"
+                },
+                null,
+                null,
+                null,
+                {
+                    "fontFamily": "Pretendard",
+                    "fontStyle": "normal",
+                    "fontWeight": 700,
+                    "fontSize": "15px",
+                    "lineHeight": 1.4,
+                    "letterSpacing": "-0.03em"
+                },
+                null
+            ],
             "textL": [
                 {
                     "fontFamily": "Pretendard",
@@ -493,7 +524,8 @@
                     "fontSize": "18px",
                     "lineHeight": 1.5,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "footerMenu": [
                 {
@@ -514,7 +546,8 @@
                     "fontSize": "14px",
                     "lineHeight": 1.4,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "bodyReg": [
                 {
@@ -535,7 +568,8 @@
                     "fontSize": "16px",
                     "lineHeight": 1.5,
                     "letterSpacing": "-0.03em"
-                }
+                },
+                null
             ],
             "smallBold": {
                 "fontFamily": "Pretendard",
