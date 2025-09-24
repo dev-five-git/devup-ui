@@ -1,4 +1,4 @@
-import { Box, Text, VStack } from '@devup-ui/react'
+import { Box, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
 
 interface OtherCardProps {
@@ -16,15 +16,15 @@ export function OtherCard({
   url,
 }: OtherCardProps) {
   return (
-    <VStack
-      aspectRatio="1"
+    <Flex
+      aspectRatio={[null, null, null, null, '1']}
       bg="$cardBg"
       borderRadius="20px"
+      flexDir={['row', null, 'column']}
       gap="40px"
-      justifyContent="center"
-      minW="300px"
-      p="30px"
-      w="300px"
+      justifyContent="space-between"
+      minW={[null, null, '240px', null, '300px']}
+      p={[6, null, '30px']}
     >
       <VStack gap="8px">
         <Box
@@ -62,6 +62,6 @@ export function OtherCard({
           </Text>
         </VStack>
       </VStack>
-    </VStack>
+    </Flex>
   )
 }
