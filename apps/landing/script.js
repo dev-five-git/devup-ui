@@ -1,6 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
-
-import { glob } from 'glob'
+import { glob, readFile, writeFile } from 'node:fs/promises'
 
 const files = await glob('src/**/*.mdx')
 
