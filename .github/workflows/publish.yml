@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Cargo tarpaulin and fmt
-        run: cargo install cargo-tarpaulin rustfmt
+        run: cargo install cargo-tarpaulin rustfmt --force
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
