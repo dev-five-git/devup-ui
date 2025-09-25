@@ -20,10 +20,12 @@ export function OtherCard({
       aspectRatio={[null, null, null, null, '1']}
       bg="$cardBg"
       borderRadius="20px"
+      flex="1"
       flexDir={['row', null, 'column']}
-      gap="40px"
+      gap={['20px', null, '40px']}
+      h={[null, null, null, null, '318px']}
       justifyContent="space-between"
-      minW={[null, null, '240px', null, '300px']}
+      minW={[null, null, '240px', null, 'none']}
       p={[6, null, '30px']}
     >
       <VStack gap="8px">
@@ -34,7 +36,7 @@ export function OtherCard({
           href={url}
           target="_blank"
         >
-          <Text color="$captionBold" typography="h6">
+          <Text color="$captionBold" typography="h6" whiteSpace="nowrap">
             {title}
           </Text>
         </Link>
