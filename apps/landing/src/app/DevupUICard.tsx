@@ -27,10 +27,10 @@ export function DevupUICard() {
       />
       <VStack gap="8px">
         <Text color="$text" typography="h5">
-          Devup-ui
+          Devup UI
         </Text>
         <Text color="$text" typography="textL">
-          1.0.15
+          1.0.18
         </Text>
       </VStack>
       <VStack alignItems="flex-end" gap="20px">
@@ -53,7 +53,7 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              16.8s
+              18.35s
             </Text>
           </Flex>
         </VStack>
@@ -76,7 +76,7 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              51.2MB
+              57.40MB
             </Text>
           </Flex>
         </VStack>
