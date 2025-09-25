@@ -110,6 +110,9 @@ export function DevupUI({
         optimizeDeps: {
           exclude: include,
         },
+        ssr: {
+          noExternal: [...include, /@devup-ui/],
+        },
       }
       if (extractCss) {
         ret['build'] = {

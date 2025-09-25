@@ -27,7 +27,7 @@ export function DevupUICard() {
       />
       <VStack gap="8px">
         <Text color="$text" typography="h5">
-          Devup-ui
+          Devup UI
         </Text>
         <Text color="$text" typography="textL">
           1.0.18
