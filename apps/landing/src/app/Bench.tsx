@@ -3,6 +3,58 @@ import { Box, Flex, Text, VStack } from '@devup-ui/react'
 import { DevupUICard } from './DevupUICard'
 import { OtherCard } from './OtherCard'
 
+const OTHER_CARDS = [
+  {
+    title: 'Chakra UI',
+    version: '3.27.0',
+    buildTime: '29.99s',
+    buildSize: '200.4MB',
+    url: 'https://chakra-ui.com',
+  },
+  {
+    title: 'Mui',
+    version: '7.3.2',
+    buildTime: '22.21s',
+    buildSize: '89.9MB',
+    url: 'https://mui.com',
+  },
+  {
+    title: 'Kuma UI',
+    version: '1.5.9',
+    buildTime: '21.61s',
+    buildSize: '64.3MB',
+    url: 'https://kuma-ui.com',
+  },
+  {
+    title: 'Tailwindcss',
+    version: '4.1.13',
+    buildTime: '20.22s',
+    buildSize: '54.8MB',
+    url: 'https://tailwindcss.com',
+  },
+  {
+    title: 'panda CSS',
+    version: '1.3.1',
+    buildTime: '22.01s',
+    buildSize: '59.5MB',
+    url: 'https://panda-css.com',
+  },
+  {
+    title: 'styleX',
+    version: '0.15.4',
+    buildTime: '38.97s',
+    buildSize: '54.7MB',
+    url: 'https://stylexjs.com',
+  },
+  {
+    title: 'vanilla extract',
+    version: '1.17.4',
+    buildTime: '20.09s',
+    buildSize: '56.6MB',
+    url: 'https://vanilla-extract.style',
+  },
+]
+
 export function Bench() {
   return (
     <VStack
@@ -39,65 +91,17 @@ export function Bench() {
           scrollbarWidth="none"
         >
           <Flex
+            alignItems="flex-end"
             flexWrap={[null, null, null, null, 'wrap']}
             gap={[3, null, 5]}
             justifyContent={[null, null, null, null, 'center']}
             px={[4, null, '40px', null, 0]}
+            w="fit-content"
           >
             <Flex display={['none', null, null, null, 'flex']}>
               <DevupUICard />
             </Flex>
-            {[
-              {
-                title: 'Chakra UI',
-                version: '3.24.2',
-                buildTime: '29.3s',
-                buildSize: '186.2MB',
-                url: 'https://chakra-ui.com',
-              },
-              {
-                title: 'Mui',
-                version: '7.3.1',
-                buildTime: '21.6s',
-                buildSize: '84.3MB',
-                url: 'https://mui.com',
-              },
-              {
-                title: 'Kuma UI',
-                version: '1.5.9',
-                buildTime: '20.6s',
-                buildSize: '60.3MB',
-                url: 'https://kuma-ui.com',
-              },
-              {
-                title: 'Tailwindcss',
-                version: '4.1.13',
-                buildTime: '20.2s',
-                buildSize: '54.7MB',
-                url: 'https://tailwindcss.com',
-              },
-              {
-                title: 'panda CSS',
-                version: '1.3.1',
-                buildTime: '22.0s',
-                buildSize: '59.5MB',
-                url: 'https://panda-css.com',
-              },
-              {
-                title: 'styleX',
-                version: '0.15.4',
-                buildTime: '38.9s',
-                buildSize: '72.7MB',
-                url: 'https://stylexjs.com',
-              },
-              {
-                title: 'vanilla extract',
-                version: '1.17.4',
-                buildTime: '20.1s',
-                buildSize: '56.6MB',
-                url: 'https://vanilla-extract.style',
-              },
-            ].map((item) => (
+            {OTHER_CARDS.map((item) => (
               <OtherCard key={item.title} {...item} />
             ))}
           </Flex>
