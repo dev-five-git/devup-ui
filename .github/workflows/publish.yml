@@ -23,7 +23,7 @@ jobs:
       - name: Cargo tarpaulin and fmt
         run: |
           cargo install cargo-tarpaulin
-          rustup component add rustfmt
+          rustup component add rustfmt clippy
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
