@@ -1,5 +1,6 @@
 import { Box, css, globalCss, ThemeScript } from '@devup-ui/react'
 import { resetCss } from '@devup-ui/reset-css'
+import ReactLenis from 'lenis/react'
 import type { Metadata } from 'next'
 
 import { Footer } from '../components/Footer'
@@ -98,12 +99,14 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             width="0"
           />
         </noscript>
-        <SearchModal />
-        <Box bg="$background">
-          <Header />
-          {children}
-        </Box>
-        <Footer />
+        <ReactLenis options={{ duration: 1.4 }} root>
+          <SearchModal />
+          <Box bg="$background">
+            <Header />
+            {children}
+          </Box>
+          <Footer />
+        </ReactLenis>
       </body>
     </html>
   )
