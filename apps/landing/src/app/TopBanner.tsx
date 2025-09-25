@@ -55,7 +55,11 @@ export function TopBanner() {
             <Box as="br" display={['none', null, 'initial']} />
             CSS in JS Preprocessor
           </Text>
-          <Text color="$text" typography="h6Reg">
+          <Text
+            color="$text"
+            textShadow="0 -2px 4px var(--base, #FFF), 0 2px 4px var(--base, #FFF)"
+            typography="h6Reg"
+          >
             Building the Future of CSS-in-JS
             <br />
             Analyze all possible scenarios at the fastest speed and style with
