@@ -1,5 +1,6 @@
-import { Box, Flex, Text, VStack } from '@devup-ui/react'
+import { Flex, Text, VStack } from '@devup-ui/react'
 
+import { BenchBox } from './BenchBox'
 import { DevupUICard } from './DevupUICard'
 import { OtherCard } from './OtherCard'
 
@@ -86,10 +87,7 @@ export function Bench() {
         <Flex display={[null, null, null, null, 'none']}>
           <DevupUICard />
         </Flex>
-        <Box
-          overflow={['auto', null, null, null, 'visible']}
-          scrollbarWidth="none"
-        >
+        <BenchBox>
           <Flex
             alignItems="flex-end"
             flexWrap={[null, null, null, null, 'wrap']}
@@ -105,7 +103,7 @@ export function Bench() {
               <OtherCard key={item.title} {...item} />
             ))}
           </Flex>
-        </Box>
+        </BenchBox>
       </VStack>
     </VStack>
   )
