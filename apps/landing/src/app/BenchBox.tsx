@@ -55,6 +55,7 @@ export function BenchBox({ children }: BenchBoxProps) {
   return (
     <Box
       ref={scrollRef}
+      WebkitOverflowScrolling="touch"
       cursor={['grab', null, null, null, 'default']}
       onMouseDown={handleMouseDown}
       onMouseLeave={handleMouseLeave}
@@ -62,9 +63,6 @@ export function BenchBox({ children }: BenchBoxProps) {
       onMouseUp={handleMouseUp}
       overflow={['auto', null, null, null, 'visible']}
       scrollbarWidth="none"
-      style={{
-        WebkitOverflowScrolling: 'touch', // iOS에서 부드러운 스크롤
-      }}
     >
       {children}
     </Box>
