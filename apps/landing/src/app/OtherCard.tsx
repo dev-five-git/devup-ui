@@ -25,6 +25,7 @@ export function OtherCard({
       gap={['20px', null, '40px']}
       h={[null, null, null, null, '318px']}
       justifyContent="space-between"
+      maxW={[null, null, null, null, '300px']}
       minW={[null, null, '240px', null, 'none']}
       p={[6, null, '30px']}
     >
