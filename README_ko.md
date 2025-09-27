@@ -2,7 +2,6 @@
   <img src="https://raw.githubusercontent.com/dev-five-git/devup-ui/main/media/logo.svg" alt="Devup UI logo" width="300" />
 </div>
 
-
 <h3 align="center">
     Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
 </h3>
@@ -23,8 +22,8 @@
 <a href="https://discord.gg/8zjcGc7cWh">
 <img alt="Discord" src="https://img.shields.io/discord/1321362173619994644.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2" />
 </a>
-<a href="https://codecov.io/gh/dev-five-git/devup-ui" > 
- <img src="https://codecov.io/gh/dev-five-git/devup-ui/graph/badge.svg?token=8I5GMB2X5B"/> 
+<a href="https://codecov.io/gh/dev-five-git/devup-ui" >
+ <img src="https://codecov.io/gh/dev-five-git/devup-ui/graph/badge.svg?token=8I5GMB2X5B"/>
 </a>
 </div>
 
@@ -70,17 +69,17 @@ npm install @devup-ui/vite-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| 라이브러리                 |  버전    | 빌드 시간    | 빌드 사이즈        |
-|--------------------------|----------|------------|-------------------|
-| tailwindcss              | 4.1.13   | 20.22s     | 57,415,796 bytes  |
-| styleX                   | 0.15.4   | 38.97s     | 76,257,820 bytes  |
-| vanilla-extract          | 1.17.4   | 20.09s     | 59,366,237 bytes  |
-| kuma-ui                  | 1.5.9    | 21.61s     | 67,422,085 bytes  |
-| panda-css                | 1.3.1    | 22.01s     | 62,431,065 bytes  |
-| chakra-ui                | 3.27.0   | 29.99s     | 210,122,493 bytes |
-| mui                      | 7.3.2    | 22.21s     | 94,231,958 bytes  |
-| devup-ui(per-file css)   | 1.0.18   | 18.23s     | 57,440,953 bytes  |
-| devup-ui(single css)     | 1.0.18   | 18.35s     | 57,409,008 bytes  |
+| 라이브러리             | 버전   | 빌드 시간 | 빌드 사이즈       |
+| ---------------------- | ------ | --------- | ----------------- |
+| tailwindcss            | 4.1.13 | 20.22s    | 57,415,796 bytes  |
+| styleX                 | 0.15.4 | 38.97s    | 76,257,820 bytes  |
+| vanilla-extract        | 1.17.4 | 20.09s    | 59,366,237 bytes  |
+| kuma-ui                | 1.5.9  | 21.61s    | 67,422,085 bytes  |
+| panda-css              | 1.3.1  | 22.01s    | 62,431,065 bytes  |
+| chakra-ui              | 3.27.0 | 29.99s    | 210,122,493 bytes |
+| mui                    | 7.3.2  | 22.21s    | 94,231,958 bytes  |
+| devup-ui(per-file css) | 1.0.18 | 18.23s    | 57,440,953 bytes  |
+| devup-ui(single css)   | 1.0.18 | 18.35s    | 57,409,008 bytes  |
 
 ## 작동 원리
 
@@ -88,30 +87,40 @@ Devup UI는 런타임이 필요 없는 CSS in JS 전처리기입니다.
 Devup UI는 CSS in JS 전처리기를 통하여 브라우저의 성능 저하를 원천적으로 제거합니다.
 모든 문법적 경우의 수를 고려하여 전처리기를 개발합니다.
 
-```typescript
-const before = <Box bg={"red"}/>
+```tsx
+const before = <Box bg="red" />
 
-const after = <div className="d0"/>
+const after = <div className="d0" />
 ```
 
 변수 사용도 완전히 지원합니다.
 
-```typescript
-const before = <Box bg={colorVariable}/>
+```tsx
+const before = <Box bg={colorVariable} />
 
-const after = <div className="d0" style={{
-    "--d0": colorVariable
-}}/>
+const after = (
+  <div
+    className="d0"
+    style={{
+      '--d0': colorVariable,
+    }}
+  />
+)
 ```
 
 다양한 표현식과 반응형도 모두 지원합니다.
 
-```typescript
-const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+```tsx
+const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
 
-const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
-    "--d2": variable
-}}/>
+const after = (
+  <div
+    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
+    style={{
+      '--d2': variable,
+    }}
+  />
+)
 ```
 
 타이핑이 되는 테마를 지원합니다.
@@ -133,36 +142,40 @@ const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
 }
 ```
 
-```typescript
+```tsx
 // Type Safe
-<Text color="$text"/>
+<Text color="$text" />
 ```
 
 반응형과 가상 선택자도 지원합니다.
 
 물론 동시 사용도 가능합니다.
 
-```typescript
+```tsx
 // Responsive with Selector
-const box = <Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 
 // Same
-const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
+const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
 ## 기여 방법
 
 ### 요구 사항
+
 - [Node.js](https://nodejs.org) (LTS 버전 권장)
 - [Rust](https://rustup.rs) 컴파일러
 - pnpm 패키지 매니저 (`npm install -g pnpm`)
 
 ### 개발 환경 설정
+
 개발 환경을 위해 아래 패키지들을 설치합니다:
+
 ```sh
 pnpm i
 pnpm build
 cargo install cargo-tarpaulin
 cargo install wasm-pack
 ```
+
 설치 후 `pnpm test`를 실행하여 문제가 없는지 확인합니다.
