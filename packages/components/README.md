@@ -2,7 +2,6 @@
   <img src="https://raw.githubusercontent.com/dev-five-git/devup-ui/main/media/logo.svg" alt="Devup UI logo" width="300" />
 </div>
 
-
 <h3 align="center">
     Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
 </h3>
@@ -23,8 +22,8 @@
 <a href="https://discord.gg/8zjcGc7cWh">
 <img alt="Discord" src="https://img.shields.io/discord/1321362173619994644.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2" />
 </a>
-<a href="https://codecov.io/gh/dev-five-git/devup-ui" > 
- <img src="https://codecov.io/gh/dev-five-git/devup-ui/graph/badge.svg?token=8I5GMB2X5B"/> 
+<a href="https://codecov.io/gh/dev-five-git/devup-ui" >
+ <img src="https://codecov.io/gh/dev-five-git/devup-ui/graph/badge.svg?token=8I5GMB2X5B"/>
 </a>
 </div>
 
@@ -76,17 +75,17 @@ npm install @devup-ui/webpack-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| Library                  | Version  | Build Time | Build Size        |
-|--------------------------|----------|------------|-------------------|
-| tailwindcss              | 4.1.13   | 20.22s     | 57,415,796 bytes  |
-| styleX                   | 0.15.4   | 38.97s     | 76,257,820 bytes  |
-| vanilla-extract          | 1.17.4   | 20.09s     | 59,366,237 bytes  |
-| kuma-ui                  | 1.5.9    | 21.61s     | 67,422,085 bytes  |
-| panda-css                | 1.3.1    | 22.01s     | 62,431,065 bytes  |
-| chakra-ui                | 3.27.0   | 29.99s     | 210,122,493 bytes |
-| mui                      | 7.3.2    | 22.21s     | 94,231,958 bytes  |
-| devup-ui(per-file css)   | 1.0.18   | 18.23s     | 57,440,953 bytes  |
-| devup-ui(single css)     | 1.0.18   | 18.35s     | 57,409,008 bytes  |
+| Library                | Version | Build Time | Build Size        |
+| ---------------------- | ------- | ---------- | ----------------- |
+| tailwindcss            | 4.1.13  | 20.22s     | 57,415,796 bytes  |
+| styleX                 | 0.15.4  | 38.97s     | 76,257,820 bytes  |
+| vanilla-extract        | 1.17.4  | 20.09s     | 59,366,237 bytes  |
+| kuma-ui                | 1.5.9   | 21.61s     | 67,422,085 bytes  |
+| panda-css              | 1.3.1   | 22.01s     | 62,431,065 bytes  |
+| chakra-ui              | 3.27.0  | 29.99s     | 210,122,493 bytes |
+| mui                    | 7.3.2   | 22.21s     | 94,231,958 bytes  |
+| devup-ui(per-file css) | 1.0.18  | 18.23s     | 57,440,953 bytes  |
+| devup-ui(single css)   | 1.0.18  | 18.35s     | 57,409,008 bytes  |
 
 ## How it works
 
@@ -94,30 +93,40 @@ Devup UI is a CSS in JS preprocessor that does not require runtime.
 Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
 We develop a preprocessor that considers all grammatical cases.
 
-```typescript
-const before = <Box bg={"red"}/>
+```tsx
+const before = <Box bg="red" />
 
-const after = <div className="d0"/>
+const after = <div className="d0" />
 ```
 
 Variables are fully supported.
 
-```typescript
-const before = <Box bg={colorVariable}/>
+```tsx
+const before = <Box bg={colorVariable} />
 
-const after = <div className="d0" style={{
-    "--d0": colorVariable
-}}/>
+const after = (
+  <div
+    className="d0"
+    style={{
+      '--d0': colorVariable,
+    }}
+  />
+)
 ```
 
 Various expressions and responsiveness are also fully supported.
 
-```typescript
-const before = <Box bg={["red", "blue", a > b ? "yellow" : variable]}/>
+```tsx
+const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
 
-const after = <div className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
-    "--d2": variable
-}}/>
+const after = (
+  <div
+    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
+    style={{
+      '--d2': variable,
+    }}
+  />
+)
 ```
 
 Support Theme with Typing
@@ -139,19 +148,19 @@ Support Theme with Typing
 }
 ```
 
-```typescript
+```tsx
 // Type Safe
-<Text color="$text"/>
+<Text color="$text" />
 ```
 
 Support Responsive And Pseudo Selector
 
 You can use responsive and pseudo selector.
 
-```typescript
+```tsx
 // Responsive with Selector
-const box = <Box _hover={{bg: ["red", "blue"]}}/>
+const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 
 // Same
-const box = <Box _hover={[{bg: "red"}, {bg: "blue"}]}/>
+const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
