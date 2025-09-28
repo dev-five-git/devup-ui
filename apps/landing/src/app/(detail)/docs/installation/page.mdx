@@ -32,7 +32,7 @@ After installing the plugin, you can use the plugin in your Next.js project.
 import { DevupUI } from '@devup-ui/next-plugin'
 
 export default DevupUI({})
-````
+```
 
 ### Using Devup UI with Vite
 
@@ -62,10 +62,13 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [react(), DevupUI({
-    // no extract css
-    extractCss: false,
-})],
+  plugins: [
+    react(),
+    DevupUI({
+      // no extract css
+      extractCss: false,
+    }),
+  ],
 })
 ```
 
@@ -82,15 +85,14 @@ After installing the plugin, you can use the plugin in your rsbuild project.
 ```js
 // rsbuild.config.mjs
 
-import { defineConfig } from '@rsbuild/core';
-import { pluginReact } from '@rsbuild/plugin-react';
-import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin';
+import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+import { pluginReact } from '@rsbuild/plugin-react'
 
 export default defineConfig({
   plugins: [pluginReact(), DevupUIRsbuildPlugin()],
-});
-
-````
+})
+```
 
 ## Project Examples
 
