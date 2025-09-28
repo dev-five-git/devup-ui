@@ -7,7 +7,7 @@ import jsonParser from 'jsonc-eslint-parser'
 export default [
   ...configs.recommended,
   {
-    files: ['src/**/*.{json,json5,jsonc}'],
+    files: ['**/*.{json,json5,jsonc}'],
     languageOptions: { parser: jsonParser },
     plugins: { jsonc },
     rules: {
@@ -18,14 +18,14 @@ export default [
   },
   {
     ...mdx.flat,
-    files: ['src/**/*.{md,mdx}'],
+    files: ['**/*.{md,mdx}'],
     processor: mdx.createRemarkProcessor({
       lintCodeBlocks: true,
     }),
   },
   {
     ...mdx.flatCodeBlocks,
-    files: ['src/**/*.{md,mdx}/*.{js,jsx,ts,tsx}'],
+    files: ['**/*.{md,mdx}/*.{js,jsx,ts,tsx}'],
     languageOptions: { parser: tsParser },
     rules: {
       ...mdx.flatCodeBlocks.rules,
