@@ -1,0 +1,57 @@
+If you want to use Devup UI Components, you need to install it.
+
+```
+npm install @devup-ui/components
+// or
+yarn add @devup-ui/components
+// or
+pnpm add @devup-ui/components
+```
+
+You need to configure the include option for each bundler environment to properly load the `@devup-ui/components` package.
+
+### using Vite
+
+```typescript
+//vite.config.js
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { DevupUI } from "@devup-ui/vite-plugin";
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      include: ["@devup-ui/components"],
+    }),
+    react(),
+  ],
+});
+```
+
+### using Next.js
+
+```typescript
+// next.config.js
+import { DevupUI } from "@devup-ui/next-plugin";
+export default DevupUI({ include: ["@devup-ui/components"] });
+```
+
+### using Rsbuild
+
+```typescript
+// rsbuild.config.mjs
+import { defineConfig } from "@rsbuild/core";
+import { pluginReact } from "@rsbuild/plugin-react";
+import { DevupUIRsbuildPlugin } from "@devup-ui/rsbuild-plugin";
+export default defineConfig({
+  plugins: [
+    pluginReact(),
+    DevupUIRsbuildPlugin({
+      include: ["@devup-ui/components"],
+    }),
+  ],
+});
+```
+
+Note: If you encounter "Cannot run on the runtime" error, make sure the include option is properly configured for your bundler.
+
+### Examples
