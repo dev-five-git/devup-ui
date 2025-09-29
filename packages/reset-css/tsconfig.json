@@ -1,10 +1,6 @@
 {
   "compilerOptions": {
-    "types": [
-      "vite/client",
-      "vitest/importMeta",
-      "vitest/globals"
-    ],
+    "types": ["vite/client", "vitest/importMeta", "vitest/globals"],
     "strict": true,
     "target": "ESNext",
     "declaration": true,
