@@ -49,30 +49,27 @@ export const cssUtilsLiteralOnly = createRule({
         }
       },
       Identifier(node) {
-        if (!devupContext) return
+        if (!devupContext || node.name === 'undefined') return
 
-        const ancestors = context.sourceCode.getAncestors(devupContext)
-        const an = context.sourceCode.getAncestors(node).slice(ancestors.length)
-        const properties = an.filter(
-          (ancestor) => ancestor.type === AST_NODE_TYPES.Property,
-        )
-        if (
-          !properties.length ||
-          properties.some(
-            (property) => [...an, node].indexOf(property.key) !== -1,
-          )
-        )
-          return
-        const conditionals = an.filter(
-          (ancestor) => ancestor.type === AST_NODE_TYPES.ConditionalExpression,
-        )
-        if (
-          conditionals.length &&
-          conditionals.some(
-            (conditional) => [...an, node].indexOf(conditional.test) !== -1,
-          )
-        ) {
-          return
+        const an = context.sourceCode
+          .getAncestors(node)
+          .slice(context.sourceCode.getAncestors(devupContext).length)
+
+        for (const ancestor of an) {
+          switch (ancestor.type) {
+            case AST_NODE_TYPES.Property:
+              if ([...an, node].indexOf(ancestor.key) !== -1) return
+              break
+            case AST_NODE_TYPES.ConditionalExpression:
+              if ([...an, node].indexOf(ancestor.test) !== -1) return
+              break
+            case AST_NODE_TYPES.MemberExpression:
+              if ([...an, node].indexOf(ancestor.property) !== -1) return
+              break
+            case AST_NODE_TYPES.CallExpression:
+              if ([...an, node].indexOf(ancestor.callee) !== -1) return
+              break
+          }
         }
 
         context.report({

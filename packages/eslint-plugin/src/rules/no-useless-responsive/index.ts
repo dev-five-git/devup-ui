@@ -14,11 +14,29 @@ const createRule = ESLintUtils.RuleCreator(
 
 function checkUselessResponsive<T extends RuleContext<string, []>>(
   node: TSESTree.ArrayExpression,
+  ancestors: TSESTree.Node[],
   context: T,
 ) {
   if (node.elements.length !== 1) return
 
   const element = node.elements[0]!
+  for (const ancestor of ancestors) {
+    switch (ancestor.type) {
+      case AST_NODE_TYPES.ConditionalExpression:
+        if (ancestors.indexOf(ancestor.test) !== -1) return
+        break
+      case AST_NODE_TYPES.JSXExpressionContainer:
+      case AST_NODE_TYPES.Property:
+      case AST_NODE_TYPES.JSXOpeningElement:
+      case AST_NODE_TYPES.CallExpression:
+      case AST_NODE_TYPES.ObjectExpression:
+      case AST_NODE_TYPES.JSXAttribute:
+        break
+      default:
+        return
+    }
+  }
+
   context.report({
     node,
     messageId: 'uselessResponsive',
@@ -77,7 +95,14 @@ export const noUselessResponsive = createRule({
         }
       },
       ArrayExpression(node) {
-        if (devupContext) checkUselessResponsive(node, context)
+        if (devupContext)
+          checkUselessResponsive(
+            node,
+            context.sourceCode
+              .getAncestors(node)
+              .slice(context.sourceCode.getAncestors(devupContext).length),
+            context,
+          )
       },
     }
   },

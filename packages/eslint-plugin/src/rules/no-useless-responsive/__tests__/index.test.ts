@@ -40,15 +40,23 @@ describe('no-useless-responsive rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
-        code: 'import { Box } from "other-package";\n<Box w={[1][0]} />',
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1][0]} />',
         filename: 'src/app/page.tsx',
       },
       {
-        code: 'import { Box } from "other-package";\n<Box w={[1, 2, 3]} />',
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1, 2, 3]} />',
         filename: 'src/app/page.tsx',
       },
       {
-        code: 'import { Box } from "other-package";\n<Box w={[1, 2, 3][1]} />',
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1, 2, 3][1]} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box onClick={() => {console.log([1])}} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1].length === 1 ? 1 : 2} />',
         filename: 'src/app/page.tsx',
       },
       {
@@ -134,6 +142,20 @@ describe('no-useless-responsive rule', () => {
         output: 'import * as c from "@devup-ui/react";\nc.css({w: 1})',
         filename: 'src/app/layout.tsx',
         errors: [
+          {
+            messageId: 'uselessResponsive',
+          },
+        ],
+      },
+      {
+        code: 'import * as c from "@devup-ui/react";\nc.css({w: [1].length === 1 ? [1] : [2]})',
+        output:
+          'import * as c from "@devup-ui/react";\nc.css({w: [1].length === 1 ? 1 : 2})',
+        filename: 'src/app/layout.tsx',
+        errors: [
+          {
+            messageId: 'uselessResponsive',
+          },
           {
             messageId: 'uselessResponsive',
           },

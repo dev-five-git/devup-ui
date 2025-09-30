@@ -46,7 +46,19 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
           filename: 'src/app/page.tsx',
         },
         {
+          code: `import { ${code} as B } from "@devup-ui/react";\nB({ w: { a: 1, b: 2 }[v]})`,
+          filename: 'src/app/page.tsx',
+        },
+        {
           code: `import { ${code} as B } from "@devup-ui/react";\nB({ w: v ? 1 : null})`,
+          filename: 'src/app/page.tsx',
+        },
+        {
+          code: `import { ${code} as B } from "@devup-ui/react";\nB({ w: v ? 1 : undefined})`,
+          filename: 'src/app/page.tsx',
+        },
+        {
+          code: `import { ${code} as B } from "@devup-ui/react";\nB({ w: v || 1 ? 1 : null})`,
           filename: 'src/app/page.tsx',
         },
       ],
@@ -89,6 +101,15 @@ describe.each(['css' /* 'globalCss', 'keyframes'*/])(
         },
         {
           code: `import { ${code} as B } from "@devup-ui/react";\nB({w: v ? 1 : v})`,
+          filename: 'src/app/layout.tsx',
+          errors: [
+            {
+              messageId: 'cssUtilsLiteralOnly',
+            },
+          ],
+        },
+        {
+          code: `import { ${code} as B } from "@devup-ui/react";\nB({w: v || 1 ? 1 : v})`,
           filename: 'src/app/layout.tsx',
           errors: [
             {
