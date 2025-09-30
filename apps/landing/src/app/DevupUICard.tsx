@@ -76,7 +76,7 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              54.8MB
+              54.75MB
             </Text>
           </Flex>
         </VStack>
