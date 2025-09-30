@@ -51,11 +51,29 @@ export const cssUtilsLiteralOnly = createRule({
       Identifier(node) {
         if (!devupContext) return
 
-        const an = context.sourceCode.getAncestors(node)
-        const property = an.find(
+        const ancestors = context.sourceCode.getAncestors(devupContext)
+        const an = context.sourceCode.getAncestors(node).slice(ancestors.length)
+        const properties = an.filter(
           (ancestor) => ancestor.type === AST_NODE_TYPES.Property,
         )
-        if (!property || [...an, node].indexOf(property.value) === -1) return
+        if (
+          !properties.length ||
+          properties.some(
+            (property) => [...an, node].indexOf(property.key) !== -1,
+          )
+        )
+          return
+        const conditionals = an.filter(
+          (ancestor) => ancestor.type === AST_NODE_TYPES.ConditionalExpression,
+        )
+        if (
+          conditionals.length &&
+          conditionals.some(
+            (conditional) => [...an, node].indexOf(conditional.test) !== -1,
+          )
+        ) {
+          return
+        }
 
         context.report({
           node,

@@ -6,6 +6,11 @@ describe('export index', () => {
       configs: {
         recommended: expect.any(Object),
       },
+      default: {
+        configs: {
+          recommended: expect.any(Object),
+        },
+      },
     })
   })
 })

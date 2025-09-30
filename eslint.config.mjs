@@ -1,13 +1,13 @@
+import devupUIEslintPlugin from '@devup-ui/eslint-plugin'
 import { configs } from 'eslint-plugin-devup'
 import eslintPlugin from 'eslint-plugin-eslint-plugin'
 import jsonc from 'eslint-plugin-jsonc'
 import * as mdx from 'eslint-plugin-mdx'
 import globals from 'globals'
-
 export default [
   {
     ignores: [
-      'coverage',
+      '**/coverage',
       'target',
       'benchmark/next-panda-css/styled-system',
       'bindings/devup-ui-wasm/pkg',
@@ -75,4 +75,8 @@ export default [
     ...eslintPlugin.configs.recommended,
     // files: ['packages/eslint-plugin/**/*.{js,jsx,ts,tsx}'],
   },
+  {
+    ignores: ['**/*.md'],
+  },
+  ...devupUIEslintPlugin.configs.recommended,
 ]

@@ -28,6 +28,14 @@ describe('no-duplicate-value rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[1, null, null, 2, 3]} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[null, null, null, 3]} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
         code: 'import { css } from "other-package";\ncss()',
         filename: 'src/app/page.tsx',
       },

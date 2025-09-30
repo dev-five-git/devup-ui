@@ -23,7 +23,8 @@ function checkDuplicateValue<T extends RuleContext<string, []>>(
       const prevElement = node.elements[i - 1]
       if (
         prevElement?.type === AST_NODE_TYPES.Literal &&
-        element.value === prevElement.value
+        element.value === prevElement.value &&
+        element.value !== null
       ) {
         context.report({
           node,
