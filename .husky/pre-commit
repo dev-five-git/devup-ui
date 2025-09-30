@@ -1,2 +1,2 @@
 pnpm lint
-echo "lint done"
+pnpm test
