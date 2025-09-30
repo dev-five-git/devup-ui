@@ -24,7 +24,7 @@ describe('no-useless-tailing-nulls rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
-        code: 'import { Box } from "other-package";\n<Box w={[1, 2, null, null]} />',
+        code: 'import { Box } from "other-package";\n<Box w={[1, 2,]} />',
         filename: 'src/app/page.tsx',
       },
     ],
@@ -52,6 +52,16 @@ describe('no-useless-tailing-nulls rule', () => {
       {
         code: 'import { css } from "@devup-ui/react";\ncss({w: [1, 2, null, null]})',
         output: 'import { css } from "@devup-ui/react";\ncss({w: [1, 2]})',
+        filename: 'src/app/page.tsx',
+        errors: [
+          {
+            messageId: 'uselessTailingNulls',
+          },
+        ],
+      },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[null, null, null, null]} />',
+        output: 'import { Box } from "@devup-ui/react";\n<Box w={[]} />',
         filename: 'src/app/page.tsx',
         errors: [
           {

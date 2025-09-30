@@ -12,34 +12,46 @@ const createRule = ESLintUtils.RuleCreator(
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
 
-function checkUselessResponsive<T extends RuleContext<string, []>>(
+function checkDuplicateValue<T extends RuleContext<string, []>>(
   node: TSESTree.ArrayExpression,
   context: T,
 ) {
-  if (node.elements.length !== 1) return
-
-  const element = node.elements[0]!
-  context.report({
-    node,
-    messageId: 'uselessResponsive',
-    fix(fixer) {
-      return fixer.replaceText(node, context.sourceCode.getText(element!))
-    },
-  })
+  for (let i = 0; i < node.elements.length; i++) {
+    const element = node.elements[i]
+    if (element?.type === AST_NODE_TYPES.Literal) {
+      if (i === 0) continue
+      const prevElement = node.elements[i - 1]
+      if (
+        prevElement?.type === AST_NODE_TYPES.Literal &&
+        element.value === prevElement.value
+      ) {
+        context.report({
+          node,
+          messageId: 'duplicateValue',
+          data: {
+            value: element.value,
+          },
+          fix(fixer) {
+            return fixer.replaceText(element, 'null')
+          },
+        })
+      }
+    }
+  }
 }
 
-export const noUselessResponsive = createRule({
-  name: 'no-useless-responsive',
+export const noDuplicateValue = createRule({
+  name: 'no-duplicate-value',
   defaultOptions: [],
   meta: {
     schema: [],
     messages: {
-      uselessResponsive: 'Responsive are useless. Remove them.',
+      duplicateValue: 'Duplicate value found: {{value}}.',
     },
     type: 'problem',
     fixable: 'code',
     docs: {
-      description: 'No useless responsive.',
+      description: 'No duplicate value.',
     },
   },
   create(context) {
@@ -77,7 +89,7 @@ export const noUselessResponsive = createRule({
         }
       },
       ArrayExpression(node) {
-        if (devupContext) checkUselessResponsive(node, context)
+        if (devupContext) checkDuplicateValue(node, context)
       },
     }
   },

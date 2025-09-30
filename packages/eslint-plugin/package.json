@@ -25,18 +25,13 @@
   "author": "devfive",
   "license": "ISC",
   "dependencies": {
-    "typescript-eslint": "^8.44"
+    "typescript-eslint": "^8.44",
+    "@typescript-eslint/utils": "^8.44"
   },
   "devDependencies": {
-    "@types/eslint": "^9.6",
-    "@types/eslint__js": "^9.14",
     "@typescript-eslint/rule-tester": "^8.44",
-    "@typescript-eslint/utils": "^8.44",
-    "@vitest/coverage-v8": "3.2.4",
-    "eslint-plugin-eslint-plugin": "^7.0.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^3.2.4"
+    "vite-plugin-dts": "^4.5.4"
   }
 }

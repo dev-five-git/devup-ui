@@ -1,33 +1,27 @@
-import { noUselessTailingNulls } from 'src/rules/no-useless-tailing-nulls'
+import {
+  cssUtilsLiteralOnly,
+  noDuplicateValue,
+  noUselessResponsive,
+  noUselessTailingNulls,
+} from '../rules'
 
 export default [
-  {
-    ignores: [
-      '**/node_modules/',
-      '**/build/',
-      '**/__snapshots__/',
-      '!**/src/**',
-      '!vite.config.ts',
-      '!**/.storybook/**',
-      '**/storybook-static/',
-      '**/dist/',
-      '**/next-env.d.ts',
-      '**/out/',
-      '**/.next/',
-      '**/public/',
-      '**/.df/',
-    ],
-  },
   {
     plugins: {
       '@devup-ui': {
         rules: {
           'no-useless-tailing-nulls': noUselessTailingNulls,
+          'css-utils-literal-only': cssUtilsLiteralOnly,
+          'no-duplicate-value': noDuplicateValue,
+          'no-useless-responsive': noUselessResponsive,
         },
       },
     },
     rules: {
       '@devup-ui/no-useless-tailing-nulls': 'error',
+      '@devup-ui/css-utils-literal-only': 'error',
+      '@devup-ui/no-duplicate-value': 'error',
+      '@devup-ui/no-useless-responsive': 'error',
     },
   },
 ]
