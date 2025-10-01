@@ -19,7 +19,10 @@ export default function Page() {
       <Text color="$text" typography="bodyReg">
         <Description />
       </Text>
-      <VStack gap="16px" overflow="visible" py="30px">
+      <Text color="$title" typography="h4" pt="30px">
+        Examples
+      </Text>
+      <VStack gap="16px" overflow="visible" pb="30px">
         <Text color="$title" typography="h6">
           Form
         </Text>
