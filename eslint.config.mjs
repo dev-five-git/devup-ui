@@ -1,9 +1,18 @@
+import devupUIEslintPlugin from '@devup-ui/eslint-plugin'
 import { configs } from 'eslint-plugin-devup'
+import eslintPlugin from 'eslint-plugin-eslint-plugin'
 import jsonc from 'eslint-plugin-jsonc'
 import * as mdx from 'eslint-plugin-mdx'
 import globals from 'globals'
-
 export default [
+  {
+    ignores: [
+      '**/coverage',
+      'target',
+      'benchmark/next-panda-css/styled-system',
+      'bindings/devup-ui-wasm/pkg',
+    ],
+  },
   // eslint-plugin-devup
   ...configs.recommended,
   // eslint-plugin-jsonc
@@ -61,4 +70,13 @@ export default [
       'react/jsx-tag-spacing': ['error', { beforeClosing: 'never' }],
     },
   },
+  // eslint-plugin rule
+  {
+    ...eslintPlugin.configs.recommended,
+    // files: ['packages/eslint-plugin/**/*.{js,jsx,ts,tsx}'],
+  },
+  {
+    ignores: ['**/*.md'],
+  },
+  ...devupUIEslintPlugin.configs.recommended,
 ]

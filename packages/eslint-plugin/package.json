@@ -1,0 +1,37 @@
+{
+  "name": "@devup-ui/eslint-plugin",
+  "version": "0.1.0",
+  "description": "eslint plugin for devup-ui",
+  "main": "dist/index.cjs",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --coverage",
+    "test:s": "vitest run -u",
+    "lint": "eslint",
+    "build": "tsc && vite build"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "eslint"
+  ],
+  "author": "devfive",
+  "license": "ISC",
+  "dependencies": {
+    "typescript-eslint": "^8.44",
+    "@typescript-eslint/utils": "^8.44"
+  },
+  "devDependencies": {
+    "@typescript-eslint/rule-tester": "^8.44",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vite-plugin-dts": "^4.5.4"
+  }
+}
