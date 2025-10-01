@@ -1,7 +1,23 @@
 {
   "name": "@devup-ui/eslint-plugin",
+  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "repository": "https://github.com/dev-five-git/devup-ui",
+  "author": "devfive",
+  "license": "Apache-2.0",
+  "homepage": "https://devup-ui.com",
+  "bugs": {
+    "url": "https://github.com/dev-five-git/devup-ui/issues",
+    "email": "contact@devfive.kr"
+  },
+  "keywords": [
+    "css",
+    "css-in-js",
+    "css-in-js-preprocessor",
+    "css-in-js-framework",
+    "react",
+    "eslint"
+  ],
   "version": "0.1.0",
-  "description": "eslint plugin for devup-ui",
   "main": "dist/index.cjs",
   "type": "module",
   "scripts": {
@@ -10,20 +26,19 @@
     "lint": "eslint",
     "build": "tsc && vite build"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
-  "keywords": [
-    "eslint"
-  ],
-  "author": "devfive",
-  "license": "ISC",
   "dependencies": {
     "typescript-eslint": "^8.44",
     "@typescript-eslint/utils": "^8.44"
