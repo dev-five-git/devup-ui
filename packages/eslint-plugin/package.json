@@ -40,12 +40,12 @@
     "dist"
   ],
   "dependencies": {
-    "typescript-eslint": "^8.44",
-    "@typescript-eslint/utils": "^8.44"
+    "typescript-eslint": "^8.45",
+    "@typescript-eslint/utils": "^8.45"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.44",
-    "typescript": "^5.9.2",
+    "@typescript-eslint/rule-tester": "^8.45",
+    "typescript": "^5.9.3",
     "vite": "^7.1.7",
     "vite-plugin-dts": "^4.5.4"
   }

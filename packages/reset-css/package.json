@@ -42,7 +42,7 @@
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "vite": "^7.1.7",
     "vite-plugin-dts": "^4.5.4",
     "rollup-plugin-preserve-directives": "^0.4.0"
