@@ -1,6 +1,6 @@
 {
   "name": "@devup-ui/eslint-plugin",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "eslint plugin for devup-ui",
   "main": "dist/index.cjs",
   "type": "module",
