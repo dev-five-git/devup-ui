@@ -1,7 +1,9 @@
-import { configs } from 'eslint-plugin-devup'
+import devupUi from '@devup-ui/eslint-plugin'
+import devup from 'eslint-plugin-devup'
 import eslintPlugin from 'eslint-plugin-eslint-plugin'
 import jsonc from 'eslint-plugin-jsonc'
 import globals from 'globals'
+
 export default [
   {
     ignores: [
@@ -10,7 +12,9 @@ export default [
     ],
   },
   // eslint-plugin-devup
-  ...configs.recommended,
+  ...devup.configs.recommended.filter(
+    (config) => !('plugins' in config && '@devup-ui' in config.plugins),
+  ),
   // eslint-plugin-jsonc
   ...jsonc.configs['flat/recommended-with-json'],
   ...jsonc.configs['flat/recommended-with-jsonc'],
@@ -51,6 +55,10 @@ export default [
   // eslint-plugin rule
   {
     ...eslintPlugin.configs.recommended,
-    // files: ['packages/eslint-plugin/**/*.{js,jsx,ts,tsx}'],
+    files: ['packages/eslint-plugin/**/*.{js,jsx,ts,tsx}'],
   },
+  {
+    ignores: ['packages/eslint-plugin/**/*.md'],
+  },
+  ...devupUi.configs.recommended,
 ]

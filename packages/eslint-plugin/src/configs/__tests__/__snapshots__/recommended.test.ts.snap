@@ -20,6 +20,7 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
+            "name": "css-utils-literal-only",
           },
           "no-duplicate-value": {
             "create": [Function],
@@ -36,6 +37,7 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
+            "name": "no-duplicate-value",
           },
           "no-useless-responsive": {
             "create": [Function],
@@ -52,6 +54,7 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
+            "name": "no-useless-responsive",
           },
           "no-useless-tailing-nulls": {
             "create": [Function],
@@ -68,6 +71,7 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
+            "name": "no-useless-tailing-nulls",
           },
         },
       },
