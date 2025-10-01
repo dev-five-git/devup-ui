@@ -1,5 +1,11 @@
 # @devup-ui/vite-plugin
 
+## 1.0.43
+
+### Patch Changes
+
+- [#405](https://github.com/dev-five-git/devup-ui/pull/405) [`ea8b1c8`](https://github.com/dev-five-git/devup-ui/commit/ea8b1c8ba95b96598c2e5321d6d63a1afc9a54bf) Thanks [@owjs3901](https://github.com/owjs3901)! - Add components to noDep
+
 ## 1.0.42
 
 ### Patch Changes
