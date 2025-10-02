@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.20
+
+### Patch Changes
+
+- [#400](https://github.com/dev-five-git/devup-ui/pull/400) [`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2) Thanks [@owjs3901](https://github.com/owjs3901)! - Add positioning
+
 ## 1.0.19
 
 ### Patch Changes
