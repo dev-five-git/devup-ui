@@ -73,6 +73,39 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "maskPos" => &["mask-position"],
     "maskImg" => &["mask-image"],
 };
+
+pub(super) static GLOBAL_ENUM_STYLE_PROPERTY: phf::Map<&str, phf::Map<&str, phf::Map<&str, &str>>> = phf_map! {
+    "positioning" => phf_map!  {
+        "top" => phf_map! {
+            "top" => "0",
+        },
+        "right" => phf_map! {
+            "right" => "0",
+        },
+        "bottom" => phf_map! {
+            "bottom" => "0",
+        },
+        "left" => phf_map! {
+            "left" => "0",
+        },
+        "top-right" => phf_map! {
+            "top" => "0",
+            "right" => "0",
+        },
+        "top-left" => phf_map! {
+            "top" => "0",
+            "left" => "0",
+        },
+        "bottom-left" => phf_map! {
+            "bottom" => "0",
+            "left" => "0",
+        },
+        "bottom-right" => phf_map! {
+            "bottom" => "0",
+            "right" => "0",
+        },
+    }
+};
 pub(super) static OPTIMIZE_MULTI_CSS_VALUE_PROPERTY: phf::Set<&str> = phf_set! {
     "font-family",
     "src",

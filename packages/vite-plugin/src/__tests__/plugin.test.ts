@@ -189,6 +189,7 @@ describe('devupUIVitePlugin', () => {
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
       free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
     })
 
     const plugin = DevupUI(options)
@@ -218,6 +219,7 @@ describe('devupUIVitePlugin', () => {
         map: undefined,
         updatedBaseStyle: options.updatedBaseStyle,
         free: vi.fn(),
+        [Symbol.dispose]: vi.fn(),
       })
       expect(writeFile).toHaveBeenCalledWith(
         join(resolve('df', 'devup-ui'), 'devup-ui.css'),
@@ -244,6 +246,7 @@ describe('devupUIVitePlugin', () => {
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
       free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
     })
     expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'long code' } : undefined,
