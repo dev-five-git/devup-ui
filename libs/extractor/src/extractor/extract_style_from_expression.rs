@@ -1,3 +1,4 @@
+
 use crate::{
     ExtractStyleProp,
     css_utils::css_to_style,
@@ -14,8 +15,8 @@ use crate::{
     },
 };
 use css::{
-    disassemble_property, is_special_property::is_special_property, style_selector::StyleSelector,
-    utils::to_kebab_case,
+    disassemble_property, get_enum_property_map, get_enum_property_value,
+    is_special_property::is_special_property, style_selector::StyleSelector, utils::to_kebab_case,
 };
 use oxc_allocator::CloneIn;
 use oxc_ast::{
@@ -37,7 +38,6 @@ pub fn extract_style_from_expression<'a>(
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
     let mut typo = false;
-    println!("expression: {:?}", expression);
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
@@ -265,16 +265,26 @@ pub fn extract_style_from_expression<'a>(
     if let Some(value) = get_string_by_literal_expression(expression) {
         if let Some(name) = name {
             ExtractResult {
-                styles: vec![ExtractStyleProp::Static(if typo {
-                    ExtractStyleValue::Typography(value.to_string())
+                styles: if typo {
+                    vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
+                        value.to_string(),
+                    ))]
                 } else {
-                    ExtractStyleValue::Static(ExtractStaticStyle::new(
-                        name,
-                        &value,
-                        level,
-                        selector.clone(),
-                    ))
-                })],
+                    // Create a new ExtractStaticStyle
+                    if let Some(map) = get_enum_property_value(name, &value) {
+                        map.into_iter()
+                            .map(|(k, v)| {
+                                ExtractStyleProp::Static(ExtractStyleValue::Static(
+                                    ExtractStaticStyle::new(&k, &v, level, selector.clone()),
+                                ))
+                            })
+                            .collect()
+                    } else {
+                        vec![ExtractStyleProp::Static(ExtractStyleValue::Static(
+                            ExtractStaticStyle::new(name, &value, level, selector.clone()),
+                        ))]
+                    }
+                },
                 ..ExtractResult::default()
             }
         } else {
@@ -292,28 +302,26 @@ pub fn extract_style_from_expression<'a>(
                 styles: if un.operator == UnaryOperator::Void {
                     vec![]
                 } else {
-                    vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                        ExtractDynamicStyle::new(
-                            name.unwrap(),
-                            level,
-                            &expression_to_code(expression),
-                            selector.clone(),
-                        ),
-                    ))]
+                    vec![dynamic_style(
+                        ast_builder,
+                        name.unwrap(),
+                        expression,
+                        level,
+                        selector,
+                    )]
                 },
                 ..ExtractResult::default()
             },
             Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
             | Expression::CallExpression(_) => ExtractResult {
-                styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                    ExtractDynamicStyle::new(
-                        name.unwrap(),
-                        level,
-                        &expression_to_code(expression),
-                        selector.clone(),
-                    ),
-                ))],
+                styles: vec![dynamic_style(
+                    ast_builder,
+                    name.unwrap(),
+                    expression,
+                    level,
+                    selector,
+                )],
                 ..ExtractResult::default()
             },
             Expression::TSAsExpression(exp) => extract_style_from_expression(
@@ -355,14 +363,13 @@ pub fn extract_style_from_expression<'a>(
                         styles: vec![],
                     }]
                 } else {
-                    vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                        ExtractDynamicStyle::new(
-                            name.unwrap(),
-                            level,
-                            &expression_to_code(expression),
-                            selector.clone(),
-                        ),
-                    ))]
+                    vec![dynamic_style(
+                        ast_builder,
+                        name.unwrap(),
+                        expression,
+                        level,
+                        selector,
+                    )]
                 },
                 ..ExtractResult::default()
             },
@@ -410,14 +417,13 @@ pub fn extract_style_from_expression<'a>(
                         }
                     } else {
                         ExtractResult {
-                            styles: vec![ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
-                                ExtractDynamicStyle::new(
-                                    name,
-                                    level,
-                                    &identifier.name,
-                                    selector.clone(),
-                                ),
-                            ))],
+                            styles: vec![dynamic_style(
+                                ast_builder,
+                                name,
+                                expression,
+                                level,
+                                selector,
+                            )],
                             ..ExtractResult::default()
                         }
                     }
@@ -580,5 +586,41 @@ pub fn extract_style_from_expression<'a>(
             }
             _ => ExtractResult::default(),
         }
+    }
+}
+
+pub fn dynamic_style<'a>(
+    ast_builder: &AstBuilder<'a>,
+    name: &str,
+    expression: &Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> ExtractStyleProp<'a> {
+    if let Some(map) = get_enum_property_map(name) {
+        ExtractStyleProp::Enum {
+            condition: expression.clone_in(ast_builder.allocator),
+            map: map
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k.to_string(),
+                        v.into_iter()
+                            .map(|(k, v)| {
+                                ExtractStyleProp::Static(ExtractStyleValue::Static(
+                                    ExtractStaticStyle::new(k, v, level, selector.clone()),
+                                ))
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect(),
+        }
+    } else {
+        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+            name,
+            level,
+            &expression_to_code(expression),
+            selector.clone(),
+        )))
     }
 }

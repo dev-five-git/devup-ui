@@ -75,7 +75,7 @@ pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
 };
 
 pub(super) static GLOBAL_ENUM_STYLE_PROPERTY: phf::Map<&str, phf::Map<&str, phf::Map<&str, &str>>> = phf_map! {
-    "positioning " => phf_map!  {
+    "positioning" => phf_map!  {
         "top" => phf_map! {
             "top" => "0",
         },

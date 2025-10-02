@@ -11,10 +11,14 @@ mod selector_separator;
 pub mod style_selector;
 pub mod utils;
 
+use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+
 use crate::class_map::GLOBAL_CLASS_MAP;
-use crate::constant::{COLOR_HASH, F_SPACE_RE, GLOBAL_STYLE_PROPERTY, ZERO_RE};
+use crate::constant::{
+    COLOR_HASH, F_SPACE_RE, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY, ZERO_RE,
+};
 use crate::debug::is_debug;
 use crate::file_map::get_file_num_by_filename;
 use crate::num_to_nm_base::num_to_nm_base;
@@ -63,6 +67,38 @@ pub fn disassemble_property(property: &str) -> Vec<String> {
                 to_kebab_case(property)
             }]
         })
+}
+
+pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(String, String)>> {
+    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
+        if let Some(map) = map.get(value) {
+            Some(
+                map.entries()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            )
+        } else {
+            Some(vec![])
+        }
+    } else {
+        None
+    }
+}
+
+pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&str, &str>>> {
+    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
+        let mut ret = BTreeMap::new();
+        for (k, v) in map.entries() {
+            let mut tmp = BTreeMap::new();
+            v.entries().for_each(|(k, v)| {
+                tmp.insert(*k, *v);
+            });
+            ret.insert(*k, tmp);
+        }
+        Some(ret)
+    } else {
+        None
+    }
 }
 
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
