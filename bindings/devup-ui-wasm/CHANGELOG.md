@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.41
+
+### Patch Changes
+
+- [#400](https://github.com/dev-five-git/devup-ui/pull/400) [`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2) Thanks [@owjs3901](https://github.com/owjs3901)! - Implement enum prop
+
 ## 1.0.40
 
 ### Patch Changes
