@@ -108,7 +108,7 @@ export function DevupUI({
         },
         define,
         optimizeDeps: {
-          exclude: include,
+          exclude: [...include, '@devup-ui/components'],
         },
         ssr: {
           noExternal: [...include, /@devup-ui/],
