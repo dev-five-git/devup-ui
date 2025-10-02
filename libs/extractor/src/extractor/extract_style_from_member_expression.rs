@@ -4,9 +4,7 @@ use crate::{
         ExtractResult,
         extract_style_from_expression::{dynamic_style, extract_style_from_expression},
     },
-    utils::{
-        get_number_by_literal_expression, get_string_by_literal_expression,
-    },
+    utils::{get_number_by_literal_expression, get_string_by_literal_expression},
 };
 use css::style_selector::StyleSelector;
 use oxc_allocator::CloneIn;

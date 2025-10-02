@@ -14,7 +14,6 @@ pub mod utils;
 use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-
 use crate::class_map::GLOBAL_CLASS_MAP;
 use crate::constant::{
     COLOR_HASH, F_SPACE_RE, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY, ZERO_RE,
