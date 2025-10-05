@@ -13,7 +13,40 @@ The `Button` component is a simple button component that can be used to trigger 
 ## How to use
 
 ```tsx
-const before = <Button bg="red" />
+import { Button } from '@devup-ui/react'
 
-const after = <button className="d0" />
+function App() {
+  return (
+    <Button bg="red" h={25} onClick={() => alert('clicked!!')} w={25}>
+      click me
+    </Button>
+  )
+}
 ```
+
+The Button component defined above will render like this:
+
+```tsx
+function App() {
+  return (
+    <button className="aa ab ac" onClick="alert('clicked!!')">
+      click me
+    </button>
+  )
+}
+```
+
+```css
+.aa {
+  background: red;
+}
+.ab {
+  width: 100px;
+}
+.ac {
+  height: 100px;
+}
+```
+
+If you pass a number without a unit to a style property, it will be automatically scaled by 4.
+This means 1 equals 4px, 2 equals 8px, and so on.

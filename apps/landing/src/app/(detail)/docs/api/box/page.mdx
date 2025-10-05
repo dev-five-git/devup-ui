@@ -15,15 +15,61 @@ It is just a `div` with some styles.
 ## How to use
 
 ```tsx
-const before = <Box bg="red" />
+import { Box } from '@devup-ui/react'
 
-const after = <div className="d0" />
+function App() {
+  return <Box bg="red" flex={1} height="100px" width={100} />
+}
 ```
+
+The Box component defined above will render like this:
+
+```tsx
+function App() {
+  return <div className="aa ab ac a-d" />
+}
+```
+
+```css
+.aa {
+  background: red;
+}
+.ab {
+  flex: 1;
+}
+.ac {
+  height: 100px;
+}
+.a-d {
+  width: 400px;
+}
+```
+
+If you pass a number without a unit to a style property, it will be automatically scaled by 4.
+This means 1 equals 4px, 2 equals 8px, and so on.
+
+### Rendering as Another Element
 
 You can use the `as` prop to change the element type.
 
 ```tsx
-const before = <Box as="span" />
+import { Box } from '@devup-ui/react'
 
-const after = <span className="d0" />
+function App() {
+  return <Box as="span" bg="red" />
+}
+```
+
+By using the as prop, you can render it as another element as shown below:
+
+```tsx
+function App() {
+  return <span className="aa" />
+}
+```
+
+```css
+.aa {
+  background: red;
+}
 ```
