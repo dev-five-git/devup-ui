@@ -3,6 +3,7 @@ import {
   noDuplicateValue,
   noUselessResponsive,
   noUselessTailingNulls,
+  styleOrderRange,
 } from '../rules'
 
 export default [
@@ -14,6 +15,7 @@ export default [
           'css-utils-literal-only': cssUtilsLiteralOnly,
           'no-duplicate-value': noDuplicateValue,
           'no-useless-responsive': noUselessResponsive,
+          'style-order-range': styleOrderRange,
         },
       },
     },
@@ -22,6 +24,7 @@ export default [
       '@devup-ui/css-utils-literal-only': 'error',
       '@devup-ui/no-duplicate-value': 'error',
       '@devup-ui/no-useless-responsive': 'error',
+      '@devup-ui/style-order-range': 'error',
     },
   },
 ]
