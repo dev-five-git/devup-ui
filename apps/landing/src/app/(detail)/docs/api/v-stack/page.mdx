@@ -66,6 +66,24 @@ function App() {
 If you pass a number without a unit to a style property, it will be automatically scaled by 4.
 This means 1 equals 4px, 2 equals 8px, and so on.
 
+However, the following properties are exceptions and **are not multiplied by 4**:
+
+- `opacity`
+- `flex`
+- `z-index`
+- `line-clamp`
+- `font-weight`
+- `line-height`
+- `scale`
+- `aspect-ratio`
+- `flex-grow`
+- `flex-shrink`
+- `order`
+- `grid-column`, `grid-column-start`, `grid-column-end`
+- `grid-row`, `grid-row-start`, `grid-row-end`
+- `animation-iteration-count`
+- `tab-size`, `moz-tab-size`, `-webkit-line-clamp`
+
 <br />
 
 Class names and style properties are resolved in the following order:
