@@ -15,7 +15,17 @@ It is just a `img` with some styles.
 ## How to use
 
 ```tsx
-const before = <Image src="https://via.placeholder.com/150" />
+import { Image } from '@devup-ui/react'
 
-const after = <img src="https://via.placeholder.com/150" />
+function App() {
+  return <Image src="https://via.placeholder.com/150" />
+}
+```
+
+The Image component defined above will render like this:
+
+```tsx
+function App() {
+  return <img src="https://via.placeholder.com/150" />
+}
 ```
