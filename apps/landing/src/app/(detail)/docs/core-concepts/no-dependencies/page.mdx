@@ -1,0 +1,69 @@
+export const metadata = {
+    title: "Core-Concepts",
+    alternates: {
+        canonical: '/docs/core-concepts/no-dependencies',
+    }
+
+}
+
+# No Dependencies
+
+Devup UI converts pure React source code without additional UI runtime code.
+
+This section explains what “No Dependencies” means in practice, why it matters, and how Devup UI achieves it without requiring client-side style engines, extra plugins, or manual pre-generation steps.
+
+## Motivation
+
+- Many CSS-in-JS libraries rely on JavaScript at runtime to compute styles, inject `<style>` tags, or resolve variables.
+- When dynamic values (e.g., variables, expressions) are used, these solutions often fall back to runtime dependencies—a partial solution that reintroduces costs.
+- In frameworks like Next.js, such runtime-style systems frequently cannot be used inside RSC (React Server Components).
+
+We asked: Can we deliver truly zero-runtime CSS that also works in RSC—without extra UI runtime code?
+
+Our approach is grounded in static analysis. Once code is built and shipped, it should contain the definitive answer—no further computation required on the client.
+
+## What “No Dependencies” Means
+
+- No UI runtime code is added to your bundle for styling.
+- No extra plugins, pre-generation scripts, or PostCSS configs are required.
+- Pure React remains your source of truth; styles are compiled at build time into static CSS.
+- Works in RSC and the edge/runtime contexts where client-side style engines are unavailable or undesired.
+
+## How It Works?
+
+1. Parse your React source into an AST using Rust-based tooling.
+2. Perform static analysis to extract all style semantics from components and props.
+3. Resolve and de-duplicate styles, generating compact, atomic class names.
+4. Emit a new AST with class names applied and a CSS virtual file populated with the minimal rule set.
+5. Bundle emits static CSS and class-applied markup—no client-side style engine.
+
+## Compatibility
+
+- Next.js (including RSC): Safe to use without runtime style engines.
+- Vite, Rsbuild, Webpack: Supported via official plugins.
+- Works with server-first and edge contexts that restrict DOM/JS-based style injection.
+
+## Class Naming Policy
+
+- Class names never start with a digit (to satisfy CSS constraints).
+- We minimize class name length while maintaining safety.
+  For example, tokens like `ad` may be flagged by content blockers; we emit `a-d` instead to break filter matches.
+- To avoid common ad-blocker heuristics (e.g., EasyList-style rules), we segment suspicious tokens by inserting a hyphen while keeping names compact.
+- Example mappings:
+  - `ad` → `a-d`
+  - `ads` → `a-ds`
+  - `adbanner` → `a-dbanner`
+  - `ad_top` → `a-d_top`
+- Generation is deterministic: the same input always yields the same safe class name across builds.
+- The policy does not depend on any specific filter list and typically remains robust as lists evolve.
+- Scope: applied to Devup UI–generated atomic class tokens only; user-supplied `className` strings are not rewritten.
+- Allowed characters include `a`–`z`, combinations like `az`, `a0`, and safe hyphen/underscore placements.
+
+## Advantages if Using
+
+Devup UI brings the convenience of CSS-in-JS together with the performance of static CSS—delivering the best of both worlds with no extra UI runtime dependencies.
+
+1. **Zero runtime**: All styles are compiled to static CSS at build time.
+2. **De-duplication**: Identical styles are generated once and reused globally.
+3. **Performance**: Rust-powered pipeline provides fast, scalable builds.
+4. **Smaller bundles**: No redundant classes, no UI runtime styling code.
