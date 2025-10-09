@@ -16,7 +16,6 @@ This document explains the de-duplication principle, the requirement for a singl
 
 - Even if the same style appears in multiple places, it is generated as exactly one atomic class (no duplicates).
 - If a style already exists in storage, the existing class is reused. Otherwise, a new class is generated and registered.
-- This happens at build time (when the bundler runs). The generation order can vary depending on the order in which the input code is discovered and analyzed.
 
 ### Why a single storage is required
 

@@ -48,14 +48,9 @@ Our approach is grounded in static analysis. Once code is built and shipped, it 
 - Class names never start with a digit (to satisfy CSS constraints).
 - We minimize class name length while maintaining safety.
   For example, tokens like `ad` may be flagged by content blockers; we emit `a-d` instead to break filter matches.
-- To avoid common ad-blocker heuristics (e.g., EasyList-style rules), we segment suspicious tokens by inserting a hyphen while keeping names compact.
+- To avoid common ad-blocker heuristics, we segment suspicious tokens by inserting a hyphen(`-`).
 - Example mappings:
   - `ad` → `a-d`
-  - `ads` → `a-ds`
-  - `adbanner` → `a-dbanner`
-  - `ad_top` → `a-d_top`
-- Generation is deterministic: the same input always yields the same safe class name across builds.
-- The policy does not depend on any specific filter list and typically remains robust as lists evolve.
 - Scope: applied to Devup UI–generated atomic class tokens only; user-supplied `className` strings are not rewritten.
 - Allowed characters include `a`–`z`, combinations like `az`, `a0`, and safe hyphen/underscore placements.
 
