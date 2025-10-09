@@ -1,0 +1,68 @@
+export const metadata = {
+  title: 'Zero-Runtime',
+  alternates: {
+    canonical: '/docs/core-concepts/zero-runtime',
+  },
+}
+
+# Zero Runtime
+
+Devup UI is a CSS-in-JS preprocessor that requires no runtime. By moving style computation to build time, Devup UI avoids browser runtime overhead. We are building a preprocessor that accounts for all syntactic cases.
+
+## End-to-end Process
+
+### 1. **Source Code Input**
+
+Your application code written in JSX/TSX/JS/TS is provided as input.
+
+For example, consider the following `<Button>` component.
+
+```tsx
+<Button
+  _hover={{ bg: 'red' }}
+  bg="blue"
+  className="btn"
+  color="white"
+  fontSize={['10px', null, null, '16px']}
+>
+  Click me!
+</Button>
+```
+
+### 2. **AST Transformation (Rust + oxc)**
+
+We use **oxc** (a Rust-based JavaScript tooling suite) to convert code into an AST (Abstract Syntax Tree).
+
+- **Lexer**: breaks source code into tokens
+- **Parser**: structures tokens into an AST
+
+This step is required to enable optimizations performed later by the **Style Storage**.
+
+### **3. Style Caching Logic (Core logic)**
+
+Core logic written in Rust + WebAssembly optimizes styles by consulting the Style Storage: **Style Storage Check**
+
+- **Existing style?** → Reuse the existing class name (cached result)
+- **New style?** → Generate a new class and register it
+
+### **4. Code Generation Paths**
+
+Based on the caching results in step 3, two parallel outputs are produced.
+
+- **New AST**
+  - Generate a new AST in TypeScript
+  - Inject resolved style class names
+
+- **Update CSS Virtual File**
+  - Append newly generated style classes to the CSS virtual file
+  - Do not regenerate existing styles
+
+### **5. Final Output**
+
+The bundler (Vite, Rsbuild, Next.js, Webpack) emits optimized code.
+
+```html
+<button className="btn a b c d e">Click me!</button>
+```
+
+Inline style props are compiled into **atomic CSS classes**, achieving zero runtime.
