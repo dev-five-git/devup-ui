@@ -38,7 +38,7 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'type'> {
 }
 
 export function Input({
-  defaultValue,
+  defaultValue = '',
   value: valueProp,
   onChange: onChangeProp,
   typography,
@@ -54,16 +54,21 @@ export function Input({
   onClear,
   ...props
 }: InputProps) {
-  const [value, setValue] = useState(defaultValue || '')
+  const [value, setValue] = useState(defaultValue)
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value)
     onChangeProp?.(e)
   }
+
   const handleClear = () => {
     setValue('')
     onClear?.()
   }
-  const clearButtonVisible = value && !disabled && allowClear
+
+  const innerValue = valueProp ?? value
+
+  const clearButtonVisible = !!innerValue && !disabled && allowClear
 
   return (
     <Box
@@ -142,7 +147,7 @@ export function Input({
         }}
         transition="all 0.1s ease-in-out"
         typography={typography}
-        value={valueProp ?? value}
+        value={innerValue}
         {...props}
       />
       {clearButtonVisible && <ClearButton onClick={handleClear} />}
