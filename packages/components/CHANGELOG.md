@@ -1,5 +1,13 @@
 # @devup-ui/components
 
+## 0.1.24
+
+### Patch Changes
+
+- [#422](https://github.com/dev-five-git/devup-ui/pull/422) [`948d98b`](https://github.com/dev-five-git/devup-ui/commit/948d98b9082ef098784e522cdddc4e164083dfcc) Thanks [@belltalion](https://github.com/belltalion)! - Fix input value
+
+- [#422](https://github.com/dev-five-git/devup-ui/pull/422) [`948d98b`](https://github.com/dev-five-git/devup-ui/commit/948d98b9082ef098784e522cdddc4e164083dfcc) Thanks [@belltalion](https://github.com/belltalion)! - Fix input value
+
 ## 0.1.23
 
 ### Patch Changes
