@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.25
+
+### Patch Changes
+
+- [#424](https://github.com/dev-five-git/devup-ui/pull/424) [`650f5bf`](https://github.com/dev-five-git/devup-ui/commit/650f5bf75b514b8ab8e699a0bd401c0d979a7301) Thanks [@belltalion](https://github.com/belltalion)! - Fix input hadnClear
+
 ## 0.1.24
 
 ### Patch Changes
