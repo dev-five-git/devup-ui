@@ -94,6 +94,15 @@ export const noUselessResponsive = createRule({
           devupContext = null
         }
       },
+      Property(node) {
+        if (
+          devupContext &&
+          node.key.type === AST_NODE_TYPES.Identifier &&
+          node.key.name === 'imports'
+        ) {
+          devupContext = null
+        }
+      },
       ArrayExpression(node) {
         if (devupContext)
           checkUselessResponsive(

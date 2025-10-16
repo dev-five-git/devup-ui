@@ -553,7 +553,13 @@ impl StyleSheet {
             .imports
             .values()
             .flatten()
-            .map(|import| format!("@import \"{import}\";"))
+            .map(|import| {
+                if import.starts_with("\"") {
+                    format!("@import {import};")
+                } else {
+                    format!("@import \"{import}\";")
+                }
+            })
             .collect::<String>();
 
         let write_global = filename.is_none();
@@ -1579,6 +1585,12 @@ mod tests {
         {
             let mut sheet = StyleSheet::default();
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+        }
+        {
+            let mut sheet = StyleSheet::default();
+            sheet.add_import("test.tsx", "\"@devup-ui/core/css/global.css\" layer");
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
             assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
         }
