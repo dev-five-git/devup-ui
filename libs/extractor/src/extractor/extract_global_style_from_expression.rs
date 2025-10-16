@@ -55,13 +55,16 @@ pub fn extract_global_style_from_expression<'a>(
                                         let mut query = None;
                                         for p in obj.properties.iter() {
                                             if let ObjectPropertyKind::ObjectProperty(o) = p
-                                            && let Some(ident) = o.key.as_expression()
-                                                && let Some(ident) = get_string_by_literal_expression(ident)
+                                                && let Some(ident) = o.key.as_expression()
+                                                && let Some(ident) =
+                                                    get_string_by_literal_expression(ident)
                                             {
                                                 if ident == "url" {
-                                                    url = get_string_by_literal_expression(&o.value);
+                                                    url =
+                                                        get_string_by_literal_expression(&o.value);
                                                 } else if ident == "query" {
-                                                    query = get_string_by_literal_expression(&o.value);
+                                                    query =
+                                                        get_string_by_literal_expression(&o.value);
                                                 }
                                             }
                                         }
@@ -80,12 +83,10 @@ pub fn extract_global_style_from_expression<'a>(
                                                 }),
                                             ));
                                         }
-                                    } else 
-                                    
-                                     if
-                                     
-                                    !matches!(p.to_expression(), Expression::NumericLiteral(_))&& 
-                                      let Some(url) =
+                                    } else if !matches!(
+                                        p.to_expression(),
+                                        Expression::NumericLiteral(_)
+                                    ) && let Some(url) =
                                         get_string_by_literal_expression(p.to_expression())
                                     {
                                         styles.push(ExtractStyleProp::Static(
