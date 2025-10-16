@@ -194,6 +194,7 @@ export function ClearButton(props: ComponentProps<'button'>) {
       styleOrder={1}
       top="50%"
       transform="translateY(-50%)"
+      type="button"
       {...props}
     >
       <svg
