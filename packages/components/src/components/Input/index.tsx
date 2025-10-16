@@ -50,7 +50,7 @@ export function Input({
   disabled,
   className,
   classNames,
-  ref,
+  readOnly,
   onClear,
   ...props
 }: InputProps) {
@@ -63,12 +63,16 @@ export function Input({
 
   const handleClear = () => {
     setValue('')
+    onChangeProp?.({
+      target: { value: '' },
+    } as React.ChangeEvent<HTMLInputElement>)
     onClear?.()
   }
 
   const innerValue = valueProp ?? value
 
-  const clearButtonVisible = !!innerValue && !disabled && allowClear
+  const clearButtonVisible =
+    !!innerValue && !disabled && allowClear && !readOnly
 
   return (
     <Box
@@ -97,7 +101,6 @@ export function Input({
         </Center>
       )}
       <DevupInput
-        ref={ref}
         _disabled={{
           _placeholder: {
             color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
@@ -189,6 +192,7 @@ export function ClearButton(props: ComponentProps<'button'>) {
       styleOrder={1}
       top="50%"
       transform="translateY(-50%)"
+      type="button"
       {...props}
     >
       <svg
