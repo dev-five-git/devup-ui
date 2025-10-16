@@ -11,6 +11,22 @@ describe('Input', () => {
     expect(container).toMatchSnapshot()
   })
 
+  it('shoue have class name when className prop is provided', () => {
+    const { container } = render(
+      <Input
+        className="test"
+        classNames={{
+          input: 'test',
+          container: 'test',
+          icon: 'test',
+          errorMessage: 'test',
+        }}
+      />,
+    )
+    expect(container).toMatchSnapshot()
+    expect(container.querySelector('[aria-label="input"]')).toHaveClass('test')
+  })
+
   it('should render with disabled prop', () => {
     const { container } = render(<Input disabled />)
     expect(container).toMatchSnapshot()
