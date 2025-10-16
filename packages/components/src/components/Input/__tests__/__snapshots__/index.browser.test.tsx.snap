@@ -114,6 +114,7 @@ exports[`Input > should pass props to ClearButton component 1`] = `
   <button
     aria-label="clear-button"
     class="align-items-0-center--1 background-0-var(--negative20,light-dark(#0003,#FFF6))--1 border-0-none--1 border-radius-0-50%--1 height-0-20px--1 width-0-20px--1 color-0-var(--base,light-dark(#FFF,#000))--1 cursor-0-pointer--1 display-0-flex--1 justify-content-0-center--1 padding-0-2px--1 position-0-absolute--1 right-0-12px--1 top-0-50%--1 transform-0-translateY(-50%)--1 "
+    type="button"
   >
     <svg
       fill="none"
