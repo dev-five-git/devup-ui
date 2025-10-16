@@ -50,6 +50,7 @@ export function Input({
   disabled,
   className,
   classNames,
+  readOnly,
   ref,
   onClear,
   ...props
@@ -63,12 +64,16 @@ export function Input({
 
   const handleClear = () => {
     setValue('')
+    onChangeProp?.({
+      target: { value: '' },
+    } as React.ChangeEvent<HTMLInputElement>)
     onClear?.()
   }
 
   const innerValue = valueProp ?? value
 
-  const clearButtonVisible = !!innerValue && !disabled && allowClear
+  const clearButtonVisible =
+    !!innerValue && !disabled && allowClear && !readOnly
 
   return (
     <Box
