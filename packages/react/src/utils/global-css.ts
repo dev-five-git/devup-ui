@@ -37,11 +37,12 @@ interface FontFaceProps {
   fontVariationSettings?: string
 }
 
+type Import = { url: string; query?: string } | string
 export function globalCss(
   strings?:
     | TemplateStringsArray
     | (Omit<GlobalCssProps, 'imports'> & {
-        imports?: string[]
+        imports?: Import[]
         fontFaces?: FontFaceProps[]
       }),
 ): void
@@ -53,7 +54,7 @@ export function globalCss(
   strings?:
     | TemplateStringsArray
     | (Omit<GlobalCssProps, 'imports'> & {
-        imports?: string[]
+        imports?: Import[]
       }),
 ): void {
   throw new Error('Cannot run on the runtime')

@@ -50,22 +50,43 @@ pub fn extract_global_style_from_expression<'a>(
                         if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in arr.elements.iter() {
-                                    if let Some(url) =
-                                        if let ArrayExpressionElement::StringLiteral(s) = p {
-                                            Some(s.value.trim().to_string())
-                                        } else if let ArrayExpressionElement::TemplateLiteral(t) = p
-                                        {
-                                            Some(
-                                                t.quasis
-                                                    .iter()
-                                                    .map(|q| q.value.raw.as_str())
-                                                    .collect::<String>()
-                                                    .trim()
-                                                    .to_string(),
-                                            )
-                                        } else {
-                                            None
+                                    if let Expression::ObjectExpression(obj) = p.to_expression() {
+                                        let mut url = None;
+                                        let mut query = None;
+                                        for p in obj.properties.iter() {
+                                            if let ObjectPropertyKind::ObjectProperty(o) = p
+                                            && let Some(ident) = o.key.as_expression()
+                                                && let Some(ident) = get_string_by_literal_expression(ident)
+                                            {
+                                                if ident == "url" {
+                                                    url = get_string_by_literal_expression(&o.value);
+                                                } else if ident == "query" {
+                                                    query = get_string_by_literal_expression(&o.value);
+                                                }
+                                            }
                                         }
+                                        if let Some(url) = url {
+                                            styles.push(ExtractStyleProp::Static(
+                                                ExtractStyleValue::Import(ExtractImport {
+                                                    url: format!(
+                                                        "\"{url}\"{}",
+                                                        if let Some(query) = query {
+                                                            format!(" {query}")
+                                                        } else {
+                                                            "".to_string()
+                                                        }
+                                                    ),
+                                                    file: file.to_string(),
+                                                }),
+                                            ));
+                                        }
+                                    } else 
+                                    
+                                     if
+                                     
+                                    !matches!(p.to_expression(), Expression::NumericLiteral(_))&& 
+                                      let Some(url) =
+                                        get_string_by_literal_expression(p.to_expression())
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {

@@ -75,6 +75,14 @@ describe('no-useless-responsive rule', () => {
         code: 'import { css } from "other-package";\ncss()',
         filename: 'src/app/page.tsx',
       },
+      {
+        code: 'import { globalCss } from "@devup-ui/react";\nglobalCss({ imports: ["@devup-ui/react/css/global.css"] })',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        code: 'import { globalCss } from "@devup-ui/react";\nglobalCss({ imports: [{"url": "@devup-ui/react/css/global.css"}] })',
+        filename: 'src/app/page.tsx',
+      },
     ],
     invalid: [
       {
