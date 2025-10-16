@@ -325,6 +325,178 @@ exports[`Button > should render icon when icon is provided 1`] = `
 </div>
 `;
 
+exports[`Button > should render loading spinner when icon is provided and loading is true 1`] = `
+<div>
+  <button
+    aria-label="button"
+    class=" outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-28px--1 padding-left-0-28px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+    type="button"
+  >
+    <div
+      class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+    >
+      <div
+        class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0 height-0-24px--255 width-0-24px--255 left-0-4px--255 position-0-absolute--255 color-0-inherit-9970740749223281870-255 top-0-50%--255 transform-0-translate(-100%,-50%)--255"
+        role="presentation"
+      >
+        <svg
+          aria-label="Whole loading spinner"
+          class="animation-duration-0-1s--255 animation-iteration-count-0-infinite--255 animation-name-0---255 animation-timing-function-0-linear--255"
+          fill="none"
+          height="20"
+          style="--animation-name-0-: k-420169018174230850;"
+          viewBox="0 0 20 20"
+          width="20"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <g
+            clip-path="url(#paint0_angular_1842_200_clip_path)"
+            data-figma-skip-parse="true"
+          >
+            <g
+              transform="matrix(0 0.007 -0.007 0 10 10)"
+            >
+              <foreignobject
+                height="2857.14"
+                width="2857.14"
+                x="-1428.57"
+                y="-1428.57"
+              >
+                <div
+                  style="height: 100%; width: 100%; opacity: 1;"
+                />
+              </foreignobject>
+            </g>
+          </g>
+          <path
+            d="M17 10H15.5C15.5 13.0376 13.0376 15.5 10 15.5V17V18.5C14.6944 18.5 18.5 14.6944 18.5 10H17ZM10 17V15.5C6.96243 15.5 4.5 13.0376 4.5 10H3H1.5C1.5 14.6944 5.30558 18.5 10 18.5V17ZM3 10H4.5C4.5 6.96243 6.96243 4.5 10 4.5V3V1.5C5.30558 1.5 1.5 5.30558 1.5 10H3ZM10 3V4.5C13.0376 4.5 15.5 6.96243 15.5 10H17H18.5C18.5 5.30558 14.6944 1.5 10 1.5V3Z"
+            data-figma-gradient-fill="{"type":"GRADIENT_ANGULAR","stops":[{"color":{"r":1.0,"g":1.0,"b":1.0,"a":1.0},"position":0.0},{"color":{"r":1.0,"g":1.0,"b":1.0,"a":0.0},"position":1.0}],"stopsVar":[{"color":{"r":1.0,"g":1.0,"b":1.0,"a":1.0},"position":0.0},{"color":{"r":1.0,"g":1.0,"b":1.0,"a":0.0},"position":1.0}],"transform":{"m00":8.5725282327939710e-16,"m01":-14.0,"m02":17.0,"m10":14.0,"m11":8.5725282327939710e-16,"m12":3.0},"opacity":1.0,"blendMode":"NORMAL","visible":true}"
+          />
+          <defs>
+            <clippath
+              id="paint0_angular_1842_200_clip_path"
+            >
+              <path
+                d="M17 10H15.5C15.5 13.0376 13.0376 15.5 10 15.5V17V18.5C14.6944 18.5 18.5 14.6944 18.5 10H17ZM10 17V15.5C6.96243 15.5 4.5 13.0376 4.5 10H3H1.5C1.5 14.6944 5.30558 18.5 10 18.5V17ZM3 10H4.5C4.5 6.96243 6.96243 4.5 10 4.5V3V1.5C5.30558 1.5 1.5 5.30558 1.5 10H3ZM10 3V4.5C13.0376 4.5 15.5 6.96243 15.5 10H17H18.5C18.5 5.30558 14.6944 1.5 10 1.5V3Z"
+              />
+            </clippath>
+          </defs>
+        </svg>
+      </div>
+      <div
+        class=" line-height-0-1.2--255 min-height-0-1.2em--255 transform-0-translateX(8px)--255"
+      />
+    </div>
+  </button>
+</div>
+`;
+
+exports[`Button > should render loading spinner when loading is true 1`] = `
+<div>
+  <button
+    aria-label="button"
+    class=" outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-28px--1 padding-left-0-28px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+    type="button"
+  >
+    <div
+      class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+    >
+      <div
+        class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0 height-0-24px--255 width-0-24px--255 left-0-4px--255 position-0-absolute--255 color-0-inherit-9970740749223281870-255 top-0-50%--255 transform-0-translate(-100%,-50%)--255"
+        role="presentation"
+      >
+        <svg
+          aria-label="Whole loading spinner"
+          class="animation-duration-0-1s--255 animation-iteration-count-0-infinite--255 animation-name-0---255 animation-timing-function-0-linear--255"
+          fill="none"
+          height="20"
+          style="--animation-name-0-: k-420169018174230850;"
+          viewBox="0 0 20 20"
+          width="20"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <g
+            clip-path="url(#paint0_angular_1842_200_clip_path)"
+            data-figma-skip-parse="true"
+          >
+            <g
+              transform="matrix(0 0.007 -0.007 0 10 10)"
+            >
+              <foreignobject
+                height="2857.14"
+                width="2857.14"
+                x="-1428.57"
+                y="-1428.57"
+              >
+                <div
+                  style="height: 100%; width: 100%; opacity: 1;"
+                />
+              </foreignobject>
+            </g>
+          </g>
+          <path
+            d="M17 10H15.5C15.5 13.0376 13.0376 15.5 10 15.5V17V18.5C14.6944 18.5 18.5 14.6944 18.5 10H17ZM10 17V15.5C6.96243 15.5 4.5 13.0376 4.5 10H3H1.5C1.5 14.6944 5.30558 18.5 10 18.5V17ZM3 10H4.5C4.5 6.96243 6.96243 4.5 10 4.5V3V1.5C5.30558 1.5 1.5 5.30558 1.5 10H3ZM10 3V4.5C13.0376 4.5 15.5 6.96243 15.5 10H17H18.5C18.5 5.30558 14.6944 1.5 10 1.5V3Z"
+            data-figma-gradient-fill="{"type":"GRADIENT_ANGULAR","stops":[{"color":{"r":1.0,"g":1.0,"b":1.0,"a":1.0},"position":0.0},{"color":{"r":1.0,"g":1.0,"b":1.0,"a":0.0},"position":1.0}],"stopsVar":[{"color":{"r":1.0,"g":1.0,"b":1.0,"a":1.0},"position":0.0},{"color":{"r":1.0,"g":1.0,"b":1.0,"a":0.0},"position":1.0}],"transform":{"m00":8.5725282327939710e-16,"m01":-14.0,"m02":17.0,"m10":14.0,"m11":8.5725282327939710e-16,"m12":3.0},"opacity":1.0,"blendMode":"NORMAL","visible":true}"
+          />
+          <defs>
+            <clippath
+              id="paint0_angular_1842_200_clip_path"
+            >
+              <path
+                d="M17 10H15.5C15.5 13.0376 13.0376 15.5 10 15.5V17V18.5C14.6944 18.5 18.5 14.6944 18.5 10H17ZM10 17V15.5C6.96243 15.5 4.5 13.0376 4.5 10H3H1.5C1.5 14.6944 5.30558 18.5 10 18.5V17ZM3 10H4.5C4.5 6.96243 6.96243 4.5 10 4.5V3V1.5C5.30558 1.5 1.5 5.30558 1.5 10H3ZM10 3V4.5C13.0376 4.5 15.5 6.96243 15.5 10H17H18.5C18.5 5.30558 14.6944 1.5 10 1.5V3Z"
+              />
+            </clippath>
+          </defs>
+        </svg>
+      </div>
+      <div
+        class=" line-height-0-1.2--255 min-height-0-1.2em--255 transform-0-translateX(8px)--255"
+      />
+    </div>
+  </button>
+</div>
+`;
+
+exports[`Button > should render loading spinner when loading is true and loadingSpinner is partial 1`] = `
+<div>
+  <button
+    aria-label="button"
+    class=" outline-0-2px solid-17005923944751620165-1 box-sizing-0-border-box--1 cursor-0-pointer--1 font-weight-0-700--1 outline-offset-0-2px--1 position-0-relative--1 transition-0-.25s--1 color-0-var(--text,#272727)-15425828959012638752-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 20%,#FFF 80%)-15425828959012638752-1 border-0-1px solid var(--primary,#8163E1)-15425828959012638752-1 color-0-#D6D7DE-14172363753176421546-1 background-color-0-#F0F0F3-14172363753176421546-1 cursor-0-not-allowed-14172363753176421546-1 border-color-0-var(--border,#E4E4E4)-14172363753176421546-1 outline-color-0-var(--primaryFocus,#9385D3)-17005923944751620165-1 border-color-0-var(--primary,#8163E1)-8380715471663921674-1 background-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1 color-0-var(--text,#F6F6F6)-2922352740838246662-1 background-0-var(--primary,#8163E1)-2922352740838246662-1 color-0-#373737-878116160589243838-1 background-color-0-#47474A-878116160589243838-1 border-color-0-transparent-878116160589243838-1 border-color-0-var(--primary,#8163E1)-6232724021015440856-1 background-0-color-mix(in srgb,var(--primary,#674DC7) 10%,var(--inputBackground,#2E2E2E) 90%)-6232724021015440856-1 outline-color-0-var(--primaryFocus,#927CE4)-13318702800233181468-1 background-0-var(--inputBackground,#2E2E2E)-6667598448774358329-1 background-0-var(--inputBackground,#FFF)--1 border-0-1px solid var(--border,#E4E4E4)--1 border-radius-0-10px--1 color-0-var(--text,#272727)--1 font-size-0-14px--1 font-size-4-15px--1 letter-spacing-0--.02em--1 letter-spacing-4--.03em--1 padding-right-0-28px--1 padding-left-0-28px--1 padding-bottom-0-10px--1 padding-top-0-10px--1 "
+    type="button"
+  >
+    <div
+      class="max-width-0-100%--255 margin-right-0-auto--255 margin-left-0-auto--255 position-0-relative--255 width-0-fit-content--255"
+    >
+      <div
+        class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0 height-0-24px--255 width-0-24px--255 left-0-4px--255 position-0-absolute--255 color-0-inherit-9970740749223281870-255 top-0-50%--255 transform-0-translate(-100%,-50%)--255"
+        role="presentation"
+      >
+        <svg
+          aria-label="Partial loading spinner"
+          class="animation-duration-0-1s--255 animation-iteration-count-0-infinite--255 animation-name-0---255 animation-timing-function-0-linear--255"
+          fill="none"
+          height="20"
+          style="--animation-name-0-: k-420169018174230850;"
+          viewBox="0 0 20 20"
+          width="20"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M17 10C17 11.291 16.643 12.5568 15.9685 13.6575C15.294 14.7582 14.3282 15.651 13.1779 16.237C12.0277 16.8231 10.7378 17.0797 9.45078 16.9784C8.1638 16.8771 6.9299 16.4219 5.8855 15.6631"
+            stroke="white"
+            stroke-linecap="round"
+            stroke-width="3"
+          />
+        </svg>
+      </div>
+      <div
+        class=" line-height-0-1.2--255 min-height-0-1.2em--255 transform-0-translateX(8px)--255"
+      />
+    </div>
+  </button>
+</div>
+`;
+
 exports[`Button > should render primary background color when danger is true and variant is primary 1`] = `
 <div>
   <button

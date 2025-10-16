@@ -108,4 +108,11 @@ export const WithForm: Story = {
   ],
 }
 
+export const WithLoading: Story = {
+  args: {
+    children: 'Submit',
+    loading: true,
+  },
+}
+
 export default meta
