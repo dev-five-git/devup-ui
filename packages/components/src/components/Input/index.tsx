@@ -51,7 +51,6 @@ export function Input({
   className,
   classNames,
   readOnly,
-  ref,
   onClear,
   ...props
 }: InputProps) {
@@ -102,7 +101,6 @@ export function Input({
         </Center>
       )}
       <DevupInput
-        ref={ref}
         _disabled={{
           _placeholder: {
             color: 'var(--inputDisabledText, light-dark(#D6D7DE, #373737))',
