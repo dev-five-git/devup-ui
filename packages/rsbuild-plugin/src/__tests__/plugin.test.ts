@@ -221,6 +221,7 @@ const App = () => <Box></Box>`,
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
       free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
     })
     const ret = await transform.mock.calls[1][1]({
       code: `import { Box } from '@devup-ui/react'

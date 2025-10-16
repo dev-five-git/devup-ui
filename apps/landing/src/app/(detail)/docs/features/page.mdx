@@ -16,11 +16,10 @@ Devup UI eliminates the performance degradation of the browser through the CSS i
 
 We develop a preprocessor that considers all grammatical cases.
 
-
 ## How it works
 
-```typescript
-const before = <Box bg={"red"} />
+```tsx
+const before = <Box bg="red" />
 
 const after = <div className="d0" />
 ```
@@ -29,8 +28,8 @@ const after = <div className="d0" />
 
 Devup UI supports responsive design.
 
-```typescript
-const before = <Box bg={["red", "blue"]} />
+```tsx
+const before = <Box bg={['red', 'blue']} />
 
 const after = <div className="d0 d1" />
 ```
@@ -39,12 +38,17 @@ const after = <div className="d0 d1" />
 
 Devup UI supports variables.
 
-```typescript
+```tsx
 const before = <Box bg={colorVariable} />
 
-const after = <div className="d0" style={{
-    "--d0": colorVariable
-}}/>
+const after = (
+  <div
+    className="d0"
+    style={{
+      '--d0': colorVariable,
+    }}
+  />
+)
 ```
 
 ## Theme
@@ -66,29 +70,33 @@ Devup UI supports theme.
 }
 ```
 
-```typescript
-<Text color="$text"/>
+```tsx
+<Text color="$text" />
 ```
 
 ## Expressions
 
 Devup UI supports expressions.
 
-```typescript
-const before = <Box bg={a > b ? "yellow" : variable}/>
+```tsx
+const before = <Box bg={a > b ? 'yellow' : variable} />
 
-const after = <Box className={`d0 d1 ${a > b ? "d2" : "d3"}`} style={{
-    "--d2": variable
-}}/>
+const after = (
+  <Box
+    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
+    style={{
+      '--d2': variable,
+    }}
+  />
+)
 ```
 
 ## Pseudo Selector
 
 Devup UI supports pseudo selector.
 
-```typescript
-const before = <Box _hover={{ bg: "red" }}/>
+```tsx
+const before = <Box _hover={{ bg: 'red' }} />
 
-const after = <Box className={"d0"}/>
+const after = <Box className="d0" />
 ```
-

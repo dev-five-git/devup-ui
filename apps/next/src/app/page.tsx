@@ -43,7 +43,7 @@ export default function HomePage() {
         text typo
       </Text>
       <Text color="$text">text</Text>
-      <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
+      <Box color={enabled ? 'green' : 'blue'} fontSize={32} pr="20px">
         hello
       </Box>
       <Box fontSize={[12, 32]}>hello</Box>

@@ -1,0 +1,46 @@
+export const metadata = {
+    title: "Core-Concepts",
+    alternates: {
+        canonical: '/docs/core-concepts/style-storage',
+    }
+
+}
+
+# Style Storage
+
+Devup UI removes duplication by storing and looking up styles in a single storage, reusing the same atomic class for identical style declarations.
+
+This document explains the de-duplication principle, the requirement for a single storage, its relationship with build order, the single CSS output option, per-page CSS splitting, and the key–value style storage with deterministic ordering.
+
+### How it works
+
+- Even if the same style appears in multiple places, it is generated as exactly one atomic class (no duplicates).
+- If a style already exists in storage, the existing class is reused. Otherwise, a new class is generated and registered.
+
+### Why a single storage is required
+
+- To guarantee deduplication and reuse, there must be exactly one style storage in the build pipeline.
+- Multiple storages fragment duplicate detection and may cause the same style to be generated with different class names.
+
+## Single CSS option
+
+- `single css`: emit all generated styles as a single CSS output file.
+- Default is `false`.
+- Pros: simplifies loading paths; maximizes browser caching benefits.
+- Cons: for very large apps or when styles vary significantly per page, it can increase initial load.
+
+### Style ordering and key–value storage
+
+- The storage uses a key–value model: the style signature as the key, and the generated class name and rule as the value.
+- Rule order follows the discovery order during the build. Rules with equal priority are merged deterministically to keep the output predictable.
+
+### Per‑page CSS splitting (optional)
+
+- You can split CSS per page so that only the rules needed for that page are loaded.
+- This can improve initial load time in large applications. A reasonable caution is that using only a single global CSS might constrain initial load for some pages.
+- Excessive splitting can increase network requests and fragment caching. Balance it according to your app size and navigation patterns.
+
+### Relation to Zero Runtime
+
+- Style Storage is resolved at compile time; no client‑side style engine or extra runtime computation is required.
+- For background and rationale, see the Zero Runtime guide: [Zero Runtime](/docs/core-concepts/zero-runtime)

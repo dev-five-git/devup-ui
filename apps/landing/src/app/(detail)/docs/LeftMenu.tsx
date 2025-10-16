@@ -7,6 +7,21 @@ export function LeftMenu() {
     <VStack gap="6px">
       <MenuItem to="/docs/overview">Overview</MenuItem>
       <MenuItem to="/docs/installation">Installation</MenuItem>
+      <MenuItem
+        subMenu={[
+          { to: '/docs/core-concepts/zero-runtime', children: 'Zero Runtime' },
+          {
+            to: '/docs/core-concepts/no-dependencies',
+            children: 'No Dependencies',
+          },
+          {
+            to: '/docs/core-concepts/style-storage',
+            children: 'Style Storage',
+          },
+        ]}
+      >
+        Core Concepts
+      </MenuItem>
       <MenuItem to="/docs/features">Features</MenuItem>
       <MenuItem
         subMenu={[

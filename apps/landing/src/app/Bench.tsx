@@ -1,5 +1,6 @@
-import { Box, Flex, Text, VStack } from '@devup-ui/react'
+import { Flex, Text, VStack } from '@devup-ui/react'
 
+import { BenchBox } from './BenchBox'
 import { DevupUICard } from './DevupUICard'
 import { OtherCard } from './OtherCard'
 
@@ -8,49 +9,49 @@ const OTHER_CARDS = [
     title: 'Chakra UI',
     version: '3.27.0',
     buildTime: '29.99s',
-    buildSize: '200.4MB',
+    buildSize: '200.39MB',
     url: 'https://chakra-ui.com',
   },
   {
     title: 'Mui',
     version: '7.3.2',
     buildTime: '22.21s',
-    buildSize: '89.9MB',
+    buildSize: '89.87MB',
     url: 'https://mui.com',
   },
   {
     title: 'Kuma UI',
     version: '1.5.9',
     buildTime: '21.61s',
-    buildSize: '64.3MB',
+    buildSize: '64.30MB',
     url: 'https://kuma-ui.com',
   },
   {
     title: 'Tailwindcss',
     version: '4.1.13',
     buildTime: '20.22s',
-    buildSize: '54.8MB',
+    buildSize: '54.76MB',
     url: 'https://tailwindcss.com',
   },
   {
     title: 'panda CSS',
     version: '1.3.1',
     buildTime: '22.01s',
-    buildSize: '59.5MB',
+    buildSize: '59.53MB',
     url: 'https://panda-css.com',
   },
   {
     title: 'styleX',
     version: '0.15.4',
     buildTime: '38.97s',
-    buildSize: '54.7MB',
+    buildSize: '72.72MB',
     url: 'https://stylexjs.com',
   },
   {
     title: 'vanilla extract',
     version: '1.17.4',
     buildTime: '20.09s',
-    buildSize: '56.6MB',
+    buildSize: '56.61MB',
     url: 'https://vanilla-extract.style',
   },
 ]
@@ -86,10 +87,7 @@ export function Bench() {
         <Flex display={[null, null, null, null, 'none']}>
           <DevupUICard />
         </Flex>
-        <Box
-          overflow={['auto', null, null, null, 'visible']}
-          scrollbarWidth="none"
-        >
+        <BenchBox>
           <Flex
             alignItems="flex-end"
             flexWrap={[null, null, null, null, 'wrap']}
@@ -105,7 +103,7 @@ export function Bench() {
               <OtherCard key={item.title} {...item} />
             ))}
           </Flex>
-        </Box>
+        </BenchBox>
       </VStack>
     </VStack>
   )

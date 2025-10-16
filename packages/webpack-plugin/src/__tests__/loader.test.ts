@@ -55,6 +55,7 @@ describe('devupUILoader', () => {
       map: '{}',
       cssFile: 'cssFile',
       updatedBaseStyle: options.updatedBaseStyle,
+      [Symbol.dispose]: vi.fn(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -114,6 +115,7 @@ describe('devupUILoader', () => {
       map: undefined,
       cssFile: undefined,
       updatedBaseStyle: false,
+      [Symbol.dispose]: vi.fn(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -173,6 +175,7 @@ describe('devupUILoader', () => {
       map: undefined,
       cssFile: 'cssFile',
       updatedBaseStyle: false,
+      [Symbol.dispose]: vi.fn(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
@@ -207,6 +210,7 @@ describe('devupUILoader', () => {
       map: undefined,
       cssFile: 'cssFile',
       updatedBaseStyle: false,
+      [Symbol.dispose]: vi.fn(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
   })

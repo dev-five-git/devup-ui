@@ -14,8 +14,24 @@ It is just a `input` with some styles.
 
 ## How to use
 
-```typescript
-const before = <Input border={"3px solid black"} />
+```tsx
+import { Input } from '@devup-ui/react'
 
-const after = <input className="d0" />
+function App() {
+  return <Input border="3px solid black" />
+}
+```
+
+The Input component defined above will render like this:
+
+```tsx
+function App() {
+  return <input className="a" />
+}
+```
+
+```css
+.a {
+  border: 3px solid black;
+}
 ```

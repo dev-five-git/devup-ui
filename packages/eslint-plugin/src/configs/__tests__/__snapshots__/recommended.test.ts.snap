@@ -1,0 +1,104 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`recommended > export recommended config 1`] = `
+[
+  {
+    "plugins": {
+      "@devup-ui": {
+        "rules": {
+          "css-utils-literal-only": {
+            "create": [Function],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "CSS utils should only be used with literal values.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/css-utils-literal-only",
+              },
+              "messages": {
+                "cssUtilsLiteralOnly": "CSS utils should only be used with literal values.",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "css-utils-literal-only",
+          },
+          "no-duplicate-value": {
+            "create": [Function],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "No duplicate value.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/no-duplicate-value",
+              },
+              "fixable": "code",
+              "messages": {
+                "duplicateValue": "Duplicate value found: {{value}}.",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "no-duplicate-value",
+          },
+          "no-useless-responsive": {
+            "create": [Function],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "No useless responsive.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/no-useless-responsive",
+              },
+              "fixable": "code",
+              "messages": {
+                "uselessResponsive": "Responsive are useless. Remove them.",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "no-useless-responsive",
+          },
+          "no-useless-tailing-nulls": {
+            "create": [Function],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "No useless tailing nulls.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/no-useless-tailing-nulls",
+              },
+              "fixable": "code",
+              "messages": {
+                "uselessTailingNulls": "Trailing nulls are useless. Remove them.",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "no-useless-tailing-nulls",
+          },
+          "style-order-range": {
+            "create": [Function],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "Ensures styleOrder prop is within valid range (0 < value < 255).",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/style-order-range",
+              },
+              "messages": {
+                "styleOrderRange": "styleOrder prop must be a number greater than 0 and less than 255.",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "style-order-range",
+          },
+        },
+      },
+    },
+    "rules": {
+      "@devup-ui/css-utils-literal-only": "error",
+      "@devup-ui/no-duplicate-value": "error",
+      "@devup-ui/no-useless-responsive": "error",
+      "@devup-ui/no-useless-tailing-nulls": "error",
+      "@devup-ui/style-order-range": "error",
+    },
+  },
+]
+`;
