@@ -1,5 +1,12 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.43
+
+### Patch Changes
+
+- Updated dependencies [[`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2)]:
+  - @devup-ui/wasm@1.0.42
+
 ## 1.0.42
 
 ### Patch Changes

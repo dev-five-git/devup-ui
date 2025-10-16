@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.42
+
+### Patch Changes
+
+- [#426](https://github.com/dev-five-git/devup-ui/pull/426) [`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2) Thanks [@owjs3901](https://github.com/owjs3901)! - Support layer on imports of globalCss
+
 ## 1.0.41
 
 ### Patch Changes
