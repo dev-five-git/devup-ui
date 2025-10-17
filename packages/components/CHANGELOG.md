@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.27
+
+### Patch Changes
+
+- [#421](https://github.com/dev-five-git/devup-ui/pull/421) [`ce99c1d`](https://github.com/dev-five-git/devup-ui/commit/ce99c1d7ebb6fd48cc4453712c7604f79b7739f9) Thanks [@forestream](https://github.com/forestream)! - add loading prop in Button in @devup-ui/components
+
 ## 0.1.26
 
 ### Patch Changes
