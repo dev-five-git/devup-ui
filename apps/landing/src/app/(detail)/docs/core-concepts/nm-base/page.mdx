@@ -1,0 +1,184 @@
+export const metadata = {
+  title: 'N/M Base',
+  alternates: {
+    canonical: '/docs/core-concepts/nm-base',
+  },
+}
+
+# N/M Base
+
+Devup UI uses a custom N/M base numbering system to generate compact, collision-free class names that are optimized for CSS constraints and ad-blocker compatibility.
+
+- **Generates compact class names**: Short, efficient class names like `a`, `b`, `c`
+- **Avoids CSS constraints**: Class names never start with digits
+- **Prevents ad-blocker conflicts**: Avoids patterns that trigger content blockers
+- **Ensures uniqueness**: Each style gets a unique, deterministic class name
+- **Optimizes for size**: Minimal class name length for maximum efficiency
+
+## How It Works
+
+### **Base System**
+
+The N/M base system uses two character sets:
+
+- **N Base**: `a-z` (26 characters)
+- **M Base**: `a-z` (26 characters)
+
+This creates a base-26 system that can represent any number using only lowercase letters.
+
+### **Number Conversion**
+
+Numbers are converted to N/M base using a two-phase approach:
+
+1. **Zero handling**: Returns 'a' when the number is 0
+2. **Base conversion**: Uses base-26 to convert numbers to alphabetic characters
+   - First digit: Uses N base array (a-z)
+   - Remaining digits: Uses M base array (a-z)
+3. **Ad-blocker conflict prevention**: Changes result to "a-d" if it ends with "ad"
+
+### **Class Name Generation**
+
+Class name generation follows these steps:
+
+1. **Style signature creation**: Combines property, level, value, selector, and style order to create a unique key
+2. **File identifier addition**: Converts filename to number for per-file CSS splitting
+3. **Hash conversion**: Converts the generated key to a number using a hash function
+4. **N/M base conversion**: Converts the hashed number to an alphabetic class name using the N/M base system
+5. **Final combination**: Combines file identifier and class number to create the final class name when file identifier exists
+
+## Examples
+
+### **Basic Class Names**
+
+<div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '2rem',
+    marginBottom: '2rem',
+    alignItems: 'start',
+  }}
+>
+  <div>
+    ```tsx // Input
+    <div>
+      <Box bg="red" />
+      <Box bg="blue" />
+      <Box color="white" />
+    </div>
+    ```
+  </div>
+  <div>
+    ```tsx // Output (N/M base class names)
+    <div>
+      <Box className="a" /> {/* bg: red */}
+      <Box className="b" /> {/* bg: blue */}
+      <Box className="c" /> {/* color: white */}
+    </div>
+    ```
+  </div>
+</div>
+
+### **Responsive Class Names**
+
+<div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '2rem',
+    marginBottom: '2rem',
+    alignItems: 'start',
+  }}
+>
+  <div>
+    ```tsx // Input
+    <Box w={[100, 200, 300]} />
+    ```
+  </div>
+  <div>
+    ```tsx // Output
+    <Box className="d e f" />
+    {/* w: 100px, w: 200px, w: 300px */}
+    ```
+  </div>
+</div>
+
+### **Pseudo-selector Class Names**
+
+<div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '2rem',
+    marginBottom: '2rem',
+    alignItems: 'start',
+  }}
+>
+  <div>
+    ```tsx
+    <Box _hover={{ bg: 'red' }} />
+    ```
+  </div>
+  <div>
+    ```tsx
+    <Box className="g" />
+    {/* .g:hover { background: red; } */}
+    ```
+  </div>
+</div>
+
+### **File-specific Class Names**
+
+<div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '2rem',
+    marginBottom: '2rem',
+    alignItems: 'start',
+  }}
+>
+  <div>
+    ```tsx
+    <div>
+      <Box bg="red" />
+      <Box bg="red" />
+    </div>
+    ```
+  </div>
+  <div>
+    ```tsx
+    <div>
+      <Box className="a" /> {/* file1.tsx */}
+      <Box className="a-a" /> {/* file2.tsx */}
+    </div>
+    ```
+  </div>
+</div>
+
+## Ad-blocker Compatibility
+
+### **Why "ad" is Problematic**
+
+Ad-blockers recognize and block class names containing "ad" patterns as advertisements:
+
+- **Ad-blocker filters**: Classify elements containing "ad" strings as advertisements
+- **CSS blocking**: Styles are not applied, causing UI to break
+- **Poor user experience**: Unintended style blocking causes layout issues
+
+### **Our Solution**
+
+Devup UI prevents ad-blocker conflicts through the following methods:
+
+- **Pattern avoidance**: Automatically converts class names ending with "ad" to "a-d"
+- **Safe character usage**: Uses only `a-z`, `-`, `_` to avoid blocking patterns
+- **No numbers**: Ensures class names don't start with digits to comply with CSS constraints
+
+## Advantages
+
+- **Compact class names**: First 26 styles generate single characters like `a`, `b`, `c`
+- **Build consistency**: Always generates the same class name for identical input
+- **Cache optimization**: Consistent class names improve browser cache efficiency
+- **Collision prevention**: Each style has a unique signature to prevent class name collisions
+- **Ad-blocker compatibility**: Automatically converts "ad" patterns to "a-d" to prevent blocking
+- **CSS constraint compliance**: Class names don't start with digits to comply with CSS rules
