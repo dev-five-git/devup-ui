@@ -325,7 +325,7 @@ describe('Checkbox', () => {
       <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
     )
 
-    const input = container.querySelector('input')
+    const input = container.querySelector('span')
     expect(input).toHaveStyle({
       '--text': '#text-custom',
     })
@@ -352,10 +352,12 @@ describe('Checkbox', () => {
     }
 
     const { container } = render(
-      <Checkbox colors={customColors}>Test Checkbox</Checkbox>,
+      <Checkbox checked colors={customColors}>
+        Test Checkbox
+      </Checkbox>,
     )
 
-    const input = container.querySelector('input')
+    const input = container.querySelector('label svg')
     expect(input).toHaveStyle({
       '--checkIcon': '#checkIcon-custom',
     })
@@ -378,9 +380,7 @@ describe('Checkbox', () => {
     expect(input).toHaveStyle({
       '--primary': '#primary-custom',
       '--border': '#border-custom',
-      '--text': '#text-custom',
       '--inputBg': '#inputBg-custom',
-      '--checkIcon': '#checkIcon-custom',
     })
   })
 
