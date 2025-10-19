@@ -108,9 +108,7 @@ export function Checkbox({
           styleVars={{
             primary: colors?.primary,
             border: colors?.border,
-            text: colors?.text,
             inputBg: colors?.inputBg,
-            checkIcon: colors?.checkIcon,
           }}
           type="checkbox"
           {...props}
@@ -120,7 +118,7 @@ export function Checkbox({
             as={CheckIcon}
             props={{
               color: disabled
-                ? 'light-dark(#D6D7DE, #373737)'
+                ? 'light-dark(#D6D7DE, #47474A)'
                 : 'var(--checkIcon, #FFF)',
               className: css({
                 pointerEvents: 'none',
@@ -145,10 +143,13 @@ export function Checkbox({
           <Text
             color={
               disabled
-                ? 'light-dark(#D6D7DE, #373737)'
+                ? 'light-dark(#D6D7DE, #6F6E6E)'
                 : 'var(--text, light-dark(#2F2F2F, #EDEDED))'
             }
             fontSize="14px"
+            styleVars={{
+              text: colors?.text,
+            }}
             userSelect="none"
           >
             {children}
