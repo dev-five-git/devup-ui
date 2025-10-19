@@ -29,7 +29,7 @@ export function Checkbox({
 }: CheckboxProps) {
   const generateId = useId()
   const [innerChecked, setInnerChecked] = useState(defaultChecked)
-  const isChecked = checked ?? innerChecked
+  const finalChecked = checked ?? innerChecked
 
   const handleChange = (value: boolean) => {
     setInnerChecked(value)
@@ -80,7 +80,7 @@ export function Checkbox({
           bg="var(--inputBg, light-dark(#FFF, #2E2E2E))"
           border="1px solid var(--border, light-dark(#E0E0E0, #333333))"
           borderRadius="2px"
-          checked={isChecked}
+          checked={finalChecked}
           cursor={disabled ? 'not-allowed' : 'pointer'}
           disabled={disabled}
           display="block"
@@ -106,7 +106,7 @@ export function Checkbox({
           zIndex={0}
           {...props}
         />
-        {isChecked && (
+        {finalChecked && (
           <Box
             as={CheckIcon}
             opacity="1"
