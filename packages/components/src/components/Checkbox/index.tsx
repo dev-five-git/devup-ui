@@ -37,12 +37,7 @@ export function Checkbox({
   }
 
   return (
-    <Flex
-      className={css({
-        alignItems: 'center',
-        gap: '8px',
-      })}
-    >
+    <Flex alignItems="center" gap="8px">
       <label
         className={css({
           position: 'relative',
@@ -85,50 +80,46 @@ export function Checkbox({
           bg="var(--inputBg, light-dark(#FFF, #2E2E2E))"
           border="1px solid var(--border, light-dark(#E0E0E0, #333333))"
           borderRadius="2px"
-          checked={checked}
-          className={css({
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            opacity: 1,
-            zIndex: 0,
-            pointerEvents: 'none',
-          })}
+          checked={isChecked}
           cursor={disabled ? 'not-allowed' : 'pointer'}
           disabled={disabled}
           display="block"
+          height="100%"
           id={generateId}
+          left={0}
           m="0"
           onChange={
             disabled ? undefined : (e) => handleChange(e.target.checked)
           }
+          opacity={1}
+          pointerEvents="none"
+          pos="absolute"
           styleOrder={1}
           styleVars={{
             primary: colors?.primary,
             border: colors?.border,
             inputBg: colors?.inputBg,
           }}
+          top={0}
           type="checkbox"
+          width="100%"
+          zIndex={0}
           {...props}
         />
         {isChecked && (
           <Box
             as={CheckIcon}
+            opacity="1"
+            pointerEvents="none"
             props={{
               color: disabled
                 ? 'light-dark(#D6D7DE, #47474A)'
                 : 'var(--checkIcon, #FFF)',
-              className: css({
-                pointerEvents: 'none',
-                opacity: 1,
-                zIndex: 1,
-              }),
             }}
             styleVars={{
               checkIcon: colors?.checkIcon,
             }}
+            zIndex="1"
           />
         )}
       </label>
