@@ -1,0 +1,69 @@
+export const metadata = {
+  title: 'Type Inference System',
+  alternates: {
+    canonical: '/docs/core-concepts/type-inference-system',
+  },
+}
+
+# Type Inference System
+
+Devup UI automatically infers TypeScript types for CSS properties, ensuring type safety and a smooth developer experience — no manual definitions required.
+Unlike traditional CSS-in-JS libraries, Devup UI **derives types directly from CSS standards**.
+
+## How It Works
+
+The type inference process consists of four main steps:
+
+1. **Parsing** – analyzes JSX/TSX code
+2. **Property Lookup** – checks against the CSS property map
+3. **Type Generation** – produces corresponding TypeScript types
+4. **Validation** – enforces compile-time correctness
+
+### 1. CSS Property Mapping
+
+All CSS properties are defined in a Rust-based mapping table.
+
+```rust
+pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
+    "bg" => &["background"],
+    "bgColor" => &["background-color"],
+    "m" => &["margin"],
+    "w" => &["width"],
+    "h" => &["height"],
+    // ...
+};
+
+```
+
+### 2. Type Generation
+
+TypeScript types are automatically derived from CSS property names and value patterns.
+
+It supports various value types — such as lengths, colors, and percentages — and
+
+ensures **type-safe responsive arrays** for breakpoint-based styles.
+
+```tsx
+<Box w={[100, 200, 300]} />
+```
+
+### 3. Special Property Handling
+
+Certain properties are excluded from inference, such as React-specific or HTML attributes.
+
+```rust
+static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
+    "children", "ref", "key", "className", "id", "style",
+};
+
+```
+
+## Advantages
+
+Devup UI’s type inference system provides several key benefits:
+
+- **Automatic updates** – New CSS properties are supported immediately when standards evolve, without requiring library updates.
+- **Type safety** – All properties and values are strictly typed, preventing invalid or misspelled declarations at compile time.
+- **Extensibility** – Experimental or custom CSS features can be easily extended within the system.
+
+This type inference system is automatic, reliable, and future-ready, allowing developers to focus on design and logic rather than manual type management.
