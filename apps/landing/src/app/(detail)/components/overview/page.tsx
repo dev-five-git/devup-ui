@@ -1,27 +1,29 @@
-import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
-import Link from 'next/link'
+import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react';
+import Link from 'next/link';
+import Description from './Description.mdx';
 
-import { Icons } from '@/components/icons/components'
-import { COMPONENT_GROUPS } from '@/constants'
+import { Icons } from '@/components/icons/components';
+import { COMPONENT_GROUPS } from '@/constants';
 
-import Card from '../Card'
+import Card from '../Card';
 
 export default function Page() {
   return (
-    <VStack gap="16px">
-      <Text color="$primary" typography="captionBold">
+    <VStack gap='16px'>
+      <Text color='$primary' typography='captionBold'>
         Overview
       </Text>
-      <Text color="$title" typography="h4">
+      <Text color='$title' typography='h4'>
         Devup UI Components
       </Text>
-      <Text color="$text" typography="bodyReg">
-        Devup UI is a library of components that can be used to build web
-        applications. It is built with React and TypeScript and is designed to
-        be used with the Devup framework.
+      <Text color='$text' typography='bodyReg'>
+        <Description />
       </Text>
-      <VStack gap="16px" overflow="visible" py="30px">
-        <Text color="$title" typography="h6">
+      <Text color='$title' typography='h4' pt='30px'>
+        Examples
+      </Text>
+      <VStack gap='16px' overflow='visible' pb='30px'>
+        <Text color='$title' typography='h6'>
           Form
         </Text>
         <Grid
@@ -41,7 +43,7 @@ export default function Page() {
                   .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
                   .join('')}Comp`
-              ]
+              ];
             return (
               <Link
                 key={component}
@@ -49,38 +51,37 @@ export default function Page() {
                 href={`/components/${component}`}
               >
                 <Card>
-                  <Center h="140px">
+                  <Center h='140px'>
                     <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
-                    alignItems="center"
-                    borderTop="1px solid $border"
-                    gap="10px"
-                    px="16px"
-                    py="12px"
+                    alignItems='center'
+                    borderTop='1px solid $border'
+                    gap='10px'
+                    px='16px'
+                    py='12px'
                   >
                     <Text
-                      color="$text"
-                      textAlign="right"
-                      typography="buttonSmid"
+                      color='$text'
+                      textAlign='right'
+                      typography='buttonSmid'
                     >
                       {component
                         .split('-')
                         .map(
-                          (item) =>
-                            item.charAt(0).toUpperCase() + item.slice(1),
+                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
                         )
                         .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            )
+            );
           })}
         </Grid>
       </VStack>
-      <VStack gap="16px" overflow="visible" py="30px">
-        <Text color="$title" typography="h6">
+      <VStack gap='16px' overflow='visible' py='30px'>
+        <Text color='$title' typography='h6'>
           Layout
         </Text>
         <Grid
@@ -92,7 +93,7 @@ export default function Page() {
             'repeat(4, 1fr)',
             'repeat(5, 1fr)',
           ]}
-          overflow="visible"
+          overflow='visible'
         >
           {COMPONENT_GROUPS.Layout.map((component) => {
             const Icon =
@@ -101,7 +102,7 @@ export default function Page() {
                   .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
                   .join('')}Comp`
-              ]
+              ];
             return (
               <Link
                 key={component}
@@ -109,38 +110,37 @@ export default function Page() {
                 href={`/components/${component}`}
               >
                 <Card>
-                  <Center h="140px">
+                  <Center h='140px'>
                     <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
-                    alignItems="center"
-                    borderTop="1px solid $border"
-                    gap="10px"
-                    px="16px"
-                    py="12px"
+                    alignItems='center'
+                    borderTop='1px solid $border'
+                    gap='10px'
+                    px='16px'
+                    py='12px'
                   >
                     <Text
-                      color="$text"
-                      textAlign="right"
-                      typography="buttonSmid"
+                      color='$text'
+                      textAlign='right'
+                      typography='buttonSmid'
                     >
                       {component
                         .split('-')
                         .map(
-                          (item) =>
-                            item.charAt(0).toUpperCase() + item.slice(1),
+                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
                         )
                         .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            )
+            );
           })}
         </Grid>
       </VStack>
-      <VStack gap="16px" overflow="visible" py="30px">
-        <Text color="$title" typography="h6">
+      <VStack gap='16px' overflow='visible' py='30px'>
+        <Text color='$title' typography='h6'>
           Theme
         </Text>
         <Grid
@@ -152,7 +152,7 @@ export default function Page() {
             'repeat(4, 1fr)',
             'repeat(5, 1fr)',
           ]}
-          overflow="visible"
+          overflow='visible'
         >
           {COMPONENT_GROUPS.Theme.map((component) => {
             const Icon =
@@ -161,7 +161,7 @@ export default function Page() {
                   .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
                   .join('')}Comp`
-              ]
+              ];
             return (
               <Link
                 key={component}
@@ -169,36 +169,35 @@ export default function Page() {
                 href={`/components/${component}`}
               >
                 <Card>
-                  <Center h="140px">
+                  <Center h='140px'>
                     <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
-                    alignItems="center"
-                    borderTop="1px solid $border"
-                    gap="10px"
-                    px="16px"
-                    py="12px"
+                    alignItems='center'
+                    borderTop='1px solid $border'
+                    gap='10px'
+                    px='16px'
+                    py='12px'
                   >
                     <Text
-                      color="$text"
-                      textAlign="right"
-                      typography="buttonSmid"
+                      color='$text'
+                      textAlign='right'
+                      typography='buttonSmid'
                     >
                       {component
                         .split('-')
                         .map(
-                          (item) =>
-                            item.charAt(0).toUpperCase() + item.slice(1),
+                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
                         )
                         .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            )
+            );
           })}
         </Grid>
       </VStack>
     </VStack>
-  )
+  );
 }
