@@ -18,7 +18,7 @@ Devup UI optimizes CSS values by:
 - **Removing unnecessary zeros**: `0px` becomes `0`
 - **Shortening decimals**: `0.5000` becomes `0.5`
 - **Optimizing units**: `0px` becomes `0` when appropriate
-- **Converting to smallest units**: `px` values are converted to `%` when more appropriate
+- **Converting to alternative units**: `0px` is converted to `0%` in CSS functions where unit-less zero is not allowed
 - **Removing redundant spaces**: `margin: 0 0 0 0` becomes `margin:0`
 
 ```
@@ -104,7 +104,6 @@ Global CSS blocks are optimized by:
 - **Removing comments**: `/* comment */` is stripped
 - **Minifying whitespace**: Multiple spaces become single spaces
 - **Removing semicolons**: Last property in a block doesn't need semicolon
-- **Optimizing selectors**: Redundant selectors are merged
 
 ```css
 /* Before optimization */
@@ -155,26 +154,12 @@ Values are converted to their most appropriate units:
 Numeric values are automatically interpreted as pixel units, while string-based values with explicit units (e.g., rem, %) are preserved for accurate rendering.
 
 ```
-// Numbers without units are treated as pixels
-<Box w={16} /> // width: 16px
+// Numbers without units are treated as pixels (multiplied by 4)
+<Box w={16} /> // width: 64px
 
 // Strings with units are preserved
 <Box w="16rem" /> // width: 16rem
 <Box w="100%" /> // width: 100%
-```
-
-### **Mathematical Optimization**
-
-Mathematical expressions are optimized to their most efficient form:
-
-```
-// Before
-<Box w="calc(100% - 32px)" />
-<Box w="calc(50% + 16px)" />
-
-// After (optimized)
-<Box w="calc(100% - 2rem)" /> // px converted to rem for better scalability
-<Box w="calc(50% + 1rem)" /> // px converted to rem for better scalability
 ```
 
 ### **Zero Value Optimization**
@@ -205,24 +190,6 @@ Identical style rules across multiple components are automatically merged into a
 
 // Output: Only one CSS rule generated
 // .red-white{background:red;color:white}
-```
-
-### **Property Deduplication**
-
-Duplicate CSS properties within the same rule are automatically removed, keeping only the last valid declaration for consistency and cleaner output.
-
-```
-// Input
-<Box
-  style={{
-    margin: '0',
-    padding: '0',
-    margin: '0', // duplicate
-  }}
-/>
-
-// Output: Duplicate margin removed
-<Box style={{ margin: '0', padding: '0' }} />
 ```
 
 ### **Advantages**

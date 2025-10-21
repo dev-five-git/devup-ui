@@ -12,58 +12,28 @@ Unlike traditional CSS-in-JS libraries, Devup UI **derives types directly from C
 
 ## How It Works
 
-The type inference process consists of four main steps:
+Devup UI uses the **csstype** package to automatically generate types for CSS properties. Instead of manually defining types, Devup UI reads the standard CSS definitions from csstype and uses them directly.
 
-1. **Parsing** – analyzes JSX/TSX code
-2. **Property Lookup** – checks against the CSS property map
-3. **Type Generation** – produces corresponding TypeScript types
-4. **Validation** – enforces compile-time correctness
+### 1. Reading CSS Standards
 
-### 1. CSS Property Mapping
+Devup UI reads all CSS property definitions from the **csstype** package, which contains the official CSS standards. This includes both regular properties (like `width`, `color`) and shorthand properties (like `margin`, `padding`).
 
-All CSS properties are defined in a Rust-based mapping table.
+### 2. Auto-Converting Selectors
 
-```rust
-pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
-    "bg" => &["background"],
-    "bgColor" => &["background-color"],
-    "m" => &["margin"],
-    "w" => &["width"],
-    "h" => &["height"],
-    // ...
-};
+When you use CSS states like `:hover` or `:focus`, Devup UI automatically converts them into props you can use. For example, `:hover` becomes `_hover` so you can write `<Box _hover={{ bg: 'red' }} />`.
 
-```
+When `csstype` is updated with new CSS standards, Devup UI automatically gets these updates without needing a library update.
 
-### 2. Type Generation
+### 3. Catching Mistakes Early
 
-TypeScript types are automatically derived from CSS property names and value patterns.
-
-It supports various value types — such as lengths, colors, and percentages — and
-
-ensures **type-safe responsive arrays** for breakpoint-based styles.
-
-```tsx
-<Box w={[100, 200, 300]} />
-```
-
-### 3. Special Property Handling
-
-Certain properties are excluded from inference, such as React-specific or HTML attributes.
-
-```rust
-static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
-    "children", "ref", "key", "className", "id", "style",
-};
-
-```
+TypeScript checks your CSS properties while you're coding. If you try to use an invalid property or value, you'll get an error right away instead of discovering it later.
 
 ## Advantages
 
-Devup UI’s type inference system provides several key benefits:
+Devup UI's type inference system provides several key benefits:
 
-- **Automatic updates** – New CSS properties are supported immediately when standards evolve, without requiring library updates.
-- **Type safety** – All properties and values are strictly typed, preventing invalid or misspelled declarations at compile time.
-- **Extensibility** – Experimental or custom CSS features can be easily extended within the system.
+- **Automatic updates** – New CSS properties are supported immediately when the csstype package is updated. Simply update the package without requiring devup-ui library updates.
+- **Type safety** – All properties and values are strictly typed based on CSS standards, preventing invalid or misspelled declarations at compile time.
+- **Standards compliance** – Types are always aligned with official CSS specifications, ensuring accuracy and consistency across all CSS standards.
 
 This type inference system is automatic, reliable, and future-ready, allowing developers to focus on design and logic rather than manual type management.
