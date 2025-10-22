@@ -51,17 +51,14 @@
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
     "next": "^16.0",
-    "browserslist": "latest",
-    "@devup-ui/wasm": "workspace:*",
-    "deasync": "^0.1"
+    "@devup-ui/wasm": "workspace:*"
   },
   "devDependencies": {
     "vite": "^7.1",
     "vite-plugin-dts": "^4.5",
     "vitest": "^3.2",
     "typescript": "^5.9",
-    "@types/webpack": "^5.28",
-    "@types/deasync": "^0.1"
+    "@types/webpack": "^5.28"
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
