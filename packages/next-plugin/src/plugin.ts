@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import {
   DevupUIWebpackPlugin,
@@ -22,7 +22,8 @@ export function DevupUI(
   config: NextConfig,
   options: DevupUiNextPluginOptions = {},
 ): NextConfig {
-  const isTurbo = process.env.TURBOPACK === '1'
+  const isTurbo =
+    process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   if (isTurbo) {
     config ??= {}
     config.turbopack ??= {}
@@ -42,9 +43,9 @@ export function DevupUI(
     if (!existsSync(cssDir)) mkdirSync(cssDir)
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
     const rules: NonNullable<typeof config.turbopack.rules> = {
-      [basename(cssDir)]: [
+      [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
-          loader: '@devup-ui/webpack-plugin/css-loader',
+          loader: '@devup-ui/next-plugin/css-loader',
           options: {
             watch: process.env.NODE_ENV === 'development',
           },
@@ -52,7 +53,7 @@ export function DevupUI(
       ],
       '*.{tsx,ts,js,mjs}': [
         {
-          loader: '@devup-ui/webpack-plugin/loader',
+          loader: '@devup-ui/next-plugin/loader',
           options: {
             package: libPackage,
             cssDir,

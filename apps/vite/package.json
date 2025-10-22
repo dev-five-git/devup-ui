@@ -10,15 +10,15 @@
     "lint": "tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
     "@devup-ui/react": "workspace:*",
     "vite-lib-example": "workspace:*"
   },
   "devDependencies": {
     "@devup-ui/vite-plugin": "workspace:*",
-    "vite": "^7.1.7",
-    "@vitejs/plugin-react": "^5.0.4",
+    "vite": "^7.1",
+    "@vitejs/plugin-react": "^5.0",
     "typescript": "^5",
     "@types/node": "^24",
     "@types/react": "^19",

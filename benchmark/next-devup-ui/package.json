@@ -10,9 +10,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "next": "^15.5.4",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "next": "^16.0",
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {

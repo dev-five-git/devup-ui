@@ -34,6 +34,14 @@
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./loader": {
+      "import": "./dist/turbo/loader.js",
+      "require": "./dist/turbo/loader.cjs"
+    },
+    "./css-loader": {
+      "import": "./dist/turbo/css-loader.js",
+      "require": "./dist/turbo/css-loader.cjs"
     }
   },
   "files": [
@@ -42,18 +50,22 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.5",
-    "browserslist": "latest"
+    "next": "^16.0",
+    "browserslist": "latest",
+    "@devup-ui/wasm": "workspace:*",
+    "deasync": "^0.1"
   },
   "devDependencies": {
-    "vite": "^7.1.7",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^3.2.4",
-    "typescript": "^5.9.3",
-    "@types/webpack": "^5.28.5"
+    "vite": "^7.1",
+    "vite-plugin-dts": "^4.5",
+    "vitest": "^3.2",
+    "typescript": "^5.9",
+    "@types/webpack": "^5.28",
+    "@types/deasync": "^0.1"
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
-    "next": "*"
+    "next": "*",
+    "@devup-ui/wasm": "*"
   }
 }
