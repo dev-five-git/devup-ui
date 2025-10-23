@@ -1332,11 +1332,11 @@ mod tests {
                     "255": {
                         "0": [
                             {
-                                "className": "test",
-                                "property": "mx",
-                                "value": "40px",
-                                "selector": null,
-                                "basic": false
+                                "c": "test",
+                                "p": "mx",
+                                "v": "40px",
+                                "s": null,
+                                "b": false
                             }
                         ]
                     }
@@ -1368,11 +1368,11 @@ mod tests {
             "properties": {
                 "wrong": [
                     {
-                        "className": "test",
-                        "property": "mx",
-                        "value": "40px",
-                        "selector": null,
-                        "basic": false
+                        "c": "test",
+                        "p": "mx",
+                        "v": "40px",
+                        "s": null,
+                        "b": false
                     }
                 ]
             },

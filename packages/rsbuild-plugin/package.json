@@ -59,7 +59,7 @@
     "@rsbuild/core": "^1.5",
     "vite": "^7.1",
     "vite-plugin-dts": "^4.5",
-    "vitest": "^3.2",
+    "vitest": "^4.0",
     "typescript": "^5.9"
   }
 }

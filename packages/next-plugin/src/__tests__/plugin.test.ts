@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
@@ -70,18 +70,19 @@ describe('DevupUINextPlugin', () => {
   describe('turbo', () => {
     it('should apply turbo config', async () => {
       vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
       const ret = DevupUI({})
 
       expect(ret).toEqual({
         turbopack: {
           rules: {
-            'devup-ui': [
+            './df/devup-ui/*.css': [
               {
                 loader: '@devup-ui/webpack-plugin/css-loader',
-                options: {
-                  watch: false,
-                },
               },
             ],
             '*.{tsx,ts,js,mjs}': [
@@ -112,12 +113,9 @@ describe('DevupUINextPlugin', () => {
       expect(ret).toEqual({
         turbopack: {
           rules: {
-            'devup-ui': [
+            './df/devup-ui/*.css': [
               {
                 loader: '@devup-ui/webpack-plugin/css-loader',
-                options: {
-                  watch: false,
-                },
               },
             ],
             '*.{tsx,ts,js,mjs}': [
@@ -137,7 +135,50 @@ describe('DevupUINextPlugin', () => {
           },
         },
       })
-      expect(mkdirSync).toHaveBeenCalledWith('df')
+      expect(mkdirSync).toHaveBeenCalledWith('df', {
+        recursive: true,
+      })
+      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
+    })
+    it('should apply turbo config with exists df and devup.json', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ theme: 'theme' }),
+      )
+      vi.mocked(mkdirSync).mockReturnValue('')
+      vi.mocked(writeFileSync).mockReturnValue()
+      const ret = DevupUI({})
+
+      expect(ret).toEqual({
+        turbopack: {
+          rules: {
+            './df/devup-ui/*.css': [
+              {
+                loader: '@devup-ui/webpack-plugin/css-loader',
+              },
+            ],
+            '*.{tsx,ts,js,mjs}': [
+              {
+                loader: '@devup-ui/webpack-plugin/loader',
+                options: {
+                  package: '@devup-ui/react',
+                  cssDir: resolve('df', 'devup-ui'),
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
+                  watch: false,
+                  singleCss: false,
+                  theme: 'theme',
+                },
+              },
+            ],
+          },
+        },
+      })
+      expect(mkdirSync).toHaveBeenCalledWith('df', {
+        recursive: true,
+      })
       expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
   })

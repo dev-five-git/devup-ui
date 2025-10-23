@@ -48,7 +48,7 @@
   "devDependencies": {
     "vite": "^7.1",
     "vite-plugin-dts": "^4.5",
-    "vitest": "^3.2",
+    "vitest": "^4.0",
     "typescript": "^5.9",
     "@types/webpack": "^5.28"
   },
