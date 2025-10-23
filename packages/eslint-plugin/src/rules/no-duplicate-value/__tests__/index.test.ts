@@ -39,6 +39,10 @@ describe('no-duplicate-value rule', () => {
         code: 'import { css } from "other-package";\ncss()',
         filename: 'src/app/page.tsx',
       },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box w={[call(), null, null, 3]} />',
+        filename: 'src/app/page.tsx',
+      },
     ],
     invalid: [
       {
@@ -70,6 +74,20 @@ describe('no-duplicate-value rule', () => {
         code: 'import { css } from "@devup-ui/react";\ncss({w: [1, 2, 2, 2, 3]})',
         output:
           'import { css } from "@devup-ui/react";\ncss({w: [1, 2, null, null, 3]})',
+        filename: 'src/app/page.tsx',
+        errors: [
+          {
+            messageId: 'duplicateValue',
+          },
+          {
+            messageId: 'duplicateValue',
+          },
+        ],
+      },
+      {
+        code: 'import { css } from "@devup-ui/react";\ncss({w: [1, `2`, 2, "2", 3]})',
+        output:
+          'import { css } from "@devup-ui/react";\ncss({w: [1, `2`, null, null, 3]})',
         filename: 'src/app/page.tsx',
         errors: [
           {

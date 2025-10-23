@@ -12,25 +12,38 @@ const createRule = ESLintUtils.RuleCreator(
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
 
+function getValue(node: TSESTree.Literal | TSESTree.TemplateLiteral) {
+  if (node.type === AST_NODE_TYPES.Literal) {
+    return node.value?.toString()
+  }
+  return node.quasis[0].value.raw
+}
+
 function checkDuplicateValue<T extends RuleContext<string, []>>(
   node: TSESTree.ArrayExpression,
   context: T,
 ) {
   for (let i = 0; i < node.elements.length; i++) {
     const element = node.elements[i]
-    if (element?.type === AST_NODE_TYPES.Literal) {
+    if (
+      element?.type === AST_NODE_TYPES.Literal ||
+      element?.type === AST_NODE_TYPES.TemplateLiteral
+    ) {
       if (i === 0) continue
+      const elementValue = getValue(element)
+      if (elementValue === undefined) continue
+
       const prevElement = node.elements[i - 1]
       if (
-        prevElement?.type === AST_NODE_TYPES.Literal &&
-        element.value === prevElement.value &&
-        element.value !== null
+        (prevElement?.type === AST_NODE_TYPES.Literal ||
+          prevElement?.type === AST_NODE_TYPES.TemplateLiteral) &&
+        elementValue === getValue(prevElement)
       ) {
         context.report({
           node,
           messageId: 'duplicateValue',
           data: {
-            value: element.value,
+            value: elementValue,
           },
           fix(fixer) {
             return fixer.replaceText(element, 'null')

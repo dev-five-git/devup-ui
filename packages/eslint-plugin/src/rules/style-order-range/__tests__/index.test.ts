@@ -344,6 +344,15 @@ describe('style-order-range rule', () => {
           },
         ],
       },
+      {
+        code: 'import { Box } from "@devup-ui/react";\n<Box styleOrder=<div /> />',
+        filename: 'src/app/page.tsx',
+        errors: [
+          {
+            messageId: 'wrongType',
+          },
+        ],
+      },
     ],
   })
 })

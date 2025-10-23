@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
@@ -63,6 +63,25 @@ describe('DevupUIRsbuildPlugin', () => {
       transform,
       modifyRsbuildConfig,
     } as any)
+  })
+
+  it('should write data files without theme', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
+    vi.mocked(getThemeInterface).mockReturnValue('')
+    vi.mocked(existsSync).mockImplementation((path) => {
+      if (path === 'devup.json') return true
+      return false
+    })
+    const plugin = DevupUI()
+    expect(plugin).toBeDefined()
+    expect(plugin.setup).toBeDefined()
+    const transform = vi.fn()
+    const modifyRsbuildConfig = vi.fn()
+    await plugin.setup({
+      transform,
+      modifyRsbuildConfig,
+    } as any)
+    expect(writeFileSync).not.toHaveBeenCalled()
   })
 
   it('should error when write data files', async () => {
