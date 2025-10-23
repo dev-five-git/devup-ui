@@ -34,14 +34,6 @@
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    },
-    "./loader": {
-      "import": "./dist/turbo/loader.js",
-      "require": "./dist/turbo/loader.cjs"
-    },
-    "./css-loader": {
-      "import": "./dist/turbo/css-loader.js",
-      "require": "./dist/turbo/css-loader.cjs"
     }
   },
   "files": [

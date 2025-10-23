@@ -7,6 +7,7 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
+  registerTheme,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -18,7 +19,9 @@ export interface DevupUILoaderOptions {
   fileMapFile: string
   watch: boolean
   singleCss: boolean
+  theme?: object
 }
+let init = false
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
@@ -30,9 +33,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       classMapFile,
       fileMapFile,
       singleCss,
+      theme,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
+    if (theme && !init) {
+      init = true
+      registerTheme(theme)
+    }
 
     try {
       let rel = relative(dirname(this.resourcePath), cssDir).replaceAll(

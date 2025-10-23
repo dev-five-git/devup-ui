@@ -56,8 +56,6 @@ export default defineConfig({
       formats: ['es', 'cjs'],
       entry: {
         index: 'src/index.ts',
-        ['turbo/loader']: 'src/turbo/loader.ts',
-        ['turbo/css-loader']: 'src/turbo/css-loader.ts',
       },
     },
     outDir: 'dist',

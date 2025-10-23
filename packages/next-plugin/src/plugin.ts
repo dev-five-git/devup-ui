@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import {
@@ -24,6 +24,7 @@ export function DevupUI(
 ): NextConfig {
   const isTurbo =
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
+  // turbopack is now stable, TURBOPACK is set to auto without any flags
   if (isTurbo) {
     config ??= {}
     config.turbopack ??= {}
@@ -33,27 +34,40 @@ export function DevupUI(
       distDir = 'df',
       cssDir = resolve(distDir, 'devup-ui'),
       singleCss = false,
+      devupFile = 'devup.json',
     } = options
 
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
     const fileMapFile = join(distDir, 'fileMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
-    if (!existsSync(distDir)) mkdirSync(distDir)
-    if (!existsSync(cssDir)) mkdirSync(cssDir)
+    if (!existsSync(distDir))
+      mkdirSync(distDir, {
+        recursive: true,
+      })
+    if (!existsSync(cssDir))
+      mkdirSync(cssDir, {
+        recursive: true,
+      })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    // disable turbo parallel
+    process.env.TURBOPACK_LOADER_CPU = '1'
+
+    // will be removed after merge
+    // https://github.com/vercel/next.js/pull/85268
+    process.env.TURBOPACK_DEBUG_JS = 'webpack_loader'
+    process.env.NODE_OPTIONS ??= ''
+    process.env.NODE_OPTIONS += ' --inspect-brk'
+
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
-          loader: '@devup-ui/next-plugin/css-loader',
-          options: {
-            watch: process.env.NODE_ENV === 'development',
-          },
+          loader: '@devup-ui/webpack-plugin/css-loader',
         },
       ],
       '*.{tsx,ts,js,mjs}': [
         {
-          loader: '@devup-ui/next-plugin/loader',
+          loader: '@devup-ui/webpack-plugin/loader',
           options: {
             package: libPackage,
             cssDir,
@@ -62,6 +76,10 @@ export function DevupUI(
             fileMapFile,
             watch: process.env.NODE_ENV === 'development',
             singleCss,
+            // for turbopack, load theme is required on loader
+            theme: existsSync(devupFile)
+              ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
+              : undefined,
           },
         },
       ],
