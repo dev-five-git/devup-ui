@@ -1,5 +1,14 @@
 # @devup-ui/components
 
+## 0.1.28
+
+### Patch Changes
+
+- [#435](https://github.com/dev-five-git/devup-ui/pull/435) [`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix typography type of Select
+
+- Updated dependencies [[`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb)]:
+  - @devup-ui/react@1.0.22
+
 ## 0.1.27
 
 ### Patch Changes
