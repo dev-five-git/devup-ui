@@ -1,5 +1,14 @@
 # @devup-ui/webpack-plugin
 
+## 1.0.44
+
+### Patch Changes
+
+- [#435](https://github.com/dev-five-git/devup-ui/pull/435) [`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb) Thanks [@owjs3901](https://github.com/owjs3901)! - Support turbopack theme
+
+- Updated dependencies [[`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb)]:
+  - @devup-ui/wasm@1.0.43
+
 ## 1.0.43
 
 ### Patch Changes
