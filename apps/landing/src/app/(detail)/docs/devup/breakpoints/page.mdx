@@ -8,20 +8,25 @@ export const metadata = {
 
 # Breakpoints
 
-You can add responsive design by using an array of maximum 5 elements. The viewport ranges of each style
+You can add responsive design by using an array of maximum 6 elements. The viewport ranges of each style
 value in the array are listed below:
 
 - 1st element: ~ 479px,
 - 2nd element: 480px ~ 767px,
 - 3rd element: 768px ~ 991px,
 - 4th element: 992px ~ 1279px,
-- 5th element: 1280px ~
+- 5th element: 1280px ~ 1599px,
+- 6th element : 1600px ~
 
 ## How to use
 
 ```tsx
 const box = (
-  <Box bg={['red', 'blue', 'green', 'yellow', 'purple']} h={25} w={25}>
+  <Box
+    bg={['red', 'blue', 'green', 'yellow', 'purple', 'orange']}
+    h={25}
+    w={25}
+  >
     <Text>Hello</Text>
   </Box>
 )
