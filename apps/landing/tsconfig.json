@@ -30,7 +30,8 @@
     "df/*.d.ts",
     ".next\\dev/types/**/*.ts",
     ".next\\dev/types/**/*.ts",
-    "next.config.mts"
+    "next.config.mts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }
