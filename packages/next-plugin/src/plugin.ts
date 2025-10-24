@@ -26,6 +26,10 @@ export function DevupUI(
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   // turbopack is now stable, TURBOPACK is set to auto without any flags
   if (isTurbo) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Devup UI is not supported in production with turbopack')
+    }
+
     config ??= {}
     config.turbopack ??= {}
     config.turbopack.rules ??= {}
@@ -51,11 +55,7 @@ export function DevupUI(
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
     // disable turbo parallel
-    process.env.TURBOPACK_LOADER_CPU = '1'
-
-    // will be removed after merge
-    // https://github.com/vercel/next.js/pull/85268
-    process.env.TURBOPACK_DEBUG_JS = 'webpack_loader'
+    process.env.TURBOPACK_DEBUG_JS = '*'
     process.env.NODE_OPTIONS ??= ''
     process.env.NODE_OPTIONS += ' --inspect-brk'
 
