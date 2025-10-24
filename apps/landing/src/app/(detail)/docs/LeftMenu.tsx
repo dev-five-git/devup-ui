@@ -18,11 +18,37 @@ export function LeftMenu() {
             to: '/docs/core-concepts/style-storage',
             children: 'Style Storage',
           },
+          {
+            to: '/docs/core-concepts/type-inference-system',
+            children: 'Type Inference System',
+          },
+          {
+            to: '/docs/core-concepts/optimize-css',
+            children: 'Optimize CSS',
+          },
+          {
+            to: '/docs/core-concepts/nm-base',
+            children: 'N/M Base',
+          },
         ]}
       >
         Core Concepts
       </MenuItem>
       <MenuItem to="/docs/features">Features</MenuItem>
+      <MenuItem
+        subMenu={[
+          {
+            to: '/docs/figma-and-theme-integration/devup-figma-plugin',
+            children: 'Devup Figma Plugin',
+          },
+          {
+            to: '/docs/figma-and-theme-integration/devup-json',
+            children: 'devup.json Configuration',
+          },
+        ]}
+      >
+        Figma and Theme Integration
+      </MenuItem>
       <MenuItem
         subMenu={[
           {

@@ -1,0 +1,34 @@
+export const metadata = {
+  title: 'Devup Figma Plugin',
+  alternates: {
+    canonical: '/docs/figma-and-theme-integration/devup-figma-plugin',
+  },
+}
+
+# Devup Figma Plugin
+
+Devup UI provides a powerful Figma plugin that enables seamless integration between design and development workflows. The plugin converts Figma layers into Devup UI code snippets and exports design tokens.
+
+### **From Figma Community**
+
+1. Open Figma
+2. Go to **Plugins** → **Browse all plugins**
+3. Search for "Devup UI"
+4. Click **Open in Figma** on the Devup UI plugin or go to directly [Figma Community page](https://www.figma.com/community/plugin/1412341601954480694).
+
+## Features
+
+### **Layer to Component Conversion**
+
+Convert Figma layers into Devup UI components.
+
+```tsx
+// Generated from Figma layer
+<Box bg="$primary" borderRadius="8px" color="$text" p="16px">
+  Button Text
+</Box>
+```
+
+### **Design Token Export**
+
+Export design tokens from Figma to your `devup.json`.

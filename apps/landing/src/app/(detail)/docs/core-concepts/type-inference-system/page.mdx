@@ -1,0 +1,39 @@
+export const metadata = {
+  title: 'Type Inference System',
+  alternates: {
+    canonical: '/docs/core-concepts/type-inference-system',
+  },
+}
+
+# Type Inference System
+
+Devup UI automatically infers TypeScript types for CSS properties, ensuring type safety and a smooth developer experience — no manual definitions required.
+Unlike traditional CSS-in-JS libraries, Devup UI **derives types directly from CSS standards**.
+
+## How It Works
+
+Devup UI uses the **csstype** package to automatically generate types for CSS properties. Instead of manually defining types, Devup UI reads the standard CSS definitions from csstype and uses them directly.
+
+### 1. Reading CSS Standards
+
+Devup UI reads all CSS property definitions from the **csstype** package, which contains the official CSS standards. This includes both regular properties (like `width`, `color`) and shorthand properties (like `margin`, `padding`).
+
+### 2. Auto-Converting Selectors
+
+When you use CSS states like `:hover` or `:focus`, Devup UI automatically converts them into props you can use. For example, `:hover` becomes `_hover` so you can write `<Box _hover={{ bg: 'red' }} />`.
+
+When `csstype` is updated with new CSS standards, Devup UI automatically gets these updates without needing a library update.
+
+### 3. Catching Mistakes Early
+
+TypeScript checks your CSS properties while you're coding. If you try to use an invalid property or value, you'll get an error right away instead of discovering it later.
+
+## Advantages
+
+Devup UI's type inference system provides several key benefits:
+
+- **Automatic updates** – New CSS properties are supported immediately when the csstype package is updated. Simply update the package without requiring devup-ui library updates.
+- **Type safety** – All properties and values are strictly typed based on CSS standards, preventing invalid or misspelled declarations at compile time.
+- **Standards compliance** – Types are always aligned with official CSS specifications, ensuring accuracy and consistency across all CSS standards.
+
+This type inference system is automatic, reliable, and future-ready, allowing developers to focus on design and logic rather than manual type management.
