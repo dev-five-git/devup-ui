@@ -1,8 +1,11 @@
 import { DevupUI } from '@devup-ui/next-plugin'
 import createMDX from '@next/mdx'
+import remarkGfm from 'remark-gfm'
 
 const withMDX = createMDX({
-  options: {},
+  options: {
+    remarkPlugins: [remarkGfm],
+  },
   extension: /\.mdx?$/,
 })
 
