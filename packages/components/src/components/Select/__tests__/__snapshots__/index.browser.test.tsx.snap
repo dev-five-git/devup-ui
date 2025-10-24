@@ -52,12 +52,14 @@ exports[`Select > should render with overflow screen 1`] = `
       style="top: 10px; left: 0px; bottom: 778px;"
     >
       <div
+        aria-label="Select option"
         class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1  color-0-var(--selectDisabled,light-dark(#C4C5D1,#45464D))--1 cursor-0-default--1 font-weight-0-400--1 gap-0-0--1 "
         data-value="Option 1"
       >
         Option 1
       </div>
       <div
+        aria-label="Select option"
         class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-8380715471663921674-1 color-0-var(--title,light-dark(#1A1A1A,#FAFAFA))--1 cursor-0-pointer--1 font-weight-0-400--1 gap-0-0--1 "
         data-value="Option 2"
       >
@@ -67,12 +69,14 @@ exports[`Select > should render with overflow screen 1`] = `
         class="background-0-var(--border,light-dark(#E4E4E4,#434343))--1 height-0-1px--1 width-0-100%--1 "
       />
       <div
+        aria-label="Select option"
         class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1 background-0-var(--primaryBg,light-dark(#F4F3FA,#F4F3FA0D))-8380715471663921674-1 color-0-var(--title,light-dark(#1A1A1A,#FAFAFA))--1 cursor-0-pointer--1 font-weight-0-400--1 gap-0-0--1 "
         data-value="Option 3"
       >
         Option 3
       </div>
       <div
+        aria-label="Select option"
         class="display-0-flex--0 align-items-0-center--1 border-radius-0-6px--1 height-0-40px--1 padding-right-0-10px--1 padding-left-0-10px--1 transition-0-background-color .1s ease-in-out--1  color-0-var(--selectDisabled,light-dark(#C4C5D1,#45464D))--1 cursor-0-default--1 font-weight-0-400--1 gap-0-0--1 "
         data-value="Option 4"
       >
@@ -116,6 +120,7 @@ exports[`Select > should render with overflow screen 1`] = `
 exports[`Select > should render with x and y properties 1`] = `
 <div>
   <div
+    aria-label="Select"
     class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
   >
     <button

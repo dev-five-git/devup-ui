@@ -361,6 +361,7 @@ export function SelectOption({
         }
       }
       alignItems="center"
+      aria-label="Select option"
       borderRadius="6px"
       color={
         disabled

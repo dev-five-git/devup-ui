@@ -181,5 +181,13 @@ describe('DevupUINextPlugin', () => {
       })
       expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
+    it('should throw error if NODE_ENV is production', () => {
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('TURBOPACK', '1')
+      const ret = () => DevupUI({})
+      expect(ret).toThrow(
+        'Devup UI is not supported in production with turbopack',
+      )
+    })
   })
 })
