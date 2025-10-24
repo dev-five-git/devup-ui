@@ -47,7 +47,8 @@
     "vite": "^7.1",
     "vite-plugin-dts": "^4.5",
     "typescript": "^5.9",
-    "@types/react": "^19.2"
+    "@types/react": "^19.2",
+    "@types/node": "^24.9"
   },
   "peerDependencies": {
     "react": "*",
