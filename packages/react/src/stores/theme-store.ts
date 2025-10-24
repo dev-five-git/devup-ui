@@ -30,9 +30,11 @@ export function createThemeStore() {
   }
 
   const mo = new MutationObserver((mutations) => {
-    for (const m of mutations)
-      if (m.type === 'attributes' && m.target instanceof HTMLElement)
-        set(m.target.getAttribute('data-theme') as Theme)
+    mutations
+      .filter((m) => m.type === 'attributes' && m.target instanceof HTMLElement)
+      .forEach((m) => {
+        set((m.target as HTMLElement).getAttribute('data-theme') as Theme)
+      })
   })
   mo.observe(el, {
     attributes: true,

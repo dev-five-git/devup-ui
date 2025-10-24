@@ -19,9 +19,13 @@ trait ExtractStyle {
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleSheetProperty {
+    #[serde(rename = "c")]
     pub class_name: String,
+    #[serde(rename = "p")]
     pub property: String,
+    #[serde(rename = "v")]
     pub value: String,
+    #[serde(rename = "s")]
     pub selector: Option<StyleSelector>,
 }
 
@@ -135,8 +139,9 @@ where
 }
 #[derive(Default, Deserialize, Serialize, Debug)]
 pub struct StyleSheet {
-    #[serde(deserialize_with = "deserialize_btree_map_u8")]
+    #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
     pub properties: BTreeMap<String, PropertyMap>,
+    #[serde(default)]
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
     #[serde(default)]
     pub keyframes: KeyframesMap,
@@ -1327,11 +1332,11 @@ mod tests {
                     "255": {
                         "0": [
                             {
-                                "className": "test",
-                                "property": "mx",
-                                "value": "40px",
-                                "selector": null,
-                                "basic": false
+                                "c": "test",
+                                "p": "mx",
+                                "v": "40px",
+                                "s": null,
+                                "b": false
                             }
                         ]
                     }
@@ -1363,11 +1368,11 @@ mod tests {
             "properties": {
                 "wrong": [
                     {
-                        "className": "test",
-                        "property": "mx",
-                        "value": "40px",
-                        "selector": null,
-                        "basic": false
+                        "c": "test",
+                        "p": "mx",
+                        "v": "40px",
+                        "s": null,
+                        "b": false
                     }
                 ]
             },

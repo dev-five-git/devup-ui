@@ -24,7 +24,13 @@ describe('no-useless-tailing-nulls rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
+        // normal case
         code: 'import { Box } from "other-package";\n<Box w={[1, 2,]} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
+        // normal case
+        code: 'css({ w: [1, 2, null] })',
         filename: 'src/app/page.tsx',
       },
     ],

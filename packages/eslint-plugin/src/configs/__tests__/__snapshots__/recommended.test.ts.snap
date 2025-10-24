@@ -20,7 +20,6 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
-            "name": "css-utils-literal-only",
           },
           "no-duplicate-value": {
             "create": [Function],
@@ -37,7 +36,6 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
-            "name": "no-duplicate-value",
           },
           "no-useless-responsive": {
             "create": [Function],
@@ -54,7 +52,6 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
-            "name": "no-useless-responsive",
           },
           "no-useless-tailing-nulls": {
             "create": [Function],
@@ -71,7 +68,6 @@ exports[`recommended > export recommended config 1`] = `
               "schema": [],
               "type": "problem",
             },
-            "name": "no-useless-tailing-nulls",
           },
           "style-order-range": {
             "create": [Function],
@@ -83,11 +79,11 @@ exports[`recommended > export recommended config 1`] = `
               },
               "messages": {
                 "styleOrderRange": "styleOrder prop must be a number greater than 0 and less than 255.",
+                "wrongType": "styleOrder prop must be a number or a string representing a number.",
               },
               "schema": [],
               "type": "problem",
             },
-            "name": "style-order-range",
           },
         },
       },

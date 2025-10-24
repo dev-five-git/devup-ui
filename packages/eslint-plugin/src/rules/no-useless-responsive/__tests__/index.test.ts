@@ -60,6 +60,11 @@ describe('no-useless-responsive rule', () => {
         filename: 'src/app/page.tsx',
       },
       {
+        // normal case
+        code: '<Box w={[1]} />',
+        filename: 'src/app/page.tsx',
+      },
+      {
         code: 'import { css } from "@devup-ui/react";\ncss({w: 1})',
         filename: 'src/app/page.tsx',
       },

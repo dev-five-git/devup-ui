@@ -52,19 +52,16 @@ export function RightIndex() {
     const elements = document.querySelectorAll(
       '.markdown-body h4, .markdown-body h6',
     )
-    const menus = []
-    for (let i = 0; i < elements.length; i++) {
-      const element = elements[i]
-      const text = element.textContent!
-      menus.push({
-        text,
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMenus(
+      [...elements].map((element) => ({
+        text: element.textContent!,
         sub: element.tagName === 'H6',
         onClick: () => {
           element.scrollIntoView({ behavior: 'smooth' })
         },
-      })
-    }
-    setMenus(menus)
+      })),
+    )
   }, [pathname])
 
   return (

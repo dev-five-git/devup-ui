@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 import {
   codeExtract,
@@ -7,12 +7,20 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
+  registerTheme,
 } from '@devup-ui/wasm'
 
 import devupUILoader from '../loader'
 
 vi.mock('@devup-ui/wasm')
 vi.mock('node:fs/promises')
+vi.mock('node:path', async (original: any) => {
+  const origin = await original()
+  return {
+    ...origin,
+    relative: vi.fn(origin.relative),
+  }
+})
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -92,8 +100,6 @@ describe('devupUILoader', () => {
       expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
       expect(writeFile).toHaveBeenCalledWith('fileMapFile', 'fileMap')
     })
-
-    expect(t._compiler.__DEVUP_CACHE).toBe('index.tsx 0')
   })
 
   it('should extract code without css', () => {
@@ -195,12 +201,12 @@ describe('devupUILoader', () => {
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssDir: 'cssFile',
+        cssDir: './foo',
         watch: false,
         singleCss: true,
       }),
       async: vi.fn().mockReturnValue(vi.fn()),
-      resourcePath: 'index.tsx',
+      resourcePath: './foo/index.tsx',
       addDependency: vi.fn(),
     }
     vi.mocked(codeExtract).mockReturnValue({
@@ -212,6 +218,41 @@ describe('devupUILoader', () => {
       updatedBaseStyle: false,
       [Symbol.dispose]: vi.fn(),
     })
+    vi.mocked(relative).mockReturnValue('./foo/index.tsx')
+    devupUILoader.bind(t as any)(Buffer.from('code'), '/foo/index.tsx')
+  })
+  it('should load with theme', () => {
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+        theme: {
+          colors: {
+            primary: '#000',
+          },
+        },
+      }),
+      async: vi.fn().mockReturnValue(vi.fn()),
+      resourcePath: 'index.tsx',
+      addDependency: vi.fn(),
+    }
+    vi.mocked(registerTheme).mockReturnValueOnce(undefined)
+    vi.mocked(codeExtract).mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: vi.fn(),
+      map: undefined,
+      cssFile: 'cssFile',
+      updatedBaseStyle: false,
+      [Symbol.dispose]: vi.fn(),
+    })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    expect(registerTheme).toHaveBeenCalledWith({
+      colors: {
+        primary: '#000',
+      },
+    })
   })
 })

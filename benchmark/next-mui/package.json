@@ -5,18 +5,18 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage",
+    "build": "next build --experimental-debug-memory-usage --webpack",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "@mui/material": "7.3.2",
-    "next": "^15.5.4",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "react-icons": "^5.5.0"
+    "@emotion/react": "^11.14",
+    "@emotion/styled": "^11.14",
+    "@mui/material": "7.3",
+    "next": "^16.0",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "react-icons": "^5.5"
   },
   "devDependencies": {
     "@types/node": "^24",

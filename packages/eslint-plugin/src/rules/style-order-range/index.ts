@@ -81,6 +81,8 @@ export const styleOrderRange = createRule({
     messages: {
       styleOrderRange:
         'styleOrder prop must be a number greater than 0 and less than 255.',
+      wrongType:
+        'styleOrder prop must be a number or a string representing a number.',
     },
     type: 'problem',
     docs: {
@@ -114,18 +116,14 @@ export const styleOrderRange = createRule({
         }
       },
       Property(node) {
-        if (!devupContext) return
         if (
+          devupContext &&
           node.key.type === AST_NODE_TYPES.Identifier &&
-          node.key.name === 'styleOrder'
+          node.key.name === 'styleOrder' &&
+          node.value.type !== AST_NODE_TYPES.AssignmentPattern &&
+          node.value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression
         ) {
-          const value = node.value
-          if (
-            value.type !== AST_NODE_TYPES.AssignmentPattern &&
-            value.type !== AST_NODE_TYPES.TSEmptyBodyFunctionExpression
-          ) {
-            checkStyleOrderRange(value, context)
-          }
+          checkStyleOrderRange(node.value, context)
         }
       },
       JSXOpeningElement(node) {
@@ -149,13 +147,18 @@ export const styleOrderRange = createRule({
           return
         }
 
-        if (node.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
-          const expression = node.value.expression
-          if (expression.type !== AST_NODE_TYPES.JSXEmptyExpression) {
-            checkStyleOrderRange(expression, context)
-          }
+        if (
+          node.value.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.value.expression.type !== AST_NODE_TYPES.JSXEmptyExpression
+        ) {
+          checkStyleOrderRange(node.value.expression, context)
         } else if (node.value.type === AST_NODE_TYPES.Literal) {
           checkStyleOrderRange(node.value, context)
+        } else {
+          context.report({
+            node: node,
+            messageId: 'wrongType',
+          })
         }
       },
     }
