@@ -463,4 +463,17 @@ describe('Select', () => {
     expect(onChange).not.toHaveBeenCalled()
     expect(container.querySelector('.test')).toHaveClass('test')
   })
+
+  it('should render with typography prop', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <Select onChange={onChange} typography="body1">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer>
+          <SelectOption>Option 1</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    expect(container).toMatchSnapshot()
+  })
 })
