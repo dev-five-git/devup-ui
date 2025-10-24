@@ -6,7 +6,7 @@
     "predev": "rimraf .next",
     "prebuild": "rimraf .next",
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --experimental-debug-memory-usage --webpack",
     "start": "next start",
     "lint": "next lint"
   },
