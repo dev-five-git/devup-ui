@@ -6,7 +6,7 @@
   "scripts": {
     "prepare": "panda codegen",
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage",
+    "build": "next build --experimental-debug-memory-usage --webpack",
     "start": "next start",
     "lint": "next lint"
   },
