@@ -10,8 +10,8 @@ export const metadata = {
 
 You can directly pass color values to the primitive components.
 
-```typescript
-const box = <Box bg="#FF0000" w={25} h={25} />
+```tsx
+const box = <Box bg="#FF0000" h={25} w={25} />
 ```
 
 But, when your project gets larger and more complicated, it could be better to use variables to style your project.
@@ -32,6 +32,6 @@ Pass in the variables that you created in `devup.json`.
 }
 ```
 
-```typescript
-const color = <Box bg="$primary" w={25} h={25} />
+```tsx
+const color = <Box bg="$primary" h={25} w={25} />
 ```

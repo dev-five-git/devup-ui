@@ -1,5 +1,23 @@
 # @devup-ui/react
 
+## 1.0.22
+
+### Patch Changes
+
+- [#435](https://github.com/dev-five-git/devup-ui/pull/435) [`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb) Thanks [@owjs3901](https://github.com/owjs3901)! - Export TypographyKeys
+
+## 1.0.21
+
+### Patch Changes
+
+- [#426](https://github.com/dev-five-git/devup-ui/pull/426) [`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2) Thanks [@owjs3901](https://github.com/owjs3901)! - Support query on imports
+
+## 1.0.20
+
+### Patch Changes
+
+- [#400](https://github.com/dev-five-git/devup-ui/pull/400) [`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2) Thanks [@owjs3901](https://github.com/owjs3901)! - Add positioning
+
 ## 1.0.19
 
 ### Patch Changes

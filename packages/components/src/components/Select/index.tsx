@@ -1,6 +1,12 @@
 'use client'
 
-import { Box, css, DevupThemeTypography, Flex, VStack } from '@devup-ui/react'
+import {
+  Box,
+  css,
+  type DevupThemeTypographyKeys,
+  Flex,
+  VStack,
+} from '@devup-ui/react'
 import clsx from 'clsx'
 import {
   Children,
@@ -38,7 +44,7 @@ interface SelectProps extends Omit<ComponentProps<'div'>, 'onChange'> {
     selectDisabled?: string
     primaryBg?: string
   }
-  typography?: keyof DevupThemeTypography
+  typography?: DevupThemeTypographyKeys
   options?: {
     label?: string
     disabled?: boolean
@@ -361,6 +367,7 @@ export function SelectOption({
         }
       }
       alignItems="center"
+      aria-label="Select option"
       borderRadius="6px"
       color={
         disabled

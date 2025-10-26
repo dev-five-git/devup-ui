@@ -17,31 +17,78 @@ export const metadata = {
 You can use `css` as a tag function to create a css string. Pass in a string of css properties as an argument, ans it will be converted
 into a class list.
 
-```typescript
-const before = (
-  <div
-    className={css`
-      color: red;
-    `}
-  />
-)
+```tsx
+import { css } from '@devup-ui/react'
 
-const after = <any className="d0"/>
+function App() {
+  return (
+    <div
+      className={css`
+        background: red;
+        width: 100px;
+        height: 100px;
+      `}
+    />
+  )
+}
+```
 
+The content above is rendered/transformed as shown below:
+
+```tsx
+function App() {
+  return <div className="a b c" />
+}
+```
+
+```css
+.a {
+  background: red;
+}
+.b {
+  width: 100px;
+}
+.c {
+  height: 100px;
+}
 ```
 
 ### CSS Object
 
 You can also use the css function by passing in a css object as an argument.
 
-```typescript
-const before = (
-  <any
-    className={css({
-      color: 'red',
-    })}
-  />
-)
+```tsx
+import { css } from '@devup-ui/react'
 
-const after = <any className="d0" />
+function App() {
+  return (
+    <div
+      className={css({
+        background: 'red',
+        width: '100px',
+        height: '100px',
+      })}
+    />
+  )
+}
+```
+
+The content above is rendered/transformed as shown below:
+
+```tsx
+function App() {
+  return <div className="a b c" />
+}
+```
+
+```css
+.a {
+  background: red;
+}
+.b {
+  width: 100px;
+}
+.c {
+  height: 100px;
+}
 ```

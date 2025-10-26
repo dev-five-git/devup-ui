@@ -19,7 +19,7 @@
     "webpack"
   ],
   "type": "module",
-  "version": "1.0.42",
+  "version": "1.0.45",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -42,18 +42,19 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^15.5",
-    "browserslist": "latest"
+    "next": "^16.0",
+    "@devup-ui/wasm": "workspace:*"
   },
   "devDependencies": {
-    "vite": "^7.1.6",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^3.2.4",
-    "typescript": "^5.9.2",
-    "@types/webpack": "^5.28.5"
+    "vite": "^7.1",
+    "vite-plugin-dts": "^4.5",
+    "vitest": "^4.0",
+    "typescript": "^5.9",
+    "@types/webpack": "^5.28"
   },
   "peerDependencies": {
     "@devup-ui/webpack-plugin": "*",
-    "next": "*"
+    "next": "*",
+    "@devup-ui/wasm": "*"
   }
 }

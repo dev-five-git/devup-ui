@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 css = { path = "../css" }
-serde = { version = "1.0.225", features = ["derive"] }
-regex = "1.11.2"
+serde = { version = "1.0.228", features = ["derive"] }
+regex = "1.12.2"
 once_cell = "1.21.3"
 extractor = { path = "../extractor" }
 

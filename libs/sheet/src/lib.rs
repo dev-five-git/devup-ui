@@ -19,9 +19,13 @@ trait ExtractStyle {
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleSheetProperty {
+    #[serde(rename = "c")]
     pub class_name: String,
+    #[serde(rename = "p")]
     pub property: String,
+    #[serde(rename = "v")]
     pub value: String,
+    #[serde(rename = "s")]
     pub selector: Option<StyleSelector>,
 }
 
@@ -135,8 +139,9 @@ where
 }
 #[derive(Default, Deserialize, Serialize, Debug)]
 pub struct StyleSheet {
-    #[serde(deserialize_with = "deserialize_btree_map_u8")]
+    #[serde(deserialize_with = "deserialize_btree_map_u8", default)]
     pub properties: BTreeMap<String, PropertyMap>,
+    #[serde(default)]
     pub css: BTreeMap<String, BTreeSet<StyleSheetCss>>,
     #[serde(default)]
     pub keyframes: KeyframesMap,
@@ -553,7 +558,13 @@ impl StyleSheet {
             .imports
             .values()
             .flatten()
-            .map(|import| format!("@import \"{import}\";"))
+            .map(|import| {
+                if import.starts_with("\"") {
+                    format!("@import {import};")
+                } else {
+                    format!("@import \"{import}\";")
+                }
+            })
             .collect::<String>();
 
         let write_global = filename.is_none();
@@ -1321,11 +1332,11 @@ mod tests {
                     "255": {
                         "0": [
                             {
-                                "className": "test",
-                                "property": "mx",
-                                "value": "40px",
-                                "selector": null,
-                                "basic": false
+                                "c": "test",
+                                "p": "mx",
+                                "v": "40px",
+                                "s": null,
+                                "b": false
                             }
                         ]
                     }
@@ -1357,11 +1368,11 @@ mod tests {
             "properties": {
                 "wrong": [
                     {
-                        "className": "test",
-                        "property": "mx",
-                        "value": "40px",
-                        "selector": null,
-                        "basic": false
+                        "c": "test",
+                        "p": "mx",
+                        "v": "40px",
+                        "s": null,
+                        "b": false
                     }
                 ]
             },
@@ -1579,6 +1590,12 @@ mod tests {
         {
             let mut sheet = StyleSheet::default();
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
+            assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+        }
+        {
+            let mut sheet = StyleSheet::default();
+            sheet.add_import("test.tsx", "\"@devup-ui/core/css/global.css\" layer");
             sheet.add_import("test.tsx", "@devup-ui/core/css/global.css");
             assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
         }

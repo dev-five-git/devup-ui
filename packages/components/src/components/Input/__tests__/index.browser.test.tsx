@@ -165,6 +165,7 @@ describe('Input', () => {
     })
     fireEvent.click(container.querySelector('[aria-label="clear-button"]')!)
     expect(onClear).toHaveBeenCalled()
+    expect(container.querySelector('input')!.value).toBe('')
   })
 })
 
@@ -180,5 +181,14 @@ describe('Controlled Input', () => {
       target: { value: 'test' },
     })
     expect(container.querySelector('input')!.value).toBe('test')
+  })
+
+  it('should clear value when clear button is clicked', () => {
+    const { container } = render(<Controlled />)
+    fireEvent.change(container.querySelector('input')!, {
+      target: { value: 'test' },
+    })
+    fireEvent.click(container.querySelector('[aria-label="clear-button"]')!)
+    expect(container.querySelector('input')!.value).toBe('')
   })
 })

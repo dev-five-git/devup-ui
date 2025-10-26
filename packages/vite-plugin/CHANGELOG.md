@@ -1,5 +1,32 @@
 # @devup-ui/vite-plugin
 
+## 1.0.46
+
+### Patch Changes
+
+- Updated dependencies [[`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb)]:
+  - @devup-ui/wasm@1.0.43
+
+## 1.0.45
+
+### Patch Changes
+
+- Updated dependencies [[`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2)]:
+  - @devup-ui/wasm@1.0.42
+
+## 1.0.44
+
+### Patch Changes
+
+- Updated dependencies [[`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2)]:
+  - @devup-ui/wasm@1.0.41
+
+## 1.0.43
+
+### Patch Changes
+
+- [#405](https://github.com/dev-five-git/devup-ui/pull/405) [`ea8b1c8`](https://github.com/dev-five-git/devup-ui/commit/ea8b1c8ba95b96598c2e5321d6d63a1afc9a54bf) Thanks [@owjs3901](https://github.com/owjs3901)! - Add components to noDep
+
 ## 1.0.42
 
 ### Patch Changes

@@ -108,7 +108,7 @@ export function DevupUI({
         },
         define,
         optimizeDeps: {
-          exclude: include,
+          exclude: [...include, '@devup-ui/components'],
         },
         ssr: {
           noExternal: [...include, /@devup-ui/],
@@ -134,8 +134,7 @@ export function DevupUI({
       return true
     },
     async watchChange(id) {
-      if (resolve(id) !== resolve(devupFile)) return
-      if (existsSync(devupFile)) {
+      if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
         try {
           await writeDataFiles({
             package: libPackage,

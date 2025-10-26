@@ -80,6 +80,24 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           href="https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css"
           rel="stylesheet"
         />
+        {[
+          'ExtraBold',
+          'Bold',
+          'SemiBold',
+          'Medium',
+          'Regular',
+          'Light',
+          'Thin',
+        ].map((font) => (
+          <link
+            key={font}
+            as="font"
+            crossOrigin="anonymous"
+            href={`https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-${font}.woff2`}
+            rel="preload"
+            type="font/woff2"
+          />
+        ))}
         <link
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
           rel="stylesheet"

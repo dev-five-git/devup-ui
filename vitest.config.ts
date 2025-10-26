@@ -10,6 +10,8 @@ export default defineConfig({
         'packages/*/src/types',
         'packages/*/src/**/__tests__',
         '**/*.stories.{ts,tsx}',
+        '*.md',
+        '*.mdx',
       ],
       cleanOnRerun: true,
       reporter: ['text', 'json', 'html'],

@@ -10,13 +10,13 @@ exports[`Checkbox > should render basic checkbox 1`] = `
     >
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«r0»"
+        id="_r_0_"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«r0»"
+      for="_r_0_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
@@ -38,13 +38,13 @@ exports[`Checkbox > should render checkbox with custom child 1`] = `
     >
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«r4»"
+        id="_r_4_"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«r4»"
+      for="_r_4_"
     >
       <div>
         Custom Child
@@ -65,7 +65,7 @@ exports[`Checkbox > should render checked checkbox 1`] = `
       <input
         checked=""
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«r1»"
+        id="_r_1_"
         type="checkbox"
       />
       <svg
@@ -85,7 +85,7 @@ exports[`Checkbox > should render checked checkbox 1`] = `
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«r1»"
+      for="_r_1_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
@@ -108,7 +108,7 @@ exports[`Checkbox > should render checked checkbox with custom colors 1`] = `
       <input
         checked=""
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«rj»"
+        id="_r_j_"
         style="--primary: #ff0000; --border: #00ff00; --text: #0000ff; --inputBg: #ffff00; --checkIcon: #000000;"
         type="checkbox"
       />
@@ -129,7 +129,7 @@ exports[`Checkbox > should render checked checkbox with custom colors 1`] = `
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«rj»"
+      for="_r_j_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
@@ -153,7 +153,7 @@ exports[`Checkbox > should render disabled and checked checkbox 1`] = `
         checked=""
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
         disabled=""
-        id="«r3»"
+        id="_r_3_"
         type="checkbox"
       />
       <svg
@@ -173,7 +173,7 @@ exports[`Checkbox > should render disabled and checked checkbox 1`] = `
     </div>
     <label
       class="cursor-0-not-allowed--255"
-      for="«r3»"
+      for="_r_3_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
@@ -196,13 +196,13 @@ exports[`Checkbox > should render disabled checkbox 1`] = `
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
         disabled=""
-        id="«r2»"
+        id="_r_2_"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-not-allowed--255"
-      for="«r2»"
+      for="_r_2_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
@@ -225,14 +225,14 @@ exports[`Checkbox > should render disabled checkbox with custom colors 1`] = `
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1    cursor-0-not-allowed--1 "
         disabled=""
-        id="«rk»"
+        id="_r_k_"
         style="--primary: #ff0000; --border: #00ff00; --text: #0000ff; --inputBg: #ffff00; --checkIcon: #000000;"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-not-allowed--255"
-      for="«rk»"
+      for="_r_k_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(#D6D7DE,#373737)--255"
@@ -254,14 +254,14 @@ exports[`Checkbox > should render with custom colors 1`] = `
     >
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«rh»"
+        id="_r_h_"
         style="--primary: #ff0000; --border: #00ff00; --text: #0000ff; --inputBg: #ffff00;"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«rh»"
+      for="_r_h_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"
@@ -283,14 +283,14 @@ exports[`Checkbox > should render with partial custom colors 1`] = `
     >
       <input
         class="background-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-6529705465913413318-1 border-0-none-6529705465913413318-1 background-0-light-dark(#F0F0F3,#47474A)-9407739846625397859-1 background-0-light-dark(#F0F0F3,#47474A)-14172363753176421546-1 accent-color-0-light-dark(var(--primary,#6159D4),var(--primary,#6670F9))--1 appearance-0-none--1 background-0-light-dark(#FFF,var(--inputBg,#2E2E2E))--1 border-0-1px solid light-dark(var(--border,#E0E0E0),var(--border,#333))--1 border-radius-0-2px--1 height-0-16px--1 width-0-16px--1 margin-0-0--1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 20%,#FFF 80%),color-mix(in srgb,var(--primary,#6670F9) 30%,#000 70%))-15425828959012638752-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 100%,#000 15%),color-mix(in srgb,var(--primary,#6670F9) 100%,#FFF 15%))-15130211206989154723-1 background-0-light-dark(color-mix(in srgb,var(--primary,#6159D4) 10%,#FFF 90%),color-mix(in srgb,var(--primary,#6670F9) 20%,#000 80%))-8380715471663921674-1 border-0-1px solid light-dark(var(--primary,#6159D4),var(--primary,#6670F9))-8380715471663921674-1 cursor-0-pointer--1 "
-        id="«ri»"
+        id="_r_i_"
         style="--primary: #ff0000; --text: #0000ff;"
         type="checkbox"
       />
     </div>
     <label
       class="cursor-0-pointer--255"
-      for="«ri»"
+      for="_r_i_"
     >
       <span
         class="font-size-0-14px--255 user-select-0-none--255 color-0-light-dark(var(--text,#2F2F2F),var(--text,#EDEDED))--255"

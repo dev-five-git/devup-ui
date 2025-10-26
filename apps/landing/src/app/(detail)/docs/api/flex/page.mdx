@@ -14,8 +14,24 @@ It has a `display: flex` style by default.
 
 ## How to use
 
-```typescript
-const before = <Flex />
+```tsx
+import { Flex } from '@devup-ui/react'
 
-const after = <div className="d0" />
+function App() {
+  return <Flex />
+}
+```
+
+The Flex component defined above will render like this:
+
+```tsx
+function App() {
+  return <div className="a" />
+}
+```
+
+```css
+.a {
+  display: flex;
+}
 ```

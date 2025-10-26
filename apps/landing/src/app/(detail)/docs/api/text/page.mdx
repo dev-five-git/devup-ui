@@ -14,8 +14,64 @@ It is just a `span` with some styles.
 
 ## How to use
 
-```typescript
-const before = <Text color={"red"}>This is Text component.</Text>
+```tsx
+import { Text } from '@devup-ui/react'
 
-const after = <span className="d0">This is Text component.</span>
+function App() {
+  return (
+    <Text color="red" fontSize="24px">
+      This is Text component.
+    </Text>
+  )
+}
+```
+
+The Text component defined above will render like this:
+
+```tsx
+function App() {
+  return <span className="a b">This is Text component.</span>
+}
+```
+
+```css
+.a {
+  color: red;
+}
+.b {
+  font-size: 24px;
+}
+```
+
+### Rendering as Another Element
+
+You can use the `as` prop to change the element type.
+
+```tsx
+import { Text } from '@devup-ui/react'
+
+function App() {
+  return (
+    <Text as="p" color="red" fontSize="24px">
+      This is Text component.
+    </Text>
+  )
+}
+```
+
+The Text component defined above will render like this:
+
+```tsx
+function App() {
+  return <p className="a b">This is Text component.</p>
+}
+```
+
+```css
+.a {
+  color: red;
+}
+.b {
+  font-size: 24px;
+}
 ```
