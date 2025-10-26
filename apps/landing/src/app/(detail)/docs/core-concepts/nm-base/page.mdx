@@ -40,8 +40,8 @@ Class name generation follows these steps:
 
 1. **Style signature creation**: Combines property, level, value, selector, and style order to create a unique key
 2. **File identifier addition**: Converts filename to number for per-file CSS splitting
-3. **Hash conversion**: Converts the generated key to a number using a hash function
-4. **N/M base conversion**: Converts the hashed number to an alphabetic class name using the N/M base system
+3. **Sequential number assignment**: Assigns a sequential number based on the order of unique styles in the GLOBAL_CLASS_MAP
+4. **N/M base conversion**: Converts the sequential number to an alphabetic class name using the N/M base system
 5. **Final combination**: Combines file identifier and class number to create the final class name when file identifier exists
 
 ## Examples
