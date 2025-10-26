@@ -1,5 +1,7 @@
+'use client'
+
 import { Box, css, Flex, Input, Text } from '@devup-ui/react'
-import { ComponentProps, useId } from 'react'
+import { ComponentProps, useId, useState } from 'react'
 
 import { CheckIcon } from './CheckIcon'
 
@@ -20,14 +22,34 @@ export function Checkbox({
   children,
   disabled,
   checked,
+  defaultChecked = false,
   colors,
   onChange,
   ...props
 }: CheckboxProps) {
   const generateId = useId()
+  const [innerChecked, setInnerChecked] = useState(defaultChecked)
+  const finalChecked = checked ?? innerChecked
+
+  const handleChange = (value: boolean) => {
+    setInnerChecked(value)
+    onChange?.(value)
+  }
+
   return (
     <Flex alignItems="center" gap="8px">
-      <Box h="18px" pos="relative" w="fit-content">
+      <label
+        className={css({
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '16px',
+          height: '16px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        })}
+        htmlFor={generateId}
+      >
         <Input
           _active={
             !disabled && {
@@ -35,7 +57,7 @@ export function Checkbox({
             }
           }
           _checked={{
-            bg: 'light-dark(var(--primary, #6159D4), var(--primary, #6670F9))',
+            bg: 'var(--primary, light-dark(#6159D4, #6670F9))',
             border: 'none',
             _hover: !disabled && {
               bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 100%, #000 15%), color-mix(in srgb, var(--primary, #6670F9) 100%, #FFF 15%))',
@@ -50,55 +72,57 @@ export function Checkbox({
           _hover={
             !disabled && {
               bg: 'light-dark(color-mix(in srgb, var(--primary, #6159D4) 10%, #FFF 90%), color-mix(in srgb, var(--primary, #6670F9) 20%, #000 80%))',
-              border:
-                '1px solid light-dark(var(--primary, #6159D4), var(--primary, #6670F9))',
+              border: '1px solid var(--primary, light-dark(#6159D4, #6670F9))',
             }
           }
-          accentColor="light-dark(var(--primary, #6159D4), var(--primary, #6670F9))"
+          accentColor="var(--primary, light-dark(#6159D4, #6670F9))"
           appearance="none"
-          bg="light-dark(#FFF, var(--inputBg, #2E2E2E))"
-          border="1px solid light-dark(var(--border, #E0E0E0), var(--border, #333333))"
+          bg="var(--inputBg, light-dark(#FFF, #2E2E2E))"
+          border="1px solid var(--border, light-dark(#E0E0E0, #333333))"
           borderRadius="2px"
-          boxSize="16px"
-          checked={checked}
+          checked={finalChecked}
           cursor={disabled ? 'not-allowed' : 'pointer'}
           disabled={disabled}
+          display="block"
+          height="100%"
           id={generateId}
+          left={0}
           m="0"
           onChange={
-            disabled || !onChange
-              ? undefined
-              : (e) => onChange(e.target.checked)
+            disabled ? undefined : (e) => handleChange(e.target.checked)
           }
+          opacity={1}
+          pointerEvents="none"
+          pos="absolute"
           styleOrder={1}
           styleVars={{
             primary: colors?.primary,
             border: colors?.border,
-            text: colors?.text,
             inputBg: colors?.inputBg,
-            checkIcon: colors?.checkIcon,
           }}
+          top={0}
           type="checkbox"
+          width="100%"
+          zIndex={0}
           {...props}
         />
-        {checked && (
+        {finalChecked && (
           <Box
             as={CheckIcon}
+            opacity="1"
+            pointerEvents="none"
             props={{
               color: disabled
-                ? 'light-dark(#D6D7DE, #373737)'
+                ? 'light-dark(#D6D7DE, #47474A)'
                 : 'var(--checkIcon, #FFF)',
-              className: css({
-                left: '50%',
-                pointerEvents: 'none',
-                pos: 'absolute',
-                top: '60%',
-                transform: 'translate(-50%, -50%)',
-              }),
             }}
+            styleVars={{
+              checkIcon: colors?.checkIcon,
+            }}
+            zIndex="1"
           />
         )}
-      </Box>
+      </label>
 
       <label
         className={css({
@@ -110,10 +134,13 @@ export function Checkbox({
           <Text
             color={
               disabled
-                ? 'light-dark(#D6D7DE, #373737)'
-                : 'light-dark(var(--text, #2F2F2F), var(--text, #EDEDED))'
+                ? 'light-dark(#D6D7DE, #6F6E6E)'
+                : 'var(--text, light-dark(#2F2F2F, #EDEDED))'
             }
             fontSize="14px"
+            styleVars={{
+              text: colors?.text,
+            }}
             userSelect="none"
           >
             {children}
