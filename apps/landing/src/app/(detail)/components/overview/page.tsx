@@ -5,6 +5,7 @@ import { Icons } from '@/components/icons/components'
 import { COMPONENT_GROUPS } from '@/constants'
 
 import Card from '../Card'
+import Description from './Description.mdx'
 
 export default function Page() {
   return (
@@ -16,11 +17,12 @@ export default function Page() {
         Devup UI Components
       </Text>
       <Text color="$text" typography="bodyReg">
-        Devup UI is a library of components that can be used to build web
-        applications. It is built with React and TypeScript and is designed to
-        be used with the Devup framework.
+        <Description />
       </Text>
-      <VStack gap="16px" overflow="visible" py="30px">
+      <Text color="$title" pt="30px" typography="h4">
+        Examples
+      </Text>
+      <VStack gap="16px" overflow="visible" pb="30px">
         <Text color="$title" typography="h6">
           Form
         </Text>
