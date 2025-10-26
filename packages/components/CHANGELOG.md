@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.29
+
+### Patch Changes
+
+- [#429](https://github.com/dev-five-git/devup-ui/pull/429) [`c445c4f`](https://github.com/dev-five-git/devup-ui/commit/c445c4f30418144464493a38ac0f6c2579b4ff8d) Thanks [@hyu-dev](https://github.com/hyu-dev)! - Enhance Checkbox component logic
+
 ## 0.1.28
 
 ### Patch Changes
