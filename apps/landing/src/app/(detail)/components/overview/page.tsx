@@ -1,11 +1,11 @@
-import { Center, css, Flex, Grid, Text, VStack } from "@devup-ui/react";
-import Link from "next/link";
-import Description from "./Description.mdx";
+import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
+import Link from 'next/link'
 
-import { Icons } from "@/components/icons/components";
-import { COMPONENT_GROUPS } from "@/constants";
+import { Icons } from '@/components/icons/components'
+import { COMPONENT_GROUPS } from '@/constants'
 
-import Card from "../Card";
+import Card from '../Card'
+import Description from './Description.mdx'
 
 export default function Page() {
   return (
@@ -19,7 +19,7 @@ export default function Page() {
       <Text color="$text" typography="bodyReg">
         <Description />
       </Text>
-      <Text color="$title" typography="h4" pt="30px">
+      <Text color="$title" pt="30px" typography="h4">
         Examples
       </Text>
       <VStack gap="16px" overflow="visible" pb="30px">
@@ -27,32 +27,32 @@ export default function Page() {
           Form
         </Text>
         <Grid
-          gap={["10px", null, null, null, "20px"]}
+          gap={['10px', null, null, null, '20px']}
           gridTemplateColumns={[
-            "repeat(1, 1fr)",
-            "repeat(3, 1fr)",
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
             null,
-            "repeat(4, 1fr)",
-            "repeat(5, 1fr)",
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
           ]}
         >
           {COMPONENT_GROUPS.Form.map((component) => {
             const Icon =
               Icons[
                 `Icon${component
-                  .split("-")
+                  .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
-                  .join("")}Comp`
-              ];
+                  .join('')}Comp`
+              ]
             return (
               <Link
                 key={component}
-                className={css({ textDecoration: "none" })}
+                className={css({ textDecoration: 'none' })}
                 href={`/components/${component}`}
               >
                 <Card>
                   <Center h="140px">
-                    <Icon className={css({ w: "100%" })} />
+                    <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
                     alignItems="center"
@@ -67,16 +67,17 @@ export default function Page() {
                       typography="buttonSmid"
                     >
                       {component
-                        .split("-")
+                        .split('-')
                         .map(
-                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
+                          (item) =>
+                            item.charAt(0).toUpperCase() + item.slice(1),
                         )
-                        .join(" ")}
+                        .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            );
+            )
           })}
         </Grid>
       </VStack>
@@ -85,13 +86,13 @@ export default function Page() {
           Layout
         </Text>
         <Grid
-          gap={["10px", null, null, null, "20px"]}
+          gap={['10px', null, null, null, '20px']}
           gridTemplateColumns={[
-            "repeat(1, 1fr)",
-            "repeat(3, 1fr)",
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
             null,
-            "repeat(4, 1fr)",
-            "repeat(5, 1fr)",
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
           ]}
           overflow="visible"
         >
@@ -99,19 +100,19 @@ export default function Page() {
             const Icon =
               Icons[
                 `Icon${component
-                  .split("-")
+                  .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
-                  .join("")}Comp`
-              ];
+                  .join('')}Comp`
+              ]
             return (
               <Link
                 key={component}
-                className={css({ textDecoration: "none" })}
+                className={css({ textDecoration: 'none' })}
                 href={`/components/${component}`}
               >
                 <Card>
                   <Center h="140px">
-                    <Icon className={css({ w: "100%" })} />
+                    <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
                     alignItems="center"
@@ -126,16 +127,17 @@ export default function Page() {
                       typography="buttonSmid"
                     >
                       {component
-                        .split("-")
+                        .split('-')
                         .map(
-                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
+                          (item) =>
+                            item.charAt(0).toUpperCase() + item.slice(1),
                         )
-                        .join(" ")}
+                        .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            );
+            )
           })}
         </Grid>
       </VStack>
@@ -144,13 +146,13 @@ export default function Page() {
           Theme
         </Text>
         <Grid
-          gap={["10px", null, null, null, "20px"]}
+          gap={['10px', null, null, null, '20px']}
           gridTemplateColumns={[
-            "repeat(1, 1fr)",
-            "repeat(3, 1fr)",
+            'repeat(1, 1fr)',
+            'repeat(3, 1fr)',
             null,
-            "repeat(4, 1fr)",
-            "repeat(5, 1fr)",
+            'repeat(4, 1fr)',
+            'repeat(5, 1fr)',
           ]}
           overflow="visible"
         >
@@ -158,19 +160,19 @@ export default function Page() {
             const Icon =
               Icons[
                 `Icon${component
-                  .split("-")
+                  .split('-')
                   .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
-                  .join("")}Comp`
-              ];
+                  .join('')}Comp`
+              ]
             return (
               <Link
                 key={component}
-                className={css({ textDecoration: "none" })}
+                className={css({ textDecoration: 'none' })}
                 href={`/components/${component}`}
               >
                 <Card>
                   <Center h="140px">
-                    <Icon className={css({ w: "100%" })} />
+                    <Icon className={css({ w: '100%' })} />
                   </Center>
                   <Flex
                     alignItems="center"
@@ -185,19 +187,20 @@ export default function Page() {
                       typography="buttonSmid"
                     >
                       {component
-                        .split("-")
+                        .split('-')
                         .map(
-                          (item) => item.charAt(0).toUpperCase() + item.slice(1)
+                          (item) =>
+                            item.charAt(0).toUpperCase() + item.slice(1),
                         )
-                        .join(" ")}
+                        .join(' ')}
                     </Text>
                   </Flex>
                 </Card>
               </Link>
-            );
+            )
           })}
         </Grid>
       </VStack>
     </VStack>
-  );
+  )
 }
