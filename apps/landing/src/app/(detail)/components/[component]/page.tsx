@@ -6,7 +6,7 @@ import { CustomH6 } from '@/components/mdx/components/CustomH6'
 import { CustomParagraph } from '@/components/mdx/components/CustomParagraph'
 import { CustomPre } from '@/components/mdx/components/CustomPre'
 import { CustomStrong } from '@/components/mdx/components/CustomStrong'
-import { PropsTable } from '@/components/props-table'
+import { PropsTable } from '@/components/PropsTable'
 import { COMPONENT_GROUPS } from '@/constants'
 import { getDemos } from '@/utils/get-demos'
 

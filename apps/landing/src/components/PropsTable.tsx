@@ -11,7 +11,7 @@ import {
   TableHeaderCell,
   TableRoot,
   TableRow,
-} from './mdx/components/Table'
+} from './Table'
 
 interface ComponentProp {
   property: string
