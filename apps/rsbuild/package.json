@@ -11,13 +11,13 @@
     "lint": "tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
     "@devup-ui/react": "workspace:*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^1.5.10",
-    "@rsbuild/plugin-react": "^1.4.0",
+    "@rsbuild/core": "^1.5",
+    "@rsbuild/plugin-react": "^1.4",
     "@devup-ui/rsbuild-plugin": "workspace:*"
   }
 }

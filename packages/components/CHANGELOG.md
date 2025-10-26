@@ -1,5 +1,48 @@
 # @devup-ui/components
 
+## 0.1.28
+
+### Patch Changes
+
+- [#435](https://github.com/dev-five-git/devup-ui/pull/435) [`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix typography type of Select
+
+- Updated dependencies [[`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb)]:
+  - @devup-ui/react@1.0.22
+
+## 0.1.27
+
+### Patch Changes
+
+- [#421](https://github.com/dev-five-git/devup-ui/pull/421) [`ce99c1d`](https://github.com/dev-five-git/devup-ui/commit/ce99c1d7ebb6fd48cc4453712c7604f79b7739f9) Thanks [@forestream](https://github.com/forestream)! - add loading prop in Button in @devup-ui/components
+
+## 0.1.26
+
+### Patch Changes
+
+- Updated dependencies [[`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2)]:
+  - @devup-ui/react@1.0.21
+
+## 0.1.25
+
+### Patch Changes
+
+- [#424](https://github.com/dev-five-git/devup-ui/pull/424) [`650f5bf`](https://github.com/dev-five-git/devup-ui/commit/650f5bf75b514b8ab8e699a0bd401c0d979a7301) Thanks [@belltalion](https://github.com/belltalion)! - Fix input hadnClear
+
+## 0.1.24
+
+### Patch Changes
+
+- [#422](https://github.com/dev-five-git/devup-ui/pull/422) [`948d98b`](https://github.com/dev-five-git/devup-ui/commit/948d98b9082ef098784e522cdddc4e164083dfcc) Thanks [@belltalion](https://github.com/belltalion)! - Fix input value
+
+- [#422](https://github.com/dev-five-git/devup-ui/pull/422) [`948d98b`](https://github.com/dev-five-git/devup-ui/commit/948d98b9082ef098784e522cdddc4e164083dfcc) Thanks [@belltalion](https://github.com/belltalion)! - Fix input value
+
+## 0.1.23
+
+### Patch Changes
+
+- Updated dependencies [[`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2)]:
+  - @devup-ui/react@1.0.20
+
 ## 0.1.22
 
 ### Patch Changes

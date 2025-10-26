@@ -1,6 +1,7 @@
 import { css, DevupThemeTypography } from '@devup-ui/react'
 import { render } from '@testing-library/react'
 
+import { IconSpinner } from '../IconSpinner'
 import { Button } from '../index'
 
 describe('Button', () => {
@@ -178,5 +179,31 @@ describe('Button', () => {
     )
     expect(container).toMatchSnapshot()
     expect(container.querySelector('button')).toHaveClass('typo-inlineLabelS')
+  })
+
+  it('should render loading spinner when loading is true', () => {
+    const { container } = render(<Button loading />)
+    expect(container).toMatchSnapshot()
+    expect(
+      container.querySelector('[aria-label="Whole loading spinner"]'),
+    ).toBeInTheDocument()
+  })
+
+  it('should render loading spinner when loading is true and loadingSpinner is partial', () => {
+    const { container } = render(<Button loading loadingSpinner="partial" />)
+    expect(container).toMatchSnapshot()
+    expect(
+      container.querySelector('[aria-label="Partial loading spinner"]'),
+    ).toBeInTheDocument()
+  })
+
+  it('should render loading spinner when icon is provided and loading is true', () => {
+    const { container } = render(
+      <Button icon={<IconSpinner type="partial" />} loading />,
+    )
+    expect(container).toMatchSnapshot()
+    expect(
+      container.querySelector('[aria-label="Whole loading spinner"]'),
+    ).toBeInTheDocument()
   })
 })

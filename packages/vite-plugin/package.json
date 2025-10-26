@@ -18,7 +18,7 @@
     "vite"
   ],
   "type": "module",
-  "version": "1.0.42",
+  "version": "1.0.46",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "vite-plugin-dts": "^4.5.4",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "vite": "*",

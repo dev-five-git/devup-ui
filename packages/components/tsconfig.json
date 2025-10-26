@@ -1,6 +1,11 @@
 {
   "compilerOptions": {
-    "types": ["vite/client", "vitest/importMeta", "vitest/globals", "@testing-library/jest-dom"],
+    "types": [
+      "vite/client",
+      "vitest/importMeta",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "strict": true,
     "target": "ESNext",
     "declaration": true,

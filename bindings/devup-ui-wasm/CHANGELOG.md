@@ -1,5 +1,23 @@
 # @devup-ui/wasm
 
+## 1.0.43
+
+### Patch Changes
+
+- [#435](https://github.com/dev-five-git/devup-ui/pull/435) [`8e46b5e`](https://github.com/dev-five-git/devup-ui/commit/8e46b5eb35897ff33b27738f4623ca7bee2588fb) Thanks [@owjs3901](https://github.com/owjs3901)! - Optimize memory files
+
+## 1.0.42
+
+### Patch Changes
+
+- [#426](https://github.com/dev-five-git/devup-ui/pull/426) [`3c65364`](https://github.com/dev-five-git/devup-ui/commit/3c65364125cea6e3582562b99a9b71291fc6f8c2) Thanks [@owjs3901](https://github.com/owjs3901)! - Support layer on imports of globalCss
+
+## 1.0.41
+
+### Patch Changes
+
+- [#400](https://github.com/dev-five-git/devup-ui/pull/400) [`fee97f8`](https://github.com/dev-five-git/devup-ui/commit/fee97f8a3d79b9a4c62858deb8e1aea8c609e3a2) Thanks [@owjs3901](https://github.com/owjs3901)! - Implement enum prop
+
 ## 1.0.40
 
 ### Patch Changes

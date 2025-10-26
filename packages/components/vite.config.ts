@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     coverage: {
-      all: true,
+      provider: 'v8',
       thresholds: {
         '100': true,
       },

@@ -412,7 +412,7 @@ describe('Select', () => {
 
   it('should render with x and y properties', () => {
     const { container } = render(
-      <Select>
+      <Select aria-label="Select">
         <SelectTrigger>Select</SelectTrigger>
         <SelectContainer x={10} y={10}>
           <SelectOption value="Option 1">Option 1</SelectOption>
@@ -443,6 +443,37 @@ describe('Select', () => {
     // rerender
     rerender(<Select>{children}</Select>)
 
+    expect(container).toMatchSnapshot()
+  })
+
+  it('should change value when clicking on SelectOption without value prop', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <Select className="test" onChange={onChange}>
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer>
+          <SelectOption>Option 1</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
+    const selectToggle = container.querySelector('[aria-label="Select toggle"]')
+    fireEvent.click(selectToggle!)
+    const option1 = container.querySelector('[aria-label="Select option"]')
+    fireEvent.click(option1!)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(container.querySelector('.test')).toHaveClass('test')
+  })
+
+  it('should render with typography prop', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <Select onChange={onChange} typography="body1">
+        <SelectTrigger>Select</SelectTrigger>
+        <SelectContainer>
+          <SelectOption>Option 1</SelectOption>
+        </SelectContainer>
+      </Select>,
+    )
     expect(container).toMatchSnapshot()
   })
 })

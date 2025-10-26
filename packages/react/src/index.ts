@@ -11,7 +11,10 @@ export { VStack } from './components/VStack'
 export { useTheme } from './hooks/use-theme'
 export type { DevupProps } from './types/props'
 export type { DevupTheme, DevupThemeColors } from './types/theme'
-export type { DevupThemeTypography } from './types/typography'
+export type {
+  DevupThemeTypography,
+  DevupThemeTypographyKeys,
+} from './types/typography'
 export { css } from './utils/css'
 export { getTheme } from './utils/get-theme'
 export { globalCss } from './utils/global-css'

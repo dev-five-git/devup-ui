@@ -23,7 +23,7 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
       getOptions: () => ({ watch: false }),
     } as any)(Buffer.from('data'), '')
-    expect(callback).toBeCalledWith(null, 'get css')
+    expect(callback).toBeCalledWith(null, 'get css', '', undefined)
   })
 
   it('should return _compiler hit css on watch', () => {

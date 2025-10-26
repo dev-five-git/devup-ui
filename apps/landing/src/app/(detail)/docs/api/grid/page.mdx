@@ -14,21 +14,82 @@ It has a `display: grid` style by default.
 
 ## How to use
 
-````typescript
-const before = (
-  <Grid>
-    <Box bg="blue" w={25} h={25} />
-    <Box bg="blue" w={25} h={25} />
-    <Box bg="blue" w={25} h={25} />
-  </Grid>
-)
+```tsx
+import { Box, Grid } from '@devup-ui/react'
 
-const after = (
-  <div className="d3">
-    <div className="d0 d1 d2"></div>
-    <div className="d0 d1 d2"></div>
-    <div className="d0 d1 d2"></div>
-  </div>
-)
-    ```
-````
+function App() {
+  return (
+    <Grid>
+      <Box bg="blue" h={25} w={25} />
+      <Box bg="blue" h={25} w={25} />
+      <Box bg="blue" h={25} w={25} />
+    </Grid>
+  )
+}
+```
+
+The Grid component defined above will render like this:
+
+```tsx
+function App() {
+  return (
+    <div className="d">
+      <div className="a b c"></div>
+      <div className="a b c"></div>
+      <div className="a b c"></div>
+    </div>
+  )
+}
+```
+
+```css
+.a {
+  background: blue;
+}
+.b {
+  height: 100px;
+}
+.c {
+  width: 100px;
+}
+.d {
+  display: grid;
+}
+```
+
+If you pass a number without a unit to a style property, it will be automatically scaled by 4.
+This means 1 equals 4px, 2 equals 8px, and so on.
+
+However, the following properties are exceptions and **are not multiplied by 4**:
+
+- `opacity`
+- `flex`
+- `z-index`
+- `line-clamp`
+- `font-weight`
+- `line-height`
+- `scale`
+- `aspect-ratio`
+- `flex-grow`
+- `flex-shrink`
+- `order`
+- `grid-column`, `grid-column-start`, `grid-column-end`
+- `grid-row`, `grid-row-start`, `grid-row-end`
+- `animation-iteration-count`
+- `tab-size`, `moz-tab-size`, `-webkit-line-clamp`
+
+<br />
+
+Class names and style properties are resolved in the following order:
+
+1. Generate class names for child components.
+   - Compute class names and style properties coming from each child (including component defaults, utility classes, and props).
+
+2. Remove duplicate component properties.
+   - Deduplicate only when both the `key:value` pair and the `style-order` match.
+
+3. If the key:value matches but the `style-order` differs, the property is not removed — the later/higher-priority style will take precedence.
+   - Example: In other words, the `display: flex` implemented internally by `Center` and the `display: flex` provided directly by the user have different style-orders, so they are not removed, and the final style is applied according to priority.
+
+4. Generate the parent component’s className based on the merged result.
+   - After child classNames are generated and duplicates (per rules above) removed, compute/merge the parent className and final style output.

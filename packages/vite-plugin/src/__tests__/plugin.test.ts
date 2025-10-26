@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -18,6 +18,13 @@ import { DevupUI } from '../plugin'
 vi.mock('@devup-ui/wasm')
 vi.mock('node:fs')
 vi.mock('node:fs/promises')
+vi.mock('node:path', async (original: any) => {
+  const origin = await original()
+  return {
+    ...origin,
+    relative: vi.fn(origin.relative),
+  }
+})
 
 const _filename = fileURLToPath(import.meta.url)
 const _dirname = resolve(dirname(_filename), '..')
@@ -57,6 +64,12 @@ describe('devupUIVitePlugin', () => {
           .config()
           .build.rollupOptions.output.manualChunks('devup-ui.css', 'code'),
       ).toEqual('devup-ui.css')
+
+      expect(
+        (plugin as any)
+          .config()
+          .build.rollupOptions.output.manualChunks('other.css', 'code'),
+      ).toEqual(undefined)
     } else {
       expect((plugin as any).config().build).toBeUndefined()
     }
@@ -189,6 +202,7 @@ describe('devupUIVitePlugin', () => {
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
       free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
     })
 
     const plugin = DevupUI(options)
@@ -218,6 +232,7 @@ describe('devupUIVitePlugin', () => {
         map: undefined,
         updatedBaseStyle: options.updatedBaseStyle,
         free: vi.fn(),
+        [Symbol.dispose]: vi.fn(),
       })
       expect(writeFile).toHaveBeenCalledWith(
         join(resolve('df', 'devup-ui'), 'devup-ui.css'),
@@ -244,6 +259,7 @@ describe('devupUIVitePlugin', () => {
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
       free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
     })
     expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'long code' } : undefined,
@@ -275,6 +291,10 @@ describe('devupUIVitePlugin', () => {
       expect(
         (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
       ).toEqual(expect.any(String))
+
+      expect(
+        (plugin as any).resolveId('other.css', 'df/devup-ui/devup-ui.css'),
+      ).toEqual(undefined)
     }
 
     {
@@ -289,9 +309,84 @@ describe('devupUIVitePlugin', () => {
   it('should resolve id with cssMap', () => {
     vi.mocked(getCss).mockReturnValue('css code')
     const plugin = DevupUI({})
-    ;(plugin as any).load('devup-ui.css')
+    expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
+    expect((plugin as any).load('other.css')).toEqual(undefined)
+
     expect(
       (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
     ).toEqual(expect.any(String))
+  })
+  it('should not write interface code when no theme', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
+    vi.mocked(getThemeInterface).mockReturnValue('')
+    vi.mocked(existsSync).mockReturnValue(true)
+    const plugin = DevupUI({})
+    await (plugin as any).configResolved()
+    expect(writeFile).not.toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      expect.any(String),
+      'utf-8',
+    )
+  })
+
+  it('sholud add relative path to css file', async () => {
+    vi.mocked(getCss).mockReturnValue('css code')
+    vi.mocked(codeExtract).mockReturnValue({
+      css: 'css code',
+      code: 'code',
+      cssFile: 'devup-ui.css',
+      map: undefined,
+      updatedBaseStyle: false,
+      free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
+    })
+    const plugin = DevupUI({})
+    vi.mocked(relative).mockReturnValue('./df/devup-ui/devup-ui.css')
+    await (plugin as any).transform('code', 'foo.tsx')
+
+    expect(codeExtract).toHaveBeenCalledWith(
+      'foo.tsx',
+      'code',
+      '@devup-ui/react',
+      './df/devup-ui/devup-ui.css',
+      false,
+      true,
+      false,
+    )
+
+    vi.mocked(relative).mockReturnValue('df/devup-ui/devup-ui.css')
+    await (plugin as any).transform('code', 'foo.tsx')
+    expect(codeExtract).toHaveBeenCalledWith(
+      'foo.tsx',
+      'code',
+      '@devup-ui/react',
+      './df/devup-ui/devup-ui.css',
+      false,
+      true,
+      false,
+    )
+  })
+
+  it('should not create css file when cssFile is empty', async () => {
+    vi.mocked(getCss).mockReturnValue('css code')
+    vi.mocked(codeExtract).mockReturnValue({
+      css: 'css code',
+      code: 'code',
+      cssFile: '',
+      map: undefined,
+      updatedBaseStyle: false,
+      free: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
+    })
+    const plugin = DevupUI({})
+    await (plugin as any).transform('code', 'foo.tsx')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('should not generate bundle when css file is not found', async () => {
+    const plugin = DevupUI({})
+    const bundle = {} as any
+    await (plugin as any).generateBundle({}, bundle)
+    expect(bundle).toEqual({})
   })
 })

@@ -30,6 +30,45 @@ fn gen_class_name<'a>(
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
     match style_prop {
+        ExtractStyleProp::Enum { map, condition } => {
+            let properties = map.iter_mut().map(|(key, value)| {
+                ast_builder.object_property_kind_object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                        SPAN,
+                        ast_builder.atom(key),
+                        None,
+                    )),
+                    merge_expression_for_class_name(
+                        ast_builder,
+                        value
+                            .iter_mut()
+                            .map(|v| gen_class_name(ast_builder, v, style_order, filename).unwrap())
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap(),
+                    false,
+                    false,
+                    false,
+                )
+            });
+            let obj = ast_builder.expression_object(
+                SPAN,
+                oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
+            );
+            Some(convert_class_name(
+                ast_builder,
+                &Expression::ComputedMemberExpression(
+                    ast_builder.alloc_computed_member_expression(
+                        SPAN,
+                        obj,
+                        condition.clone_in(ast_builder.allocator),
+                        false,
+                    ),
+                ),
+            ))
+        }
         ExtractStyleProp::Static(st) => {
             if let Some(style_order) = style_order {
                 st.set_style_order(style_order);

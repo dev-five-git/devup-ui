@@ -6,6 +6,8 @@ import {
   type DevupThemeTypography,
 } from '@devup-ui/react'
 
+import { IconSpinner } from './IconSpinner'
+
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'default'
   colors?: {
@@ -21,6 +23,8 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: 'sm' | 'md' | 'lg'
   icon?: React.ReactNode
   ellipsis?: boolean
+  loading?: boolean
+  loadingSpinner?: 'whole' | 'partial'
 }
 
 export function Button({
@@ -35,6 +39,8 @@ export function Button({
   ellipsis = false,
   typography,
   disabled,
+  loading = false,
+  loadingSpinner = 'whole',
   ...props
 }: ButtonProps): React.ReactElement {
   return (
@@ -204,7 +210,7 @@ export function Button({
         {
           false: { sm: '12px', md: '16px', lg: '20px' }[size],
           true: { sm: '24px', md: '28px', lg: '32px' }[size],
-        }[(!!icon).toString()]
+        }[(!!(icon || loading)).toString()]
       }
       py={{ sm: '8px', md: '10px', lg: '12px' }[size]}
       styleOrder={1}
@@ -222,7 +228,7 @@ export function Button({
       {...props}
     >
       <Box maxW="100%" mx="auto" pos="relative" w="fit-content">
-        {icon && (
+        {(icon || loading) && (
           <Center
             boxSize="24px"
             left="4px"
@@ -236,7 +242,7 @@ export function Button({
             top="50%"
             transform="translate(-100%, -50%)"
           >
-            {icon}
+            {loading ? <IconSpinner type={loadingSpinner} /> : icon}
           </Center>
         )}
         <Box
@@ -251,7 +257,7 @@ export function Button({
           }
           lineHeight="1.2"
           minH="1.2em"
-          transform={!!icon && 'translateX(8px)'}
+          transform={!!(icon || loading) && 'translateX(8px)'}
         >
           {children}
         </Box>

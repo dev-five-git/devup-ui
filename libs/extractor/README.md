@@ -6,19 +6,22 @@ jsx to css extractor
 
 Before
 
-```typescript
-<Box bg="red" color="white" p={2} m={2} textAlign={variable}>
-    Hello World
+```tsx
+<Box bg="red" color="white" m={2} p={2} textAlign={variable}>
+  Hello World
 </Box>
 ```
 
 After
 
-```typescript
-<Box className={"dp1 dp2 dp-3 dp-4 dp-v"} style={{
-    "--ta": variable,
-}}>
-    Hello World
+```tsx
+<Box
+  className="dp1 dp2 dp-3 dp-4 dp-v"
+  style={{
+    '--ta': variable,
+  }}
+>
+  Hello World
 </Box>
 ```
 
