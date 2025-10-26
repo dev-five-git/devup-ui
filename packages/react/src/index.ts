@@ -9,7 +9,11 @@ export { Text } from './components/Text'
 export { ThemeScript } from './components/ThemeScript'
 export { VStack } from './components/VStack'
 export { useTheme } from './hooks/use-theme'
-export type { DevupProps } from './types/props'
+export type {
+  DevupComponentBaseProps,
+  DevupComponentProps,
+  DevupProps,
+} from './types/props'
 export type { DevupTheme, DevupThemeColors } from './types/theme'
 export type {
   DevupThemeTypography,
