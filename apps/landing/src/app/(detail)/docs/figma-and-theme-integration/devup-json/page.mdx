@@ -108,9 +108,11 @@ Each typography definition can include.
 - **lineHeight**: Numeric ratio or string with unit
 - **letterSpacing**: Spacing with unit (`-0.03em`)
 
-### **Static Typography**
+### **Typography Configuration**
 
-For non-responsive typography, use objects.
+Define typography styles using objects for static values or arrays for responsive breakpoints.
+
+#### **Static typography**
 
 ```json
 {
@@ -127,6 +129,39 @@ For non-responsive typography, use objects.
 }
 ```
 
+#### **Responsive typography**
+
+Use arrays to define styles for each breakpoint.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "heading": [
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "20px",
+          "lineHeight": 1.3
+        },
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "28px",
+          "lineHeight": 1.3
+        },
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "32px",
+          "lineHeight": 1.2
+        }
+      ]
+    }
+  }
+}
+```
+
 ## Usage in Components
 
 ### **Color Usage**
@@ -138,6 +173,8 @@ Access colors using the `$` prefix.
   Content
 </Box>
 ```
+
+- To enable type autocompletion for theme values, add `"df/*.ts"` to the `include` array in your `tsconfig.json` file.
 
 ### **Typography Usage**
 

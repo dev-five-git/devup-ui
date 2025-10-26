@@ -62,8 +62,8 @@ All RGB and RGBA color values are normalized and converted into compact hexadeci
 <Box bg="rgba(255, 0, 0, 0.5)" />
 
 // Output
-<Box className="bg-red" /> // #f00
-<Box className="bg-red-50" /> // #ff000080
+<Box bg="#f00" /> // #ff0000 shortened to #f00
+<Box bg="#f000" /> // #ff000080 shortened to #f000
 ```
 
 ### **Hex Shortening**
@@ -88,11 +88,11 @@ Alpha channel optimization removes unnecessary opacity information.
 Fully opaque colors (FF) are shortened, while partial transparency values are preserved for accuracy.
 
 ```tsx
-// Full opacity is removed
-// #ff0000ff → #ff0000
+// Full opacity is removed and shortened to 3-digit hex
+// #ff0000ff → #f00
 
-// Partial opacity is preserved
-// #ff000080 → #ff000080
+// Partial opacity is preserved and shortened to 4-digit hex
+// #ff000080 → #f000
 ```
 
 ## Global CSS Optimization
@@ -101,7 +101,6 @@ Fully opaque colors (FF) are shortened, while partial transparency values are pr
 
 Global CSS blocks are optimized by:
 
-- **Removing comments**: `/* comment */` is stripped
 - **Minifying whitespace**: Multiple spaces become single spaces
 - **Removing semicolons**: Last property in a block doesn't need semicolon
 
