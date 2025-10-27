@@ -4,12 +4,14 @@ import Markdown from 'react-markdown'
 import { _components } from '@/mdx-components'
 
 import { CustomCodeBlock } from './mdx/components/CustomCodeBlock'
-import { TableBody } from './TableBody'
-import { TableCell } from './TableCell'
-import { TableHead } from './TableHead'
-import { TableHeaderCell } from './TableHeaderCell'
-import { TableRoot } from './TableRoot'
-import { TableRow } from './TableRow'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from './mdx/components/Table'
 
 interface ComponentProp {
   property: string
@@ -39,7 +41,7 @@ export const PropsTable = async (props: PropTableProps) => {
   const { componentProps } = props
 
   return (
-    <TableRoot border={0}>
+    <Table border={0}>
       <TableHead>
         <TableRow>
           <TableHeaderCell>Prop</TableHeaderCell>
@@ -83,6 +85,6 @@ export const PropsTable = async (props: PropTableProps) => {
           ),
         )}
       </TableBody>
-    </TableRoot>
+    </Table>
   )
 }

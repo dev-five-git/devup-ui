@@ -4,7 +4,7 @@ export function CustomCodeBlock({ children }: { children: string }) {
   return (
     <Box
       as="code"
-      bg="var(--containerBackground)"
+      bg="$containerBackground"
       borderRadius="0.25rem"
       color="var(--text)"
       padding="0.25rem"
