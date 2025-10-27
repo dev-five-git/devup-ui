@@ -6,7 +6,7 @@ export function CustomCodeBlock({ children }: { children: string }) {
       as="code"
       bg="$containerBackground"
       borderRadius="0.25rem"
-      color="var(--text)"
+      color="$text"
       padding="0.25rem"
       whiteSpace="pre-wrap"
     >
