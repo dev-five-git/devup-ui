@@ -4,14 +4,12 @@ import Markdown from 'react-markdown'
 import { _components } from '@/mdx-components'
 
 import { CustomCodeBlock } from './mdx/components/CustomCodeBlock'
-import {
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRoot,
-  TableRow,
-} from './Table'
+import { TableBody } from './TableBody'
+import { TableCell } from './TableCell'
+import { TableHead } from './TableHead'
+import { TableHeaderCell } from './TableHeaderCell'
+import { TableRoot } from './TableRoot'
+import { TableRow } from './TableRow'
 
 interface ComponentProp {
   property: string
