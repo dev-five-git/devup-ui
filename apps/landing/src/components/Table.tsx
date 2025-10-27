@@ -1,18 +1,7 @@
-import {
-  Box,
-  type DevupComponentBaseProps,
-  type DevupComponentProps,
-} from '@devup-ui/react'
+import { Box } from '@devup-ui/react'
+import { ComponentPropsWithoutRef } from 'react'
 
-// FIXME: Merge type is not exported in @devup-ui/react
-type Merge<T, U> = Omit<T, Extract<keyof T, keyof U>> & U
-
-type TableComponentProps<T extends React.ElementType> = Merge<
-  DevupComponentBaseProps<T>,
-  DevupComponentProps<T>
->
-
-const TableRoot = ({ ...props }: TableComponentProps<'table'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'table'>) => {
   return (
     <Box borderRadius="0.5rem" overflow="hidden">
       <Box as="table" borderCollapse="collapse" borderSpacing={0} {...props} />
@@ -20,7 +9,7 @@ const TableRoot = ({ ...props }: TableComponentProps<'table'>) => {
   )
 }
 
-const TableHead = ({ ...props }: TableComponentProps<'thead'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'thead'>) => {
   return (
     <Box
       as="thead"
@@ -34,11 +23,11 @@ const TableHead = ({ ...props }: TableComponentProps<'thead'>) => {
   )
 }
 
-const TableBody = ({ ...props }: TableComponentProps<'tbody'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'tbody'>) => {
   return <Box as="tbody" {...props}></Box>
 }
 
-const TableRow = ({ ...props }: TableComponentProps<'tr'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'tr'>) => {
   return (
     <Box
       as="tr"
@@ -53,16 +42,10 @@ const TableRow = ({ ...props }: TableComponentProps<'tr'>) => {
   )
 }
 
-const TableCell = ({ ...props }: TableComponentProps<'td'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'td'>) => {
   return <Box as="td" padding="0.5rem 1rem" {...props} />
 }
 
-const TableHeaderCell = ({ ...props }: TableComponentProps<'th'>) => {
+export const Table = ({ ...props }: ComponentPropsWithoutRef<'th'>) => {
   return <Box as="th" padding="0.5rem 1rem" textAlign="left" {...props} />
-}
-
-export { TableBody, TableCell, TableHead, TableHeaderCell, TableRoot, TableRow }
-
-export function Table() {
-  return <></>
 }
