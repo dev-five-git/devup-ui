@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 1.0.47
+
+### Patch Changes
+
+- [#457](https://github.com/dev-five-git/devup-ui/pull/457) [`bac9016`](https://github.com/dev-five-git/devup-ui/commit/bac9016310095a456c1479127f905ac261ccd70e) Thanks [@owjs3901](https://github.com/owjs3901)! - Create Theme type file
+
+- [#457](https://github.com/dev-five-git/devup-ui/pull/457) [`bac9016`](https://github.com/dev-five-git/devup-ui/commit/bac9016310095a456c1479127f905ac261ccd70e) Thanks [@owjs3901](https://github.com/owjs3901)! - Using next-turbo loader
+
 ## 1.0.46
 
 ### Patch Changes
