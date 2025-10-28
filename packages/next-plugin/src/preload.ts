@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 
 import { codeExtract, registerTheme } from '@devup-ui/wasm'
@@ -11,20 +11,19 @@ export function preload(
   theme: object,
   cssDir: string,
 ) {
-  const projectRoot = process.cwd()
-
   const collected = globSync(['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'], {
     follow: true,
+    absolute: true,
   })
   registerTheme(theme)
   for (const file of collected) {
+    const filePath = relative(process.cwd(), realpathSync(file))
     if (
-      /\.(test(-d)?|d|spec)\.(tsx|ts|js|mjs)$/.test(file) ||
-      /^(out|.next)[/\\]/.test(file) ||
-      excludeRegex.test(file)
+      /\.(test(-d)?|d|spec)\.(tsx|ts|js|mjs)$/.test(filePath) ||
+      /^(out|.next)[/\\]/.test(filePath) ||
+      excludeRegex.test(filePath)
     )
       continue
-    const filePath = relative(process.cwd(), join(projectRoot, file))
     const { cssFile, css } = codeExtract(
       filePath,
       readFileSync(filePath, 'utf-8'),
