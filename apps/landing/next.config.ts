@@ -10,6 +10,5 @@ export default withMDX(
     pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
     output: 'export',
     reactCompiler: true,
-    cacheComponents: true,
   }),
 )
