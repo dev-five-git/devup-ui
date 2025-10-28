@@ -72,8 +72,12 @@ export function RightIndex() {
             Contents
           </Text>
         </Flex>
-        {menus.map((menu) => (
-          <IndexMenu key={menu.text} onClick={menu.onClick} sub={menu.sub}>
+        {menus.map((menu, idx) => (
+          <IndexMenu
+            key={menu.text + idx}
+            onClick={menu.onClick}
+            sub={menu.sub}
+          >
             {menu.text}
           </IndexMenu>
         ))}
