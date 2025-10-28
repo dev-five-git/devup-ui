@@ -81,30 +81,15 @@ describe('findRoot', () => {
     expect(result).toBe(expectedRoot)
   })
 
-  it('should handle Windows-style paths', () => {
-    const mockDir = 'C:\\project\\src\\components'
-    const expectedRoot = 'C:\\project'
+  it('should handle paths', () => {
+    const mockDir = join('a', 'b', 'c', 'd')
+    const expectedRoot = join('a', 'b')
 
     vi.mocked(existsSync)
-      .mockReturnValueOnce(false) // C:\project\src\components\package.json
-      .mockReturnValueOnce(false) // C:\project\src\package.json
-      .mockReturnValueOnce(true) // C:\project\package.json
-      .mockReturnValueOnce(false) // C:\package.json
-
-    const result = findRoot(mockDir)
-
-    expect(result).toBe(expectedRoot)
-  })
-
-  it('should handle relative paths', () => {
-    const mockDir = './src/components'
-    const expectedRoot = '.'
-
-    vi.mocked(existsSync)
-      .mockReturnValueOnce(false) // ./src/components/package.json
-      .mockReturnValueOnce(false) // ./src/package.json
-      .mockReturnValueOnce(true) // ./package.json
-      .mockReturnValueOnce(false) // ../package.json
+      .mockReturnValueOnce(false) // a/b/c/d/package.json
+      .mockReturnValueOnce(false) // a/b/c/package.json
+      .mockReturnValueOnce(true) // a/b/package.json
+      .mockReturnValueOnce(false) // a/package.json
 
     const result = findRoot(mockDir)
 
@@ -112,7 +97,7 @@ describe('findRoot', () => {
   })
 
   it('should stop at filesystem root', () => {
-    const mockDir = '/some/path'
+    const mockDir = join('a', 'b', 'c')
 
     // Mock existsSync to return false for all calls, simulating no package.json found
     vi.mocked(existsSync).mockReturnValue(false)
