@@ -1,23 +1,37 @@
 import type { DevupCommonProps } from '../types/props'
 import type {
+  AdvancedSelector,
+  CamelCase,
   DevupThemeSelectorProps,
   ExtractSelector,
   SimpleSelector,
 } from '../types/props/selector'
 import type { DevupSelectorProps } from '../types/props/selector'
 
-type GlobalCssKeys =
-  | `*${SimpleSelector | ''}`
-  | `${keyof HTMLElementTagNameMap}${SimpleSelector | ''}`
-  | `${keyof SVGElementTagNameMap}${SimpleSelector | ''}`
-  | `_${ExtractSelector<SimpleSelector>}`
-  | (string & {})
+type GlobalCssKeys<T extends string> =
+  | `*${T}`
+  | `${keyof HTMLElementTagNameMap}${T}`
+  | `${keyof SVGElementTagNameMap}${T}`
+  | `_${CamelCase<ExtractSelector<T>>}`
 
 type GlobalCssProps = {
-  [K in GlobalCssKeys]?:
-    | DevupCommonProps
-    | DevupSelectorProps
-    | DevupThemeSelectorProps
+  [K in GlobalCssKeys<AdvancedSelector>]?: DevupCommonProps &
+    DevupSelectorProps &
+    DevupThemeSelectorProps & {
+      params: string[]
+    }
+} & {
+  [K in GlobalCssKeys<
+    Exclude<AdvancedSelector, SimpleSelector>
+  >]?: DevupCommonProps &
+    DevupSelectorProps &
+    DevupThemeSelectorProps & {
+      params?: string[]
+    }
+} & {
+  [K in GlobalCssKeys<SimpleSelector> | (string & {})]?: DevupCommonProps &
+    DevupSelectorProps &
+    DevupThemeSelectorProps
 }
 
 interface FontFaceProps {

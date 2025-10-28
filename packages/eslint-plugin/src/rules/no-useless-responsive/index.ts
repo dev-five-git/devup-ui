@@ -98,7 +98,7 @@ export const noUselessResponsive = createRule({
         if (
           devupContext &&
           node.key.type === AST_NODE_TYPES.Identifier &&
-          node.key.name === 'imports'
+          ['imports', 'params', 'fontFaces'].includes(node.key.name)
         ) {
           devupContext = null
         }

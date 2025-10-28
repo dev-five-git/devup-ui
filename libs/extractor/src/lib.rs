@@ -7397,5 +7397,30 @@ keyframes({
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+        globalCss({
+          "_is": {
+            params: ["test", variable],
+            _hover: {
+              bg: "blue"
+            },
+            bg: "red"
+          }
+        })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
     }
 }

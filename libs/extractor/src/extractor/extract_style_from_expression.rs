@@ -591,10 +591,14 @@ pub fn extract_style_from_expression<'a>(
                 });
 
                 let selector = selector.clone().map(|s| {
-                    if let Some(params) = params
-                        && let StyleSelector::Selector(selector) = s
-                    {
-                        StyleSelector::Selector(format!("{}({})", selector, params))
+                    if let Some(params) = params {
+                        if let StyleSelector::Selector(selector) = s {
+                            StyleSelector::Selector(format!("{}({})", selector, params))
+                        } else if let StyleSelector::Global(selector, file) = s {
+                            StyleSelector::Global(format!("{}({})", selector, params), file)
+                        } else {
+                            s
+                        }
                     } else {
                         s
                     }

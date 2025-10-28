@@ -4,7 +4,7 @@ import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'
 import type { DevupProps } from '../index'
 
-type CamelCase<S extends string> =
+export type CamelCase<S extends string> =
   S extends Lowercase<S>
     ? S extends `${infer F}-${infer RF}${infer R}`
       ? `${F}${Uppercase<RF>}${CamelCase<R>}`
@@ -20,10 +20,7 @@ export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
       Record<`_theme${PascalCase<keyof DevupTheme>}`, SelectorProps<DevupProps>>
     >
 
-export type NormalizedSelector<T> = Exclude<
-  T,
-  `:-${string}` | `::-${string}` | `${string}()`
->
+export type NormalizedSelector<T> = Exclude<T, `:-${string}` | `::-${string}`>
 export type SimpleSelector = NormalizedSelector<SimplePseudos>
 
 export type AdvancedSelector = NormalizedSelector<AdvancedPseudos>
