@@ -94,9 +94,9 @@ export default function MdxCardFooter({
           <Box
             borderTop="1px solid $border"
             h="100%"
+            onWheel={(e) => e.stopPropagation()}
             overflow="auto"
-            px="24px"
-            py="16px"
+            p={['12px', null, '24px']}
           >
             {children}
           </Box>
