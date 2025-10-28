@@ -4,9 +4,11 @@ import { join, resolve } from 'node:path'
 import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
 
 import { DevupUI } from '../plugin'
+import { preload } from '../preload'
 
 vi.mock('@devup-ui/webpack-plugin')
 vi.mock('node:fs')
+vi.mock('../preload')
 
 describe('DevupUINextPlugin', () => {
   describe('webpack', () => {
@@ -85,20 +87,42 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/webpack-plugin/css-loader',
               },
             ],
-            '*.{tsx,ts,js,mjs}': [
-              {
-                loader: '@devup-ui/webpack-plugin/loader',
-                options: {
-                  package: '@devup-ui/react',
-                  cssDir: resolve('df', 'devup-ui'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  watch: false,
-                  singleCss: false,
+            '*.{tsx,ts,js,mjs}': {
+              loaders: [
+                {
+                  loader: '@devup-ui/webpack-plugin/loader',
+                  options: {
+                    package: '@devup-ui/react',
+                    cssDir: resolve('df', 'devup-ui'),
+                    sheetFile: join('df', 'sheet.json'),
+                    classMapFile: join('df', 'classMap.json'),
+                    fileMapFile: join('df', 'fileMap.json'),
+                    watch: false,
+                    singleCss: false,
+                    theme: {},
+                    defaultClassMap: {},
+                    defaultFileMap: {},
+                    defaultSheet: {
+                      css: {},
+                      font_faces: {},
+                      global_css_files: [],
+                      imports: {},
+                      keyframes: {},
+                      properties: {},
+                    },
+                  },
+                },
+              ],
+              condition: {
+                not: {
+                  path: new RegExp(
+                    `node_modules(?!.*(${['@devup-ui']
+                      .join('|')
+                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                  ),
                 },
               },
-            ],
+            },
           },
         },
       })
@@ -118,20 +142,42 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/webpack-plugin/css-loader',
               },
             ],
-            '*.{tsx,ts,js,mjs}': [
-              {
-                loader: '@devup-ui/webpack-plugin/loader',
-                options: {
-                  package: '@devup-ui/react',
-                  cssDir: resolve('df', 'devup-ui'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  watch: false,
-                  singleCss: false,
+            '*.{tsx,ts,js,mjs}': {
+              condition: {
+                not: {
+                  path: new RegExp(
+                    `node_modules(?!.*(${['@devup-ui']
+                      .join('|')
+                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                  ),
                 },
               },
-            ],
+              loaders: [
+                {
+                  loader: '@devup-ui/webpack-plugin/loader',
+                  options: {
+                    package: '@devup-ui/react',
+                    cssDir: resolve('df', 'devup-ui'),
+                    sheetFile: join('df', 'sheet.json'),
+                    classMapFile: join('df', 'classMap.json'),
+                    fileMapFile: join('df', 'fileMap.json'),
+                    watch: false,
+                    singleCss: false,
+                    theme: {},
+                    defaultClassMap: {},
+                    defaultFileMap: {},
+                    defaultSheet: {
+                      css: {},
+                      font_faces: {},
+                      global_css_files: [],
+                      imports: {},
+                      keyframes: {},
+                      properties: {},
+                    },
+                  },
+                },
+              ],
+            },
           },
         },
       })
@@ -158,21 +204,42 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/webpack-plugin/css-loader',
               },
             ],
-            '*.{tsx,ts,js,mjs}': [
-              {
-                loader: '@devup-ui/webpack-plugin/loader',
-                options: {
-                  package: '@devup-ui/react',
-                  cssDir: resolve('df', 'devup-ui'),
-                  sheetFile: join('df', 'sheet.json'),
-                  classMapFile: join('df', 'classMap.json'),
-                  fileMapFile: join('df', 'fileMap.json'),
-                  watch: false,
-                  singleCss: false,
-                  theme: 'theme',
+            '*.{tsx,ts,js,mjs}': {
+              condition: {
+                not: {
+                  path: new RegExp(
+                    `node_modules(?!.*(${['@devup-ui']
+                      .join('|')
+                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                  ),
                 },
               },
-            ],
+              loaders: [
+                {
+                  loader: '@devup-ui/webpack-plugin/loader',
+                  options: {
+                    package: '@devup-ui/react',
+                    cssDir: resolve('df', 'devup-ui'),
+                    sheetFile: join('df', 'sheet.json'),
+                    classMapFile: join('df', 'classMap.json'),
+                    fileMapFile: join('df', 'fileMap.json'),
+                    watch: false,
+                    singleCss: false,
+                    theme: 'theme',
+                    defaultClassMap: {},
+                    defaultFileMap: {},
+                    defaultSheet: {
+                      css: {},
+                      font_faces: {},
+                      global_css_files: [],
+                      imports: {},
+                      keyframes: {},
+                      properties: {},
+                    },
+                  },
+                },
+              ],
+            },
           },
         },
       })
@@ -184,9 +251,23 @@ describe('DevupUINextPlugin', () => {
     it('should throw error if NODE_ENV is production', () => {
       vi.stubEnv('NODE_ENV', 'production')
       vi.stubEnv('TURBOPACK', '1')
-      const ret = () => DevupUI({})
-      expect(ret).toThrow(
-        'Devup UI is not supported in production with turbopack',
+      vi.mocked(preload).mockReturnValue()
+      const ret = DevupUI({})
+      expect(ret).toEqual({
+        turbopack: {
+          rules: expect.any(Object),
+        },
+      })
+      expect(preload).toHaveBeenCalledWith(
+        new RegExp(
+          `node_modules(?!.*(${['@devup-ui']
+            .join('|')
+            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+        ),
+        '@devup-ui/react',
+        false,
+        'theme',
+        expect.any(String),
       )
     })
   })

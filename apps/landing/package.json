@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node ./script.js && next dev",
     "search": "node ./script.js",
-    "build": "node ./script.js && next build --webpack",
+    "build": "node ./script.js && next build",
     "start": "npx serve ./out",
     "lint": "eslint"
   },
@@ -19,21 +19,22 @@
     "@next/mdx": "^16.0",
     "body-scroll-lock": "3.1",
     "clsx": "^2.1",
+    "lenis": "1.3",
     "next": "^16.0",
     "react": "^19.2",
     "react-dom": "^19.2",
     "react-markdown": "^10.1",
-    "react-syntax-highlighter": "^15.6",
-    "lenis": "1.3"
+    "react-syntax-highlighter": "^15.6"
   },
   "devDependencies": {
-    "@types/mdx": "^2.0",
     "@devup-ui/next-plugin": "workspace:*",
     "@types/body-scroll-lock": "^3.1",
+    "@types/mdx": "^2.0",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5",
+    "babel-plugin-react-compiler": "^1.0",
     "typescript": "^5"
   }
 }

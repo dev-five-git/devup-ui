@@ -27,6 +27,9 @@ export const metadata: Metadata = {
 resetCss()
 
 globalCss({
+  pre: {
+    borderRadius: '10px',
+  },
   fontFaces: [
     {
       fontFamily: 'Pretendard',
@@ -84,9 +87,6 @@ globalCss({
     fontWeight: 700,
     lineHeight: '1.5',
     letterSpacing: '-0.03em',
-  },
-  pre: {
-    borderRadius: '10px',
   },
 })
 

@@ -2,11 +2,11 @@ import type { DevupCommonProps } from '../types/props'
 import type {
   AdvancedSelector,
   CamelCase,
+  DevupSelectorProps,
   DevupThemeSelectorProps,
   ExtractSelector,
   SimpleSelector,
 } from '../types/props/selector'
-import type { DevupSelectorProps } from '../types/props/selector'
 
 type GlobalCssKeys<T extends string> =
   | `*${T}`
@@ -22,16 +22,21 @@ type GlobalCssProps = {
     }
 } & {
   [K in GlobalCssKeys<
-    Exclude<AdvancedSelector, SimpleSelector>
+    Extract<AdvancedSelector, SimpleSelector>
   >]?: DevupCommonProps &
     DevupSelectorProps &
     DevupThemeSelectorProps & {
       params?: string[]
     }
 } & {
-  [K in GlobalCssKeys<SimpleSelector> | (string & {})]?: DevupCommonProps &
+  [K in GlobalCssKeys<SimpleSelector>]?: DevupCommonProps &
     DevupSelectorProps &
     DevupThemeSelectorProps
+} & {
+  [K in
+    | keyof HTMLElementTagNameMap
+    | keyof SVGElementTagNameMap
+    | '*']?: DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
 }
 
 interface FontFaceProps {
@@ -52,14 +57,23 @@ interface FontFaceProps {
 }
 
 type Import = { url: string; query?: string } | string
+interface AdditionalGlobalCssProps {
+  imports?: Import[]
+  fontFaces?: FontFaceProps[]
+}
+
 export function globalCss(
-  strings?:
-    | TemplateStringsArray
-    | (Omit<GlobalCssProps, 'imports'> & {
-        imports?: Import[]
-        fontFaces?: FontFaceProps[]
-      }),
+  strings: AdditionalGlobalCssProps & GlobalCssProps,
 ): void
+
+export function globalCss(
+  strings: Record<
+    string,
+    DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
+  >,
+): void
+
+export function globalCss(strings?: TemplateStringsArray): void
 
 export function globalCss(): void
 
@@ -67,9 +81,11 @@ export function globalCss(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   strings?:
     | TemplateStringsArray
-    | (Omit<GlobalCssProps, 'imports'> & {
-        imports?: Import[]
-      }),
+    | (GlobalCssProps & AdditionalGlobalCssProps)
+    | Record<
+        string,
+        DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
+      >,
 ): void {
   throw new Error('Cannot run on the runtime')
 }
