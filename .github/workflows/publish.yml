@@ -9,12 +9,43 @@ on:
       - main
 permissions: write-all
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Cargo tarpaulin and fmt
+        run: |
+          cargo install cargo-tarpaulin
+          rustup component add rustfmt clippy
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: 'latest'
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          registry-url: "https://registry.npmjs.org"
+          node-version: 22
+          cache: 'pnpm'
+      - run: pnpm i
+      - run: pnpm build
+      - name: Benchmark
+        run: pnpm benchmark
+
   publish:
     runs-on: ubuntu-latest
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,8 +85,6 @@ jobs:
           cargo fmt
           pnpm test
           rm -rf .rustfmt.toml
-      - name: Benchmark
-        run: pnpm benchmark
       - name: Build Landing
         run: |
           pnpm -F components build-storybook

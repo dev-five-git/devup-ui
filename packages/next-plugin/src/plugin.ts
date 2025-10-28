@@ -60,7 +60,7 @@ export function DevupUI(
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
     const theme = existsSync(devupFile)
       ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
-      : undefined
+      : {}
     // disable turbo parallel
     const excludeRegex = new RegExp(
       `node_modules(?!.*(${['@devup-ui', ...include]
