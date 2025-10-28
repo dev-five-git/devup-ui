@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.48
+
+### Patch Changes
+
+- [#463](https://github.com/dev-five-git/devup-ui/pull/463) [`ae1b77b`](https://github.com/dev-five-git/devup-ui/commit/ae1b77bcd40cc07f3133839dab554f2a4378829b) Thanks [@owjs3901](https://github.com/owjs3901)! - Register theme for interface
+
 ## 1.0.47
 
 ### Patch Changes
