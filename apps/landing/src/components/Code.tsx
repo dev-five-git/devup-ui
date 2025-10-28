@@ -32,7 +32,12 @@ export const Code = ({
         }}
         display="none"
       >
-        <SyntaxHighlighter language={language} showLineNumbers style={Dark}>
+        <SyntaxHighlighter
+          customStyle={{ margin: 0 }}
+          language={language}
+          showLineNumbers
+          style={Dark}
+        >
           {value}
         </SyntaxHighlighter>
       </Box>
