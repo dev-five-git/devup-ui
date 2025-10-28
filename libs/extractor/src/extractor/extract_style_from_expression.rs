@@ -568,22 +568,20 @@ pub fn extract_style_from_expression<'a>(
                         && selector.is_some()
                         && let Expression::ArrayExpression(array) = &o.value
                     {
+                        let arr = array.elements.iter();
                         Some(
-                            array
-                                .elements
-                                .iter()
-                                .filter_map(|e| {
-                                    if let Some(e) = e.as_expression()
-                                        && let Some(s) = get_string_by_literal_expression(e)
-                                        && !s.is_empty()
-                                    {
-                                        Some(s)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<String>>()
-                                .join(","),
+                            arr.filter_map(|e| {
+                                if let Some(e) = e.as_expression()
+                                    && let Some(s) = get_string_by_literal_expression(e)
+                                    && !s.is_empty()
+                                {
+                                    Some(s)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<String>>()
+                            .join(","),
                         )
                     } else {
                         None

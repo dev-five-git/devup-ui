@@ -7409,6 +7409,9 @@ keyframes({
             _hover: {
               bg: "blue"
             },
+            _print: {
+              bg: "green",
+            },
             bg: "red"
           }
         })
