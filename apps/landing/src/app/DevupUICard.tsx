@@ -3,6 +3,12 @@ import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 export function DevupUICard() {
   return (
     <Flex
+      _hover={{
+        params: [],
+        _active: {
+          bg: 'red',
+        },
+      }}
       bg="$containerBackground"
       border="1px solid $border"
       borderRadius="20px"

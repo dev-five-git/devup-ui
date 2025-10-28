@@ -562,8 +562,48 @@ pub fn extract_style_from_expression<'a>(
             }
             Expression::ObjectExpression(obj) => {
                 let mut props = vec![];
+                let params = obj.properties.iter().find_map(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p
+                        && o.key.name().unwrap() == "params"
+                        && selector.is_some()
+                        && let Expression::ArrayExpression(array) = &o.value
+                    {
+                        Some(
+                            array
+                                .elements
+                                .iter()
+                                .filter_map(|e| {
+                                    if let Some(e) = e.as_expression()
+                                        && let Some(s) = get_string_by_literal_expression(e)
+                                        && !s.is_empty()
+                                    {
+                                        Some(s)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<String>>()
+                                .join(","),
+                        )
+                    } else {
+                        None
+                    }
+                });
+
+                let selector = selector.clone().map(|s| {
+                    if let Some(params) = params
+                        && let StyleSelector::Selector(selector) = s
+                    {
+                        StyleSelector::Selector(format!("{}({})", selector, params))
+                    } else {
+                        s
+                    }
+                });
+
                 for p in obj.properties.iter_mut() {
-                    if let ObjectPropertyKind::ObjectProperty(o) = p {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p
+                        && o.key.name().unwrap() != "params"
+                    {
                         for name in disassemble_property(&o.key.name().unwrap()) {
                             props.extend(
                                 extract_style_from_expression(
@@ -571,7 +611,7 @@ pub fn extract_style_from_expression<'a>(
                                     Some(&name),
                                     &mut o.value,
                                     level,
-                                    selector,
+                                    &selector,
                                 )
                                 .styles,
                             );

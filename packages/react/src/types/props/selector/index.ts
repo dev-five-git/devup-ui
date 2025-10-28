@@ -1,4 +1,4 @@
-import type { Pseudos } from 'csstype'
+import type { AdvancedPseudos, SimplePseudos } from 'csstype'
 
 import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'
@@ -13,36 +13,65 @@ type CamelCase<S extends string> =
 
 type PascalCase<S extends string> = Capitalize<CamelCase<S>>
 
-export type SelectorProps<T = DevupProps> = ResponsiveValue<T | string | false>
+export type SelectorProps<T> = ResponsiveValue<T | string | false>
 export type DevupThemeSelectorProps = keyof DevupTheme extends undefined
-  ? Partial<Record<`_theme${string}`, SelectorProps>>
-  : Partial<Record<`_theme${PascalCase<keyof DevupTheme>}`, SelectorProps>>
+  ? Partial<Record<`_theme${string}`, SelectorProps<DevupProps>>>
+  : Partial<
+      Record<`_theme${PascalCase<keyof DevupTheme>}`, SelectorProps<DevupProps>>
+    >
 
-export type NormalSelector = Exclude<
-  Pseudos,
+export type NormalizedSelector<T> = Exclude<
+  T,
   `:-${string}` | `::-${string}` | `${string}()`
 >
-export type ExtractSelector<T = NormalSelector> = T extends `::${infer R}`
+export type SimpleSelector = NormalizedSelector<SimplePseudos>
+
+export type AdvancedSelector = NormalizedSelector<AdvancedPseudos>
+
+export type ExtractSelector<T> = T extends `::${infer R}`
   ? R
   : T extends `:${infer R}`
     ? R
     : never
-export type CommonSelectorProps = {
-  [K in ExtractSelector as
+
+export type AdvancedSelectorProps = {
+  [K in ExtractSelector<Exclude<AdvancedSelector, SimpleSelector>> as
     | `_${CamelCase<K>}`
-    | `_group${PascalCase<K>}`]?: SelectorProps
+    | `_group${PascalCase<K>}`]?: SimpleSelectorProps &
+    AdvancedSelectorProps & {
+      params: string[]
+      selectors?: Selectors
+    }
+}
+
+export type MultipleSelectorProps = {
+  [K in ExtractSelector<Extract<AdvancedSelector, SimpleSelector>> as
+    | `_${CamelCase<K>}`
+    | `_group${PascalCase<K>}`]?: SelectorProps<DevupProps> & {
+    params?: string[]
+  }
+}
+
+export type SimpleSelectorProps = {
+  [K in ExtractSelector<Exclude<SimpleSelector, AdvancedSelector>> as
+    | `_${CamelCase<K>}`
+    | `_group${PascalCase<K>}`]?: SelectorProps<DevupProps>
 }
 
 export type Selectors = Partial<
   Record<
-    (string & {}) | `&${NormalSelector}` | `_${CamelCase<ExtractSelector>}`,
-    SelectorProps
+    | (string & {})
+    | `&${SimpleSelector}`
+    | `_${CamelCase<ExtractSelector<SimpleSelector>>}`,
+    SelectorProps<DevupProps>
   >
 >
 
-export interface DevupSelectorProps extends CommonSelectorProps {
+export interface DevupSelectorProps
+  extends SimpleSelectorProps,
+    AdvancedSelectorProps {
   // media query
-  _print?: SelectorProps
+  _print?: SelectorProps<DevupProps>
 
   selectors?: Selectors
 
