@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import { exportClassMap, exportFileMap, exportSheet } from '@devup-ui/wasm'
+import {
+  exportClassMap,
+  exportFileMap,
+  exportSheet,
+  getThemeInterface,
+} from '@devup-ui/wasm'
 import {
   DevupUIWebpackPlugin,
   type DevupUIWebpackPluginOptions,
@@ -61,6 +66,15 @@ export function DevupUI(
     const theme = existsSync(devupFile)
       ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
       : {}
+    const themeInterface = getThemeInterface(
+      libPackage,
+      'DevupThemeColors',
+      'DevupThemeTypography',
+      'DevupTheme',
+    )
+    if (themeInterface) {
+      writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
+    }
     // disable turbo parallel
     const excludeRegex = new RegExp(
       `node_modules(?!.*(${['@devup-ui', ...include]
@@ -81,13 +95,13 @@ export function DevupUI(
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
-          loader: '@devup-ui/webpack-plugin/css-loader',
+          loader: '@devup-ui/next-plugin/css-loader',
         },
       ],
       '*.{tsx,ts,js,mjs}': {
         loaders: [
           {
-            loader: '@devup-ui/webpack-plugin/loader',
+            loader: '@devup-ui/next-plugin/loader',
             options: {
               package: libPackage,
               cssDir,

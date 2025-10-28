@@ -22,5 +22,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "jsx": "react-jsx"
-  }
+  },
+  "include": ["src", "vite.config.ts", "../../vitest.setup.ts"],
+  "exclude": ["node_modules", "dist"]
 }
