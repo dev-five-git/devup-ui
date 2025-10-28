@@ -7409,9 +7409,28 @@ keyframes({
             _hover: {
               bg: "blue"
             },
-            _print: {
-              bg: "green",
-            },
+            bg: "red"
+          }
+        })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {css} from '@devup-ui/core'
+        css({
+          "_is": {
+            params: ["test"],
             bg: "red"
           }
         })

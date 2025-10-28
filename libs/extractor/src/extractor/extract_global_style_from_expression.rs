@@ -10,7 +10,7 @@ use crate::{
     extractor::{
         GlobalExtractResult, extract_style_from_expression::extract_style_from_expression,
     },
-    utils::get_string_by_literal_expression,
+    utils::{get_string_by_literal_expression, get_string_by_property_key},
 };
 use css::{
     disassemble_property,
@@ -19,7 +19,7 @@ use css::{
 };
 use oxc_ast::{
     AstBuilder,
-    ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKey},
+    ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
 };
 
 pub fn extract_global_style_from_expression<'a>(
@@ -33,20 +33,7 @@ pub fn extract_global_style_from_expression<'a>(
         for p in obj.properties.iter_mut() {
             match p {
                 ObjectPropertyKind::ObjectProperty(o) => {
-                    if let Some(name) = if let PropertyKey::StaticIdentifier(ident) = &o.key {
-                        Some(ident.name.to_string())
-                    } else if let PropertyKey::StringLiteral(s) = &o.key {
-                        Some(s.value.to_string())
-                    } else if let PropertyKey::TemplateLiteral(t) = &o.key {
-                        Some(
-                            t.quasis
-                                .iter()
-                                .map(|q| q.value.raw.as_str())
-                                .collect::<String>(),
-                        )
-                    } else {
-                        None
-                    } {
+                    if let Some(name) = get_string_by_property_key(&o.key) {
                         if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in arr.elements.iter() {
@@ -108,11 +95,11 @@ pub fn extract_global_style_from_expression<'a>(
                                                     .iter()
                                                     .filter_map(|p| {
                                                         if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                            && let PropertyKey::StaticIdentifier(ident) = &o.key
+                                                            && let Some(property_name) = get_string_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
                                                             Some(
-                                                                disassemble_property(&ident.name)
+                                                                disassemble_property(&property_name)
                                                                     .iter()
                                                                     .map(|p| {
                                                                         let v = if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() };

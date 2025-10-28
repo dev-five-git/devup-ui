@@ -4,7 +4,10 @@ use crate::{
         ExtractResult,
         extract_style_from_expression::{dynamic_style, extract_style_from_expression},
     },
-    utils::{get_number_by_literal_expression, get_string_by_literal_expression},
+    utils::{
+        get_number_by_literal_expression, get_string_by_literal_expression,
+        get_string_by_property_key,
+    },
 };
 use css::style_selector::StyleSelector;
 use oxc_allocator::CloneIn;
@@ -12,7 +15,6 @@ use oxc_ast::{
     AstBuilder,
     ast::{
         ArrayExpressionElement, ComputedMemberExpression, Expression, ObjectPropertyKind,
-        PropertyKey,
     },
 };
 use oxc_span::SPAN;
@@ -113,8 +115,8 @@ pub(super) fn extract_style_from_member_expression<'a>(
             let mut etc = None;
             for p in obj.properties.iter_mut() {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    if let PropertyKey::StaticIdentifier(ref pk) = o.key
-                        && pk.name == k
+                    if let Some(property_name) = get_string_by_property_key(&o.key)
+                        && property_name == k
                     {
                         return ExtractResult {
                             styles: extract_style_from_expression(
@@ -154,12 +156,10 @@ pub(super) fn extract_style_from_member_expression<'a>(
 
         for p in obj.properties.iter_mut() {
             if let ObjectPropertyKind::ObjectProperty(o) = p
-                && let PropertyKey::StaticIdentifier(_)
-                | PropertyKey::NumericLiteral(_)
-                | PropertyKey::StringLiteral(_) = o.key
+                && let Some(property_name) = get_string_by_property_key(&o.key)
             {
                 map.insert(
-                    o.key.name().unwrap().to_string(),
+                    property_name,
                     Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
                             ast_builder,
