@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node ./script.js && next dev",
     "search": "node ./script.js",
-    "build": "node ./script.js && next build --webpack",
+    "build": "node ./script.js && next build",
     "start": "npx serve ./out",
     "lint": "eslint"
   },

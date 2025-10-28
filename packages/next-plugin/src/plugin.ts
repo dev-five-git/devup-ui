@@ -1,11 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
+import { exportClassMap, exportFileMap, exportSheet } from '@devup-ui/wasm'
 import {
   DevupUIWebpackPlugin,
   type DevupUIWebpackPluginOptions,
 } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
+
+import { preload } from './preload'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -26,9 +29,9 @@ export function DevupUI(
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   // turbopack is now stable, TURBOPACK is set to auto without any flags
   if (isTurbo) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('Devup UI is not supported in production with turbopack')
-    }
+    // if (process.env.NODE_ENV === 'production') {
+    //   throw new Error('Devup UI is not supported in production with turbopack')
+    // }
 
     config ??= {}
     config.turbopack ??= {}
@@ -39,6 +42,7 @@ export function DevupUI(
       cssDir = resolve(distDir, 'devup-ui'),
       singleCss = false,
       devupFile = 'devup.json',
+      include = [],
     } = options
 
     const sheetFile = join(distDir, 'sheet.json')
@@ -54,10 +58,23 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    const theme = existsSync(devupFile)
+      ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
+      : undefined
     // disable turbo parallel
-    process.env.TURBOPACK_DEBUG_JS = '*'
-    process.env.NODE_OPTIONS ??= ''
-    process.env.NODE_OPTIONS += ' --inspect-brk'
+    const excludeRegex = new RegExp(
+      `node_modules(?!.*(${['@devup-ui', ...include]
+        .join('|')
+        .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+    )
+
+    if (process.env.NODE_ENV !== 'production') {
+      process.env.TURBOPACK_DEBUG_JS = '*'
+      process.env.NODE_OPTIONS ??= ''
+      process.env.NODE_OPTIONS += ' --inspect-brk'
+    } else {
+      preload(excludeRegex, libPackage, singleCss, theme, cssDir)
+    }
 
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
@@ -65,24 +82,32 @@ export function DevupUI(
           loader: '@devup-ui/webpack-plugin/css-loader',
         },
       ],
-      '*.{tsx,ts,js,mjs}': [
-        {
-          loader: '@devup-ui/webpack-plugin/loader',
-          options: {
-            package: libPackage,
-            cssDir,
-            sheetFile,
-            classMapFile,
-            fileMapFile,
-            watch: process.env.NODE_ENV === 'development',
-            singleCss,
-            // for turbopack, load theme is required on loader
-            theme: existsSync(devupFile)
-              ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
-              : undefined,
+      '*.{tsx,ts,js,mjs}': {
+        loaders: [
+          {
+            loader: '@devup-ui/webpack-plugin/loader',
+            options: {
+              package: libPackage,
+              cssDir,
+              sheetFile,
+              classMapFile,
+              fileMapFile,
+              defaultSheet: JSON.parse(exportSheet()),
+              defaultClassMap: JSON.parse(exportClassMap()),
+              defaultFileMap: JSON.parse(exportFileMap()),
+              watch: process.env.NODE_ENV === 'development',
+              singleCss,
+              // for turbopack, load theme is required on loader
+              theme,
+            },
+          },
+        ],
+        condition: {
+          not: {
+            path: excludeRegex,
           },
         },
-      ],
+      },
     }
     Object.assign(config.turbopack.rules, rules)
     return config

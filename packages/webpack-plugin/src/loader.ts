@@ -7,6 +7,9 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
+  importClassMap,
+  importFileMap,
+  importSheet,
   registerTheme,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
@@ -19,7 +22,11 @@ export interface DevupUILoaderOptions {
   fileMapFile: string
   watch: boolean
   singleCss: boolean
+  // turbo
   theme?: object
+  defaultSheet: object
+  defaultClassMap: object
+  defaultFileMap: object
 }
 let init = false
 
@@ -34,21 +41,26 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       fileMapFile,
       singleCss,
       theme,
+      defaultClassMap,
+      defaultFileMap,
+      defaultSheet,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
-    if (theme && !init) {
+    if (!init) {
       init = true
-      registerTheme(theme)
+      if (defaultFileMap) importFileMap(defaultFileMap)
+      if (defaultClassMap) importClassMap(defaultClassMap)
+      if (defaultSheet) importSheet(defaultSheet)
+      if (theme) registerTheme(theme)
     }
 
     try {
-      let rel = relative(dirname(this.resourcePath), cssDir).replaceAll(
-        '\\',
-        '/',
-      )
+      let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
-      if (!rel.startsWith('./')) rel = `./${rel}`
+      const relativePath = relative(process.cwd(), id)
+
+      if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
       const {
         code,
         css = '',
@@ -56,10 +68,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         cssFile,
         updatedBaseStyle,
       } = codeExtract(
-        id,
+        relativePath,
         source.toString(),
         libPackage,
-        rel,
+        relCssDir,
         singleCss,
         false,
         true,
