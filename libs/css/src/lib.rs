@@ -68,6 +68,19 @@ pub fn disassemble_property(property: &str) -> Vec<String> {
         })
 }
 
+pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelector {
+    match selector {
+        StyleSelector::Selector(value) => StyleSelector::Selector(format!("{}({})", value, params)),
+        StyleSelector::Global(value, file) => {
+            StyleSelector::Global(format!("{}({})", value, params), file)
+        }
+        StyleSelector::Media { query, selector } => StyleSelector::Media {
+            query: query.to_string(),
+            selector: selector.map(|s| format!("{}({})", s, params)),
+        },
+    }
+}
+
 pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(String, String)>> {
     if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
         if let Some(map) = map.get(value) {
@@ -676,5 +689,33 @@ mod tests {
         set_debug(true);
         assert_eq!(keyframes_to_keyframes_name("spin", None), "k-spin");
         assert_eq!(keyframes_to_keyframes_name("spin1", None), "k-spin1");
+    }
+
+    #[test]
+    fn test_add_selector_params() {
+        assert_eq!(
+            add_selector_params(StyleSelector::Selector("hover:is".to_string()), "test"),
+            StyleSelector::Selector("hover:is(test)".to_string())
+        );
+        assert_eq!(
+            add_selector_params(
+                StyleSelector::Global("&:is".to_string(), "file.ts".to_string()),
+                "test"
+            ),
+            StyleSelector::Global("&:is(test)".to_string(), "file.ts".to_string())
+        );
+        assert_eq!(
+            add_selector_params(
+                StyleSelector::Media {
+                    query: "print".to_string(),
+                    selector: Some("&:is".to_string())
+                },
+                "test"
+            ),
+            StyleSelector::Media {
+                query: "print".to_string(),
+                selector: Some("&:is(test)".to_string())
+            }
+        );
     }
 }

@@ -1,5 +1,5 @@
 use oxc_allocator::{Allocator, CloneIn};
-use oxc_ast::ast::{Expression, JSXAttributeValue, Statement};
+use oxc_ast::ast::{Expression, JSXAttributeValue, PropertyKey, Statement};
 use oxc_codegen::Codegen;
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
@@ -109,6 +109,18 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
             }
             _ => None,
         })
+}
+
+pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
+    if let PropertyKey::StaticIdentifier(ident) = key {
+        Some(ident.name.to_string())
+    } else if let Some(s) = key.as_expression()
+        && let Some(s) = get_string_by_literal_expression(s)
+    {
+        Some(s)
+    } else {
+        None
+    }
 }
 
 pub fn gcd(a: u32, b: u32) -> u32 {

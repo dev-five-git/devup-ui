@@ -10,19 +10,19 @@ use crate::{
     },
     utils::{
         expression_to_code, get_number_by_literal_expression, get_string_by_literal_expression,
-        is_same_expression,
+        get_string_by_property_key, is_same_expression,
     },
 };
 use css::{
-    disassemble_property, get_enum_property_map, get_enum_property_value,
+    add_selector_params, disassemble_property, get_enum_property_map, get_enum_property_value,
     is_special_property::is_special_property, style_selector::StyleSelector, utils::to_kebab_case,
 };
 use oxc_allocator::CloneIn;
 use oxc_ast::{
     AstBuilder,
     ast::{
-        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, PropertyKey,
-        TemplateElementValue, UnaryOperator,
+        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, TemplateElementValue,
+        UnaryOperator,
     },
 };
 use oxc_span::SPAN;
@@ -50,9 +50,8 @@ pub fn extract_style_from_expression<'a>(
                     let mut prop = obj.properties.remove(idx);
                     if !match &mut prop {
                         ObjectPropertyKind::ObjectProperty(prop) => {
-                            if let PropertyKey::StaticIdentifier(ident) = &prop.key
-                                && let name = ident.name.as_str()
-                                && !is_special_property(name)
+                            if let Some(name) = get_string_by_property_key(&prop.key)
+                                && !is_special_property(&name)
                             {
                                 let property_name = name.to_string();
                                 for name in disassemble_property(&property_name) {
@@ -562,8 +561,44 @@ pub fn extract_style_from_expression<'a>(
             }
             Expression::ObjectExpression(obj) => {
                 let mut props = vec![];
+                let params = obj.properties.iter().find_map(|p| {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p
+                        && o.key.name().unwrap() == "params"
+                        && selector.is_some()
+                        && let Expression::ArrayExpression(array) = &o.value
+                    {
+                        let arr = array.elements.iter();
+                        Some(
+                            arr.filter_map(|e| {
+                                if let Some(e) = e.as_expression()
+                                    && let Some(s) = get_string_by_literal_expression(e)
+                                    && !s.is_empty()
+                                {
+                                    Some(s)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<String>>()
+                            .join(","),
+                        )
+                    } else {
+                        None
+                    }
+                });
+
+                let selector = selector.clone().map(|s| {
+                    if let Some(params) = params {
+                        add_selector_params(s, &params)
+                    } else {
+                        s
+                    }
+                });
+
                 for p in obj.properties.iter_mut() {
-                    if let ObjectPropertyKind::ObjectProperty(o) = p {
+                    if let ObjectPropertyKind::ObjectProperty(o) = p
+                        && o.key.name().unwrap() != "params"
+                    {
                         for name in disassemble_property(&o.key.name().unwrap()) {
                             props.extend(
                                 extract_style_from_expression(
@@ -571,7 +606,7 @@ pub fn extract_style_from_expression<'a>(
                                     Some(&name),
                                     &mut o.value,
                                     level,
-                                    selector,
+                                    &selector,
                                 )
                                 .styles,
                             );

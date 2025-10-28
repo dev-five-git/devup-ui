@@ -24,7 +24,7 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, PropertyKey, Statement,
+    ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, Statement,
     VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
@@ -34,7 +34,7 @@ use oxc_ast_visit::walk_mut::{
 };
 use strum::IntoEnumIterator;
 
-use crate::utils::jsx_expression_to_number;
+use crate::utils::{get_string_by_property_key, jsx_expression_to_number};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -392,13 +392,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.jsx_object = Some(ident.name.to_string());
                 } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
                     for prop in &object.properties {
-                        if let PropertyKey::StaticIdentifier(ident) = &prop.key
+                        if let Some(name) = get_string_by_property_key(&prop.key)
                             && let Some(k) = prop
                                 .value
                                 .get_binding_identifier()
                                 .map(|id| id.name.to_string())
                         {
-                            self.jsx_imports.insert(k, ident.name.to_string());
+                            self.jsx_imports.insert(k, name);
                         }
                     }
                 }
@@ -407,7 +407,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.import_object = Some(ident.name.to_string());
                 } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
                     for prop in &object.properties {
-                        if let PropertyKey::StaticIdentifier(ident) = &prop.key
+                        if let Some(name) = get_string_by_property_key(&prop.key)
                             && let Ok(kind) = ExportVariableKind::try_from(
                                 prop.value
                                     .get_binding_identifier()
@@ -415,7 +415,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                     .unwrap_or_default(),
                             )
                         {
-                            self.imports.insert(ident.name.to_string(), kind);
+                            self.imports.insert(name, kind);
                         }
                     }
                 }
