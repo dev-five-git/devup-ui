@@ -1,20 +1,23 @@
 import { Box, keyframes } from '@devup-ui/react'
 import { SVGProps } from 'react'
 
-const spin = keyframes({
-  '0%': {
-    transform: 'rotateZ(0deg)',
-  },
-  '100%': {
-    transform: 'rotateZ(360deg)',
-  },
-})
-
 interface IconSpinnerProps extends SVGProps<SVGSVGElement> {
   type?: 'whole' | 'partial'
 }
 
 export function IconSpinner({ type = 'whole', ...props }: IconSpinnerProps) {
+  /**
+   * TODO: After fixing the keyframes issue, keyframe must be moved to outside function
+   */
+  const spin = keyframes({
+    '0%': {
+      transform: 'rotateZ(0deg)',
+    },
+    '100%': {
+      transform: 'rotateZ(360deg)',
+    },
+  })
+
   if (type === 'partial') {
     return (
       <Box
