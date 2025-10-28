@@ -1,5 +1,12 @@
 # @devup-ui/reset-css
 
+## 1.0.14
+
+### Patch Changes
+
+- Updated dependencies [[`b85123f`](https://github.com/dev-five-git/devup-ui/commit/b85123fce0c097649bd602566cb3601107c190f6)]:
+  - @devup-ui/react@1.0.23
+
 ## 1.0.13
 
 ### Patch Changes

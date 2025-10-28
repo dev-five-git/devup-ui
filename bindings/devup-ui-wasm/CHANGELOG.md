@@ -1,5 +1,11 @@
 # @devup-ui/wasm
 
+## 1.0.44
+
+### Patch Changes
+
+- [#449](https://github.com/dev-five-git/devup-ui/pull/449) [`b85123f`](https://github.com/dev-five-git/devup-ui/commit/b85123fce0c097649bd602566cb3601107c190f6) Thanks [@owjs3901](https://github.com/owjs3901)! - Support selector with params
+
 ## 1.0.43
 
 ### Patch Changes
