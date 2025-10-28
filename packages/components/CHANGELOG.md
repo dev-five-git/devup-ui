@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.30
+
+### Patch Changes
+
+- [#451](https://github.com/dev-five-git/devup-ui/pull/451) [`4dde835`](https://github.com/dev-five-git/devup-ui/commit/4dde835e9b9ce91e3f7c79bea8d3640603b842ff) Thanks [@belltalion](https://github.com/belltalion)! - Hotfix button keyframe
+
 ## 0.1.29
 
 ### Patch Changes

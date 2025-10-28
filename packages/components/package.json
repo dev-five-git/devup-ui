@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "0.1.29",
+  "version": "0.1.30",
   "type": "module",
   "scripts": {
     "lint": "eslint",
