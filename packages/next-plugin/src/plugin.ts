@@ -69,10 +69,12 @@ export function DevupUI(
     )
 
     if (process.env.NODE_ENV !== 'production') {
+      // dev
       process.env.TURBOPACK_DEBUG_JS = '*'
       process.env.NODE_OPTIONS ??= ''
       process.env.NODE_OPTIONS += ' --inspect-brk'
     } else {
+      // build
       preload(excludeRegex, libPackage, singleCss, theme, cssDir)
     }
 

@@ -9,7 +9,7 @@ export function preload(
   excludeRegex: RegExp,
   libPackage: string,
   singleCss: boolean,
-  theme: object | undefined,
+  theme: object,
   cssDir: string,
 ) {
   const projectRoot = findRoot(process.cwd())
@@ -18,7 +18,7 @@ export function preload(
     cwd: projectRoot,
     exclude: (filename) => excludeRegex.test(filename),
   })
-  if (theme) registerTheme(theme)
+  registerTheme(theme)
   for (const file of collected) {
     const filePath = relative(process.cwd(), join(projectRoot, file))
     const { cssFile, css } = codeExtract(

@@ -10,8 +10,6 @@ import {
   registerTheme,
 } from '@devup-ui/wasm'
 
-import devupUILoader from '../loader'
-
 vi.mock('@devup-ui/wasm')
 vi.mock('node:fs/promises')
 vi.mock('node:path', async (original: any) => {
@@ -24,6 +22,7 @@ vi.mock('node:path', async (original: any) => {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.resetModules()
   Date.now = vi.fn().mockReturnValue(0)
 })
 
@@ -33,6 +32,7 @@ describe('devupUILoader', () => {
       updatedBaseStyle: [true, false],
     }),
   )('should extract code with css', async (options) => {
+    const { default: devupUILoader } = await import('../loader')
     const _compiler = {
       __DEVUP_CACHE: '',
     }
@@ -102,7 +102,8 @@ describe('devupUILoader', () => {
     })
   })
 
-  it('should extract code without css', () => {
+  it('should extract code without css', async () => {
+    const { default: devupUILoader } = await import('../loader')
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -141,7 +142,8 @@ describe('devupUILoader', () => {
     })
   })
 
-  it('should handle error', () => {
+  it('should handle error', async () => {
+    const { default: devupUILoader } = await import('../loader')
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -162,7 +164,8 @@ describe('devupUILoader', () => {
     expect(t.async()).toHaveBeenCalledWith(new Error('error'))
   })
 
-  it('should load with date now on watch', () => {
+  it('should load with date now on watch', async () => {
+    const { default: devupUILoader } = await import('../loader')
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -197,7 +200,8 @@ describe('devupUILoader', () => {
     )
   })
 
-  it('should load with nowatch', () => {
+  it('should load with nowatch', async () => {
+    const { default: devupUILoader } = await import('../loader')
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -221,7 +225,8 @@ describe('devupUILoader', () => {
     vi.mocked(relative).mockReturnValue('./foo/index.tsx')
     devupUILoader.bind(t as any)(Buffer.from('code'), '/foo/index.tsx')
   })
-  it('should load with theme', () => {
+  it('should load with theme', async () => {
+    const { default: devupUILoader } = await import('../loader')
     const t = {
       getOptions: () => ({
         package: 'package',
