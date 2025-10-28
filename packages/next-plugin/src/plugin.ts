@@ -6,6 +6,7 @@ import {
   exportFileMap,
   exportSheet,
   getThemeInterface,
+  registerTheme,
 } from '@devup-ui/wasm'
 import {
   DevupUIWebpackPlugin,
@@ -66,6 +67,7 @@ export function DevupUI(
     const theme = existsSync(devupFile)
       ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
       : {}
+    registerTheme(theme)
     const themeInterface = getThemeInterface(
       libPackage,
       'DevupThemeColors',
