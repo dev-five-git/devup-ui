@@ -21,8 +21,8 @@ use oxc_allocator::CloneIn;
 use oxc_ast::{
     AstBuilder,
     ast::{
-        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind,
-        TemplateElementValue, UnaryOperator,
+        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, TemplateElementValue,
+        UnaryOperator,
     },
 };
 use oxc_span::SPAN;

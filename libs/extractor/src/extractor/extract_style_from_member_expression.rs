@@ -13,9 +13,7 @@ use css::style_selector::StyleSelector;
 use oxc_allocator::CloneIn;
 use oxc_ast::{
     AstBuilder,
-    ast::{
-        ArrayExpressionElement, ComputedMemberExpression, Expression, ObjectPropertyKind,
-    },
+    ast::{ArrayExpressionElement, ComputedMemberExpression, Expression, ObjectPropertyKind},
 };
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
