@@ -1,0 +1,205 @@
+export const metadata = {
+  title: 'Optimize CSS',
+  alternates: {
+    canonical: '/docs/core-concepts/optimize-css',
+  },
+}
+
+# Optimize CSS
+
+Devup UI automatically optimizes CSS output through micro-unit optimization, duplicate removal, and intelligent value conversion to minimize bundle size and improve performance. This document explains the various CSS optimization techniques used by Devup UI, including micro-unit optimization, color optimization, and global CSS handling.
+
+## Micro-unit Optimization
+
+### **Value Optimization**
+
+Devup UI optimizes CSS values by:
+
+- **Removing unnecessary zeros**: `0px` becomes `0`
+- **Shortening decimals**: `0.5000` becomes `0.5`
+- **Optimizing units**: `0px` becomes `0` when appropriate
+- **Converting to alternative units**: `0px` is converted to `0%` in CSS functions where unit-less zero is not allowed
+- **Removing redundant spaces**: `margin: 0 0 0 0` becomes `margin:0`
+
+```
+// Before optimization
+<Box
+  margin="0px 0px 0px 0px"
+  padding="16.0000px"
+  width="0px"
+/>
+
+// After optimization
+<Box
+  margin="0"
+  padding="16px"
+  width="0"
+/>
+```
+
+### **Aspect Ratio Optimization**
+
+Aspect ratios are simplified to their smallest equivalent ratio using the greatest common divisor (GCD).
+For example, 500/100 becomes 5/1, while 16/9 remains unchanged since GCD(16, 9) = 1.
+
+```tsx
+// Before: aspect-ratio: 500/100
+<Box aspectRatio="500/100" />
+
+// After: aspect-ratio: 5/1 (optimized)
+// The system calculates GCD(500, 100) = 100, simplifying the ratio to 5/1
+```
+
+## Color Optimization
+
+### **RGB/RGBA to Hex Conversion**
+
+All RGB and RGBA color values are normalized and converted into compact hexadecimal form.
+
+```
+// Input
+<Box bg="rgb(255, 0, 0)" />
+<Box bg="rgba(255, 0, 0, 0.5)" />
+
+// Output
+<Box bg="#f00" /> // #ff0000 shortened to #f00
+<Box bg="#f000" /> // #ff000080 shortened to #f000
+```
+
+### **Hex Shortening**
+
+Hex shortening converts long hex codes into their shortest possible form.
+Six- or eight-digit values are reduced to three or four digits when safely equivalent.
+
+```tsx
+// 6-digit hex to 3-digit
+// #ffffff → #fff
+// #000000 → #000
+// #ff0000 → #f00
+
+// 8-digit hex to 4-digit (when alpha is FF)
+// #ffffffff → #ffff
+// #000000ff → #000f
+```
+
+### **Alpha Channel Optimization**
+
+Alpha channel optimization removes unnecessary opacity information.
+Fully opaque colors (FF) are shortened, while partial transparency values are preserved for accuracy.
+
+```tsx
+// Full opacity is removed and shortened to 3-digit hex
+// #ff0000ff → #f00
+
+// Partial opacity is preserved and shortened to 4-digit hex
+// #ff000080 → #f000
+```
+
+## Global CSS Optimization
+
+### **CSS Block Optimization**
+
+Global CSS blocks are optimized by:
+
+- **Minifying whitespace**: Multiple spaces become single spaces
+- **Removing semicolons**: Last property in a block doesn't need semicolon
+
+```css
+/* Before optimization */
+div {
+  /* comment */
+  background-color: red;
+  /* color: blue; */
+}
+
+/* After optimization */
+div {
+  background-color: red;
+}
+```
+
+### **Keyframes Optimization**
+
+Keyframes are optimized for minimal output:
+
+```tsx
+// Input
+const fadeIn = keyframes({
+  from: { opacity: 0 },
+  to: { opacity: 1 },
+})
+
+// Output (optimized)
+// @keyframes k-fadeIn{from{opacity:0}to{opacity:1}}
+```
+
+### **Font Face Optimization**
+
+Font faces are automatically added and optimized:
+
+```tsx
+// Input
+<Box fontFamily="Inter" />
+
+// Output (optimized)
+// @font-face{font-family:Inter;src:url(./fonts/Inter.woff2)}
+```
+
+## Value Conversion
+
+### **Unit Conversion**
+
+Values are converted to their most appropriate units:
+Numeric values are automatically interpreted as pixel units, while string-based values with explicit units (e.g., rem, %) are preserved for accurate rendering.
+
+```
+// Numbers without units are treated as pixels (multiplied by 4)
+<Box w={16} /> // width: 64px
+
+// Strings with units are preserved
+<Box w="16rem" /> // width: 16rem
+<Box w="100%" /> // width: 100%
+```
+
+### **Zero Value Optimization**
+
+Zero values are optimized:
+
+```
+// Before
+<Box margin="0px 0px 0px 0px" />
+
+// After
+<Box margin="0" />
+```
+
+## Duplicate Removal
+
+### **Style Deduplication**
+
+Identical style rules across multiple components are automatically merged into a single CSS rule, reducing redundancy and overall bundle size.
+
+```tsx
+// Multiple components with same styles
+<div>
+  <Box bg="red" color="white" />
+  <Box bg="red" color="white" />
+  <Box bg="red" color="white" />
+</div>
+
+// Output: Only one CSS rule generated
+// .red-white{background:red;color:white}
+```
+
+### **Advantages**
+
+Devup UI offers complete flexibility in how you implement and optimize styles — while maintaining measurable performance gains.
+
+- **Flexible syntax support** – Use CSS utility objects, template literals, or prop-based expressions seamlessly in one system
+- **Smaller bundle size** – Reduced CSS output through color, value, and duplicate optimization
+- **Faster parsing** – Lightweight CSS loads and parses quickly in browsers
+- **Better caching** – Compact, consistent values improve cache efficiency
+- **Lower memory usage** – Reduced CSS footprint minimizes runtime memory consumption
+
+This unified approach ensures both **maximum developer freedom** and **optimized performance**,
+allowing teams to write CSS their way without compromising efficiency.

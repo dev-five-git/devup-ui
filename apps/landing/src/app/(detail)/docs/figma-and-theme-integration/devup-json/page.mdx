@@ -1,0 +1,188 @@
+export const metadata = {
+  title: 'devup.json Configuration',
+  alternates: {
+    canonical: '/docs/figma-and-theme-integration/devup-json',
+  },
+}
+
+# devup.json Configuration
+
+The `devup.json` file is the central configuration file for Devup UI that allows you to define custom themes, colors, typography, and other design tokens.
+
+## Basic Structure
+
+```json
+{
+  "theme": {
+    "colors": {
+      "primary": "#5A44FF"
+    },
+    "typography": {
+      "h1": {
+        "fontSize": "32px"
+      }
+    }
+  }
+}
+```
+
+## Colors Configuration
+
+### **Basic Color Setup**
+
+Define colors for different themes.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#5A44FF",
+        "secondary": "#85A5F2",
+        "text": "#2F2F2F",
+        "background": "#FFF"
+      },
+      "dark": {
+        "primary": "#9086FF",
+        "secondary": "#2A4586",
+        "text": "#EDEDED",
+        "background": "#131313"
+      }
+    }
+  }
+}
+```
+
+### **Semantic Color Naming**
+
+Use semantic names that describe purpose.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#5A44FF",
+        "primaryHover": "#4D38AE",
+        "text": "#2F2F2F",
+        "textSecondary": "#787878",
+        "background": "#FFF",
+        "surface": "#F8F8F8",
+        "success": "#4CAF50",
+        "warning": "#FF9800",
+        "error": "#F44336"
+      }
+    }
+  }
+}
+```
+
+### **Color Variants**
+
+Create color variants with opacity.
+
+```json
+{
+  "theme": {
+    "colors": {
+      "light": {
+        "primary": "#5A44FF",
+        "primary50": "#5A44FF80",
+        "primary20": "#5A44FF33",
+        "black50": "#00000080"
+      }
+    }
+  }
+}
+```
+
+## Typography Configuration
+
+### **Typography Properties**
+
+Each typography definition can include.
+
+- **fontFamily**: Font family name
+- **fontWeight**: Numeric weight (100-900) or string
+- **fontSize**: Size with unit (`16px`, `1rem`)
+- **lineHeight**: Numeric ratio or string with unit
+- **letterSpacing**: Spacing with unit (`-0.03em`)
+
+### **Typography Configuration**
+
+Define typography styles using objects for static values or arrays for responsive breakpoints.
+
+#### **Static typography**
+
+```json
+{
+  "theme": {
+    "typography": {
+      "caption": {
+        "fontFamily": "Pretendard",
+        "fontWeight": 500,
+        "fontSize": "14px",
+        "lineHeight": 1.4
+      }
+    }
+  }
+}
+```
+
+#### **Responsive typography**
+
+Use arrays to define styles for each breakpoint.
+
+```json
+{
+  "theme": {
+    "typography": {
+      "heading": [
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "20px",
+          "lineHeight": 1.3
+        },
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "28px",
+          "lineHeight": 1.3
+        },
+        {
+          "fontFamily": "Pretendard",
+          "fontWeight": 700,
+          "fontSize": "32px",
+          "lineHeight": 1.2
+        }
+      ]
+    }
+  }
+}
+```
+
+## Usage in Components
+
+### **Color Usage**
+
+Access colors using the `$` prefix.
+
+```tsx
+<Box bg="$primary" borderColor="$border" color="$text">
+  Content
+</Box>
+```
+
+- To enable type autocompletion for theme values, add `"df/*.ts"` to the `include` array in your `tsconfig.json` file.
+
+### **Typography Usage**
+
+Apply typography styles using the `typography` prop.
+
+```tsx
+<>
+  <Text typography="h1">Heading 1</Text>
+  <Text typography="body">Body text</Text>
+</>
+```

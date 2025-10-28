@@ -77,18 +77,6 @@ globalCss({
       fontDisplay: 'swap',
     },
   ],
-  table: {
-    borderCollapse: 'collapse',
-    borderSpacing: 0,
-    border: '1px solid var(--text)',
-    color: 'var(--text, #2F2F2F)',
-    fontFamily: 'Pretendard',
-    fontSize: '16px',
-    fontStyle: 'normal',
-    fontWeight: 400,
-    lineHeight: '150%',
-    letterSpacing: '-0.48px',
-  },
   code: {
     fontFamily: 'D2Coding',
     fontSize: ['13px', '15px'],
@@ -96,10 +84,6 @@ globalCss({
     fontWeight: 700,
     lineHeight: '1.5',
     letterSpacing: '-0.03em',
-  },
-  'th, td': {
-    border: '1px solid var(--text)',
-    padding: '6px 13px',
   },
   pre: {
     borderRadius: '10px',
@@ -166,7 +150,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             width="0"
           />
         </noscript>
-        <ReactLenis options={{ duration: 1.4 }} root>
+        <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
           <SearchModal />
           <Box bg="$background">
             <Header />
