@@ -12,6 +12,7 @@ vi.mock('node:fs')
 vi.mock('../preload')
 vi.mock('@devup-ui/wasm', async (original) => ({
   ...(await original()),
+  registerTheme: vi.fn(),
   getThemeInterface: vi.fn(),
 }))
 
