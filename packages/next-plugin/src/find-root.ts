@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-export function findRoot(dir: string) {
+export function findRoot(dir: string): string {
   let root = dir
   let prev = null
   const collectecd: string[] = []
@@ -13,7 +13,7 @@ export function findRoot(dir: string) {
     root = dirname(root)
   }
   if (collectecd.length > 0) {
-    return collectecd.pop() ?? process.cwd()
+    return collectecd.pop()!
   }
   return process.cwd()
 }

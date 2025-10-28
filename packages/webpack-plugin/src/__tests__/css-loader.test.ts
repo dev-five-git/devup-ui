@@ -5,7 +5,10 @@ import { getCss } from '@devup-ui/wasm'
 import devupUICssLoader from '../css-loader'
 
 vi.mock('node:path')
-vi.mock('@devup-ui/wasm')
+vi.mock('@devup-ui/wasm', () => ({
+  registerTheme: vi.fn(),
+  getCss: vi.fn(),
+}))
 
 beforeEach(() => {
   vi.resetAllMocks()
