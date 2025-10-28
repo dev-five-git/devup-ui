@@ -27,6 +27,9 @@ export const metadata: Metadata = {
 resetCss()
 
 globalCss({
+  pre: {
+    borderRadius: '10px',
+  },
   code: {
     fontFamily: 'D2Coding',
     fontSize: ['13px', '15px'],
@@ -34,9 +37,6 @@ globalCss({
     fontWeight: 700,
     lineHeight: '1.5',
     letterSpacing: '-0.03em',
-  },
-  pre: {
-    borderRadius: '10px',
   },
 })
 
