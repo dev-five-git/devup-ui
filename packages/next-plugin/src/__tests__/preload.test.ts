@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { realpathSync, writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +19,7 @@ vi.mock('node:fs', () => ({
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   existsSync: vi.fn(),
+  realpathSync: vi.fn().mockReturnValue('src/App.tsx'),
 }))
 
 vi.mock('glob', () => ({
@@ -68,6 +69,7 @@ describe('preload', () => {
       ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
       {
         follow: true,
+        absolute: true,
       },
     )
   })
@@ -83,7 +85,10 @@ describe('preload', () => {
   it('should process each collected file', () => {
     const files = ['src/App.tsx', 'src/components/Button.tsx', '.next/page.tsx']
     vi.mocked(globSync).mockReturnValue(files)
-
+    vi.mocked(realpathSync)
+      .mockReturnValueOnce('src/App.tsx')
+      .mockReturnValueOnce('src/components/Button.tsx')
+      .mockReturnValueOnce('.next/page.tsx')
     preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
 
     expect(codeExtract).toHaveBeenCalledTimes(2)
