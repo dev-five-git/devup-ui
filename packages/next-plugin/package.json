@@ -34,6 +34,14 @@
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./css-loader": {
+      "import": "./dist/css-loader.js",
+      "require": "./dist/css-loader.cjs"
+    },
+    "./loader": {
+      "import": "./dist/loader.js",
+      "require": "./dist/loader.cjs"
     }
   },
   "files": [

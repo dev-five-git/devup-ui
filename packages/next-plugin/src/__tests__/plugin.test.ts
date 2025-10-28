@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { getThemeInterface } from '@devup-ui/wasm'
 import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
 
 import { DevupUI } from '../plugin'
@@ -9,6 +10,10 @@ import { preload } from '../preload'
 vi.mock('@devup-ui/webpack-plugin')
 vi.mock('node:fs')
 vi.mock('../preload')
+vi.mock('@devup-ui/wasm', async (original) => ({
+  ...(await original()),
+  getThemeInterface: vi.fn(),
+}))
 
 describe('DevupUINextPlugin', () => {
   describe('webpack', () => {
@@ -84,13 +89,13 @@ describe('DevupUINextPlugin', () => {
           rules: {
             './df/devup-ui/*.css': [
               {
-                loader: '@devup-ui/webpack-plugin/css-loader',
+                loader: '@devup-ui/next-plugin/css-loader',
               },
             ],
             '*.{tsx,ts,js,mjs}': {
               loaders: [
                 {
-                  loader: '@devup-ui/webpack-plugin/loader',
+                  loader: '@devup-ui/next-plugin/loader',
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
@@ -139,7 +144,7 @@ describe('DevupUINextPlugin', () => {
           rules: {
             './df/devup-ui/*.css': [
               {
-                loader: '@devup-ui/webpack-plugin/css-loader',
+                loader: '@devup-ui/next-plugin/css-loader',
               },
             ],
             '*.{tsx,ts,js,mjs}': {
@@ -154,7 +159,7 @@ describe('DevupUINextPlugin', () => {
               },
               loaders: [
                 {
-                  loader: '@devup-ui/webpack-plugin/loader',
+                  loader: '@devup-ui/next-plugin/loader',
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
@@ -201,7 +206,7 @@ describe('DevupUINextPlugin', () => {
           rules: {
             './df/devup-ui/*.css': [
               {
-                loader: '@devup-ui/webpack-plugin/css-loader',
+                loader: '@devup-ui/next-plugin/css-loader',
               },
             ],
             '*.{tsx,ts,js,mjs}': {
@@ -216,7 +221,7 @@ describe('DevupUINextPlugin', () => {
               },
               loaders: [
                 {
-                  loader: '@devup-ui/webpack-plugin/loader',
+                  loader: '@devup-ui/next-plugin/loader',
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
@@ -269,6 +274,25 @@ describe('DevupUINextPlugin', () => {
         'theme',
         expect.any(String),
       )
+    })
+    it('should create theme.d.ts file', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.mocked(existsSync).mockReturnValue(true)
+      vi.mocked(getThemeInterface).mockReturnValue('interface code')
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ theme: 'theme' }),
+      )
+      vi.mocked(mkdirSync).mockReturnValue('')
+      vi.mocked(writeFileSync).mockReturnValue()
+      DevupUI({})
+      expect(writeFileSync).toHaveBeenCalledWith(
+        join('df', 'theme.d.ts'),
+        'interface code',
+      )
+      expect(mkdirSync).toHaveBeenCalledWith('df', {
+        recursive: true,
+      })
+      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
     })
   })
 })
