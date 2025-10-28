@@ -33,10 +33,9 @@ type GlobalCssProps = {
     DevupSelectorProps &
     DevupThemeSelectorProps
 } & {
-  [K in
-    | keyof HTMLElementTagNameMap
-    | keyof SVGElementTagNameMap
-    | '*']?: DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
+  [K in `${keyof HTMLElementTagNameMap | keyof SVGElementTagNameMap | '.' | '*' | '#' | ':' | '['}${string}`]?: DevupCommonProps &
+    DevupSelectorProps &
+    DevupThemeSelectorProps
 }
 
 interface FontFaceProps {
