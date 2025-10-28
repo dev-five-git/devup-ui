@@ -30,6 +30,56 @@ globalCss({
   pre: {
     borderRadius: '10px',
   },
+  fontFaces: [
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-ExtraBold.woff2) format("woff2")',
+      fontWeight: 800,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2) format("woff2")',
+      fontWeight: 700,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-SemiBold.woff2) format("woff2")',
+      fontWeight: 600,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-Medium.woff2) format("woff2")',
+      fontWeight: 500,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-Regular.woff2) format("woff2")',
+      fontWeight: 400,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-Light.woff2) format("woff2")',
+      fontWeight: 300,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'Pretendard',
+      src: 'url(https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff2/Pretendard-Thin.woff2) format("woff2")',
+      fontWeight: 100,
+      fontStyle: 'normal',
+    },
+    {
+      fontFamily: 'D2Coding',
+      src: 'url(https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_three@1.0/D2Coding.woff) format("woff")',
+      fontWeight: 400,
+      fontDisplay: 'swap',
+    },
+  ],
   code: {
     fontFamily: 'D2Coding',
     fontSize: ['13px', '15px'],
@@ -57,12 +107,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 })(window,document,'script','dataLayer','GTM-PSRKC4QZ')`,
           }}
         />
-        <ThemeScript auto />
-        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-        <link href="/favicon.ico" rel="shortcut icon" />
         <link
-          href="https://cdn.jsdelivr.net/gh/joungkyun/font-d2coding/d2coding.css"
-          rel="stylesheet"
+          as="font"
+          crossOrigin="anonymous"
+          href="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_three@1.0/D2Coding.woff"
+          rel="preload"
+          type="font/woff"
         />
         {[
           'ExtraBold',
@@ -82,10 +132,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             type="font/woff2"
           />
         ))}
-        <link
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
-          rel="stylesheet"
-        />
+        <ThemeScript auto />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+        <link href="/favicon.ico" rel="shortcut icon" />
       </head>
       <body
         className={css({

@@ -4,7 +4,8 @@
       "vite/client",
       "vitest/importMeta",
       "vitest/globals",
-      "@testing-library/jest-dom"
+      "@testing-library/jest-dom",
+      "node"
     ],
     "strict": true,
     "target": "ESNext",
