@@ -1,5 +1,12 @@
 # @devup-ui/components
 
+## 0.1.32
+
+### Patch Changes
+
+- Updated dependencies [[`840553d`](https://github.com/dev-five-git/devup-ui/commit/840553d3e3ddcdc901af99daa9ca87eca3f5a640)]:
+  - @devup-ui/react@1.0.24
+
 ## 0.1.31
 
 ### Patch Changes

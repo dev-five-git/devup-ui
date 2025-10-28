@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.24
+
+### Patch Changes
+
+- [#459](https://github.com/dev-five-git/devup-ui/pull/459) [`840553d`](https://github.com/dev-five-git/devup-ui/commit/840553d3e3ddcdc901af99daa9ca87eca3f5a640) Thanks [@owjs3901](https://github.com/owjs3901)! - Global css typing
+
 ## 1.0.23
 
 ### Patch Changes
