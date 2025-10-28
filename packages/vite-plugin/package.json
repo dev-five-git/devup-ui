@@ -18,7 +18,7 @@
     "vite"
   ],
   "type": "module",
-  "version": "1.0.46",
+  "version": "1.0.47",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
