@@ -588,18 +588,22 @@ pub fn extract_style_from_expression<'a>(
                     }
                 });
 
-                let selector = selector.clone().map(|s| {
-                    if let Some(params) = params {
-                        if let StyleSelector::Selector(selector) = s {
+                let selector = selector.clone().map(|s| match &s {
+                    StyleSelector::Selector(selector) => {
+                        if let Some(params) = params {
                             StyleSelector::Selector(format!("{}({})", selector, params))
-                        } else if let StyleSelector::Global(selector, file) = s {
-                            StyleSelector::Global(format!("{}({})", selector, params), file)
                         } else {
                             s
                         }
-                    } else {
-                        s
                     }
+                    StyleSelector::Global(selector, file) => {
+                        if let Some(params) = params {
+                            StyleSelector::Global(format!("{}({})", selector, params), file.clone())
+                        } else {
+                            s
+                        }
+                    }
+                    _ => s,
                 });
 
                 for p in obj.properties.iter_mut() {
