@@ -1,25 +1,28 @@
-import { globSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { readFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { codeExtract, registerTheme } from '@devup-ui/wasm'
+import { globSync } from 'glob'
 
-import { findRoot } from '../find-root'
 import { preload } from '../preload'
 
 // Mock dependencies
 vi.mock('node:fs')
 vi.mock('@devup-ui/wasm')
-vi.mock('../find-root')
+vi.mock('glob')
 
 // Mock globSync
 vi.mock('node:fs', () => ({
-  globSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   existsSync: vi.fn(),
+}))
+
+vi.mock('glob', () => ({
+  globSync: vi.fn(),
 }))
 
 // Mock @devup-ui/wasm
@@ -28,17 +31,11 @@ vi.mock('@devup-ui/wasm', () => ({
   registerTheme: vi.fn(),
 }))
 
-// Mock findRoot
-vi.mock('../find-root', () => ({
-  findRoot: vi.fn(),
-}))
-
 describe('preload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
     // Default mock implementations
-    vi.mocked(findRoot).mockReturnValue('/project/root')
     vi.mocked(globSync).mockReturnValue([
       'src/App.tsx',
       'src/components/Button.tsx',
@@ -67,12 +64,10 @@ describe('preload', () => {
 
     preload(excludeRegex, libPackage, singleCss, theme, cssDir)
 
-    expect(findRoot).toHaveBeenCalledWith(process.cwd())
     expect(globSync).toHaveBeenCalledWith(
       ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
       {
-        cwd: '/project/root',
-        exclude: expect.any(Function),
+        follow: true,
       },
     )
   })
@@ -86,7 +81,7 @@ describe('preload', () => {
   })
 
   it('should process each collected file', () => {
-    const files = ['src/App.tsx', 'src/components/Button.tsx']
+    const files = ['src/App.tsx', 'src/components/Button.tsx', '.next/page.tsx']
     vi.mocked(globSync).mockReturnValue(files)
 
     preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
@@ -234,26 +229,5 @@ describe('preload', () => {
       '.button { color: blue; }',
       'utf-8',
     )
-  })
-  it('should handle exclude regex', () => {
-    const excludeRegex = /node_modules/
-    const libPackage = '@devup-ui/react'
-    const singleCss = false
-    const theme = { colors: { primary: 'blue' } }
-    const cssDir = '/output/css'
-
-    preload(excludeRegex, libPackage, singleCss, theme, cssDir)
-    expect(globSync).toHaveBeenCalledWith(
-      ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
-      {
-        cwd: '/project/root',
-        exclude: expect.any(Function),
-      },
-    )
-    expect(
-      (vi.mocked(globSync).mock.calls[0][1].exclude as any)(
-        '/node_modules/react.tsx',
-      ),
-    ).toBe(true)
   })
 })

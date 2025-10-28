@@ -1,9 +1,8 @@
-import { globSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 
 import { codeExtract, registerTheme } from '@devup-ui/wasm'
-
-import { findRoot } from './find-root'
+import { globSync } from 'glob'
 
 export function preload(
   excludeRegex: RegExp,
@@ -12,14 +11,19 @@ export function preload(
   theme: object,
   cssDir: string,
 ) {
-  const projectRoot = findRoot(process.cwd())
+  const projectRoot = process.cwd()
 
   const collected = globSync(['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'], {
-    cwd: projectRoot,
-    exclude: (fileName) => excludeRegex.test(fileName),
+    follow: true,
   })
   registerTheme(theme)
   for (const file of collected) {
+    if (
+      /\.(test(-d)?|d|spec)\.(tsx|ts|js|mjs)$/.test(file) ||
+      /^(out|.next)[/\\]/.test(file) ||
+      excludeRegex.test(file)
+    )
+      continue
     const filePath = relative(process.cwd(), join(projectRoot, file))
     const { cssFile, css } = codeExtract(
       filePath,
