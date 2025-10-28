@@ -760,6 +760,9 @@ importers:
       '@devup-ui/webpack-plugin':
         specifier: workspace:*
         version: link:../webpack-plugin
+      glob:
+        specifier: ^11.0
+        version: 11.0.3
       next:
         specifier: ^16.0
         version: 16.0.0(@babel/core@7.28.4)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
