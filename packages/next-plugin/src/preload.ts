@@ -16,7 +16,7 @@ export function preload(
 
   const collected = globSync(['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'], {
     cwd: projectRoot,
-    exclude: excludeRegex.test,
+    exclude: (fileName) => excludeRegex.test(fileName),
   })
   registerTheme(theme)
   for (const file of collected) {

@@ -235,4 +235,25 @@ describe('preload', () => {
       'utf-8',
     )
   })
+  it('should handle exclude regex', () => {
+    const excludeRegex = /node_modules/
+    const libPackage = '@devup-ui/react'
+    const singleCss = false
+    const theme = { colors: { primary: 'blue' } }
+    const cssDir = '/output/css'
+
+    preload(excludeRegex, libPackage, singleCss, theme, cssDir)
+    expect(globSync).toHaveBeenCalledWith(
+      ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
+      {
+        cwd: '/project/root',
+        exclude: expect.any(Function),
+      },
+    )
+    expect(
+      (vi.mocked(globSync).mock.calls[0][1].exclude as any)(
+        '/node_modules/react.tsx',
+      ),
+    ).toBe(true)
+  })
 })
