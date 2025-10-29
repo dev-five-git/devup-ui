@@ -8,6 +8,11 @@ export interface DevupUiBackgroundProps {
   bgAttachment?: ResponsiveValue<Property.BackgroundAttachment>
   bgClip?: ResponsiveValue<Property.BackgroundClip>
   bgColor?: ResponsiveValue<Property.BackgroundColor | keyof DevupThemeColors>
+  color?: ResponsiveValue<Property.Color | keyof DevupThemeColors>
+  background?: ResponsiveValue<Property.Background | keyof DevupThemeColors>
+  backgroundColor?: ResponsiveValue<
+    Property.BackgroundColor | keyof DevupThemeColors
+  >
   bgImage?: ResponsiveValue<Property.BackgroundImage>
   bgOrigin?: ResponsiveValue<Property.BackgroundOrigin>
   bgPosition?: ResponsiveValue<Property.BackgroundPosition>
