@@ -70,8 +70,8 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - run: pnpm i
+      - run: pnpm build
       - run: |
-          pnpm build
           pnpm lint
           # rust coverage issue
           echo 'max_width = 100000' > .rustfmt.toml
@@ -83,8 +83,8 @@ jobs:
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
-          pnpm test
           rm -rf .rustfmt.toml
+      - run: pnpm test
       - name: Build Landing
         run: |
           pnpm -F components build-storybook

@@ -14,7 +14,7 @@ describe('Stepper', () => {
       <Stepper>
         <StepperContainer>
           <StepperDecreaseButton />
-          <StepperInput editable={false} />
+          <StepperInput />
           <StepperIncreaseButton />
         </StepperContainer>
       </Stepper>,
@@ -24,7 +24,7 @@ describe('Stepper', () => {
 
   it('should throw error if children are used outside of StepperProvider', () => {
     expect(() => {
-      render(<StepperInput editable={false} />)
+      render(<StepperInput />)
     }).toThrow('useStepper must be used within a StepperProvider')
   })
 
