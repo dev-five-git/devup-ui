@@ -1,5 +1,11 @@
 # @devup-ui/react
 
+## 1.0.25
+
+### Patch Changes
+
+- [#467](https://github.com/dev-five-git/devup-ui/pull/467) [`c69bb1a`](https://github.com/dev-five-git/devup-ui/commit/c69bb1a001716dee6837852c53b0288c9b938bc1) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix color typing
+
 ## 1.0.24
 
 ### Patch Changes
