@@ -1,5 +1,11 @@
 # @devup-ui/components
 
+## 0.1.33
+
+### Patch Changes
+
+- [#465](https://github.com/dev-five-git/devup-ui/pull/465) [`295c3fc`](https://github.com/dev-five-git/devup-ui/commit/295c3fc4c0c1c8ecdd3af9033580236e781a50af) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix component warning
+
 ## 0.1.32
 
 ### Patch Changes
