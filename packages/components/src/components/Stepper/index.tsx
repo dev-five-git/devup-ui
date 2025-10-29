@@ -131,9 +131,7 @@ function StepperIncreaseButton({ ...props }: ComponentProps<typeof Button>) {
   )
 }
 
-interface StepperInputProps extends ComponentProps<typeof Input> {
-  editable?: boolean
-}
+type StepperInputProps = ComponentProps<typeof Input>
 
 function StepperInput({ className, ...props }: StepperInputProps) {
   const { value, setValue, type } = useStepper()
@@ -144,12 +142,15 @@ function StepperInput({ className, ...props }: StepperInputProps) {
     h: 'fit-content',
     styleOrder: 3,
   })
-  const editable = type === 'input'
-  const Comp = editable ? Input : 'div'
+  const isInput = type === 'input'
+  const Comp = isInput ? Input : 'div'
+  if (isInput) {
+    // div tag doesn't support allowClear prop
+    Object.assign(props, { allowClear: false })
+  }
 
   return (
     <Comp
-      allowClear={false}
       aria-label="Stepper value"
       className={clsx(
         css({
@@ -163,17 +164,20 @@ function StepperInput({ className, ...props }: StepperInputProps) {
             },
           },
         }),
-        !editable && notEditableClass,
+        !isInput && notEditableClass,
         className,
       )}
       dangerouslySetInnerHTML={
-        editable ? undefined : { __html: Number(value).toString() }
+        isInput ? undefined : { __html: Number(value).toString() }
       }
       data-value={value}
-      onChange={(e) => setValue(Number(e.target.value))}
-      readOnly={!editable}
+      onChange={(e) => {
+        setValue(Number(e.target.value))
+      }}
+      readOnly={!isInput}
       type="number"
-      value={value}
+      // Fix prefix 0 issue
+      value={value.toString()}
       {...props}
     />
   )
