@@ -79,9 +79,9 @@ export function DevupUI(
     }
     // disable turbo parallel
     const excludeRegex = new RegExp(
-      `node_modules(?!.*(${['@devup-ui', ...include]
+      `(node_modules(?!.*(${['@devup-ui', ...include]
         .join('|')
-        .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+        .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
     )
 
     if (process.env.NODE_ENV !== 'production') {
@@ -91,13 +91,19 @@ export function DevupUI(
       process.env.NODE_OPTIONS += ' --inspect-brk'
     } else {
       // build
-      preload(excludeRegex, libPackage, singleCss, theme, cssDir)
+      preload(excludeRegex, libPackage, singleCss, cssDir)
     }
+    const defaultSheet = JSON.parse(exportSheet())
+    const defaultClassMap = JSON.parse(exportClassMap())
+    const defaultFileMap = JSON.parse(exportFileMap())
 
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [
         {
           loader: '@devup-ui/next-plugin/css-loader',
+          options: {
+            watch: process.env.NODE_ENV === 'development',
+          },
         },
       ],
       '*.{tsx,ts,js,mjs}': {
@@ -110,9 +116,9 @@ export function DevupUI(
               sheetFile,
               classMapFile,
               fileMapFile,
-              defaultSheet: JSON.parse(exportSheet()),
-              defaultClassMap: JSON.parse(exportClassMap()),
-              defaultFileMap: JSON.parse(exportFileMap()),
+              defaultSheet,
+              defaultClassMap,
+              defaultFileMap,
               watch: process.env.NODE_ENV === 'development',
               singleCss,
               // for turbopack, load theme is required on loader

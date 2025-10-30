@@ -91,6 +91,9 @@ describe('DevupUINextPlugin', () => {
             './df/devup-ui/*.css': [
               {
                 loader: '@devup-ui/next-plugin/css-loader',
+                options: {
+                  watch: false,
+                },
               },
             ],
             '*.{tsx,ts,js,mjs}': {
@@ -122,9 +125,12 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui']
                       .join('|')
-                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                      .replaceAll(
+                        '/',
+                        '[\\/\\\\_]',
+                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
                   ),
                 },
               },
@@ -146,15 +152,21 @@ describe('DevupUINextPlugin', () => {
             './df/devup-ui/*.css': [
               {
                 loader: '@devup-ui/next-plugin/css-loader',
+                options: {
+                  watch: false,
+                },
               },
             ],
             '*.{tsx,ts,js,mjs}': {
               condition: {
                 not: {
                   path: new RegExp(
-                    `node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui']
                       .join('|')
-                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                      .replaceAll(
+                        '/',
+                        '[\\/\\\\_]',
+                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
                   ),
                 },
               },
@@ -208,15 +220,21 @@ describe('DevupUINextPlugin', () => {
             './df/devup-ui/*.css': [
               {
                 loader: '@devup-ui/next-plugin/css-loader',
+                options: {
+                  watch: false,
+                },
               },
             ],
             '*.{tsx,ts,js,mjs}': {
               condition: {
                 not: {
                   path: new RegExp(
-                    `node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui']
                       .join('|')
-                      .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+                      .replaceAll(
+                        '/',
+                        '[\\/\\\\_]',
+                      )})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
                   ),
                 },
               },
@@ -266,13 +284,12 @@ describe('DevupUINextPlugin', () => {
       })
       expect(preload).toHaveBeenCalledWith(
         new RegExp(
-          `node_modules(?!.*(${['@devup-ui']
+          `(node_modules(?!.*(${['@devup-ui']
             .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
         ),
         '@devup-ui/react',
         false,
-        'theme',
         expect.any(String),
       )
     })

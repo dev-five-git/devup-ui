@@ -7,10 +7,6 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
-  importClassMap,
-  importFileMap,
-  importSheet,
-  registerTheme,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -22,13 +18,7 @@ export interface DevupUILoaderOptions {
   fileMapFile: string
   watch: boolean
   singleCss: boolean
-  // turbo
-  theme?: object
-  defaultSheet: object
-  defaultClassMap: object
-  defaultFileMap: object
 }
-let init = false
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
@@ -40,20 +30,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       classMapFile,
       fileMapFile,
       singleCss,
-      theme,
-      defaultClassMap,
-      defaultFileMap,
-      defaultSheet,
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
-    if (!init) {
-      init = true
-      if (defaultFileMap) importFileMap(defaultFileMap)
-      if (defaultClassMap) importClassMap(defaultClassMap)
-      if (defaultSheet) importSheet(defaultSheet)
-      if (theme) registerTheme(theme)
-    }
 
     try {
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
@@ -100,12 +79,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             writeFile(fileMapFile, exportFileMap()),
           )
         }
-        Promise.all(promises)
-          .catch(console.error)
-          .finally(() => callback(null, code, sourceMap))
-        return
       }
-      callback(null, code, sourceMap)
+      Promise.all(promises)
+        .catch(console.error)
+        .finally(() => callback(null, code, sourceMap))
     } catch (error) {
       callback(error as Error)
     }

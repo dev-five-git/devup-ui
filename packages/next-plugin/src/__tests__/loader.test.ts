@@ -139,7 +139,9 @@ describe('devupUILoader', () => {
       false,
       true,
     )
-    expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
+    await vi.waitFor(() => {
+      expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
+    })
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })

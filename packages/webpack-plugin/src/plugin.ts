@@ -165,9 +165,9 @@ export class DevupUIWebpackPlugin {
       {
         test: /\.(tsx|ts|js|mjs|jsx)$/,
         exclude: new RegExp(
-          `node_modules(?!.*(${['@devup-ui', ...this.options.include]
+          `(node_modules(?!.*(${['@devup-ui', ...this.options.include]
             .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
+            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
         ),
         enforce: 'pre',
         use: [

@@ -142,16 +142,20 @@ describe('devupUIWebpackPlugin', () => {
       include: [
         {
           input: ['lib'],
-          output: new RegExp('node_modules(?!.*(@devup-ui|lib)([\\/\\\\.]|$))'),
+          output: new RegExp(
+            '(node_modules(?!.*(@devup-ui|lib)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+          ),
         },
         {
           input: [],
-          output: new RegExp('node_modules(?!.*(@devup-ui)([\\/\\\\.]|$))'),
+          output: new RegExp(
+            '(node_modules(?!.*(@devup-ui)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+          ),
         },
         {
           input: ['lib', 'lib2'],
           output: new RegExp(
-            'node_modules(?!.*(@devup-ui|lib|lib2)([\\/\\\\.]|$))',
+            '(node_modules(?!.*(@devup-ui|lib|lib2)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
       ],

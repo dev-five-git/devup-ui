@@ -6,8 +6,23 @@ function getFileNumByFilename(filename: string) {
   return parseInt(filename.split('devup-ui-')[1].split('.')[0])
 }
 
-const devupUICssLoader: RawLoaderDefinitionFunction = function (_, map, meta) {
-  const fileNum = getFileNumByFilename(this.resourcePath)
-  this.callback(null, getCss(fileNum, true), map, meta)
+export interface DevupUICssLoaderOptions {
+  // turbo
+  theme: object
+  defaultSheet: object
+  defaultClassMap: object
+  defaultFileMap: object
+  watch: boolean
 }
+
+const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
+  function (source, map, meta) {
+    const { watch } = this.getOptions()
+    this.callback(
+      null,
+      !watch ? source : getCss(getFileNumByFilename(this.resourcePath), true),
+      map,
+      meta,
+    )
+  }
 export default devupUICssLoader

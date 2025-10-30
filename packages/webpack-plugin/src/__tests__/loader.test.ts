@@ -7,9 +7,6 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
-  importClassMap,
-  importFileMap,
-  importSheet,
   registerTheme,
 } from '@devup-ui/wasm'
 
@@ -139,7 +136,9 @@ describe('devupUILoader', () => {
       false,
       true,
     )
-    expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
+    await vi.waitFor(() => {
+      expect(t.async()).toHaveBeenCalledWith(null, 'code', null)
+    })
     expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })
@@ -257,57 +256,5 @@ describe('devupUILoader', () => {
       [Symbol.dispose]: vi.fn(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
-    expect(registerTheme).toHaveBeenCalledWith({
-      colors: {
-        primary: '#000',
-      },
-    })
-  })
-
-  it('should register theme on init', async () => {
-    const { default: devupUILoader } = await import('../loader')
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        theme: {
-          colors: {
-            primary: '#000',
-          },
-        },
-        defaultClassMap: {
-          button: 'button',
-        },
-        defaultFileMap: {
-          button: 'button',
-        },
-        defaultSheet: {
-          button: 'button',
-        },
-      }),
-      async: vi.fn().mockReturnValue(vi.fn()),
-      resourcePath: 'index.tsx',
-      addDependency: vi.fn(),
-    }
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
-    expect(registerTheme).toHaveBeenCalledTimes(1)
-    expect(importClassMap).toHaveBeenCalledWith({
-      button: 'button',
-    })
-    expect(importFileMap).toHaveBeenCalledWith({
-      button: 'button',
-    })
-    expect(importSheet).toHaveBeenCalledWith({
-      button: 'button',
-    })
-
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
-
-    expect(registerTheme).toHaveBeenCalledTimes(1)
-    expect(importClassMap).toHaveBeenCalledTimes(1)
-    expect(importFileMap).toHaveBeenCalledTimes(1)
-    expect(importSheet).toHaveBeenCalledTimes(1)
   })
 })

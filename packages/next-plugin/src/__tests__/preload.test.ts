@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { codeExtract, registerTheme } from '@devup-ui/wasm'
+import { codeExtract, getCss } from '@devup-ui/wasm'
 import { globSync } from 'glob'
 
 import { preload } from '../preload'
@@ -30,6 +30,7 @@ vi.mock('glob', () => ({
 vi.mock('@devup-ui/wasm', () => ({
   codeExtract: vi.fn(),
   registerTheme: vi.fn(),
+  getCss: vi.fn(),
 }))
 
 describe('preload', () => {
@@ -60,10 +61,9 @@ describe('preload', () => {
     const excludeRegex = /node_modules/
     const libPackage = '@devup-ui/react'
     const singleCss = false
-    const theme = { colors: { primary: 'blue' } }
     const cssDir = '/output/css'
 
-    preload(excludeRegex, libPackage, singleCss, theme, cssDir)
+    preload(excludeRegex, libPackage, singleCss, cssDir)
 
     expect(globSync).toHaveBeenCalledWith(
       ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
@@ -74,14 +74,6 @@ describe('preload', () => {
     )
   })
 
-  it('should register theme before processing files', () => {
-    const theme = { colors: { primary: 'blue' } }
-
-    preload(/node_modules/, '@devup-ui/react', false, theme, '/output/css')
-
-    expect(registerTheme).toHaveBeenCalledWith(theme)
-  })
-
   it('should process each collected file', () => {
     const files = ['src/App.tsx', 'src/components/Button.tsx', '.next/page.tsx']
     vi.mocked(globSync).mockReturnValue(files)
@@ -89,7 +81,7 @@ describe('preload', () => {
       .mockReturnValueOnce('src/App.tsx')
       .mockReturnValueOnce('src/components/Button.tsx')
       .mockReturnValueOnce('.next/page.tsx')
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
     expect(codeExtract).toHaveBeenCalledTimes(2)
     expect(codeExtract).toHaveBeenCalledWith(
@@ -114,7 +106,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -133,10 +125,15 @@ describe('preload', () => {
       updatedBaseStyle: false,
       [Symbol.dispose]: vi.fn(),
     })
+    vi.mocked(getCss).mockReturnValue('')
 
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
-    expect(writeFileSync).not.toHaveBeenCalled()
+    expect(writeFileSync).toHaveBeenCalledWith(
+      join('/output/css', 'devup-ui.css'),
+      '',
+      'utf-8',
+    )
   })
 
   it('should handle empty CSS content', () => {
@@ -150,7 +147,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -170,7 +167,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -184,7 +181,7 @@ describe('preload', () => {
     const singleCss = true
     const cssDir = '/custom/css/dir'
 
-    preload(/node_modules/, libPackage, singleCss, {}, cssDir)
+    preload(/node_modules/, libPackage, singleCss, cssDir)
 
     expect(codeExtract).toHaveBeenCalledWith(
       expect.stringMatching(/App\.tsx$/),
@@ -221,9 +218,9 @@ describe('preload', () => {
         [Symbol.dispose]: vi.fn(),
       })
 
-    preload(/node_modules/, '@devup-ui/react', false, {}, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
 
-    expect(writeFileSync).toHaveBeenCalledTimes(2)
+    expect(writeFileSync).toHaveBeenCalledTimes(3)
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'app.css'),
       '.app { margin: 0; }',

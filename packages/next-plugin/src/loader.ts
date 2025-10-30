@@ -45,29 +45,23 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       defaultFileMap,
       defaultSheet,
     } = this.getOptions()
-    const callback = this.async()
-    const id = this.resourcePath
     if (!init) {
       init = true
-      if (defaultFileMap) importFileMap(defaultFileMap)
-      if (defaultClassMap) importClassMap(defaultClassMap)
-      if (defaultSheet) importSheet(defaultSheet)
-      if (theme) registerTheme(theme)
+      importFileMap(defaultFileMap)
+      importClassMap(defaultClassMap)
+      importSheet(defaultSheet)
+      registerTheme(theme)
     }
 
+    const callback = this.async()
     try {
+      const id = this.resourcePath
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
       const relativePath = relative(process.cwd(), id)
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-      const {
-        code,
-        css = '',
-        map,
-        cssFile,
-        updatedBaseStyle,
-      } = codeExtract(
+      const { code, map, cssFile, updatedBaseStyle } = codeExtract(
         relativePath,
         source.toString(),
         libPackage,
@@ -78,34 +72,27 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       )
       const sourceMap = map ? JSON.parse(map) : null
       const promises: Promise<void>[] = []
-      if (updatedBaseStyle) {
+      if (updatedBaseStyle && watch) {
         // update base style
         promises.push(
           writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
         )
       }
-      if (cssFile) {
-        const content = `${this.resourcePath} ${Date.now()}`
-        // should be reset css
+      if (cssFile && watch) {
+        // don't write file when build
         promises.push(
           writeFile(
             join(cssDir, basename(cssFile!)),
-            watch ? `/* ${content} */` : css,
+            `/* ${this.resourcePath} ${Date.now()} */`,
           ),
+          writeFile(sheetFile, exportSheet()),
+          writeFile(classMapFile, exportClassMap()),
+          writeFile(fileMapFile, exportFileMap()),
         )
-        if (watch) {
-          promises.push(
-            writeFile(sheetFile, exportSheet()),
-            writeFile(classMapFile, exportClassMap()),
-            writeFile(fileMapFile, exportFileMap()),
-          )
-        }
-        Promise.all(promises)
-          .catch(console.error)
-          .finally(() => callback(null, code, sourceMap))
-        return
       }
-      callback(null, code, sourceMap)
+      Promise.all(promises)
+        .catch(console.error)
+        .finally(() => callback(null, code, sourceMap))
     } catch (error) {
       callback(error as Error)
     }
