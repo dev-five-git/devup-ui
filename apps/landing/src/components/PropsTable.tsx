@@ -1,4 +1,4 @@
-import { Text, VStack } from '@devup-ui/react'
+import { Box, Text, VStack } from '@devup-ui/react'
 import Markdown from 'react-markdown'
 
 import { _components } from '@/mdx-components'
@@ -41,50 +41,52 @@ export const PropsTable = async (props: PropTableProps) => {
   const { componentProps } = props
 
   return (
-    <Table border={0}>
-      <TableHead>
-        <TableRow>
-          <TableHeaderCell>Prop</TableHeaderCell>
-          <TableHeaderCell>description</TableHeaderCell>
-          <TableHeaderCell>Type</TableHeaderCell>
-          <TableHeaderCell>Default</TableHeaderCell>
-        </TableRow>
-      </TableHead>
-      <TableBody>
-        {componentProps.length === 0 && (
+    <Box maxWidth="100%" overflow="auto" width="100%">
+      <Table border={0} style={{ minWidth: '600px' }}>
+        <TableHead>
           <TableRow>
-            <TableCell colSpan={3}>
-              <Text>No props to display</Text>
-            </TableCell>
+            <TableHeaderCell>Prop</TableHeaderCell>
+            <TableHeaderCell>description</TableHeaderCell>
+            <TableHeaderCell>Type</TableHeaderCell>
+            <TableHeaderCell>Default</TableHeaderCell>
           </TableRow>
-        )}
-        {componentProps.map(
-          ({ property, description, type, default: defaultValue }) => (
-            <TableRow key={property}>
-              <TableCell>
-                <Text typography="bodyBold">{property}</Text>
-              </TableCell>
-              <TableCell>
-                <MdxComponentsWithCodeBlock>
-                  {description}
-                </MdxComponentsWithCodeBlock>
-              </TableCell>
-              <TableCell>
-                <VStack>
-                  <MdxComponentsWithCodeBlock>
-                    {type?.replaceAll('"', "'")}
-                  </MdxComponentsWithCodeBlock>
-                </VStack>
-              </TableCell>
-              <TableCell>
-                <MdxComponentsWithCodeBlock>
-                  {defaultValue}
-                </MdxComponentsWithCodeBlock>
+        </TableHead>
+        <TableBody>
+          {componentProps.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={3}>
+                <Text>No props to display</Text>
               </TableCell>
             </TableRow>
-          ),
-        )}
-      </TableBody>
-    </Table>
+          )}
+          {componentProps.map(
+            ({ property, description, type, default: defaultValue }) => (
+              <TableRow key={property}>
+                <TableCell>
+                  <Text typography="bodyBold">{property}</Text>
+                </TableCell>
+                <TableCell>
+                  <MdxComponentsWithCodeBlock>
+                    {description}
+                  </MdxComponentsWithCodeBlock>
+                </TableCell>
+                <TableCell>
+                  <VStack>
+                    <MdxComponentsWithCodeBlock>
+                      {type?.replaceAll('"', "'")}
+                    </MdxComponentsWithCodeBlock>
+                  </VStack>
+                </TableCell>
+                <TableCell>
+                  <MdxComponentsWithCodeBlock>
+                    {defaultValue}
+                  </MdxComponentsWithCodeBlock>
+                </TableCell>
+              </TableRow>
+            ),
+          )}
+        </TableBody>
+      </Table>
+    </Box>
   )
 }
