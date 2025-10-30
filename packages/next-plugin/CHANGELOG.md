@@ -1,5 +1,14 @@
 # @devup-ui/next-plugin
 
+## 1.0.49
+
+### Patch Changes
+
+- [#469](https://github.com/dev-five-git/devup-ui/pull/469) [`9813476`](https://github.com/dev-five-git/devup-ui/commit/9813476ec3b85ad371bbff9babed6c9f1ffbbda7) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix turbo build issue, split webpack, turbopack loader
+
+- Updated dependencies [[`9813476`](https://github.com/dev-five-git/devup-ui/commit/9813476ec3b85ad371bbff9babed6c9f1ffbbda7)]:
+  - @devup-ui/webpack-plugin@1.0.46
+
 ## 1.0.48
 
 ### Patch Changes
