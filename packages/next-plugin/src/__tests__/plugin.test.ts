@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { getThemeInterface } from '@devup-ui/wasm'
+import { getDefaultTheme, getThemeInterface } from '@devup-ui/wasm'
 import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
 
 import { DevupUI } from '../plugin'
@@ -14,6 +14,19 @@ vi.mock('@devup-ui/wasm', async (original) => ({
   ...(await original()),
   registerTheme: vi.fn(),
   getThemeInterface: vi.fn(),
+  getDefaultTheme: vi.fn(),
+  exportSheet: vi.fn(() =>
+    JSON.stringify({
+      css: {},
+      font_faces: {},
+      global_css_files: [],
+      imports: {},
+      keyframes: {},
+      properties: {},
+    }),
+  ),
+  exportClassMap: vi.fn(() => JSON.stringify({})),
+  exportFileMap: vi.fn(() => JSON.stringify({})),
 }))
 
 describe('DevupUINextPlugin', () => {
@@ -311,6 +324,68 @@ describe('DevupUINextPlugin', () => {
         recursive: true,
       })
       expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
+    })
+    it('should set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns a value', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
+      vi.mocked(getDefaultTheme).mockReturnValue('dark')
+      const config: any = {}
+      const ret = DevupUI(config)
+
+      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('dark')
+      expect(ret.env).toEqual({
+        DEVUP_UI_DEFAULT_THEME: 'dark',
+      })
+      expect(config.env).toEqual({
+        DEVUP_UI_DEFAULT_THEME: 'dark',
+      })
+    })
+    it('should not set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns undefined', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
+      vi.mocked(getDefaultTheme).mockReturnValue(undefined)
+      const config: any = {}
+      const ret = DevupUI(config)
+
+      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('')
+      expect(ret.env).toBeUndefined()
+      expect(config.env).toBeUndefined()
+    })
+    it('should set DEVUP_UI_DEFAULT_THEME and preserve existing env vars', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
+      vi.mocked(getDefaultTheme).mockReturnValue('light')
+      const config: any = {
+        env: {
+          CUSTOM_VAR: 'value',
+        },
+      }
+      const ret = DevupUI(config)
+
+      expect(process.env.DEVUP_UI_DEFAULT_THEME).toBe('light')
+      expect(ret.env).toEqual({
+        CUSTOM_VAR: 'value',
+        DEVUP_UI_DEFAULT_THEME: 'light',
+      })
+      expect(config.env).toEqual({
+        CUSTOM_VAR: 'value',
+        DEVUP_UI_DEFAULT_THEME: 'light',
+      })
     })
   })
 })
