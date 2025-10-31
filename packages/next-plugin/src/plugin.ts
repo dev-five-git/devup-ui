@@ -5,6 +5,7 @@ import {
   exportClassMap,
   exportFileMap,
   exportSheet,
+  getCss,
   getDefaultTheme,
   getThemeInterface,
   registerTheme,
@@ -90,6 +91,8 @@ export function DevupUI(
       process.env.TURBOPACK_DEBUG_JS = '*'
       process.env.NODE_OPTIONS ??= ''
       process.env.NODE_OPTIONS += ' --inspect-brk'
+      // create devup-ui.css file
+      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
     } else {
       // build
       preload(excludeRegex, libPackage, singleCss, cssDir)
