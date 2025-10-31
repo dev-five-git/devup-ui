@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.51
+
+### Patch Changes
+
+- [#473](https://github.com/dev-five-git/devup-ui/pull/473) [`0cf0ca8`](https://github.com/dev-five-git/devup-ui/commit/0cf0ca831e8c459d12ecc9ad8455aad48e429b37) Thanks [@owjs3901](https://github.com/owjs3901)! - Create devup-ui.css after creating devup-ui.css
+
 ## 1.0.50
 
 ### Patch Changes
