@@ -6,6 +6,7 @@ import {
   exportFileMap,
   exportSheet,
   getCss,
+  getDefaultTheme,
   getThemeInterface,
   registerTheme,
 } from '@devup-ui/wasm'
@@ -99,6 +100,15 @@ export function DevupUI(
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())
     const defaultFileMap = JSON.parse(exportFileMap())
+    // for theme script
+    const defaultTheme = getDefaultTheme()
+    if (defaultTheme) {
+      process.env.DEVUP_UI_DEFAULT_THEME = defaultTheme
+      config.env ??= {}
+      Object.assign(config.env, {
+        DEVUP_UI_DEFAULT_THEME: defaultTheme,
+      })
+    }
 
     const rules: NonNullable<typeof config.turbopack.rules> = {
       [`./${relative(process.cwd(), cssDir).replaceAll('\\', '/')}/*.css`]: [

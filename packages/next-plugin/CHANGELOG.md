@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.50
+
+### Patch Changes
+
+- [#471](https://github.com/dev-five-git/devup-ui/pull/471) [`8a37e11`](https://github.com/dev-five-git/devup-ui/commit/8a37e119381fe4c4a4c11fbf793b0bdb72a32a19) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix default theme issue
+
 ## 1.0.49
 
 ### Patch Changes
