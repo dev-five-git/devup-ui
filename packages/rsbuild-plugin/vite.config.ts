@@ -28,7 +28,7 @@ export default defineConfig({
         isolatedModules: false,
         declaration: true,
       },
-    }) as any,
+    }),
   ],
   build: {
     rollupOptions: {

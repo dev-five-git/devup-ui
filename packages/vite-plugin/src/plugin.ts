@@ -120,8 +120,9 @@ export function DevupUI({
             output: {
               manualChunks(id) {
                 // merge devup css files
-                if (id.split('?')[0].endsWith('devup-ui.css')) {
-                  return `devup-ui.css`
+                const fileName = basename(id).split('?')[0]
+                if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
+                  return fileName
                 }
               },
             },
@@ -149,20 +150,24 @@ export function DevupUI({
       }
     },
     resolveId(id, importer) {
+      const fileName = basename(id).split('?')[0]
       if (
-        id.includes('devup-ui.css') &&
+        /devup-ui(-\d+)?\.css$/.test(fileName) &&
         resolve(importer ? join(dirname(importer), id) : id) ===
-          resolve(join(cssDir, 'devup-ui.css'))
+          resolve(join(cssDir, fileName))
       ) {
         return join(
           cssDir,
-          `devup-ui.css?t=${Date.now().toString() + (cssMap.get(null)?.length ?? 0)}`,
+          `${fileName}?t=${
+            Date.now().toString() +
+            (cssMap.get(getFileNumByFilename(fileName))?.length ?? 0)
+          }`,
         )
       }
     },
     load(id) {
       const fileName = basename(id).split('?')[0]
-      if (fileName.startsWith('devup-ui') && fileName.endsWith('.css')) {
+      if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
         const fileNum = getFileNumByFilename(fileName)
         const css = getCss(fileNum, false)
         cssMap.set(fileNum, css)
