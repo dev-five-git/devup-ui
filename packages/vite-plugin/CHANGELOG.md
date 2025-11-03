@@ -1,5 +1,14 @@
 # @devup-ui/vite-plugin
 
+## 1.0.48
+
+### Patch Changes
+
+- [#479](https://github.com/dev-five-git/devup-ui/pull/479) [`e1be04e`](https://github.com/dev-five-git/devup-ui/commit/e1be04eeb9c6fe1e1a3bf5b4fa2f6881d83c7310) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix split css issue
+
+- Updated dependencies [[`9002fb6`](https://github.com/dev-five-git/devup-ui/commit/9002fb69eca8ec967d7f6a8798187cbba6b9aa9a), [`4ffc5ae`](https://github.com/dev-five-git/devup-ui/commit/4ffc5aec916205d20f26e1cee203566ebda03b01)]:
+  - @devup-ui/wasm@1.0.45
+
 ## 1.0.47
 
 ### Patch Changes

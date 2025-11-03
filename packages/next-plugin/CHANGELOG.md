@@ -1,5 +1,13 @@
 # @devup-ui/next-plugin
 
+## 1.0.52
+
+### Patch Changes
+
+- Updated dependencies [[`9002fb6`](https://github.com/dev-five-git/devup-ui/commit/9002fb69eca8ec967d7f6a8798187cbba6b9aa9a), [`4ffc5ae`](https://github.com/dev-five-git/devup-ui/commit/4ffc5aec916205d20f26e1cee203566ebda03b01)]:
+  - @devup-ui/wasm@1.0.45
+  - @devup-ui/webpack-plugin@1.0.47
+
 ## 1.0.51
 
 ### Patch Changes
