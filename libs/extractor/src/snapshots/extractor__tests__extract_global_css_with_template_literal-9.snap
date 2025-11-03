@@ -1,13 +1,12 @@
 ---
 source: libs/extractor/src/lib.rs
-assertion_line: 6242
 expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\n    globalCss`:root {color-scheme: light dark}`\n    \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
         Css(
             ExtractCss {
-                css: ":root{color-scheme",
+                css: ":root{color-scheme:light dark}",
                 file: "test.tsx",
             },
         ),
