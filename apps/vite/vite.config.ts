@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     DevupUI({
       include: ['vite-lib-example'],
-      // singleCss: true,
+      singleCss: true,
     }),
   ],
 })
