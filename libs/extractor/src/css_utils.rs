@@ -149,18 +149,30 @@ pub fn optimize_css_block(css: &str) -> String {
         .join("}")
         .split(";")
         .map(|s| {
-            if !s.contains(":") {
-                s.trim().to_string()
+            println!("s: {}", s);
+            let parts = s.split("{").collect::<Vec<&str>>();
+            let first_part = if parts.len() == 1 {
+                "".to_string()
             } else {
-                let mut iter = s.split(":");
+                format!("{}{{", parts.first().unwrap().trim())
+            };
+            println!("first_part: {}", first_part);
+            let last_part = parts.last().unwrap().trim();
+            if !last_part.contains(":") {
+                println!("last_part: {}", last_part);
+                format!("{first_part}{last_part}")
+            } else {
+                let mut iter = last_part.split(":");
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
+
+                println!("property: {}, value: {}", property, value);
                 let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
                     optimize_mutli_css_value(value)
                 } else {
                     value.to_string()
                 };
-                format!("{property}:{value}")
+                format!("{first_part}{property}:{value}")
             }
         })
         .collect::<Vec<String>>()
@@ -224,6 +236,14 @@ mod tests {
         "ul{font-family:\"Roboto Hello\",sans-serif}"
     )]
     #[case("section{  }", "section{}")]
+    #[case(":root{   }", ":root{}")]
+    #[case(":root{ background: red; }", ":root{background:red}")]
+    #[case(
+        ":root, :section{ background: red; }",
+        ":root,:section{background:red}"
+    )]
+    #[case("*:hover{ background: red; }", "*:hover{background:red}")]
+    #[case(":root {color-scheme: light dark }", ":root{color-scheme:light dark}")]
     fn test_optimize_css_block(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_css_block(input), expected);
     }
