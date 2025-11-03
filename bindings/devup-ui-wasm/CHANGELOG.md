@@ -1,5 +1,13 @@
 # @devup-ui/wasm
 
+## 1.0.45
+
+### Patch Changes
+
+- [#480](https://github.com/dev-five-git/devup-ui/pull/480) [`9002fb6`](https://github.com/dev-five-git/devup-ui/commit/9002fb69eca8ec967d7f6a8798187cbba6b9aa9a) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix global css issue
+
+- [#477](https://github.com/dev-five-git/devup-ui/pull/477) [`4ffc5ae`](https://github.com/dev-five-git/devup-ui/commit/4ffc5aec916205d20f26e1cee203566ebda03b01) Thanks [@owjs3901](https://github.com/owjs3901)! - Update rust
+
 ## 1.0.44
 
 ### Patch Changes
