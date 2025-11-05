@@ -8,10 +8,6 @@ function getFileNumByFilename(filename: string) {
 
 export interface DevupUICssLoaderOptions {
   // turbo
-  theme: object
-  defaultSheet: object
-  defaultClassMap: object
-  defaultFileMap: object
   watch: boolean
 }
 
