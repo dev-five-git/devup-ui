@@ -37,10 +37,6 @@ export function DevupUI(
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   // turbopack is now stable, TURBOPACK is set to auto without any flags
   if (isTurbo) {
-    // if (process.env.NODE_ENV === 'production') {
-    //   throw new Error('Devup UI is not supported in production with turbopack')
-    // }
-
     config ??= {}
     config.turbopack ??= {}
     config.turbopack.rules ??= {}
@@ -129,6 +125,7 @@ export function DevupUI(
               sheetFile,
               classMapFile,
               fileMapFile,
+              themeFile: devupFile,
               defaultSheet,
               defaultClassMap,
               defaultFileMap,

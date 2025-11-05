@@ -1,4 +1,5 @@
-import { writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
 
 import {
@@ -20,6 +21,7 @@ export interface DevupUILoaderOptions {
   sheetFile: string
   classMapFile: string
   fileMapFile: string
+  themeFile: string
   watch: boolean
   singleCss: boolean
   // turbo
@@ -39,18 +41,47 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       sheetFile,
       classMapFile,
       fileMapFile,
+      themeFile,
       singleCss,
       theme,
       defaultClassMap,
       defaultFileMap,
       defaultSheet,
     } = this.getOptions()
+
+    const promises: Promise<void>[] = []
     if (!init) {
       init = true
-      importFileMap(defaultFileMap)
-      importClassMap(defaultClassMap)
-      importSheet(defaultSheet)
-      registerTheme(theme)
+      if (watch) {
+        // restart loader issue
+        // loader should read files when they exist in watch mode
+        if (existsSync(sheetFile))
+          promises.push(
+            readFile(sheetFile, 'utf-8').then(JSON.parse).then(importSheet),
+          )
+        if (existsSync(classMapFile))
+          promises.push(
+            readFile(classMapFile, 'utf-8')
+              .then(JSON.parse)
+              .then(importClassMap),
+          )
+        if (existsSync(fileMapFile))
+          promises.push(
+            readFile(fileMapFile, 'utf-8').then(JSON.parse).then(importFileMap),
+          )
+        if (existsSync(themeFile))
+          promises.push(
+            readFile(themeFile, 'utf-8')
+              .then(JSON.parse)
+              .then((data) => data?.['theme'] ?? {})
+              .then(registerTheme),
+          )
+      } else {
+        importFileMap(defaultFileMap)
+        importClassMap(defaultClassMap)
+        importSheet(defaultSheet)
+        registerTheme(theme)
+      }
     }
 
     const callback = this.async()
@@ -71,7 +102,6 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
       )
       const sourceMap = map ? JSON.parse(map) : null
-      const promises: Promise<void>[] = []
       if (updatedBaseStyle && watch) {
         // update base style
         promises.push(
@@ -94,7 +124,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         .catch(console.error)
         .finally(() => callback(null, code, sourceMap))
     } catch (error) {
-      callback(error as Error)
+      Promise.all(promises)
+        .catch(console.error)
+        .finally(() => callback(error as Error))
     }
     return
   }
