@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.53
+
+### Patch Changes
+
+- [#481](https://github.com/dev-five-git/devup-ui/pull/481) [`a33e612`](https://github.com/dev-five-git/devup-ui/commit/a33e61267bdfad292488d0dc8c7d591b892fc842) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix turbo loader restart issue
+
 ## 1.0.52
 
 ### Patch Changes
