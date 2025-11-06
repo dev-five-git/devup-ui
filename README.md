@@ -86,8 +86,8 @@ Next.js Build Time and Build Size (github action - ubuntu-latest)
 | mui                            | 7.3.2   | 20.86s     | 97,964,458 bytes  |
 | devup-ui(per-file css)         | 1.0.18  | 16.90s     | 59,540,459 bytes  |
 | devup-ui(single css)           | 1.0.18  | 17.05s     | 59,520,196 bytes  |
-| tailwindcss(turbopack)         | 4.1.13  |  6.72s     |  5,355,082 bytes  |
-| devup-ui(single css+turbopack) | 1.0.18  | 10.34s     |  4,772,050 bytes  |
+| tailwindcss(turbopack)         | 4.1.13  | 6.72s      | 5,355,082 bytes   |
+| devup-ui(single css+turbopack) | 1.0.18  | 10.34s     | 4,772,050 bytes   |
 
 ## How it works
 
