@@ -75,17 +75,19 @@ npm install @devup-ui/webpack-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| Library                | Version | Build Time | Build Size        |
-| ---------------------- | ------- | ---------- | ----------------- |
-| tailwindcss            | 4.1.13  | 20.22s     | 57,415,796 bytes  |
-| styleX                 | 0.15.4  | 38.97s     | 76,257,820 bytes  |
-| vanilla-extract        | 1.17.4  | 20.09s     | 59,366,237 bytes  |
-| kuma-ui                | 1.5.9   | 21.61s     | 67,422,085 bytes  |
-| panda-css              | 1.3.1   | 22.01s     | 62,431,065 bytes  |
-| chakra-ui              | 3.27.0  | 29.99s     | 210,122,493 bytes |
-| mui                    | 7.3.2   | 22.21s     | 94,231,958 bytes  |
-| devup-ui(per-file css) | 1.0.18  | 18.23s     | 57,440,953 bytes  |
-| devup-ui(single css)   | 1.0.18  | 18.35s     | 57,409,008 bytes  |
+| Library                        | Version | Build Time | Build Size        |
+| ------------------------------ | ------- | ---------- | ----------------- |
+| tailwindcss                    | 4.1.13  | 19.31s     | 59,521,539 bytes  |
+| styleX                         | 0.15.4  | 41.78s     | 86,869,452 bytes  |
+| vanilla-extract                | 1.17.4  | 19.50s     | 61,494,033 bytes  |
+| kuma-ui                        | 1.5.9   | 20.93s     | 69,924,179 bytes  |
+| panda-css                      | 1.3.1   | 20.64s     | 64,573,260 bytes  |
+| chakra-ui                      | 3.27.0  | 28.81s     | 222,435,802 bytes |
+| mui                            | 7.3.2   | 20.86s     | 97,964,458 bytes  |
+| devup-ui(per-file css)         | 1.0.18  | 16.90s     | 59,540,459 bytes  |
+| devup-ui(single css)           | 1.0.18  | 17.05s     | 59,520,196 bytes  |
+| tailwindcss(turbopack)         | 4.1.13  |  6.72s     |  5,355,082 bytes  |
+| devup-ui(single css+turbopack) | 1.0.18  | 10.34s     |  4,772,050 bytes  |
 
 ## How it works
 
