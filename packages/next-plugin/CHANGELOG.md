@@ -1,5 +1,11 @@
 # @devup-ui/next-plugin
 
+## 1.0.54
+
+### Patch Changes
+
+- [#483](https://github.com/dev-five-git/devup-ui/pull/483) [`ed6bc01`](https://github.com/dev-five-git/devup-ui/commit/ed6bc01d8c3f7c147d43878abe6cf9c266fa487a) Thanks [@owjs3901](https://github.com/owjs3901)! - Fix turbo loader async issue
+
 ## 1.0.53
 
 ### Patch Changes
