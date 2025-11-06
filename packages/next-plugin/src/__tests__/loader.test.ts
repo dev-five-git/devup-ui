@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 import {
@@ -387,7 +387,7 @@ describe('devupUILoader', () => {
         path === 'themeFile'
       )
     })
-    vi.mocked(readFile).mockResolvedValue('{}')
+    vi.mocked(readFileSync).mockReturnValue('{}')
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
@@ -403,16 +403,14 @@ describe('devupUILoader', () => {
     expect(existsSync).toHaveBeenCalledWith('classMapFile')
     expect(existsSync).toHaveBeenCalledWith('fileMapFile')
     expect(existsSync).toHaveBeenCalledWith('themeFile')
-    await vi.waitFor(() => {
-      expect(readFile).toHaveBeenCalledWith('sheetFile', 'utf-8')
-      expect(readFile).toHaveBeenCalledWith('classMapFile', 'utf-8')
-      expect(readFile).toHaveBeenCalledWith('fileMapFile', 'utf-8')
-      expect(readFile).toHaveBeenCalledWith('themeFile', 'utf-8')
-      expect(importSheet).toHaveBeenCalledWith({})
-      expect(importClassMap).toHaveBeenCalledWith({})
-      expect(importFileMap).toHaveBeenCalledWith({})
-      expect(registerTheme).toHaveBeenCalledWith({})
-    })
+    expect(readFileSync).toHaveBeenCalledWith('sheetFile', 'utf-8')
+    expect(readFileSync).toHaveBeenCalledWith('classMapFile', 'utf-8')
+    expect(readFileSync).toHaveBeenCalledWith('fileMapFile', 'utf-8')
+    expect(readFileSync).toHaveBeenCalledWith('themeFile', 'utf-8')
+    expect(importSheet).toHaveBeenCalledWith({})
+    expect(importClassMap).toHaveBeenCalledWith({})
+    expect(importFileMap).toHaveBeenCalledWith({})
+    expect(registerTheme).toHaveBeenCalledWith({})
   })
 
   it('should not read files when they do not exist in watch mode', async () => {
@@ -448,7 +446,7 @@ describe('devupUILoader', () => {
     expect(existsSync).toHaveBeenCalledWith('classMapFile')
     expect(existsSync).toHaveBeenCalledWith('fileMapFile')
     expect(existsSync).toHaveBeenCalledWith('themeFile')
-    expect(readFile).not.toHaveBeenCalled()
+    expect(readFileSync).not.toHaveBeenCalled()
   })
 
   it('should not write base style when watch is false even if updatedBaseStyle is true', async () => {
@@ -507,7 +505,7 @@ describe('devupUILoader', () => {
       addDependency: vi.fn(),
     }
     vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFile).mockResolvedValue('{}')
+    vi.mocked(readFileSync).mockReturnValue('{}')
     vi.mocked(codeExtract).mockImplementation(() => {
       throw new Error('error')
     })
@@ -545,7 +543,7 @@ describe('devupUILoader', () => {
       },
     }
     vi.mocked(existsSync).mockImplementation((path) => path === 'themeFile')
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify(themeData))
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(themeData))
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
@@ -558,14 +556,12 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(existsSync).toHaveBeenCalledWith('themeFile')
-    await vi.waitFor(() => {
-      expect(readFile).toHaveBeenCalledWith('themeFile', 'utf-8')
-      expect(registerTheme).toHaveBeenCalledWith({
-        colors: {
-          primary: '#000',
-          secondary: '#fff',
-        },
-      })
+    expect(readFileSync).toHaveBeenCalledWith('themeFile', 'utf-8')
+    expect(registerTheme).toHaveBeenCalledWith({
+      colors: {
+        primary: '#000',
+        secondary: '#fff',
+      },
     })
   })
 
@@ -590,7 +586,9 @@ describe('devupUILoader', () => {
       otherProperty: 'value',
     }
     vi.mocked(existsSync).mockImplementation((path) => path === 'themeFile')
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify(themeDataWithoutTheme))
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify(themeDataWithoutTheme),
+    )
     vi.mocked(codeExtract).mockReturnValue({
       code: 'code',
       css: 'css',
@@ -603,10 +601,8 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(existsSync).toHaveBeenCalledWith('themeFile')
-    await vi.waitFor(() => {
-      expect(readFile).toHaveBeenCalledWith('themeFile', 'utf-8')
-      expect(registerTheme).toHaveBeenCalledWith({})
-    })
+    expect(readFileSync).toHaveBeenCalledWith('themeFile', 'utf-8')
+    expect(registerTheme).toHaveBeenCalledWith({})
   })
 
   it('should read themeFile and use empty object when theme property is null', async () => {
@@ -630,7 +626,7 @@ describe('devupUILoader', () => {
       theme: null,
     }
     vi.mocked(existsSync).mockImplementation((path) => path === 'themeFile')
-    vi.mocked(readFile).mockResolvedValue(
+    vi.mocked(readFileSync).mockReturnValue(
       JSON.stringify(themeDataWithNullTheme),
     )
     vi.mocked(codeExtract).mockReturnValue({
@@ -645,9 +641,7 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(existsSync).toHaveBeenCalledWith('themeFile')
-    await vi.waitFor(() => {
-      expect(readFile).toHaveBeenCalledWith('themeFile', 'utf-8')
-      expect(registerTheme).toHaveBeenCalledWith({})
-    })
+    expect(readFileSync).toHaveBeenCalledWith('themeFile', 'utf-8')
+    expect(registerTheme).toHaveBeenCalledWith({})
   })
 })
