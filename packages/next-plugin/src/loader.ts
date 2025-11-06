@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
 
 import {
@@ -56,25 +56,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         // restart loader issue
         // loader should read files when they exist in watch mode
         if (existsSync(sheetFile))
-          promises.push(
-            readFile(sheetFile, 'utf-8').then(JSON.parse).then(importSheet),
-          )
+          importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
         if (existsSync(classMapFile))
-          promises.push(
-            readFile(classMapFile, 'utf-8')
-              .then(JSON.parse)
-              .then(importClassMap),
-          )
+          importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
         if (existsSync(fileMapFile))
-          promises.push(
-            readFile(fileMapFile, 'utf-8').then(JSON.parse).then(importFileMap),
-          )
+          importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
         if (existsSync(themeFile))
-          promises.push(
-            readFile(themeFile, 'utf-8')
-              .then(JSON.parse)
-              .then((data) => data?.['theme'] ?? {})
-              .then(registerTheme),
+          registerTheme(
+            JSON.parse(readFileSync(themeFile, 'utf-8'))?.['theme'] ?? {},
           )
       } else {
         importFileMap(defaultFileMap)
