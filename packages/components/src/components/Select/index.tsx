@@ -55,6 +55,9 @@ interface SelectProps extends Omit<ComponentProps<'div'>, 'onChange'> {
     showCheck?: boolean
     value: string
   }[]
+  triggerProps?: ComponentProps<typeof SelectTrigger>
+  containerProps?: ComponentProps<typeof SelectContainer>
+  optionProps?: ComponentProps<typeof SelectOption>
 }
 
 export function Select({
@@ -69,6 +72,9 @@ export function Select({
   colors,
   typography,
   options,
+  triggerProps,
+  containerProps,
+  optionProps,
   ...props
 }: SelectProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -143,10 +149,14 @@ export function Select({
       >
         {options ? (
           <>
-            <SelectTrigger>{children}</SelectTrigger>
-            <SelectContainer>
+            <SelectTrigger {...triggerProps}>{children}</SelectTrigger>
+            <SelectContainer {...containerProps}>
               {options?.map((option) => (
-                <SelectOption {...option} key={'option-' + option.value}>
+                <SelectOption
+                  {...optionProps}
+                  {...option}
+                  key={'option-' + option.value}
+                >
                   {option.label ?? option.value}
                 </SelectOption>
               ))}
