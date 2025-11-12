@@ -68,7 +68,7 @@ export class DevupUIWebpackPlugin {
         registerTheme(JSON.parse(content)?.['theme'] ?? {})
         const interfaceCode = getThemeInterface(
           this.options.package,
-          'DevupThemeColors',
+          'CustomColors',
           'DevupThemeTypography',
           'DevupTheme',
         )

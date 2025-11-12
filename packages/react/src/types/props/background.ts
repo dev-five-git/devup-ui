@@ -1,18 +1,12 @@
-import type { Property } from 'csstype'
+import type { Property } from 'csstype-extra'
 
 import type { ResponsiveValue } from '../responsive-value'
-import type { DevupThemeColors } from '../theme'
 
 export interface DevupUiBackgroundProps {
-  bg?: ResponsiveValue<Property.Background | keyof DevupThemeColors>
+  bg?: ResponsiveValue<Property.Background>
   bgAttachment?: ResponsiveValue<Property.BackgroundAttachment>
   bgClip?: ResponsiveValue<Property.BackgroundClip>
-  bgColor?: ResponsiveValue<Property.BackgroundColor | keyof DevupThemeColors>
-  color?: ResponsiveValue<Property.Color | keyof DevupThemeColors>
-  background?: ResponsiveValue<Property.Background | keyof DevupThemeColors>
-  backgroundColor?: ResponsiveValue<
-    Property.BackgroundColor | keyof DevupThemeColors
-  >
+  bgColor?: ResponsiveValue<Property.BackgroundColor>
   bgImage?: ResponsiveValue<Property.BackgroundImage>
   bgOrigin?: ResponsiveValue<Property.BackgroundOrigin>
   bgPosition?: ResponsiveValue<Property.BackgroundPosition>

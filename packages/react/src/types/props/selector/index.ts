@@ -1,4 +1,4 @@
-import type { AdvancedPseudos, SimplePseudos } from 'csstype'
+import type { AdvancedPseudos, SimplePseudos } from 'csstype-extra'
 
 import type { ResponsiveValue } from '../../responsive-value'
 import type { DevupTheme } from '../../theme'

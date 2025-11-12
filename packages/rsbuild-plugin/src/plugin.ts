@@ -40,7 +40,7 @@ async function writeDataFiles(
       registerTheme(JSON.parse(content)?.['theme'] ?? {})
       const interfaceCode = getThemeInterface(
         options.package,
-        'DevupThemeColors',
+        'CustomColors',
         'DevupThemeTypography',
         'DevupTheme',
       )

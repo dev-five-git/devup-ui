@@ -1,4 +1,4 @@
-import type { Property } from 'csstype'
+import type { Property } from 'csstype-extra'
 
 import type { ResponsiveValue } from '../responsive-value'
 

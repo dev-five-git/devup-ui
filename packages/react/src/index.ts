@@ -10,7 +10,7 @@ export { ThemeScript } from './components/ThemeScript'
 export { VStack } from './components/VStack'
 export { useTheme } from './hooks/use-theme'
 export type { DevupProps } from './types/props'
-export type { DevupTheme, DevupThemeColors } from './types/theme'
+export type { DevupTheme } from './types/theme'
 export type {
   DevupThemeTypography,
   DevupThemeTypographyKeys,
@@ -21,3 +21,4 @@ export { globalCss } from './utils/global-css'
 export { initTheme } from './utils/init-theme'
 export { keyframes } from './utils/keyframes'
 export { setTheme } from './utils/set-theme'
+export type { CustomColors } from 'csstype-extra'
