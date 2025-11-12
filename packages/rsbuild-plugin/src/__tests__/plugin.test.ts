@@ -319,7 +319,7 @@ const App = () => <Box></Box>`,
       expect(registerTheme).toHaveBeenCalledWith({})
       expect(getThemeInterface).toHaveBeenCalledWith(
         '@devup-ui/react',
-        'DevupThemeColors',
+        'CustomColors',
         'DevupThemeTypography',
         'DevupTheme',
       )

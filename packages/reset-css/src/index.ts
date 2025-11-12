@@ -13,10 +13,9 @@ globalCss({
     cursor: 'default',
     lineHeight: 1.5,
     overflowWrap: 'break-word',
-    MozTabSize: 4,
     tabSize: 4,
     WebkitTapHighlightColor: 'transparent',
-    WebkitTextSizeAdjust: '100%',
+    textSizeAdjust: '100%',
   },
   ':where(body)': {
     m: 0,
@@ -47,8 +46,8 @@ globalCss({
   },
   ':where(abbr[title])': {
     textDecoration: 'underline dotted',
-    WebkitTextDecorationStyle: 'dotted',
-    WebkitTextDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
+    textDecorationLine: 'underline',
   },
   ':where(b,strong)': {
     fontWeight: 'bolder',

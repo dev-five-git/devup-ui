@@ -68,7 +68,7 @@ export function DevupUI(
     registerTheme(theme)
     const themeInterface = getThemeInterface(
       libPackage,
-      'DevupThemeColors',
+      'CustomColors',
       'DevupThemeTypography',
       'DevupTheme',
     )

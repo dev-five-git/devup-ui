@@ -40,7 +40,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "react": "^19.2",
-    "csstype": "latest"
+    "csstype-extra": "latest"
   },
   "devDependencies": {
     "rollup-plugin-preserve-directives": "^0.4",
@@ -52,6 +52,6 @@
   },
   "peerDependencies": {
     "react": "*",
-    "csstype": "*"
+    "csstype-extra": "*"
   }
 }
