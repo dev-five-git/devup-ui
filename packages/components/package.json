@@ -43,7 +43,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/react": "workspace:*",
-    "csstype-extra": "^0.1.10",
+    "csstype-extra": "latest",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "clsx": "^2.1"
