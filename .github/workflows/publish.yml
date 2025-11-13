@@ -109,24 +109,10 @@ jobs:
 
       - name: Publish to npm
         run: |
-          # Check Git status
-          echo "=== Git Status Check ==="
-          echo "Current branches:"
-          git branch
-          echo ""
-          echo "Git HEAD status:"
-          git rev-parse --abbrev-ref HEAD
-          echo ""
-          echo "Git status:"
-          git status
-          echo ""
-          echo "Recent commit:"
-          git log -1 --oneline
-          echo ""
-          echo "Remote branch info:"
-          git branch -r | grep HEAD || echo "No remote HEAD found"
-          echo "==================="
-          echo ""
-
-          pnpm publish
+          echo '${{ steps.changepacks.outputs.changepacks }}' | jq -r '.[]' | while read package; do
+            echo "Publishing package: $package"
+            cd "$package"
+            pnpm publish
+            cd "${{ github.workspace }}"
+          done
         if: steps.changepacks.outputs.changepacks != ''
