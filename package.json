@@ -14,8 +14,6 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.5",
-    "@changesets/cli": "^2.29",
     "@devup-ui/eslint-plugin": "workspace:*",
     "@devup-ui/vite-plugin": "workspace:*",
     "@testing-library/jest-dom": "^6.9",
