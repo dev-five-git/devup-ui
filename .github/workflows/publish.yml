@@ -84,6 +84,7 @@ jobs:
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
           rm -rf .rustfmt.toml
+          cargo fmt
       - run: pnpm test
       - name: Build Landing
         run: |
