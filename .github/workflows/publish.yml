@@ -46,9 +46,6 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
