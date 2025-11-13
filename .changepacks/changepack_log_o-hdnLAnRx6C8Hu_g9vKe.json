@@ -1,5 +1,0 @@
-{
-  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
-  "note": "Update rust",
-  "date": "2025-11-13T11:34:25.373645400Z"
-}
