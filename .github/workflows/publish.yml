@@ -110,4 +110,4 @@ jobs:
           fail_ci_if_error: true
       - name: Publish to npm
         run: pnpm publish
-        if: steps.changepacks.outputs.changepacks != '[]'
+        if: steps.changepacks.outputs.changepacks != ''
