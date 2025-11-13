@@ -110,8 +110,9 @@ jobs:
       - name: Publish to npm
         run: |
           echo '${{ steps.changepacks.outputs.changepacks }}' | jq -r '.[]' | while read package; do
-            echo "Publishing package: $package"
-            cd "$package"
+            package_dir=$(dirname "$package")
+            echo "Publishing package: $package_dir"
+            cd "$package_dir"
             pnpm publish
             cd "${{ github.workspace }}"
           done
