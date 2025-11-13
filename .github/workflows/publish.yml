@@ -50,9 +50,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - uses: changepacks/action@main
-        id: changepacks
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Cargo tarpaulin and fmt
         run: |
@@ -105,6 +102,10 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+
+      - uses: changepacks/action@main
+        id: changepacks
+
       - name: Publish to npm
         run: pnpm publish
         if: steps.changepacks.outputs.changepacks != ''
