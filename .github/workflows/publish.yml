@@ -69,6 +69,8 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           node-version: 22
           cache: 'pnpm'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm i
       - run: pnpm build
       - run: |
@@ -113,7 +115,9 @@ jobs:
             package_dir=$(dirname "$package")
             echo "Publishing package: $package_dir"
             cd "$package_dir"
-            pnpm publish
+            pnpm publish --access public --no-git-checks
             cd "${{ github.workspace }}"
           done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         if: steps.changepacks.outputs.changepacks != ''
