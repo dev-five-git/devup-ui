@@ -5,6 +5,7 @@ use crate::constant::DOUBLE_SEPARATOR;
 pub enum SelectorSeparator {
     Single,
     Double,
+    Space,
     None,
 }
 impl Display for SelectorSeparator {
@@ -15,6 +16,7 @@ impl Display for SelectorSeparator {
             match self {
                 SelectorSeparator::Single => ":",
                 SelectorSeparator::Double => "::",
+                SelectorSeparator::Space => " ",
                 SelectorSeparator::None => "",
             }
         )
@@ -22,10 +24,16 @@ impl Display for SelectorSeparator {
 }
 impl From<&str> for SelectorSeparator {
     fn from(value: &str) -> Self {
-        if value.starts_with(":") || value.is_empty() || value.starts_with("[") {
+        if value.starts_with(":")
+            || value.is_empty()
+            || value.starts_with("[")
+            || value.starts_with(" ")
+        {
             SelectorSeparator::None
         } else if DOUBLE_SEPARATOR.contains(value) {
             SelectorSeparator::Double
+        } else if value.starts_with("#") || value.starts_with(".") || value.starts_with("*") {
+            SelectorSeparator::Space
         } else {
             SelectorSeparator::Single
         }

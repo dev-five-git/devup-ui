@@ -204,14 +204,16 @@ pub fn extract_style_from_expression<'a>(
                                 if name.starts_with("_") {
                                     if name.starts_with("_theme") {
                                         StyleSelector::from([
-                                            to_kebab_case(name.replace("_", "").as_str()).as_str(),
+                                            to_kebab_case(name.strip_prefix("_").unwrap_or(name))
+                                                .as_str(),
                                             &selector.to_string(),
                                         ])
                                         .to_string()
                                     } else {
                                         StyleSelector::from([
                                             &selector.to_string(),
-                                            to_kebab_case(name.replace("_", "").as_str()).as_str(),
+                                            to_kebab_case(name.strip_prefix("_").unwrap_or(name))
+                                                .as_str(),
                                         ])
                                         .to_string()
                                     }
@@ -219,10 +221,13 @@ pub fn extract_style_from_expression<'a>(
                                     name.replace("&", &selector.to_string())
                                 }
                             } else if name.starts_with("_") {
-                                StyleSelector::from(to_kebab_case(&name.replace("_", "")).as_str())
-                                    .to_string()
+                                StyleSelector::from(
+                                    to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_str(),
+                                )
+                                .to_string()
                             } else {
-                                StyleSelector::from(name.replace("_", "").as_str()).to_string()
+                                StyleSelector::from(name.strip_prefix("_").unwrap_or(name))
+                                    .to_string()
                             }
                         })
                         .collect::<Vec<_>>()
