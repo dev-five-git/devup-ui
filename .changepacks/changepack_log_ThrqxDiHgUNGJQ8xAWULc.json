@@ -1,5 +1,0 @@
-{
-  "changes": { "packages/components/package.json": "Patch" },
-  "note": "Add props for <Select />",
-  "date": "2025-11-18T08:11:31.056908200Z"
-}
