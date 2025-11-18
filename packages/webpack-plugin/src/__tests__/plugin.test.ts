@@ -111,7 +111,7 @@ describe('devupUIWebpackPlugin', () => {
         )
         expect(getThemeInterface).toHaveBeenCalledWith(
           options.package,
-          'DevupThemeColors',
+          'CustomColors',
           'DevupThemeTypography',
           'DevupTheme',
         )

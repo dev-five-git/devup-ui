@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.25",
+  "version": "1.0.26",
   "type": "module",
   "scripts": {
     "lint": "eslint && tsc --noEmit",
@@ -40,18 +40,18 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "react": "^19.2",
-    "csstype": "latest"
+    "csstype-extra": "latest"
   },
   "devDependencies": {
     "rollup-plugin-preserve-directives": "^0.4",
-    "vite": "^7.1",
+    "vite": "^7.2",
     "vite-plugin-dts": "^4.5",
     "typescript": "^5.9",
     "@types/react": "^19.2",
-    "@types/node": "^24.9"
+    "@types/node": "^24.10"
   },
   "peerDependencies": {
     "react": "*",
-    "csstype": "*"
+    "csstype-extra": "*"
   }
 }

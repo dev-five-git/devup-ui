@@ -1,7 +1,7 @@
 import type {
   VendorLonghandProperties,
   VendorShorthandProperties,
-} from 'csstype'
+} from 'csstype-extra'
 
 import type { ResponsiveValue } from '../responsive-value'
 

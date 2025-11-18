@@ -1,5 +1,14 @@
 # @devup-ui/reset-css
 
+## 1.0.17
+
+### Patch Changes
+
+- [#486](https://github.com/dev-five-git/devup-ui/pull/486) [`be1798e`](https://github.com/dev-five-git/devup-ui/commit/be1798e04505fb066a44c88a370474d62560ee35) Thanks [@owjs3901](https://github.com/owjs3901)! - Update css typing
+
+- Updated dependencies [[`be1798e`](https://github.com/dev-five-git/devup-ui/commit/be1798e04505fb066a44c88a370474d62560ee35)]:
+  - @devup-ui/react@1.0.26
+
 ## 1.0.16
 
 ### Patch Changes

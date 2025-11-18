@@ -19,7 +19,7 @@
     "webpack"
   ],
   "type": "module",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && vite build"
@@ -52,10 +52,10 @@
     "@devup-ui/webpack-plugin": "workspace:*",
     "next": "^16.0",
     "@devup-ui/wasm": "workspace:*",
-    "glob": "^11.0"
+    "glob": "^12.0"
   },
   "devDependencies": {
-    "vite": "^7.1",
+    "vite": "^7.2",
     "vite-plugin-dts": "^4.5",
     "vitest": "^4.0",
     "typescript": "^5.9",

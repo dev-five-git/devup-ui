@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Cargo tarpaulin and fmt
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Cargo tarpaulin and fmt
@@ -69,6 +69,8 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           node-version: 22
           cache: 'pnpm'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: pnpm i
       - run: pnpm build
       - run: |
@@ -84,6 +86,7 @@ jobs:
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
           rm -rf .rustfmt.toml
+          cargo fmt
       - run: pnpm test
       - name: Build Landing
         run: |
@@ -102,12 +105,19 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
-      - name: Create Release Pull Request or Publish to npm
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm changeset publish
+
+      - uses: changepacks/action@main
+        id: changepacks
+
+      - name: Publish to npm
+        run: |
+          echo '${{ steps.changepacks.outputs.changepacks }}' | jq -r '.[]' | while read package; do
+            package_dir=$(dirname "$package")
+            echo "Publishing package: $package_dir"
+            cd "$package_dir"
+            pnpm publish --access public --no-git-checks
+            cd "${{ github.workspace }}"
+          done
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        if: github.ref == 'refs/heads/main'
+        if: steps.changepacks.outputs.changepacks != ''
