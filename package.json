@@ -11,7 +11,8 @@
     "build": "pnpm -F wasm build && pnpm -F @devup-ui/* -F !wasm build",
     "dev": "pnpm -r dev",
     "benchmark": "node benchmark.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "changepacks": "pnpm dlx @changepacks/cli"
   },
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:*",
