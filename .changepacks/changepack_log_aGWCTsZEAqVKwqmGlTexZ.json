@@ -1,5 +1,0 @@
-{
-  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
-  "note": "Fix selectors normialized class when including underscore(_)",
-  "date": "2025-11-18T08:18:08.445637Z"
-}
