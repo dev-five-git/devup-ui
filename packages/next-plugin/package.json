@@ -52,7 +52,7 @@
     "@devup-ui/webpack-plugin": "workspace:*",
     "next": "^16.0",
     "@devup-ui/wasm": "workspace:*",
-    "glob": "^11.0"
+    "glob": "^11.1"
   },
   "devDependencies": {
     "vite": "^7.1",
