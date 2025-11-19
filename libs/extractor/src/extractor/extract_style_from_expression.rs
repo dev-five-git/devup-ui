@@ -197,51 +197,47 @@ pub fn extract_style_from_expression<'a>(
                         }
                     }
 
-                    let sel = part_of_selector
-                        .iter()
-                        .map(|name| {
-                            if let Some(selector) = selector {
-                                if name.starts_with("_") {
-                                    if name.starts_with("_theme") {
-                                        StyleSelector::from([
-                                            to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                                .as_str(),
-                                            &selector.to_string(),
-                                        ])
-                                        .to_string()
-                                    } else {
-                                        StyleSelector::from([
-                                            &selector.to_string(),
-                                            to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                                .as_str(),
-                                        ])
-                                        .to_string()
-                                    }
-                                } else {
-                                    name.replace("&", &selector.to_string())
-                                }
-                            } else if name.starts_with("_") {
-                                StyleSelector::from(
-                                    to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_str(),
-                                )
-                                .to_string()
-                            } else {
-                                StyleSelector::from(name.strip_prefix("_").unwrap_or(name))
+                    for sel in part_of_selector.iter().map(|name| {
+                        if let Some(selector) = selector {
+                            if name.starts_with("_") {
+                                if name.starts_with("_theme") {
+                                    StyleSelector::from([
+                                        to_kebab_case(name.strip_prefix("_").unwrap_or(name))
+                                            .as_str(),
+                                        &selector.to_string(),
+                                    ])
                                     .to_string()
+                                } else {
+                                    StyleSelector::from([
+                                        &selector.to_string(),
+                                        to_kebab_case(name.strip_prefix("_").unwrap_or(name))
+                                            .as_str(),
+                                    ])
+                                    .to_string()
+                                }
+                            } else {
+                                name.replace("&", &selector.to_string())
                             }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    props.extend(
-                        extract_style_from_expression(
-                            ast_builder,
-                            None,
-                            &mut o.value,
-                            level,
-                            &Some(StyleSelector::Selector(sel)),
-                        )
-                        .styles,
-                    );
+                        } else if name.starts_with("_") {
+                            StyleSelector::from(
+                                to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_str(),
+                            )
+                            .to_string()
+                        } else {
+                            StyleSelector::from(name.strip_prefix("_").unwrap_or(name)).to_string()
+                        }
+                    }) {
+                        props.extend(
+                            extract_style_from_expression(
+                                ast_builder,
+                                None,
+                                &mut o.value,
+                                level,
+                                &Some(StyleSelector::Selector(sel)),
+                            )
+                            .styles,
+                        );
+                    }
                 }
             }
             return ExtractResult {
