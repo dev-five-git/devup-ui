@@ -67,7 +67,12 @@ impl Ord for StyleSelector {
                 if c == Ordering::Equal { aa.cmp(bb) } else { c }
             }
             (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
-                get_selector_order(a).cmp(&get_selector_order(b))
+                let order_cmp = get_selector_order(a).cmp(&get_selector_order(b));
+                if order_cmp == Ordering::Equal {
+                    a.cmp(b)
+                } else {
+                    order_cmp
+                }
             }
             (
                 StyleSelector::Media {

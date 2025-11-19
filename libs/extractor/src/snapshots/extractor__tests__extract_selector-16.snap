@@ -1,17 +1,17 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/core'\n        <Box selectors={{\n          \"_hover, _active\": {\n            mx: 1\n          }\n        }} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/core'\n        <Box selectors={{\n          \".a, .b\": {\n            _hover: {\n              bg: \"$primary\"\n            },\n            selectors: {\n              \"&:active\": {\n                bg: \"$secondary\"\n              }\n            }\n          }\n        }} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "margin-left",
-                value: "4px",
+                property: "background",
+                value: "$primary",
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:hover",
+                        "& .a:hover",
                     ),
                 ),
                 style_order: None,
@@ -19,12 +19,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "margin-left",
-                value: "4px",
+                property: "background",
+                value: "$primary",
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:active",
+                        "& .b:hover",
                     ),
                 ),
                 style_order: None,
@@ -32,12 +32,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "margin-right",
-                value: "4px",
+                property: "background",
+                value: "$secondary",
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:hover",
+                        "& .a:active",
                     ),
                 ),
                 style_order: None,
@@ -45,12 +45,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "margin-right",
-                value: "4px",
+                property: "background",
+                value: "$secondary",
                 level: 0,
                 selector: Some(
                     Selector(
-                        "&:active",
+                        "& .b:active",
                     ),
                 ),
                 style_order: None,
