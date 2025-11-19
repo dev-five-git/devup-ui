@@ -1,5 +1,0 @@
-{
-  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
-  "note": "Fix selector issue",
-  "date": "2025-11-19T07:56:23.681473700Z"
-}

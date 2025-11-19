@@ -1,5 +1,0 @@
-{
-  "changes": { "packages/next-plugin/package.json": "Patch" },
-  "note": "Add forced boot code",
-  "date": "2025-11-19T08:36:56.984126800Z"
-}
