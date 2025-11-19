@@ -3,7 +3,7 @@
 exports[`Select > should render 1`] = `
 <div>
   <div
-    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-16872530230555934585-1 box-sizing-0-border-box-2187736501337973943-1  "
   >
     <button
       aria-expanded="false"
@@ -28,7 +28,7 @@ exports[`Select > should render 1`] = `
 exports[`Select > should render with overflow screen 1`] = `
 <div>
   <div
-    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-16872530230555934585-1 box-sizing-0-border-box-2187736501337973943-1  "
   >
     <button
       aria-expanded="true"
@@ -83,7 +83,7 @@ exports[`Select > should render with overflow screen 1`] = `
         Option 4
       </div>
       <div
-        class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+        class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-16872530230555934585-1 box-sizing-0-border-box-2187736501337973943-1  "
       >
         <div
           aria-expanded="false"
@@ -120,7 +120,7 @@ exports[`Select > should render with overflow screen 1`] = `
 exports[`Select > should render with typography prop 1`] = `
 <div>
   <div
-    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1 typo-body1 "
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-16872530230555934585-1 box-sizing-0-border-box-2187736501337973943-1 typo-body1 "
   >
     <button
       aria-expanded="false"
@@ -146,7 +146,7 @@ exports[`Select > should render with x and y properties 1`] = `
 <div>
   <div
     aria-label="Select"
-    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-1137980104803605758-1  "
+    class="display-0-inline-block--1 height-0-fit-content--1 box-sizing-0-border-box-16872530230555934585-1 box-sizing-0-border-box-2187736501337973943-1  "
   >
     <button
       aria-expanded="false"
