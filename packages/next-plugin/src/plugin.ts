@@ -83,7 +83,13 @@ export function DevupUI(
     )
 
     if (process.env.NODE_ENV !== 'production') {
-      // dev
+      // check if debugger is attached
+      fetch('http://localhost:' + process.env.PORT)
+      fetch('http://localhost:' + process.debugPort).catch(() => {
+        setTimeout(() => {
+          process.exit(77)
+        }, 500)
+      })
       process.env.TURBOPACK_DEBUG_JS = '*'
       process.env.NODE_OPTIONS ??= ''
       process.env.NODE_OPTIONS += ' --inspect-brk'

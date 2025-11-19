@@ -15,6 +15,7 @@ vi.mock('@devup-ui/wasm', async (original) => ({
   registerTheme: vi.fn(),
   getThemeInterface: vi.fn(),
   getDefaultTheme: vi.fn(),
+  getCss: vi.fn(() => ''),
   exportSheet: vi.fn(() =>
     JSON.stringify({
       css: {},
@@ -89,6 +90,15 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
+    beforeEach(() => {
+      // Mock fetch globally to prevent "http://localhost:undefined" errors
+      global.fetch = vi.fn(() => Promise.resolve({} as Response))
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
     it('should apply turbo config', async () => {
       vi.stubEnv('TURBOPACK', '1')
       vi.mocked(existsSync)
@@ -389,6 +399,57 @@ describe('DevupUINextPlugin', () => {
         CUSTOM_VAR: 'value',
         DEVUP_UI_DEFAULT_THEME: 'light',
       })
+    })
+    it('should handle debugPort fetch failure in development mode', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.stubEnv('NODE_ENV', 'development')
+      vi.stubEnv('PORT', '3000')
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
+      vi.mocked(writeFileSync).mockReturnValue()
+
+      // Mock process.exit to prevent actual exit
+      const originalExit = process.exit
+      const exitSpy = vi.fn()
+      process.exit = exitSpy as any
+
+      // Mock process.debugPort
+      const originalDebugPort = process.debugPort
+      process.debugPort = 9229
+
+      // Mock fetch globally before calling DevupUI
+      const originalFetch = global.fetch
+      const fetchMock = vi.fn((url: string | URL) => {
+        const urlString = typeof url === 'string' ? url : url.toString()
+        if (urlString.includes('9229')) {
+          return Promise.reject(new Error('Connection refused'))
+        }
+        return Promise.resolve({} as Response)
+      })
+      global.fetch = fetchMock as any
+
+      // Use fake timers to control setTimeout
+      vi.useFakeTimers()
+
+      try {
+        DevupUI({})
+
+        // Wait for the fetch promise to reject (this triggers the catch handler)
+        // The catch handler sets up a setTimeout, so we need to wait for that
+        await vi.runAllTimersAsync()
+
+        // Verify process.exit was called with code 77
+        expect(exitSpy).toHaveBeenCalledWith(77)
+      } finally {
+        // Restore
+        vi.useRealTimers()
+        global.fetch = originalFetch
+        process.exit = originalExit
+        process.debugPort = originalDebugPort
+      }
     })
   })
 })
