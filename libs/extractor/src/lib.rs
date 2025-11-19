@@ -2331,39 +2331,63 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
-    }
 
-    // #[test]
-    // #[serial]
-    // fn optimize_func1() {
-    //     reset_class_map();
-    //     assert_debug_snapshot!(ToBTreeSet::from(
-    //         extract(
-    //             "test.tsx",
-    //             r#"import {Box} from '@devup-ui/core'
-    //     <Box selectors={{
-    //       ".test-picker__day--keyboard-selected": {
-    //         _hover: {
-    //           bg: "$primary"
-    //         },
-    //         selectors: {
-    //           "&:active": {
-    //             bg: "$primary"
-    //           }
-    //         }
-    //       }
-    //     }} />
-    //     "#,
-    //             ExtractOption {
-    //                 package: "@devup-ui/core".to_string(),
-    //                 css_dir: "@devup-ui/core".to_string(),
-    //                 single_css: true,
-    //                 import_main_css: false
-    //             }
-    //         )
-    //         .unwrap()
-    //     ));
-    // }
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box selectors={{
+          ".test-picker__day--keyboard-selected": {
+            _hover: {
+              bg: "$primary"
+            },
+            selectors: {
+              "&:active": {
+                bg: "$primary"
+              }
+            }
+          }
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box selectors={{
+          ".a, .b": {
+            _hover: {
+              bg: "$primary"
+            },
+            selectors: {
+              "&:active": {
+                bg: "$secondary"
+              }
+            }
+          }
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
 
     #[test]
     #[serial]
