@@ -1,5 +1,0 @@
-{
-  "changes": { "packages/react/package.json": "Patch" },
-  "note": "Fix globalCss typing",
-  "date": "2025-11-21T14:17:50.816538300Z"
-}
