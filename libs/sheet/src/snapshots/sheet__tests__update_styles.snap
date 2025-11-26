@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: "sheet.create_css(Some(\"index.tsx\"), true)"
 ---
-"@import \"./devup-ui.css\";"
+"/*! devup-ui v1.0.48, | Apache License 2.0 | https://devup-ui.com */@import \"./devup-ui.css\";"

@@ -554,23 +554,25 @@ impl StyleSheet {
     }
 
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
-        let mut css = self
-            .imports
-            .values()
-            .flatten()
-            .map(|import| {
-                if import.starts_with("\"") {
-                    format!("@import {import};")
-                } else {
-                    format!("@import \"{import}\";")
-                }
-            })
-            .collect::<String>();
+        let header = self.create_header();
+        let mut css = format!(
+            "{header}{}",
+            self.imports
+                .values()
+                .flatten()
+                .map(|import| {
+                    if import.starts_with("\"") {
+                        format!("@import {import};")
+                    } else {
+                        format!("@import \"{import}\";")
+                    }
+                })
+                .collect::<String>()
+        );
 
         let write_global = filename.is_none();
 
         if write_global {
-            css.insert_str(0, self.create_header().as_str());
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
             let mut base_styles = BTreeMap::<u8, HashSet<StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
