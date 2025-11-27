@@ -1,5 +1,0 @@
-{
-  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
-  "note": "Add header to css",
-  "date": "2025-11-26T07:12:47.012760800Z"
-}
