@@ -15,7 +15,8 @@ import type { DevupSelectorProps, DevupThemeSelectorProps } from './selector'
 import type { DevupUiTextProps } from './text'
 
 export interface DevupShortcutsProps
-  extends DevupUiBackgroundProps,
+  extends
+    DevupUiBackgroundProps,
     DevupUiBorderProps,
     DevupUiBoxModelProps,
     DevupUiBoxSizingProps,
@@ -36,11 +37,11 @@ export type DevupCommonProps = Merge<
 export interface DevupProps extends DevupCommonProps, DevupSelectorProps {}
 
 export interface DevupPropsWithTheme
-  extends DevupProps,
-    DevupThemeSelectorProps {}
+  extends DevupProps, DevupThemeSelectorProps {}
 
-export interface DevupComponentProps<T extends React.ElementType>
-  extends DevupPropsWithTheme {
+export interface DevupComponentProps<
+  T extends React.ElementType,
+> extends DevupPropsWithTheme {
   as?: T
   styleVars?: Record<string, string | undefined>
 }
