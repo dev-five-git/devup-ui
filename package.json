@@ -5,7 +5,7 @@
   "description": "devup-ui",
   "type": "module",
   "scripts": {
-    "lint": "pnpm -F @devup-ui/* lint && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
+    "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
     "pretest": "pnpm -F @devup-ui/vite-plugin build",
     "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && vitest test --coverage --run && pnpm -r test",
     "build": "pnpm -F wasm build && pnpm -F @devup-ui/* -F !wasm build",
