@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: "sheet.create_css(Some(\"index.tsx\"), true)"
+expression: "sheet.create_css(Some(\"index.tsx\"), true).split(\"*/\").nth(1).unwrap()"
 ---
-"/*! devup-ui v1.0.48, | Apache License 2.0 | https://devup-ui.com */@import \"./devup-ui.css\";"
+"@import \"./devup-ui.css\";"

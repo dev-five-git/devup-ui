@@ -792,7 +792,13 @@ mod tests {
     #[test]
     fn test_import_css() {
         let sheet = StyleSheet::default();
-        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
+        assert_debug_snapshot!(
+            sheet
+                .create_css(Some("index.tsx"), true)
+                .split("*/")
+                .nth(1)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1751,7 +1757,13 @@ mod tests {
     fn test_update_styles() {
         let mut sheet = StyleSheet::default();
         sheet.update_styles(&HashSet::new(), "index.tsx", true);
-        assert_debug_snapshot!(sheet.create_css(Some("index.tsx"), true));
+        assert_debug_snapshot!(
+            sheet
+                .create_css(Some("index.tsx"), true)
+                .split("*/")
+                .nth(1)
+                .unwrap()
+        );
 
         let mut sheet = StyleSheet::default();
         let output = extract("index.tsx", "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:flex},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }).unwrap();

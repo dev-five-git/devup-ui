@@ -65,8 +65,7 @@ export type Selectors = Partial<
 >
 
 export interface DevupSelectorProps
-  extends SimpleSelectorProps,
-    AdvancedSelectorProps {
+  extends SimpleSelectorProps, AdvancedSelectorProps {
   // media query
   _print?: SelectorProps<DevupProps>
 

@@ -5,8 +5,10 @@ import { ComponentProps, useId, useState } from 'react'
 
 import { CheckIcon } from './CheckIcon'
 
-interface CheckboxProps
-  extends Omit<ComponentProps<'input'>, 'type' | 'onChange'> {
+interface CheckboxProps extends Omit<
+  ComponentProps<'input'>,
+  'type' | 'onChange'
+> {
   children: React.ReactNode
   onChange?: (checked: boolean) => void
   colors?: {

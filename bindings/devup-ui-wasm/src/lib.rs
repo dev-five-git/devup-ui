@@ -19,17 +19,17 @@ pub struct Output {
     updated_base_style: bool,
     css: Option<String>,
 }
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &JsValue);
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn log_str(s: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = time)]
-    fn time(s: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = timeEnd)]
-    fn time_end(s: &str);
-}
+// #[wasm_bindgen]
+// extern "C" {
+//     #[wasm_bindgen(js_namespace = console)]
+//     fn log(s: &JsValue);
+//     #[wasm_bindgen(js_namespace = console, js_name = log)]
+//     fn log_str(s: &str);
+//     #[wasm_bindgen(js_namespace = console, js_name = time)]
+//     fn time(s: &str);
+//     #[wasm_bindgen(js_namespace = console, js_name = timeEnd)]
+//     fn time_end(s: &str);
+// }
 
 #[wasm_bindgen]
 impl Output {

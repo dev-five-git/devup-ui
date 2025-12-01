@@ -85,9 +85,11 @@ jobs:
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
+      - run: pnpm test
+      - name: Format Rollback
+        run: |
           rm -rf .rustfmt.toml
           cargo fmt
-      - run: pnpm test
       - name: Build Landing
         run: |
           pnpm -F components build-storybook
