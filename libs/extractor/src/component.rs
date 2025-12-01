@@ -1,7 +1,9 @@
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
-use crate::extract_style::{extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue};
+use crate::extract_style::{
+    extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
+};
 
 /// devup-ui export variable kind
 #[derive(Debug, PartialEq, Clone, EnumIter, Display)]
@@ -21,7 +23,11 @@ impl ExportVariableKind {
     /// Convert the kind to a tag
     pub fn to_tag(&self) -> Result<&str, &str> {
         match self {
-            ExportVariableKind::Center | ExportVariableKind::VStack | ExportVariableKind::Grid | ExportVariableKind::Flex | ExportVariableKind::Box => Ok("div"),
+            ExportVariableKind::Center
+            | ExportVariableKind::VStack
+            | ExportVariableKind::Grid
+            | ExportVariableKind::Flex
+            | ExportVariableKind::Box => Ok("div"),
             ExportVariableKind::Text => Ok("span"),
             ExportVariableKind::Image => Ok("img"),
             ExportVariableKind::Button => Ok("button"),
@@ -33,18 +39,52 @@ impl ExportVariableKind {
 impl ExportVariableKind {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
-            ExportVariableKind::Input | ExportVariableKind::Button | ExportVariableKind::Text | ExportVariableKind::Image | ExportVariableKind::Box => vec![],
+            ExportVariableKind::Input
+            | ExportVariableKind::Button
+            | ExportVariableKind::Text
+            | ExportVariableKind::Image
+            | ExportVariableKind::Box => vec![],
             ExportVariableKind::Flex => {
-                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None))]
+                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "display", "flex", 0, None,
+                ))]
             }
             ExportVariableKind::VStack => {
-                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("flex-direction", "column", 0, None))]
+                vec![
+                    ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                        "display", "flex", 0, None,
+                    )),
+                    ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                        "flex-direction",
+                        "column",
+                        0,
+                        None,
+                    )),
+                ]
             }
             ExportVariableKind::Center => {
-                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("justify-content", "center", 0, None)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("align-items", "center", 0, None))]
+                vec![
+                    ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                        "display", "flex", 0, None,
+                    )),
+                    ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                        "justify-content",
+                        "center",
+                        0,
+                        None,
+                    )),
+                    ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                        "align-items",
+                        "center",
+                        0,
+                        None,
+                    )),
+                ]
             }
             ExportVariableKind::Grid => {
-                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "grid", 0, None))]
+                vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "display", "grid", 0, None,
+                ))]
             }
         }
     }
@@ -69,15 +109,42 @@ mod tests {
 
     #[test]
     fn test_kind_from_export_variable() {
-        assert_eq!(ExportVariableKind::try_from("Box".to_string()), Ok(ExportVariableKind::Box));
-        assert_eq!(ExportVariableKind::try_from("Text".to_string()), Ok(ExportVariableKind::Text));
-        assert_eq!(ExportVariableKind::try_from("Image".to_string()), Ok(ExportVariableKind::Image));
-        assert_eq!(ExportVariableKind::try_from("Button".to_string()), Ok(ExportVariableKind::Button));
-        assert_eq!(ExportVariableKind::try_from("Input".to_string()), Ok(ExportVariableKind::Input));
-        assert_eq!(ExportVariableKind::try_from("Flex".to_string()), Ok(ExportVariableKind::Flex));
-        assert_eq!(ExportVariableKind::try_from("VStack".to_string()), Ok(ExportVariableKind::VStack));
-        assert_eq!(ExportVariableKind::try_from("Center".to_string()), Ok(ExportVariableKind::Center));
-        assert_eq!(ExportVariableKind::try_from("Grid".to_string()), Ok(ExportVariableKind::Grid));
+        assert_eq!(
+            ExportVariableKind::try_from("Box".to_string()),
+            Ok(ExportVariableKind::Box)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Text".to_string()),
+            Ok(ExportVariableKind::Text)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Image".to_string()),
+            Ok(ExportVariableKind::Image)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Button".to_string()),
+            Ok(ExportVariableKind::Button)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Input".to_string()),
+            Ok(ExportVariableKind::Input)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Flex".to_string()),
+            Ok(ExportVariableKind::Flex)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("VStack".to_string()),
+            Ok(ExportVariableKind::VStack)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Center".to_string()),
+            Ok(ExportVariableKind::Center)
+        );
+        assert_eq!(
+            ExportVariableKind::try_from("Grid".to_string()),
+            Ok(ExportVariableKind::Grid)
+        );
         assert!(ExportVariableKind::try_from("css".to_string()).is_err());
         assert!(ExportVariableKind::try_from("foo".to_string()).is_err());
     }
@@ -102,9 +169,51 @@ mod tests {
         assert_eq!(ExportVariableKind::Image.extract(), vec![]);
         assert_eq!(ExportVariableKind::Button.extract(), vec![]);
         assert_eq!(ExportVariableKind::Input.extract(), vec![]);
-        assert_eq!(ExportVariableKind::Flex.extract(), vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None,))]);
-        assert_eq!(ExportVariableKind::VStack.extract(), vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None,)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("flex-direction", "column", 0, None,))]);
-        assert_eq!(ExportVariableKind::Center.extract(), vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "flex", 0, None,)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("justify-content", "center", 0, None,)), ExtractStyleValue::Static(ExtractStaticStyle::new_basic("align-items", "center", 0, None,))]);
-        assert_eq!(ExportVariableKind::Grid.extract(), vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic("display", "grid", 0, None,))]);
+        assert_eq!(
+            ExportVariableKind::Flex.extract(),
+            vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                "display", "flex", 0, None,
+            ))]
+        );
+        assert_eq!(
+            ExportVariableKind::VStack.extract(),
+            vec![
+                ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "display", "flex", 0, None,
+                )),
+                ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "flex-direction",
+                    "column",
+                    0,
+                    None,
+                ))
+            ]
+        );
+        assert_eq!(
+            ExportVariableKind::Center.extract(),
+            vec![
+                ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "display", "flex", 0, None,
+                )),
+                ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "justify-content",
+                    "center",
+                    0,
+                    None,
+                )),
+                ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                    "align-items",
+                    "center",
+                    0,
+                    None,
+                ))
+            ]
+        );
+        assert_eq!(
+            ExportVariableKind::Grid.extract(),
+            vec![ExtractStyleValue::Static(ExtractStaticStyle::new_basic(
+                "display", "grid", 0, None,
+            ))]
+        );
     }
 }

@@ -6,7 +6,9 @@ use css::{
 };
 
 use crate::{
-    extract_style::{ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty},
+    extract_style::{
+        ExtractStyleProperty, constant::MAINTAIN_VALUE_PROPERTIES, style_property::StyleProperty,
+    },
     utils::{convert_value, gcd},
 };
 
@@ -30,7 +32,11 @@ impl ExtractStaticStyle {
         Self {
             value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
                 if property == "aspect-ratio" && value.contains("/") {
-                    if let [Ok(a), Ok(b)] = value.split('/').map(|v| v.trim().parse::<u32>()).collect::<Vec<_>>()[..] {
+                    if let [Ok(a), Ok(b)] = value
+                        .split('/')
+                        .map(|v| v.trim().parse::<u32>())
+                        .collect::<Vec<_>>()[..]
+                    {
                         let gcd = gcd(a, b);
                         format!("{}/{}", a / gcd, b / gcd)
                     } else {
@@ -49,8 +55,23 @@ impl ExtractStaticStyle {
         }
     }
 
-    pub fn new_basic(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
-        Self { value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) { value.to_string() } else { convert_value(value) }), property: property.to_string(), level, selector, style_order: Some(0) }
+    pub fn new_basic(
+        property: &str,
+        value: &str,
+        level: u8,
+        selector: Option<StyleSelector>,
+    ) -> Self {
+        Self {
+            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+                value.to_string()
+            } else {
+                convert_value(value)
+            }),
+            property: property.to_string(),
+            level,
+            selector,
+            style_order: Some(0),
+        }
     }
 
     pub fn property(&self) -> &str {
@@ -77,9 +98,24 @@ impl ExtractStaticStyle {
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
-        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) { self.value.to_string() } else { convert_value(&self.value) });
-        let v = if check_multi_css_optimize(&self.property) { optimize_mutli_css_value(&v) } else { v };
-        StyleProperty::ClassName(sheet_to_classname(&self.property, self.level, Some(&v), s.as_deref(), self.style_order, filename))
+        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
+            self.value.to_string()
+        } else {
+            convert_value(&self.value)
+        });
+        let v = if check_multi_css_optimize(&self.property) {
+            optimize_mutli_css_value(&v)
+        } else {
+            v
+        };
+        StyleProperty::ClassName(sheet_to_classname(
+            &self.property,
+            self.level,
+            Some(&v),
+            s.as_deref(),
+            self.style_order,
+            filename,
+        ))
     }
 }
 

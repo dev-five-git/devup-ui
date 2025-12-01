@@ -5,24 +5,43 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator, to_kebab_case, utils::to_camel_case};
+use crate::{
+    constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator, to_kebab_case,
+    utils::to_camel_case,
+};
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
-    Media { query: String, selector: Option<String> },
+    Media {
+        query: String,
+        selector: Option<String>,
+    },
     Selector(String),
     // selector, file
     Global(String, String),
 }
 
 fn optimize_selector_string(selector: &str) -> String {
-    selector.split_whitespace().collect::<Vec<_>>().join(" ").replace(", ", ",")
+    selector
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(", ", ",")
 }
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
-        StyleSelector::Media { query, selector } => StyleSelector::Media { query: query.to_string(), selector: selector.as_ref().map(|s| optimize_selector_string(s.as_str())) },
-        StyleSelector::Selector(selector) => StyleSelector::Selector(optimize_selector_string(&selector)),
-        StyleSelector::Global(selector, file) => StyleSelector::Global(optimize_selector_string(&selector), file.to_string()),
+        StyleSelector::Media { query, selector } => StyleSelector::Media {
+            query: query.to_string(),
+            selector: selector
+                .as_ref()
+                .map(|s| optimize_selector_string(s.as_str())),
+        },
+        StyleSelector::Selector(selector) => {
+            StyleSelector::Selector(optimize_selector_string(&selector))
+        }
+        StyleSelector::Global(selector, file) => {
+            StyleSelector::Global(optimize_selector_string(&selector), file.to_string())
+        }
     }
 }
 
@@ -34,16 +53,41 @@ impl PartialOrd for StyleSelector {
 impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (StyleSelector::Media { query: a, selector: aa }, StyleSelector::Media { query: b, selector: bb }) => {
+            (
+                StyleSelector::Media {
+                    query: a,
+                    selector: aa,
+                },
+                StyleSelector::Media {
+                    query: b,
+                    selector: bb,
+                },
+            ) => {
                 let c = a.cmp(b);
                 if c == Ordering::Equal { aa.cmp(bb) } else { c }
             }
             (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
                 let order_cmp = get_selector_order(a).cmp(&get_selector_order(b));
-                if order_cmp == Ordering::Equal { a.cmp(b) } else { order_cmp }
+                if order_cmp == Ordering::Equal {
+                    a.cmp(b)
+                } else {
+                    order_cmp
+                }
             }
-            (StyleSelector::Media { selector: _, query: _ }, StyleSelector::Selector(_)) => Ordering::Greater,
-            (StyleSelector::Selector(_), StyleSelector::Media { selector: _, query: _ }) => Ordering::Less,
+            (
+                StyleSelector::Media {
+                    selector: _,
+                    query: _,
+                },
+                StyleSelector::Selector(_),
+            ) => Ordering::Greater,
+            (
+                StyleSelector::Selector(_),
+                StyleSelector::Media {
+                    selector: _,
+                    query: _,
+                },
+            ) => Ordering::Less,
             (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
                 if a == b {
                     return Ordering::Equal;
@@ -62,7 +106,11 @@ impl Ord for StyleSelector {
                                 b_order_value = *order_value;
                             }
                         }
-                        if a_order_value == b_order_value { a.cmp(b) } else { a_order_value.cmp(&b_order_value) }
+                        if a_order_value == b_order_value {
+                            a.cmp(b)
+                        } else {
+                            a_order_value.cmp(&b_order_value)
+                        }
                     }
                     (true, false) => Ordering::Greater,
                     (false, true) => Ordering::Less,
@@ -77,36 +125,69 @@ impl Ord for StyleSelector {
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        let value = value.split_whitespace().collect::<Vec<_>>().join(" ").replace(", ", ",");
+        let value = value
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace(", ", ",");
         if value.contains("&") {
             StyleSelector::Selector(value.to_string())
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
-            StyleSelector::Selector(format!("{}{}{} &", "*[role=group]", SelectorSeparator::from(post.as_str()), post))
+            StyleSelector::Selector(format!(
+                "{}{}{} &",
+                "*[role=group]",
+                SelectorSeparator::from(post.as_str()),
+                post
+            ))
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
         } else if value == "print" {
-            StyleSelector::Media { query: "print".to_string(), selector: None }
+            StyleSelector::Media {
+                query: "print".to_string(),
+                selector: None,
+            }
         } else {
             let post = to_kebab_case(&value);
 
-            StyleSelector::Selector(format!("&{}{}", SelectorSeparator::from(post.as_str()), post))
+            StyleSelector::Selector(format!(
+                "&{}{}",
+                SelectorSeparator::from(post.as_str()),
+                post
+            ))
         }
     }
 }
 
 impl From<[&str; 2]> for StyleSelector {
     fn from(value: [&str; 2]) -> Self {
-        let post = if value[1].contains("&:") { to_kebab_case(value[1].split(":").last().unwrap()) } else { to_kebab_case(value[1]) };
-        StyleSelector::Selector(format!("{}{}{}", StyleSelector::from(value[0]), SelectorSeparator::from(post.as_str()), post))
+        let post = if value[1].contains("&:") {
+            to_kebab_case(value[1].split(":").last().unwrap())
+        } else {
+            to_kebab_case(value[1])
+        };
+        StyleSelector::Selector(format!(
+            "{}{}{}",
+            StyleSelector::from(value[0]),
+            SelectorSeparator::from(post.as_str()),
+            post
+        ))
     }
 }
 impl From<(&StyleSelector, &str)> for StyleSelector {
     fn from(value: (&StyleSelector, &str)) -> Self {
         if let StyleSelector::Global(_, file) = value.0 {
             let post = to_kebab_case(value.1);
-            StyleSelector::Global(format!("{}{}{}", value.0, SelectorSeparator::from(post.as_str()), post), file.clone())
+            StyleSelector::Global(
+                format!(
+                    "{}{}{}",
+                    value.0,
+                    SelectorSeparator::from(post.as_str()),
+                    post
+                ),
+                file.clone(),
+            )
         } else {
             StyleSelector::from([&value.0.to_string(), value.1])
         }
@@ -121,7 +202,11 @@ impl Display for StyleSelector {
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
                 StyleSelector::Media { query, selector } => {
-                    if let Some(selector) = selector { format!("@{query} {selector}") } else { format!("@{query}") }
+                    if let Some(selector) = selector {
+                        format!("@{query} {selector}")
+                    } else {
+                        format!("@{query}")
+                    }
                 }
                 StyleSelector::Global(value, _) => value.to_string(),
             }
@@ -131,9 +216,19 @@ impl Display for StyleSelector {
 
 fn get_selector_order(selector: &str) -> u8 {
     // & count
-    let t = if selector.chars().filter(|c| c == &'&').count() == 1 { selector.split('&').next_back().map(|a| a.to_string()).unwrap_or(selector.to_string()) } else { selector.to_string() };
+    let t = if selector.chars().filter(|c| c == &'&').count() == 1 {
+        selector
+            .split('&')
+            .next_back()
+            .map(|a| a.to_string())
+            .unwrap_or(selector.to_string())
+    } else {
+        selector.to_string()
+    };
 
-    *SELECTOR_ORDER_MAP.get(&t).unwrap_or(if t.starts_with("&") { &0 } else { &99 })
+    *SELECTOR_ORDER_MAP
+        .get(&t)
+        .unwrap_or(if t.starts_with("&") { &0 } else { &99 })
 }
 
 #[cfg(test)]
@@ -151,7 +246,10 @@ mod tests {
     #[case(["theme-dark", "placeholder"], StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string()))]
     #[case("theme-light", StyleSelector::Selector(":root[data-theme=light] &".to_string()))]
     #[case("*[aria=disabled='true'] &:hover", StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string()))]
-    fn test_style_selector(#[case] input: impl Into<StyleSelector>, #[case] expected: StyleSelector) {
+    fn test_style_selector(
+        #[case] input: impl Into<StyleSelector>,
+        #[case] expected: StyleSelector,
+    ) {
         assert_eq!(input.into(), expected);
     }
 
@@ -199,7 +297,11 @@ mod tests {
         StyleSelector::Global(":root[data-theme=light]".to_string(), "file2.rs".to_string()),
         std::cmp::Ordering::Less
     )]
-    #[case(StyleSelector::from(":root[data-theme=dark] &:hover"), StyleSelector::from(":root[data-theme=dark] &:focus-visible"), std::cmp::Ordering::Less)]
+    #[case(
+        StyleSelector::from(":root[data-theme=dark] &:hover"),
+        StyleSelector::from(":root[data-theme=dark] &:focus-visible"),
+        std::cmp::Ordering::Less
+    )]
     #[case(
         StyleSelector::Selector("&:hover".to_string()),
         StyleSelector::Media {
@@ -208,7 +310,11 @@ mod tests {
         },
         std::cmp::Ordering::Less
     )]
-    #[case(StyleSelector::from("&:hover"), StyleSelector::from("&:hover"), std::cmp::Ordering::Equal)]
+    #[case(
+        StyleSelector::from("&:hover"),
+        StyleSelector::from("&:hover"),
+        std::cmp::Ordering::Equal
+    )]
     #[case(
         StyleSelector::Global(":root[data-theme=dark]".to_string(), "file1.rs".to_string()),
         StyleSelector::Global(":root[data-theme=dark]".to_string(), "file2.rs".to_string()),
@@ -250,7 +356,11 @@ mod tests {
         StyleSelector::Global("div:".to_string(), "file2.rs".to_string()),
         std::cmp::Ordering::Greater
     )]
-    fn test_style_selector_ord(#[case] a: StyleSelector, #[case] b: StyleSelector, #[case] expected: std::cmp::Ordering) {
+    fn test_style_selector_ord(
+        #[case] a: StyleSelector,
+        #[case] b: StyleSelector,
+        #[case] expected: std::cmp::Ordering,
+    ) {
         assert_eq!(a.cmp(&b), expected);
         assert_eq!(a.partial_cmp(&b), Some(expected));
     }

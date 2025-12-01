@@ -8,7 +8,8 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
-static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> = Lazy::new(|| Mutex::new(StyleSheet::default()));
+static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
+    Lazy::new(|| Mutex::new(StyleSheet::default()));
 
 #[wasm_bindgen]
 pub struct Output {
@@ -32,11 +33,34 @@ pub struct Output {
 
 #[wasm_bindgen]
 impl Output {
-    fn new(code: String, styles: HashSet<ExtractStyleValue>, map: Option<String>, single_css: bool, filename: String, css_file: Option<String>, import_main_css: bool) -> Self {
+    fn new(
+        code: String,
+        styles: HashSet<ExtractStyleValue>,
+        map: Option<String>,
+        single_css: bool,
+        filename: String,
+        css_file: Option<String>,
+        import_main_css: bool,
+    ) -> Self {
         let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
         let default_collected = sheet.rm_global_css(&filename, single_css);
         let (collected, updated_base_style) = sheet.update_styles(&styles, &filename, single_css);
-        Self { code, map, css_file, updated_base_style: updated_base_style || default_collected, css: { if !collected && !default_collected { None } else { Some(sheet.create_css(if !single_css { Some(&filename) } else { None }, import_main_css)) } } }
+        Self {
+            code,
+            map,
+            css_file,
+            updated_base_style: updated_base_style || default_collected,
+            css: {
+                if !collected && !default_collected {
+                    None
+                } else {
+                    Some(sheet.create_css(
+                        if !single_css { Some(&filename) } else { None },
+                        import_main_css,
+                    ))
+                }
+            },
+        }
     }
 
     /// Get the code
@@ -79,18 +103,23 @@ pub fn is_debug() -> bool {
 
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 pub fn export_sheet() -> Result<String, JsValue> {
-    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap()).map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap())
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(serde_wasm_bindgen::from_value(sheet_object).map_err(|e| JsValue::from_str(&e.to_string()))?);
+    set_class_map(
+        serde_wasm_bindgen::from_value(sheet_object)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
+    );
     Ok(())
 }
 
@@ -101,7 +130,10 @@ pub fn export_class_map() -> Result<String, JsValue> {
 
 #[wasm_bindgen(js_name = "importFileMap")]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_file_map(serde_wasm_bindgen::from_value(sheet_object).map_err(|e| JsValue::from_str(&e.to_string()))?);
+    set_file_map(
+        serde_wasm_bindgen::from_value(sheet_object)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
+    );
     Ok(())
 }
 
@@ -111,16 +143,44 @@ pub fn export_file_map() -> Result<String, JsValue> {
 }
 
 #[wasm_bindgen(js_name = "codeExtract")]
-pub fn code_extract(filename: &str, code: &str, package: &str, css_dir: String, single_css: bool, import_main_css_in_code: bool, import_main_css_in_css: bool) -> Result<Output, JsValue> {
-    match extract(filename, code, ExtractOption { package: package.to_string(), css_dir, single_css, import_main_css: import_main_css_in_code }) {
-        Ok(output) => Ok(Output::new(output.code, output.styles, output.map, single_css, filename.to_string(), output.css_file, import_main_css_in_css)),
+pub fn code_extract(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+) -> Result<Output, JsValue> {
+    match extract(
+        filename,
+        code,
+        ExtractOption {
+            package: package.to_string(),
+            css_dir,
+            single_css,
+            import_main_css: import_main_css_in_code,
+        },
+    ) {
+        Ok(output) => Ok(Output::new(
+            output.code,
+            output.styles,
+            output.map,
+            single_css,
+            filename.to_string(),
+            output.css_file,
+            import_main_css_in_css,
+        )),
         Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
     }
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(serde_wasm_bindgen::from_value(theme_object).map_err(|e| JsValue::from_str(e.to_string().as_str()))?);
+    GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(
+        serde_wasm_bindgen::from_value(theme_object)
+            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
+    );
     Ok(())
 }
 
@@ -133,13 +193,26 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[wasm_bindgen(js_name = "getCss")]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.create_css(file_num.map(get_filename_by_file_num).as_deref(), import_main_css))
+    Ok(sheet.create_css(
+        file_num.map(get_filename_by_file_num).as_deref(),
+        import_main_css,
+    ))
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
-pub fn get_theme_interface(package_name: &str, color_interface_name: &str, typography_interface_name: &str, theme_interface_name: &str) -> String {
+pub fn get_theme_interface(
+    package_name: &str,
+    color_interface_name: &str,
+    typography_interface_name: &str,
+    theme_interface_name: &str,
+) -> String {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    sheet.create_interface(package_name, color_interface_name, typography_interface_name, theme_interface_name)
+    sheet.create_interface(
+        package_name,
+        color_interface_name,
+        typography_interface_name,
+        theme_interface_name,
+    )
 }
 #[cfg(test)]
 mod tests {
@@ -158,7 +231,10 @@ mod tests {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
             *sheet = StyleSheet::default();
         }
-        assert_eq!(get_css(None, false).unwrap().split("*/").nth(1).unwrap(), "");
+        assert_eq!(
+            get_css(None, false).unwrap().split("*/").nth(1).unwrap(),
+            ""
+        );
 
         {
             let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -271,15 +347,48 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#fff");
         theme.add_color_theme("dark", color_theme);
-        theme.add_typography("default", vec![Some(Typography::new(Some("Arial".to_string()), Some("16px".to_string()), Some("400".to_string()), Some("1.5".to_string()), Some("0.5".to_string()))), Some(Typography::new(Some("Arial".to_string()), Some("24px".to_string()), Some("400".to_string()), Some("1.5".to_string()), Some("0.5".to_string())))]);
+        theme.add_typography(
+            "default",
+            vec![
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("16px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("24px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+            ],
+        );
 
-        theme.add_typography("default1", vec![None, Some(Typography::new(Some("Arial".to_string()), Some("24px".to_string()), Some("400".to_string()), Some("1.5".to_string()), Some("0.5".to_string())))]);
+        theme.add_typography(
+            "default1",
+            vec![
+                None,
+                Some(Typography::new(
+                    Some("Arial".to_string()),
+                    Some("24px".to_string()),
+                    Some("400".to_string()),
+                    Some("1.5".to_string()),
+                    Some("0.5".to_string()),
+                )),
+            ],
+        );
         let css = theme.to_css();
         assert_debug_snapshot!(css);
 
         assert_eq!(Theme::default().to_css(), "");
         let mut theme = Theme::default();
-        theme.add_typography("default", vec![Some(Typography::new(None, None, None, None, None))]);
+        theme.add_typography(
+            "default",
+            vec![Some(Typography::new(None, None, None, None, None))],
+        );
         assert_eq!(theme.to_css(), "");
 
         let mut theme = Theme::default();
@@ -453,14 +562,30 @@ mod tests {
     #[serial]
     fn test_get_theme_interface() {
         let sheet = StyleSheet::default();
-        assert_eq!(sheet.create_interface("package", "ColorInterface", "TypographyInterface", "ThemeInterface"), "");
+        assert_eq!(
+            sheet.create_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            ""
+        );
 
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
         theme.add_color_theme("dark", color_theme);
         GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(theme);
-        assert_eq!(get_theme_interface("package", "ColorInterface", "TypographyInterface", "ThemeInterface"), "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}");
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
+        );
 
         // test wrong case
         let mut sheet = StyleSheet::default();
@@ -468,10 +593,27 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("(primary)", "#000");
         theme.add_color_theme("dark", color_theme);
-        theme.add_typography("prim``ary", vec![Some(Typography::new(Some("Arial".to_string()), Some("16px".to_string()), Some("400".to_string()), Some("1.5".to_string()), Some("0.5".to_string())))]);
+        theme.add_typography(
+            "prim``ary",
+            vec![Some(Typography::new(
+                Some("Arial".to_string()),
+                Some("16px".to_string()),
+                Some("400".to_string()),
+                Some("1.5".to_string()),
+                Some("0.5".to_string()),
+            ))],
+        );
         sheet.set_theme(theme);
         *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
-        assert_eq!(get_theme_interface("package", "ColorInterface", "TypographyInterface", "ThemeInterface"), "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}");
+        assert_eq!(
+            get_theme_interface(
+                "package",
+                "ColorInterface",
+                "TypographyInterface",
+                "ThemeInterface"
+            ),
+            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
+        );
     }
 
     #[test]

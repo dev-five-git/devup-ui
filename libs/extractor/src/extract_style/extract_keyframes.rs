@@ -5,7 +5,9 @@ use std::{
 
 use css::keyframes_to_keyframes_name;
 
-use crate::extract_style::{ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty};
+use crate::extract_style::{
+    ExtractStyleProperty, extract_static_style::ExtractStaticStyle, style_property::StyleProperty,
+};
 
 #[derive(Debug, Default, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractKeyframes {

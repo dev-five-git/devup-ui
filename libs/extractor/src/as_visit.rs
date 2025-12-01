@@ -14,7 +14,10 @@ pub struct AsVisitor<'a> {
 
 impl<'a> AsVisitor<'a> {
     pub fn new(allocator: &'a Allocator, element: JSXElement<'a>) -> Self {
-        Self { ast: AstBuilder::new(allocator), element }
+        Self {
+            ast: AstBuilder::new(allocator),
+            element,
+        }
     }
 }
 

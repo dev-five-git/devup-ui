@@ -2,7 +2,11 @@ use std::fmt::{Display, Error, Formatter};
 
 pub enum StyleProperty {
     ClassName(String),
-    Variable { class_name: String, variable_name: String, identifier: String },
+    Variable {
+        class_name: String,
+        variable_name: String,
+        identifier: String,
+    },
 }
 impl Display for StyleProperty {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -24,7 +28,11 @@ mod tests {
 
     #[test]
     fn test_to_string_variable() {
-        let prop = StyleProperty::Variable { class_name: "cls".to_string(), variable_name: "--var-name".to_string(), identifier: "id".to_string() };
+        let prop = StyleProperty::Variable {
+            class_name: "cls".to_string(),
+            variable_name: "--var-name".to_string(),
+            identifier: "id".to_string(),
+        };
         assert_eq!(prop.to_string(), "var(--var-name)".to_string());
     }
 }

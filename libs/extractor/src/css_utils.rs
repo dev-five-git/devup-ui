@@ -8,7 +8,11 @@ use css::{
 
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 
-pub fn css_to_style(css: &str, level: u8, selector: &Option<StyleSelector>) -> Vec<ExtractStaticStyle> {
+pub fn css_to_style(
+    css: &str,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
     let mut input = css;
 
@@ -35,16 +39,39 @@ pub fn css_to_style(css: &str, level: u8, selector: &Option<StyleSelector>) -> V
         while let Some(start) = input.find('{') {
             let rest = &input[start + 1..];
 
-            let end = if selector.is_none() { rest.rfind('}').unwrap() } else { rest.find('}').unwrap() };
+            let end = if selector.is_none() {
+                rest.rfind('}').unwrap()
+            } else {
+                rest.find('}').unwrap()
+            };
             let block = &rest[..end];
             let sel = &if let Some(StyleSelector::Media { query, .. }) = selector {
                 let local_sel = input[..start].trim().to_string();
-                Some(StyleSelector::Media { query: query.clone(), selector: if local_sel == "&" { None } else { Some(local_sel) } })
+                Some(StyleSelector::Media {
+                    query: query.clone(),
+                    selector: if local_sel == "&" {
+                        None
+                    } else {
+                        Some(local_sel)
+                    },
+                })
             } else {
                 let sel = input[..start].trim().to_string();
-                if sel.starts_with("@media") { Some(StyleSelector::Media { query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..].to_string(), selector: None }) } else { Some(StyleSelector::Selector(sel)) }
+                if sel.starts_with("@media") {
+                    Some(StyleSelector::Media {
+                        query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
+                            .to_string(),
+                        selector: None,
+                    })
+                } else {
+                    Some(StyleSelector::Selector(sel))
+                }
             };
-            let block = if block.contains('{') { css_to_style(block, level, sel) } else { css_to_style_block(block, level, sel) };
+            let block = if block.contains('{') {
+                css_to_style(block, level, sel)
+            } else {
+                css_to_style_block(block, level, sel)
+            };
             let input_end = input.rfind('}').unwrap() + 1;
 
             input = &input[start + end + 2..input_end];
@@ -58,7 +85,11 @@ pub fn css_to_style(css: &str, level: u8, selector: &Option<StyleSelector>) -> V
     styles
 }
 
-fn css_to_style_block(css: &str, level: u8, selector: &Option<StyleSelector>) -> Vec<ExtractStaticStyle> {
+fn css_to_style_block(
+    css: &str,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> Vec<ExtractStaticStyle> {
     rm_css_comment(css)
         .split(";")
         .filter_map(|s| {
@@ -69,8 +100,17 @@ fn css_to_style_block(css: &str, level: u8, selector: &Option<StyleSelector>) ->
                 let mut iter = s.split(":").map(|s| s.trim());
                 let property = iter.next().unwrap();
                 let value = iter.next().unwrap();
-                let value = if check_multi_css_optimize(property) { optimize_mutli_css_value(value) } else { value.to_string() };
-                Some(ExtractStaticStyle::new(property, &value, level, selector.clone()))
+                let value = if check_multi_css_optimize(property) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
+                Some(ExtractStaticStyle::new(
+                    property,
+                    &value,
+                    level,
+                    selector.clone(),
+                ))
             }
         })
         .collect()
@@ -110,7 +150,11 @@ pub fn optimize_css_block(css: &str) -> String {
         .split(";")
         .map(|s| {
             let parts = s.split("{").collect::<Vec<&str>>();
-            let first_part = if parts.len() == 1 { "".to_string() } else { format!("{}{{", parts.first().unwrap().trim()) };
+            let first_part = if parts.len() == 1 {
+                "".to_string()
+            } else {
+                format!("{}{{", parts.first().unwrap().trim())
+            };
             let last_part = parts.last().unwrap().trim();
             if !last_part.contains(":") {
                 format!("{first_part}{last_part}")
@@ -119,7 +163,11 @@ pub fn optimize_css_block(css: &str) -> String {
                 let property = iter.next().unwrap().trim();
                 let value = iter.next().unwrap().trim();
 
-                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) { optimize_mutli_css_value(value) } else { value.to_string() };
+                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
+                    optimize_mutli_css_value(value)
+                } else {
+                    value.to_string()
+                };
                 format!("{first_part}{property}:{value}")
             }
         })
@@ -151,21 +199,45 @@ mod tests {
     }*/",
         ""
     )]
-    #[case("       img      {       background-color    :       red;      }     ", "img{background-color:red}")]
-    #[case("       img      {       background-color    :       red;          color     :          blue;      }     ", "img{background-color:red;color:blue}")]
+    #[case(
+        "       img      {       background-color    :       red;      }     ",
+        "img{background-color:red}"
+    )]
+    #[case(
+        "       img      {       background-color    :       red;          color     :          blue;      }     ",
+        "img{background-color:red;color:blue}"
+    )]
     #[case("div{margin : 0 ; padding : 0 ; }", "div{margin:0;padding:0}")]
-    #[case("a { text-decoration : none ; color : black ; }", "a{text-decoration:none;color:black}")]
+    #[case(
+        "a { text-decoration : none ; color : black ; }",
+        "a{text-decoration:none;color:black}"
+    )]
     #[case("body{background: #fff;}", "body{background:#fff}")]
-    #[case("h1{ font-size : 2rem ; font-weight : bold ; }", "h1{font-size:2rem;font-weight:bold}")]
+    #[case(
+        "h1{ font-size : 2rem ; font-weight : bold ; }",
+        "h1{font-size:2rem;font-weight:bold}"
+    )]
     #[case("span { }", "span{}")]
     #[case("p{color:blue;}", "p{color:blue}")]
-    #[case("ul { list-style : none ; margin : 0 ; padding : 0 ; }", "ul{list-style:none;margin:0;padding:0}")]
-    #[case("ul { font-family: 'Roboto',       sans-serif; }", "ul{font-family:Roboto,sans-serif}")]
-    #[case("ul { font-family: \"Roboto Hello\",       sans-serif; }", "ul{font-family:\"Roboto Hello\",sans-serif}")]
+    #[case(
+        "ul { list-style : none ; margin : 0 ; padding : 0 ; }",
+        "ul{list-style:none;margin:0;padding:0}"
+    )]
+    #[case(
+        "ul { font-family: 'Roboto',       sans-serif; }",
+        "ul{font-family:Roboto,sans-serif}"
+    )]
+    #[case(
+        "ul { font-family: \"Roboto Hello\",       sans-serif; }",
+        "ul{font-family:\"Roboto Hello\",sans-serif}"
+    )]
     #[case("section{  }", "section{}")]
     #[case(":root{   }", ":root{}")]
     #[case(":root{ background: red; }", ":root{background:red}")]
-    #[case(":root, :section{ background: red; }", ":root,:section{background:red}")]
+    #[case(
+        ":root, :section{ background: red; }",
+        ":root,:section{background:red}"
+    )]
     #[case("*:hover{ background: red; }", "*:hover{background:red}")]
     #[case(":root {color-scheme: light dark }", ":root{color-scheme:light dark}")]
     fn test_optimize_css_block(#[case] input: &str, #[case] expected: &str) {
@@ -410,9 +482,15 @@ mod tests {
             ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
         ]
     )]
-    fn test_css_to_style(#[case] input: &str, #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>) {
+    fn test_css_to_style(
+        #[case] input: &str,
+        #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
+    ) {
         let styles = css_to_style(input, 0, &None);
-        let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles.iter().map(|prop| (prop.property(), prop.value(), prop.selector().cloned())).collect();
+        let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
+            .iter()
+            .map(|prop| (prop.property(), prop.value(), prop.selector().cloned()))
+            .collect();
         result.sort();
         let mut expected_sorted = expected.clone();
         expected_sorted.sort();
@@ -470,16 +548,26 @@ mod tests {
         vec![
         ],
     )]
-    fn test_keyframes_to_keyframes_style(#[case] input: &str, #[case] expected: Vec<(&str, Vec<(&str, &str)>)>) {
+    fn test_keyframes_to_keyframes_style(
+        #[case] input: &str,
+        #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
+    ) {
         let styles = keyframes_to_keyframes_style(input);
         if styles.len() != expected.len() {
             panic!("styles.len() != expected.len()");
         }
         for (expected_key, expected_styles) in styles.iter() {
             let styles = expected_styles;
-            let mut result: Vec<(&str, &str)> = styles.iter().map(|prop| (prop.property(), prop.value())).collect();
+            let mut result: Vec<(&str, &str)> = styles
+                .iter()
+                .map(|prop| (prop.property(), prop.value()))
+                .collect();
             result.sort();
-            let mut expected_sorted = expected.iter().find(|(k, _)| k == expected_key).map(|(_, v)| v.clone()).unwrap();
+            let mut expected_sorted = expected
+                .iter()
+                .find(|(k, _)| k == expected_key)
+                .map(|(_, v)| v.clone())
+                .unwrap();
             expected_sorted.sort();
             assert_eq!(result, expected_sorted);
         }

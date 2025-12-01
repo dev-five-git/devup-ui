@@ -3,7 +3,8 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
-pub(crate) static GLOBAL_FILE_MAP: Lazy<Mutex<BiHashMap<String, usize>>> = Lazy::new(|| Mutex::new(BiHashMap::new()));
+pub(crate) static GLOBAL_FILE_MAP: Lazy<Mutex<BiHashMap<String, usize>>> =
+    Lazy::new(|| Mutex::new(BiHashMap::new()));
 
 /// for test
 pub fn reset_file_map() {
@@ -31,7 +32,10 @@ pub fn get_file_num_by_filename(filename: &str) -> usize {
 
 pub fn get_filename_by_file_num(file_num: usize) -> String {
     let map = GLOBAL_FILE_MAP.lock().unwrap();
-    map.get_by_right(&file_num).map(|s| s.as_str()).unwrap_or_default().to_string()
+    map.get_by_right(&file_num)
+        .map(|s| s.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 #[cfg(test)]
