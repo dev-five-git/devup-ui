@@ -6,23 +6,11 @@ use std::hint::black_box;
 static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
 
 fn convert_theme_variable_value_a(value: &str) -> String {
-    if value.contains("$") {
-        VAR_RE
-            .replace_all(value, |caps: &regex::Captures| {
-                format!("var(--{})", &caps[0][1..])
-            })
-            .to_string()
-    } else {
-        value.to_string()
-    }
+    if value.contains("$") { VAR_RE.replace_all(value, |caps: &regex::Captures| format!("var(--{})", &caps[0][1..])).to_string() } else { value.to_string() }
 }
 
 fn convert_theme_variable_value_b(value: &str) -> String {
-    VAR_RE
-        .replace_all(value, |caps: &regex::Captures| {
-            format!("var(--{})", &caps[0][1..])
-        })
-        .to_string()
+    VAR_RE.replace_all(value, |caps: &regex::Captures| format!("var(--{})", &caps[0][1..])).to_string()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

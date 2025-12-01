@@ -1,9 +1,6 @@
 use crate::{
     COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{
-        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
-        ZERO_PERCENT_FUNCTION,
-    },
+    constant::{DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION},
 };
 
 pub fn optimize_value(value: &str) -> String {
@@ -21,13 +18,7 @@ pub fn optimize_value(value: &str) -> String {
             let g = c[2].parse::<i32>().unwrap();
             let b = c[3].parse::<i32>().unwrap();
             let a = c[4].parse::<f32>().unwrap();
-            format!(
-                "#{:02X}{:02X}{:02X}{:02X}",
-                r,
-                g,
-                b,
-                (a * 255.0).round() as i32
-            )
+            format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, (a * 255.0).round() as i32)
         })
         .to_string();
     ret = F_RGB_RE
@@ -39,9 +30,7 @@ pub fn optimize_value(value: &str) -> String {
         })
         .to_string();
     if ret.contains("#") {
-        ret = COLOR_HASH
-            .replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]))
-            .to_string();
+        ret = COLOR_HASH.replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1])).to_string();
     }
     if ret.contains("0") {
         ret = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}").to_string();
@@ -59,12 +48,7 @@ pub fn optimize_value(value: &str) -> String {
                         depth += 1;
                     } else if tmp[i..i + 1].eq(")") {
                         depth -= 1;
-                    } else if tmp[i..i + 1].eq("0")
-                        && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit()
-                        && (tmp.len() == i + 1
-                            || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
-                        && depth == 0
-                    {
+                    } else if tmp[i..i + 1].eq("0") && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit() && (tmp.len() == i + 1 || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit()) && depth == 0 {
                         zero_idx.push(i);
                     }
                 }
@@ -77,17 +61,9 @@ pub fn optimize_value(value: &str) -> String {
     // remove ; from dynamic value
     for str_symbol in ["", "`", "\"", "'"] {
         if ret.ends_with(&format!(";{str_symbol}")) {
-            ret = format!(
-                "{}{}",
-                ret[..ret.len() - str_symbol.len() - 1].trim_end_matches(';'),
-                str_symbol
-            );
+            ret = format!("{}{}", ret[..ret.len() - str_symbol.len() - 1].trim_end_matches(';'), str_symbol);
         } else if ret.ends_with(&format!(";{str_symbol})")) {
-            ret = format!(
-                "{}{})",
-                ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'),
-                str_symbol
-            );
+            ret = format!("{}{})", ret[..ret.len() - str_symbol.len() - 2].trim_end_matches(';'), str_symbol);
         }
     }
 
@@ -224,10 +200,7 @@ mod tests {
     #[case("max(10px, any(0", "max(10px,any(0))")]
     #[case("10px, any(0))", "(10px,any(0))")]
     #[case("scale(0deg, 0deg)", "scale(0,0)")]
-    #[case(
-        "scaleX(0deg) scaleY(0deg) scaleZ(0deg)",
-        "scaleX(0) scaleY(0) scaleZ(0)"
-    )]
+    #[case("scaleX(0deg) scaleY(0deg) scaleZ(0deg)", "scaleX(0) scaleY(0) scaleZ(0)")]
     #[case("scaleX(0deg)", "scaleX(0)")]
     #[case("scaleY(0deg)", "scaleY(0)")]
     #[case("scaleZ(0deg)", "scaleZ(0)")]

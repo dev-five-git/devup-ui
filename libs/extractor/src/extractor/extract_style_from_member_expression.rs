@@ -4,10 +4,7 @@ use crate::{
         ExtractResult,
         extract_style_from_expression::{dynamic_style, extract_style_from_expression},
     },
-    utils::{
-        get_number_by_literal_expression, get_string_by_literal_expression,
-        get_string_by_property_key,
-    },
+    utils::{get_number_by_literal_expression, get_string_by_literal_expression, get_string_by_property_key},
 };
 use css::style_selector::StyleSelector;
 use oxc_allocator::CloneIn;
@@ -18,13 +15,7 @@ use oxc_ast::{
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 
-pub(super) fn extract_style_from_member_expression<'a>(
-    ast_builder: &AstBuilder<'a>,
-    name: Option<&str>,
-    mem: &mut ComputedMemberExpression<'a>,
-    level: u8,
-    selector: &Option<StyleSelector>,
-) -> ExtractResult<'a> {
+pub(super) fn extract_style_from_member_expression<'a>(ast_builder: &AstBuilder<'a>, name: Option<&str>, mem: &mut ComputedMemberExpression<'a>, level: u8, selector: &Option<StyleSelector>) -> ExtractResult<'a> {
     let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
@@ -45,66 +36,19 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     return extract_style_from_expression(ast_builder, name, p, level, selector);
                 }
             }
-            return ExtractResult {
-                props: None,
-                styles: etc
-                    .map(|etc| {
-                        vec![dynamic_style(
-                            ast_builder,
-                            name.unwrap(),
-                            &Expression::ComputedMemberExpression(
-                                ast_builder.alloc_computed_member_expression(
-                                    SPAN,
-                                    etc,
-                                    mem_expression.clone_in(ast_builder.allocator),
-                                    false,
-                                ),
-                            ),
-                            level,
-                            selector,
-                        )]
-                    })
-                    .unwrap_or_default(),
-                tag: None,
-                style_order: None,
-                style_vars: None,
-            };
+            return ExtractResult { props: None, styles: etc.map(|etc| vec![dynamic_style(ast_builder, name.unwrap(), &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(SPAN, etc, mem_expression.clone_in(ast_builder.allocator), false)), level, selector)]).unwrap_or_default(), tag: None, style_order: None, style_vars: None };
         }
 
         let mut map = BTreeMap::new();
         for (idx, p) in array.elements.iter_mut().enumerate() {
             if let ArrayExpressionElement::SpreadElement(sp) = p {
-                map.insert(
-                    idx.to_string(),
-                    Box::new(dynamic_style(
-                        ast_builder,
-                        name.unwrap(),
-                        &Expression::ComputedMemberExpression(
-                            ast_builder.alloc_computed_member_expression(
-                                SPAN,
-                                sp.argument.clone_in(ast_builder.allocator),
-                                mem_expression.clone_in(ast_builder.allocator),
-                                false,
-                            ),
-                        ),
-                        level,
-                        &selector.clone(),
-                    )),
-                );
+                map.insert(idx.to_string(), Box::new(dynamic_style(ast_builder, name.unwrap(), &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(SPAN, sp.argument.clone_in(ast_builder.allocator), mem_expression.clone_in(ast_builder.allocator), false)), level, &selector.clone())));
             } else if let Some(p) = p.as_expression_mut() {
-                map.insert(
-                    idx.to_string(),
-                    Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(ast_builder, name, p, level, selector).styles,
-                    )),
-                );
+                map.insert(idx.to_string(), Box::new(ExtractStyleProp::StaticArray(extract_style_from_expression(ast_builder, name, p, level, selector).styles)));
             }
         }
 
-        ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator),
-            map,
-        });
+        ret.push(ExtractStyleProp::MemberExpression { expression: mem_expression.clone_in(ast_builder.allocator), map });
     } else if let Expression::ObjectExpression(obj) = &mut mem.object
         && !obj.properties.is_empty()
     {
@@ -116,17 +60,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     if let Some(property_name) = get_string_by_property_key(&o.key)
                         && property_name == k
                     {
-                        return ExtractResult {
-                            styles: extract_style_from_expression(
-                                ast_builder,
-                                name,
-                                &mut o.value,
-                                level,
-                                selector,
-                            )
-                            .styles,
-                            ..ExtractResult::default()
-                        };
+                        return ExtractResult { styles: extract_style_from_expression(ast_builder, name, &mut o.value, level, selector).styles, ..ExtractResult::default() };
                     }
                 } else if let ObjectPropertyKind::SpreadProperty(sp) = p {
                     etc = Some(sp.argument.clone_in(ast_builder.allocator));
@@ -135,20 +69,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
 
             match etc {
                 None => return ExtractResult::default(),
-                Some(etc) => ret.push(dynamic_style(
-                    ast_builder,
-                    name.unwrap(),
-                    &Expression::ComputedMemberExpression(
-                        ast_builder.alloc_computed_member_expression(
-                            SPAN,
-                            etc,
-                            mem_expression.clone_in(ast_builder.allocator),
-                            false,
-                        ),
-                    ),
-                    level,
-                    selector,
-                )),
+                Some(etc) => ret.push(dynamic_style(ast_builder, name.unwrap(), &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(SPAN, etc, mem_expression.clone_in(ast_builder.allocator), false)), level, selector)),
             }
         }
 
@@ -156,42 +77,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
             if let ObjectPropertyKind::ObjectProperty(o) = p
                 && let Some(property_name) = get_string_by_property_key(&o.key)
             {
-                map.insert(
-                    property_name,
-                    Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(
-                            ast_builder,
-                            name,
-                            &mut o.value,
-                            level,
-                            selector,
-                        )
-                        .styles,
-                    )),
-                );
+                map.insert(property_name, Box::new(ExtractStyleProp::StaticArray(extract_style_from_expression(ast_builder, name, &mut o.value, level, selector).styles)));
             }
         }
-        ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator),
-            map,
-        });
+        ret.push(ExtractStyleProp::MemberExpression { expression: mem_expression.clone_in(ast_builder.allocator), map });
     } else if let Expression::Identifier(_) = &mut mem.object {
-        ret.push(dynamic_style(
-            ast_builder,
-            name.unwrap(),
-            &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
-                SPAN,
-                mem.object.clone_in(ast_builder.allocator),
-                mem_expression.clone_in(ast_builder.allocator),
-                false,
-            )),
-            level,
-            selector,
-        ))
+        ret.push(dynamic_style(ast_builder, name.unwrap(), &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(SPAN, mem.object.clone_in(ast_builder.allocator), mem_expression.clone_in(ast_builder.allocator), false)), level, selector))
     }
 
-    ExtractResult {
-        styles: ret,
-        ..ExtractResult::default()
-    }
+    ExtractResult { styles: ret, ..ExtractResult::default() }
 }

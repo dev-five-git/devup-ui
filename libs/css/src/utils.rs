@@ -1,33 +1,9 @@
 pub fn to_kebab_case(value: &str) -> String {
-    value
-        .chars()
-        .enumerate()
-        .map(|(i, c)| {
-            if c.is_uppercase() {
-                if i == 0 {
-                    c.to_ascii_lowercase().to_string()
-                } else {
-                    format!("-{}", c.to_ascii_lowercase())
-                }
-            } else {
-                c.to_string()
-            }
-        })
-        .collect()
+    value.chars().enumerate().map(|(i, c)| if c.is_uppercase() { if i == 0 { c.to_ascii_lowercase().to_string() } else { format!("-{}", c.to_ascii_lowercase()) } } else { c.to_string() }).collect()
 }
 
 pub fn to_camel_case(value: &str) -> String {
-    value
-        .split('-')
-        .enumerate()
-        .map(|(i, s)| {
-            if i == 0 {
-                s.to_string()
-            } else {
-                format!("{}{}", s[0..1].to_uppercase(), &s[1..])
-            }
-        })
-        .collect()
+    value.split('-').enumerate().map(|(i, s)| if i == 0 { s.to_string() } else { format!("{}{}", s[0..1].to_uppercase(), &s[1..]) }).collect()
 }
 
 #[cfg(test)]

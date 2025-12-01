@@ -22,19 +22,8 @@ pub struct ExtractDynamicStyle {
 
 impl ExtractDynamicStyle {
     /// create a new ExtractDynamicStyle
-    pub fn new(
-        property: &str,
-        level: u8,
-        identifier: &str,
-        selector: Option<StyleSelector>,
-    ) -> Self {
-        Self {
-            property: property.to_string(),
-            level,
-            identifier: optimize_value(identifier),
-            selector: selector.map(optimize_selector),
-            style_order: None,
-        }
+    pub fn new(property: &str, level: u8, identifier: &str, selector: Option<StyleSelector>) -> Self {
+        Self { property: property.to_string(), level, identifier: optimize_value(identifier), selector: selector.map(optimize_selector), style_order: None }
     }
 
     pub fn property(&self) -> &str {
@@ -61,22 +50,7 @@ impl ExtractDynamicStyle {
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let selector = self.selector.clone().map(|s| s.to_string());
-        StyleProperty::Variable {
-            class_name: sheet_to_classname(
-                self.property.as_str(),
-                self.level,
-                None,
-                selector.as_deref(),
-                self.style_order,
-                filename,
-            ),
-            variable_name: sheet_to_variable_name(
-                self.property.as_str(),
-                self.level,
-                selector.as_deref(),
-            ),
-            identifier: self.identifier.clone(),
-        }
+        StyleProperty::Variable { class_name: sheet_to_classname(self.property.as_str(), self.level, None, selector.as_deref(), self.style_order, filename), variable_name: sheet_to_variable_name(self.property.as_str(), self.level, selector.as_deref()), identifier: self.identifier.clone() }
     }
 }
 

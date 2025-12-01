@@ -1,9 +1,4 @@
-use crate::extract_style::{
-    ExtractStyleProperty, extract_css::ExtractCss, extract_dynamic_style::ExtractDynamicStyle,
-    extract_font_face::ExtractFontFace, extract_import::ExtractImport,
-    extract_keyframes::ExtractKeyframes, extract_static_style::ExtractStaticStyle,
-    style_property::StyleProperty,
-};
+use crate::extract_style::{ExtractStyleProperty, extract_css::ExtractCss, extract_dynamic_style::ExtractDynamicStyle, extract_font_face::ExtractFontFace, extract_import::ExtractImport, extract_keyframes::ExtractKeyframes, extract_static_style::ExtractStaticStyle, style_property::StyleProperty};
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum ExtractStyleValue {
@@ -22,12 +17,8 @@ impl ExtractStyleValue {
             ExtractStyleValue::Static(style) => Some(style.extract(filename)),
             ExtractStyleValue::Dynamic(style) => Some(style.extract(filename)),
             ExtractStyleValue::Keyframes(keyframes) => Some(keyframes.extract(filename)),
-            ExtractStyleValue::Typography(typo) => {
-                Some(StyleProperty::ClassName(format!("typo-{typo}")))
-            }
-            ExtractStyleValue::Css(_)
-            | ExtractStyleValue::Import(_)
-            | ExtractStyleValue::FontFace(_) => None,
+            ExtractStyleValue::Typography(typo) => Some(StyleProperty::ClassName(format!("typo-{typo}"))),
+            ExtractStyleValue::Css(_) | ExtractStyleValue::Import(_) | ExtractStyleValue::FontFace(_) => None,
         }
     }
     pub fn set_style_order(&mut self, order: u8) {
@@ -51,14 +42,12 @@ mod tests {
 
     #[test]
     fn test_style_order() {
-        let mut style =
-            ExtractStyleValue::Static(ExtractStaticStyle::new("margin", "10px", 0, None));
+        let mut style = ExtractStyleValue::Static(ExtractStaticStyle::new("margin", "10px", 0, None));
         style.set_style_order(1);
         if let ExtractStyleValue::Static(style) = style {
             assert_eq!(style.style_order(), Some(1));
         }
-        let mut style =
-            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("margin", 0, "10px", None));
+        let mut style = ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("margin", 0, "10px", None));
         style.set_style_order(1);
         if let ExtractStyleValue::Dynamic(style) = style {
             assert_eq!(style.style_order(), Some(1));
@@ -85,16 +74,10 @@ mod tests {
         let extracted = value.extract(None);
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
-        let value = ExtractStyleValue::Css(ExtractCss {
-            css: "".to_string(),
-            file: "".to_string(),
-        });
+        let value = ExtractStyleValue::Css(ExtractCss { css: "".to_string(), file: "".to_string() });
         assert!(value.extract(None).is_none());
 
-        let value = ExtractStyleValue::Import(ExtractImport {
-            url: "".to_string(),
-            file: "".to_string(),
-        });
+        let value = ExtractStyleValue::Import(ExtractImport { url: "".to_string(), file: "".to_string() });
         assert!(value.extract(None).is_none());
     }
 }

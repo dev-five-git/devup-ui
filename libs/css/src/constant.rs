@@ -6,17 +6,7 @@ use regex::Regex;
 
 pub(super) static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    for (idx, selector) in [
-        "hover",
-        "focus-visible",
-        "focus",
-        "active",
-        "selected",
-        "disabled",
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    for (idx, selector) in ["hover", "focus-visible", "focus", "active", "selected", "disabled"].into_iter().enumerate() {
         map.insert(format!(":{selector}"), idx as u8);
     }
     map
@@ -162,46 +152,26 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
 };
 
 pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
-pub(super) static CSS_FUNCTION_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
+pub(super) static CSS_FUNCTION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
 pub(super) static CHECK_QUOTES_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[()\s]").unwrap());
 
-pub(super) static CSS_COMMENT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
+pub(super) static CSS_COMMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
 
 pub(super) static F_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
-pub(super) static DOT_ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
+pub(super) static DOT_ZERO_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
 
 pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
-pub(super) static INNER_TRIM_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
+pub(super) static INNER_TRIM_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
 
-pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap()
-});
+pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap());
 
-pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
-        .unwrap()
-});
-pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)")
-        .unwrap()
-});
+pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)").unwrap());
+pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)").unwrap());
 
-pub(super) static F_RGBA_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
+pub(super) static F_RGBA_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
 
-pub(super) static F_RGB_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
+pub(super) static F_RGB_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
 
-pub(super) static N_BASE_ARRAY: [char; 27] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', '_',
-];
+pub(super) static N_BASE_ARRAY: [char; 27] = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '_'];
 
-pub(super) static M_BASE_ARRAY: [char; 37] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_',
-];
+pub(super) static M_BASE_ARRAY: [char; 37] = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_'];

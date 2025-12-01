@@ -2,8 +2,7 @@ use std::{collections::HashMap, sync::Mutex};
 
 use once_cell::sync::Lazy;
 
-pub(crate) static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, HashMap<String, usize>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub(crate) static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, HashMap<String, usize>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// for test
 pub fn reset_class_map() {

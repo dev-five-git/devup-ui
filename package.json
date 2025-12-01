@@ -34,7 +34,7 @@
     "vitest": "^4.0"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.22.0",
+  "packageManager": "pnpm@10.24.0",
   "resolutions": {
     "@devup-ui/eslint-plugin": "workspace:*"
   },

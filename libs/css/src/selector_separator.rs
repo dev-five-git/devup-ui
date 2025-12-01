@@ -24,11 +24,7 @@ impl Display for SelectorSeparator {
 }
 impl From<&str> for SelectorSeparator {
     fn from(value: &str) -> Self {
-        if value.starts_with(":")
-            || value.is_empty()
-            || value.starts_with("[")
-            || value.starts_with(" ")
-        {
+        if value.starts_with(":") || value.is_empty() || value.starts_with("[") || value.starts_with(" ") {
             SelectorSeparator::None
         } else if DOUBLE_SEPARATOR.contains(value) {
             SelectorSeparator::Double
@@ -56,10 +52,7 @@ mod tests {
 
         assert!(matches!("::placeholder".into(), SelectorSeparator::None));
 
-        assert!(matches!(
-            "[aria-disabled='true']".into(),
-            SelectorSeparator::None
-        ));
+        assert!(matches!("[aria-disabled='true']".into(), SelectorSeparator::None));
     }
 
     #[test]
