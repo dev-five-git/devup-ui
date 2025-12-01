@@ -215,7 +215,8 @@ pub fn sheet_to_classname(
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     if is_debug() {
-        let selector = selector.unwrap_or_default().trim();
+        let selector = selector.unwrap_or_default();
+        let selector = selector.trim();
         format!(
             "--{}-{}-{}",
             property,

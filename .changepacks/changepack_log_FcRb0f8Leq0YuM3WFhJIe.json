@@ -1,0 +1,5 @@
+{
+  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
+  "note": "Update lib",
+  "date": "2025-12-01T10:09:41.057039800Z"
+}
