@@ -405,6 +405,243 @@ mod tests {
     #[case("`background-color: ${func()}`", vec![("background-color", "func()", None)])]
     #[case("`background-color: ${(props)=>props.b ? 'a' : 'b'}`", vec![("background-color", "((props)=>props.b ? 'a' : 'b')(rest)", None)])]
     #[case("`background-color: ${(props)=>props.b ? null : undefined}`", vec![("background-color", "((props)=>props.b ? null : undefined)(rest)", None)])]
+    #[case(
+        "`color: red; background: blue;`",
+        vec![
+            ("color", "red", None),
+            ("background", "blue", None),
+        ]
+    )]
+    #[case(
+        "`margin:0;padding:0;`",
+        vec![
+            ("margin", "0", None),
+            ("padding", "0", None),
+        ]
+    )]
+    #[case(
+        "`font-size: 16px;`",
+        vec![
+            ("font-size", "16px", None),
+        ]
+    )]
+    #[case(
+        "`border: 1px solid #000; color: #fff;`",
+        vec![
+            ("border", "1px solid #000", None),
+            ("color", "#FFF", None),
+        ]
+    )]
+    #[case(
+        "``",
+        vec![]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            border: 1px solid #000;
+            color: #fff;
+        }`",
+        vec![
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) and (max-width: 1024px) {
+            border: 1px solid #000;
+            color: #fff;
+        }
+        
+        @media (min-width: 768px) {
+            border: 1px solid #000;
+            color: #fff;
+        }`",
+        vec![
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover,   &:active, &:nth-child(2) {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+            border: 1px solid #000;
+            color: #000;
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+        }`",
+        vec![]
+    )]
+    #[case(
+        "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
+        vec![
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
     fn test_css_to_style_literal(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
