@@ -5,13 +5,29 @@ interface StyledCreator {
     tag: T,
   ): (
     strings: TemplateStringsArray | DevupPropsWithTheme,
+    ...values: (
+      | ((props: React.ComponentProps<T>) => unknown)
+      | string
+      | number
+      | boolean
+      | null
+      | undefined
+    )[][]
   ) => (props: React.ComponentProps<T>) => React.ReactElement
 }
 
 type Styled = StyledCreator & {
-  [T in keyof React.JSX.IntrinsicElements]: <P extends React.ComponentProps<T>>(
+  [T in keyof React.JSX.IntrinsicElements]: <P>(
     strings: TemplateStringsArray | DevupPropsWithTheme,
-  ) => (props: P) => React.ReactElement
+    ...values: (
+      | ((props: P & React.ComponentProps<T>) => unknown)
+      | string
+      | number
+      | boolean
+      | null
+      | undefined
+    )[]
+  ) => (props: P & React.ComponentProps<T>) => React.ReactElement
 }
 
 export const styled: Styled = new Proxy(Function.prototype, {
