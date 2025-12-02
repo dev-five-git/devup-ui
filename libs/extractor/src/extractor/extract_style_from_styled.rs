@@ -7,6 +7,7 @@ use crate::{
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{ExtractResult, extract_style_from_expression::extract_style_from_expression},
     gen_class_name::gen_class_names,
+    gen_style::gen_styles,
     utils::{merge_object_expressions, wrap_array_filter},
 };
 use oxc_allocator::CloneIn;
@@ -101,7 +102,12 @@ pub fn extract_style_from_styled<'a>(
                 let class_name =
                     gen_class_names(ast_builder, &mut props_styles, None, split_filename);
 
-                let new_expr = create_styled_component(ast_builder, &tag_name, &class_name, &None);
+                let new_expr = create_styled_component(
+                    ast_builder,
+                    &tag_name,
+                    &class_name,
+                    &gen_styles(ast_builder, &props_styles, None),
+                );
                 let result = ExtractResult {
                     styles: props_styles,
                     tag: Some(ast_builder.expression_string_literal(
@@ -152,8 +158,12 @@ pub fn extract_style_from_styled<'a>(
 
                 let class_name =
                     gen_class_names(ast_builder, &mut styles, style_order, split_filename);
-                let styled_component =
-                    create_styled_component(ast_builder, &tag_name, &class_name, &style_vars);
+                let styled_component = create_styled_component(
+                    ast_builder,
+                    &tag_name,
+                    &class_name,
+                    &gen_styles(ast_builder, &styles, None),
+                );
 
                 let result = ExtractResult {
                     styles,
