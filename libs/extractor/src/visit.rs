@@ -179,6 +179,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     it,
                     styled_name,
                     self.split_filename.as_deref(),
+                    &self.imports,
                 );
                 self.styles
                     .extend(result.styles.into_iter().flat_map(|ex| ex.extract()));
@@ -380,11 +381,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Some(kind) = element_kind
                 && it.arguments.len() > 1
             {
-                let mut tag = self.ast.expression_string_literal(
-                    SPAN,
-                    self.ast.atom(kind.to_tag().unwrap_or("div")),
-                    None,
-                );
+                let mut tag =
+                    self.ast
+                        .expression_string_literal(SPAN, self.ast.atom(kind.to_tag()), None);
                 let mut props_styles = vec![];
                 let ExtractResult {
                     styles,
@@ -560,9 +559,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         let component_name = &elem.opening_element.name.to_string();
         if let Some(kind) = self.imports.get(component_name) {
             let attrs = &mut elem.opening_element.attributes;
-            let mut tag_name =
-                self.ast
-                    .expression_string_literal(SPAN, kind.to_tag().unwrap_or("div"), None);
+            let mut tag_name = self
+                .ast
+                .expression_string_literal(SPAN, kind.to_tag(), None);
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract

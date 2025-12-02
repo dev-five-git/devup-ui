@@ -21,17 +21,17 @@ pub enum ExportVariableKind {
 
 impl ExportVariableKind {
     /// Convert the kind to a tag
-    pub fn to_tag(&self) -> Result<&str, &str> {
+    pub fn to_tag(&self) -> &str {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack
             | ExportVariableKind::Grid
             | ExportVariableKind::Flex
-            | ExportVariableKind::Box => Ok("div"),
-            ExportVariableKind::Text => Ok("span"),
-            ExportVariableKind::Image => Ok("img"),
-            ExportVariableKind::Button => Ok("button"),
-            ExportVariableKind::Input => Ok("input"),
+            | ExportVariableKind::Box => "div",
+            ExportVariableKind::Text => "span",
+            ExportVariableKind::Image => "img",
+            ExportVariableKind::Button => "button",
+            ExportVariableKind::Input => "input",
         }
     }
 }
@@ -151,15 +151,15 @@ mod tests {
 
     #[test]
     fn test_to_tag() {
-        assert_eq!(ExportVariableKind::Box.to_tag(), Ok("div"));
-        assert_eq!(ExportVariableKind::Text.to_tag(), Ok("span"));
-        assert_eq!(ExportVariableKind::Image.to_tag(), Ok("img"));
-        assert_eq!(ExportVariableKind::Button.to_tag(), Ok("button"));
-        assert_eq!(ExportVariableKind::Input.to_tag(), Ok("input"));
-        assert_eq!(ExportVariableKind::Flex.to_tag(), Ok("div"));
-        assert_eq!(ExportVariableKind::VStack.to_tag(), Ok("div"));
-        assert_eq!(ExportVariableKind::Center.to_tag(), Ok("div"));
-        assert_eq!(ExportVariableKind::Grid.to_tag(), Ok("div"));
+        assert_eq!(ExportVariableKind::Box.to_tag(), "div");
+        assert_eq!(ExportVariableKind::Text.to_tag(), "span");
+        assert_eq!(ExportVariableKind::Image.to_tag(), "img");
+        assert_eq!(ExportVariableKind::Button.to_tag(), "button");
+        assert_eq!(ExportVariableKind::Input.to_tag(), "input");
+        assert_eq!(ExportVariableKind::Flex.to_tag(), "div");
+        assert_eq!(ExportVariableKind::VStack.to_tag(), "div");
+        assert_eq!(ExportVariableKind::Center.to_tag(), "div");
+        assert_eq!(ExportVariableKind::Grid.to_tag(), "div");
     }
 
     #[test]

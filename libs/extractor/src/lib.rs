@@ -7573,7 +7573,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled.div`
+        const StyledDiv = styled.section`
           background: red;
           color: blue;
         `
@@ -7594,7 +7594,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled("div")`
+        const StyledDiv = styled("article")`
           background: red;
           color: blue;
         `
@@ -7615,7 +7615,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled("div")({ bg: "red" })
+        const StyledDiv = styled("footer")({ bg: "red" })
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7633,7 +7633,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const StyledDiv = styled.div({ bg: "red" })
+        const StyledDiv = styled.aside({ bg: "red" })
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7650,8 +7650,65 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled, Box} from '@devup-ui/core'
-        const StyledComponent = styled(Box)({ bg: "red" })
+                r#"import {styled, Text} from '@devup-ui/core'
+        const StyledComponent = styled(Text)({ bg: "red" })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled, Text} from '@devup-ui/core'
+        const StyledComponent = styled(Text)`
+          background: red;
+          color: blue;
+        `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled, VStack} from '@devup-ui/core'
+        const StyledComponent = styled(VStack)({ bg: "red" })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled, VStack} from '@devup-ui/core'
+        const StyledComponent = styled(VStack)`
+          background: red;
+          color: blue;
+        `
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -7669,6 +7726,26 @@ keyframes({
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
         const StyledComponent = styled(CustomComponent)({ bg: "red" })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledComponent = styled(CustomComponent)`
+          background: red;
+          color: blue;
+        `
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

@@ -1,7 +1,7 @@
 use crate::ExtractStyleProp;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::utils::get_string_by_property_key;
+use crate::utils::{get_string_by_property_key, merge_object_expressions};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::JSXAttributeName::Identifier;
@@ -373,29 +373,6 @@ fn merge_string_expressions<'a>(
             ),
         ),
     )
-}
-
-/// merge expressions to object expression
-fn merge_object_expressions<'a>(
-    ast_builder: &AstBuilder<'a>,
-    expressions: &[Expression<'a>],
-) -> Option<Expression<'a>> {
-    if expressions.is_empty() {
-        return None;
-    }
-    if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator));
-    }
-    Some(ast_builder.expression_object(
-        SPAN,
-        oxc_allocator::Vec::from_iter_in(
-            expressions.iter().map(|ex| {
-                ast_builder
-                    .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator))
-            }),
-            ast_builder.allocator,
-        ),
-    ))
 }
 
 pub fn convert_class_name<'a>(

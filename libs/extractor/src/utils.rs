@@ -1,5 +1,9 @@
 use oxc_allocator::{Allocator, CloneIn};
-use oxc_ast::ast::{Expression, JSXAttributeValue, PropertyKey, Statement};
+use oxc_ast::{
+    AstBuilder,
+    ast::{Argument, Expression, JSXAttributeValue, PropertyKey, Statement},
+};
+
 use oxc_codegen::Codegen;
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
@@ -109,6 +113,99 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
             }
             _ => None,
         })
+}
+
+pub(super) fn wrap_array_filter<'a>(
+    builder: &AstBuilder<'a>,
+    expr: &[Expression<'a>],
+) -> Option<Expression<'a>> {
+    if expr.is_empty() {
+        return None;
+    }
+    if expr.len() == 1 {
+        return Some(expr[0].clone_in(builder.allocator));
+    }
+
+    // 1. Create ArrayExpression: [a, b, ...]
+    let array_elements = oxc_allocator::Vec::from_iter_in(
+        expr.iter().map(|e| e.clone_in(builder.allocator).into()),
+        builder.allocator,
+    );
+    let array_expr = builder.expression_array(SPAN, array_elements);
+
+    // 2. Create StaticMemberExpression: array.filter
+    let filter_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+        SPAN,
+        array_expr,
+        builder.identifier_name(SPAN, builder.atom("filter")),
+        false,
+    ));
+
+    // 3. Create CallExpression: array.filter(Boolean)
+    let filter_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
+        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
+    >>(
+        SPAN,
+        filter_member,
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        oxc_allocator::Vec::from_iter_in(
+            vec![Argument::from(
+                builder.expression_identifier(SPAN, builder.atom("Boolean")),
+            )],
+            builder.allocator,
+        ),
+        false,
+    ));
+
+    // 4. Create StaticMemberExpression: array.filter(Boolean).join
+    let join_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+        SPAN,
+        filter_call,
+        builder.identifier_name(SPAN, builder.atom("join")),
+        false,
+    ));
+
+    // 5. Create CallExpression: array.filter(Boolean).join()
+    let join_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
+        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
+    >>(
+        SPAN,
+        join_member,
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        oxc_allocator::Vec::from_iter_in(
+            vec![Argument::from(builder.expression_string_literal(
+                SPAN,
+                builder.atom(" "),
+                None,
+            ))],
+            builder.allocator,
+        ),
+        false,
+    ));
+
+    Some(join_call)
+}
+/// merge expressions to object expression
+pub(super) fn merge_object_expressions<'a>(
+    ast_builder: &AstBuilder<'a>,
+    expressions: &[Expression<'a>],
+) -> Option<Expression<'a>> {
+    if expressions.is_empty() {
+        return None;
+    }
+    if expressions.len() == 1 {
+        return Some(expressions[0].clone_in(ast_builder.allocator));
+    }
+    Some(ast_builder.expression_object(
+        SPAN,
+        oxc_allocator::Vec::from_iter_in(
+            expressions.iter().map(|ex| {
+                ast_builder
+                    .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator))
+            }),
+            ast_builder.allocator,
+        ),
+    ))
 }
 
 pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
@@ -326,5 +423,56 @@ mod tests {
         // Identifier 등 기타 타입 - None 반환
         let expr = builder.expression_identifier(SPAN, builder.atom("foo"));
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
+    }
+
+    use insta::assert_snapshot;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::empty_array(&[] as &[&str], None)]
+    #[case::single_identifier(&["a"], Some("[a].filter(Boolean).join()"))]
+    #[case::multiple_identifiers(&["a", "b"], Some("[a, b].filter(Boolean).join()"))]
+    #[case::identifier_and_string(&["className", "\"class-name\""], Some("[className, \"class-name\"].filter(Boolean).join()"))]
+    fn test_wrap_array_filter(#[case] input: &[&str], #[case] _expected: Option<&str>) {
+        let allocator = Allocator::default();
+        let builder = oxc_ast::AstBuilder::new(&allocator);
+
+        // Create expressions from input strings
+        let expressions: std::vec::Vec<oxc_ast::ast::Expression> = input
+            .iter()
+            .map(|s| {
+                if s.starts_with('"') && s.ends_with('"') {
+                    // String literal
+                    let value = s.trim_matches('"');
+                    builder.expression_string_literal(SPAN, builder.atom(value), None)
+                } else {
+                    // Identifier
+                    builder.expression_identifier(SPAN, builder.atom(s))
+                }
+            })
+            .collect();
+
+        let result = super::wrap_array_filter(&builder, &expressions);
+
+        if input.is_empty() {
+            assert!(
+                result.is_none(),
+                "Expected None for empty array, but got Some"
+            );
+        } else {
+            assert!(
+                result.is_some(),
+                "Expected Some, but got None for input: {:?}",
+                input
+            );
+            if let Some(expr) = result {
+                let code = super::expression_to_code(&expr);
+                let snapshot_name = format!(
+                    "wrap_array_filter_{}",
+                    input.join("_").replace("\"", "quote")
+                );
+                assert_snapshot!(snapshot_name, code);
+            }
+        }
     }
 }
