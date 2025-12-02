@@ -90,115 +90,116 @@ pub fn css_to_style_literal<'a>(
 
         if is_dynamic
             && let Some(idx) = expr_idx
-                && idx < css.expressions.len() {
-                    // This is a dynamic style - the value comes from an expression
-                    let expr = &css.expressions[idx];
+            && idx < css.expressions.len()
+        {
+            // This is a dynamic style - the value comes from an expression
+            let expr = &css.expressions[idx];
 
-                    // Check if expression is a function (arrow function or function expression)
-                    let is_function = matches!(
-                        expr,
-                        oxc_ast::ast::Expression::ArrowFunctionExpression(_)
-                            | oxc_ast::ast::Expression::FunctionExpression(_)
-                    );
+            // Check if expression is a function (arrow function or function expression)
+            let is_function = matches!(
+                expr,
+                oxc_ast::ast::Expression::ArrowFunctionExpression(_)
+                    | oxc_ast::ast::Expression::FunctionExpression(_)
+            );
 
-                    let mut identifier = expression_to_code(expr);
+            let mut identifier = expression_to_code(expr);
 
-                    // Normalize the code string
-                    // 1. Remove newlines and tabs, replace with spaces
-                    identifier = identifier.replace(['\n', '\t'], " ");
-                    // 2. Normalize multiple spaces to single space
-                    while identifier.contains("  ") {
-                        identifier = identifier.replace("  ", " ");
-                    }
-                    // 3. Normalize arrow function whitespace
-                    identifier = identifier
-                        .replace(" => ", "=>")
-                        .replace(" =>", "=>")
-                        .replace("=> ", "=>");
-                    // 4. Normalize function expression formatting
-                    if is_function {
-                        // Normalize function() { } to function(){ }
-                        identifier = identifier.replace("function() {", "function(){");
-                        identifier = identifier.replace("function (", "function(");
-                        // Remove trailing semicolon and spaces before closing brace
-                        identifier = identifier.replace("; }", "}");
-                        identifier = identifier.replace(" }", "}");
+            // Normalize the code string
+            // 1. Remove newlines and tabs, replace with spaces
+            identifier = identifier.replace(['\n', '\t'], " ");
+            // 2. Normalize multiple spaces to single space
+            while identifier.contains("  ") {
+                identifier = identifier.replace("  ", " ");
+            }
+            // 3. Normalize arrow function whitespace
+            identifier = identifier
+                .replace(" => ", "=>")
+                .replace(" =>", "=>")
+                .replace("=> ", "=>");
+            // 4. Normalize function expression formatting
+            if is_function {
+                // Normalize function() { } to function(){ }
+                identifier = identifier.replace("function() {", "function(){");
+                identifier = identifier.replace("function (", "function(");
+                // Remove trailing semicolon and spaces before closing brace
+                identifier = identifier.replace("; }", "}");
+                identifier = identifier.replace(" }", "}");
 
-                        // Wrap function in parentheses if not already wrapped
-                        // and add (rest) call
-                        let trimmed = identifier.trim();
-                        // Check if already wrapped in parentheses
-                        if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
-                            identifier = format!("({})", trimmed);
-                        }
-                        // Add (rest) call
-                        identifier = format!("{}(rest)", identifier);
-                    }
-                    // 5. Normalize quotes
-                    if !is_function {
-                        // For non-function expressions, convert property access quotes
-                        // object["color"] -> object['color']
-                        identifier = identifier.replace("[\"", "['").replace("\"]", "']");
-                    } else {
-                        // For function expressions, convert string literals in ternary operators
-                        // This handles cases like: (props)=>props.b ? "a" : "b" -> (props)=>props.b ? 'a' : 'b'
-                        // Use simple pattern matching for ternary operator string literals
-                        // Pattern: ? "text" : "text" -> ? 'text' : 'text'
-                        // We'll replace " with ' but only in the context of ternary operators
-                        let mut result = String::new();
-                        let mut chars = identifier.chars().peekable();
-                        let mut in_ternary_string = false;
-
-                        while let Some(ch) = chars.next() {
-                            if ch == '?' || ch == ':' {
-                                result.push(ch);
-                                // Skip whitespace
-                                while let Some(&' ') = chars.peek() {
-                                    result.push(chars.next().unwrap());
-                                }
-                                // Check if next is a string literal
-                                if let Some(&'"') = chars.peek() {
-                                    in_ternary_string = true;
-                                    result.push('\'');
-                                    chars.next(); // consume the "
-                                    continue;
-                                }
-                            } else if in_ternary_string && ch == '"' {
-                                // Check if this is a closing quote by looking ahead
-                                let mut peeked = chars.clone();
-                                // Skip whitespace
-                                while let Some(&' ') = peeked.peek() {
-                                    peeked.next();
-                                }
-                                // If next is : or ? or ) or } or end, it's a closing quote
-                                if peeked.peek().is_none()
-                                    || matches!(
-                                        peeked.peek(),
-                                        Some(&':') | Some(&'?') | Some(&')') | Some(&'}')
-                                    )
-                                {
-                                    result.push('\'');
-                                    in_ternary_string = false;
-                                    continue;
-                                }
-                                // Not a closing quote, keep as is
-                                result.push(ch);
-                            } else {
-                                result.push(ch);
-                            }
-                        }
-                        identifier = result;
-                    }
-                    identifier = identifier.trim().to_string();
-
-                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                        style.property(),
-                        style.level(),
-                        &identifier,
-                        style.selector().cloned(),
-                    )));
-                    continue;
+                // Wrap function in parentheses if not already wrapped
+                // and add (rest) call
+                let trimmed = identifier.trim();
+                // Check if already wrapped in parentheses
+                if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
+                    identifier = format!("({})", trimmed);
                 }
+                // Add (rest) call
+                identifier = format!("{}(rest)", identifier);
+            }
+            // 5. Normalize quotes
+            if !is_function {
+                // For non-function expressions, convert property access quotes
+                // object["color"] -> object['color']
+                identifier = identifier.replace("[\"", "['").replace("\"]", "']");
+            } else {
+                // For function expressions, convert string literals in ternary operators
+                // This handles cases like: (props)=>props.b ? "a" : "b" -> (props)=>props.b ? 'a' : 'b'
+                // Use simple pattern matching for ternary operator string literals
+                // Pattern: ? "text" : "text" -> ? 'text' : 'text'
+                // We'll replace " with ' but only in the context of ternary operators
+                let mut result = String::new();
+                let mut chars = identifier.chars().peekable();
+                let mut in_ternary_string = false;
+
+                while let Some(ch) = chars.next() {
+                    if ch == '?' || ch == ':' {
+                        result.push(ch);
+                        // Skip whitespace
+                        while let Some(&' ') = chars.peek() {
+                            result.push(chars.next().unwrap());
+                        }
+                        // Check if next is a string literal
+                        if let Some(&'"') = chars.peek() {
+                            in_ternary_string = true;
+                            result.push('\'');
+                            chars.next(); // consume the "
+                            continue;
+                        }
+                    } else if in_ternary_string && ch == '"' {
+                        // Check if this is a closing quote by looking ahead
+                        let mut peeked = chars.clone();
+                        // Skip whitespace
+                        while let Some(&' ') = peeked.peek() {
+                            peeked.next();
+                        }
+                        // If next is : or ? or ) or } or end, it's a closing quote
+                        if peeked.peek().is_none()
+                            || matches!(
+                                peeked.peek(),
+                                Some(&':') | Some(&'?') | Some(&')') | Some(&'}')
+                            )
+                        {
+                            result.push('\'');
+                            in_ternary_string = false;
+                            continue;
+                        }
+                        // Not a closing quote, keep as is
+                        result.push(ch);
+                    } else {
+                        result.push(ch);
+                    }
+                }
+                identifier = result;
+            }
+            identifier = identifier.trim().to_string();
+
+            styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
+                style.property(),
+                style.level(),
+                &identifier,
+                style.selector().cloned(),
+            )));
+            continue;
+        }
 
         // Check if property name contains a dynamic expression placeholder
         let property = style.property();
