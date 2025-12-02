@@ -145,7 +145,7 @@ pub fn extract_style_from_expression<'a>(
                 &None,
             ),
             Expression::TemplateLiteral(tmp) => ExtractResult {
-                styles: css_to_style_literal(&tmp, level, selector)
+                styles: css_to_style_literal(tmp, level, selector)
                     .into_iter()
                     .map(|ex| ExtractStyleProp::Static(ex.into()))
                     .collect(),

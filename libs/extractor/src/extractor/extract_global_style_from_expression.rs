@@ -116,7 +116,7 @@ pub fn extract_global_style_from_expression<'a>(
                                             file: file.to_string(),
                                         })));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
-                                        let css_styles = css_to_style_literal(&t, 0, &None)
+                                        let css_styles = css_to_style_literal(t, 0, &None)
                                             .into_iter()
                                             .filter_map(|ex| {
                                                 if let CssToStyleResult::Static(st) = ex {

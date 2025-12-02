@@ -41,7 +41,7 @@ pub fn css_to_style_literal<'a>(
             styles.extend(
                 css_to_style(&quasi.value.raw, level, selector)
                     .into_iter()
-                    .map(|ex| CssToStyleResult::Static(ex)),
+                    .map(CssToStyleResult::Static),
             );
         }
         return styles;
@@ -88,9 +88,9 @@ pub fn css_to_style_literal<'a>(
             }
         }
 
-        if is_dynamic {
-            if let Some(idx) = expr_idx {
-                if idx < css.expressions.len() {
+        if is_dynamic
+            && let Some(idx) = expr_idx
+                && idx < css.expressions.len() {
                     // This is a dynamic style - the value comes from an expression
                     let expr = &css.expressions[idx];
 
@@ -105,7 +105,7 @@ pub fn css_to_style_literal<'a>(
 
                     // Normalize the code string
                     // 1. Remove newlines and tabs, replace with spaces
-                    identifier = identifier.replace('\n', " ").replace('\t', " ");
+                    identifier = identifier.replace(['\n', '\t'], " ");
                     // 2. Normalize multiple spaces to single space
                     while identifier.contains("  ") {
                         identifier = identifier.replace("  ", " ");
@@ -199,8 +199,6 @@ pub fn css_to_style_literal<'a>(
                     )));
                     continue;
                 }
-            }
-        }
 
         // Check if property name contains a dynamic expression placeholder
         let property = style.property();
