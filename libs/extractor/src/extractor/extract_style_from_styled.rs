@@ -104,7 +104,7 @@ pub fn extract_style_from_styled<'a>(
                     props_styles.extend(
                         default_class_name
                             .into_iter()
-                            .map(|style| ExtractStyleProp::Static(style)),
+                            .map(ExtractStyleProp::Static),
                     );
                 }
 
@@ -165,7 +165,7 @@ pub fn extract_style_from_styled<'a>(
                     styles.extend(
                         default_class_name
                             .into_iter()
-                            .map(|style| ExtractStyleProp::Static(style)),
+                            .map(ExtractStyleProp::Static),
                     );
                 }
 
@@ -178,7 +178,7 @@ pub fn extract_style_from_styled<'a>(
                     styles,
                     tag: None,
                     style_order,
-                    style_vars: style_vars,
+                    style_vars,
                     props,
                 };
 
