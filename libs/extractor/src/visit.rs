@@ -11,6 +11,7 @@ use crate::extractor::{
     extract_global_style_from_expression::extract_global_style_from_expression,
     extract_style_from_expression::extract_style_from_expression,
     extract_style_from_jsx::extract_style_from_jsx,
+    extract_style_from_styled::extract_style_from_styled,
 };
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
@@ -52,6 +53,7 @@ pub struct DevupVisitor<'a> {
     split_filename: Option<String>,
     pub css_files: Vec<String>,
     pub styles: HashSet<ExtractStyleValue>,
+    styled_import: Option<String>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -74,6 +76,7 @@ impl<'a> DevupVisitor<'a> {
             jsx_object: None,
             util_imports: HashMap::new(),
             split_filename,
+            styled_import: None,
         }
     }
 }
@@ -129,6 +132,60 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
         walk_expression(self, it);
+
+        // Handle styled function calls
+        if let Some(styled_name) = &self.styled_import {
+            let is_styled = match it {
+                Expression::TaggedTemplateExpression(tag) => match &tag.tag {
+                    Expression::StaticMemberExpression(member) => {
+                        if let Expression::Identifier(ident) = &member.object {
+                            ident.name.as_str() == styled_name.as_str()
+                        } else {
+                            false
+                        }
+                    }
+                    Expression::CallExpression(call) => {
+                        if let Expression::Identifier(ident) = &call.callee {
+                            ident.name.as_str() == styled_name.as_str()
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                },
+                Expression::CallExpression(call) => match &call.callee {
+                    Expression::StaticMemberExpression(member) => {
+                        if let Expression::Identifier(ident) = &member.object {
+                            ident.name.as_str() == styled_name.as_str()
+                        } else {
+                            false
+                        }
+                    }
+                    Expression::CallExpression(inner_call) => {
+                        if let Expression::Identifier(ident) = &inner_call.callee {
+                            ident.name.as_str() == styled_name.as_str()
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                },
+                _ => false,
+            };
+
+            if is_styled {
+                let (result, new_expr) = extract_style_from_styled(
+                    &self.ast,
+                    it,
+                    styled_name,
+                    self.split_filename.as_deref(),
+                );
+                self.styles
+                    .extend(result.styles.into_iter().flat_map(|ex| ex.extract()));
+                *it = new_expr;
+                return;
+            }
+        }
 
         if let Expression::CallExpression(call) = it {
             let util_import_key = if let Expression::Identifier(ident) = &call.callee {
@@ -448,6 +505,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         } else if let Ok(kind) = UtilType::try_from(import.imported.to_string()) {
                             self.util_imports
                                 .insert(import.local.to_string(), Rc::new(kind));
+                            specifiers.remove(i);
+                        } else if import.imported.to_string() == "styled" {
+                            self.styled_import = Some(import.local.to_string());
                             specifiers.remove(i);
                         }
                     }
