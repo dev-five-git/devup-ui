@@ -254,16 +254,67 @@ pub fn css_to_style(
 
     if input.contains('{') {
         while let Some(start) = input.find('{') {
+            // Check if there are properties before the selector
+            let before_brace = &input[..start].trim();
+
+            // Split by semicolon to find the last part which should be the selector
+            let parts: Vec<&str> = before_brace.split(';').map(|s| s.trim()).collect();
+
+            // Find the selector part (the last part that doesn't contain ':')
+            // or if all parts contain ':', then the last part is the selector
+            let (plain_props, selector_part) = if parts.len() > 1 {
+                // Check if any part doesn't contain ':' (which would be a selector)
+                let mut selector_idx = parts.len();
+                for (i, part) in parts.iter().enumerate().rev() {
+                    if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
+                        selector_idx = i;
+                        break;
+                    }
+                }
+
+                if selector_idx < parts.len() {
+                    let (props, sel) = parts.split_at(selector_idx);
+                    (props.join(";"), sel.join(";"))
+                } else {
+                    // All parts contain ':', so treat the last one as selector
+                    let (props, sel) = parts.split_at(parts.len() - 1);
+                    (props.join(";"), sel.join(";"))
+                }
+            } else {
+                ("".to_string(), before_brace.to_string())
+            };
+
+            // Process plain properties if any
+            if !plain_props.is_empty() {
+                styles.extend(css_to_style_block(&plain_props, level, selector));
+            }
+
             let rest = &input[start + 1..];
 
-            let end = if selector.is_none() {
-                rest.rfind('}').unwrap()
-            } else {
-                rest.find('}').unwrap()
-            };
+            // Find the matching closing brace by counting braces
+            let mut brace_count = 1;
+            let mut end = 0;
+            for (i, ch) in rest.char_indices() {
+                match ch {
+                    '{' => brace_count += 1,
+                    '}' => {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            end = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // If we didn't find a matching brace, use the first '}' as fallback
+            if brace_count > 0 {
+                end = rest.find('}').unwrap_or(rest.len());
+            }
             let block = &rest[..end];
             let sel = &if let Some(StyleSelector::Media { query, .. }) = selector {
-                let local_sel = input[..start].trim().to_string();
+                let local_sel = selector_part.trim().to_string();
                 Some(StyleSelector::Media {
                     query: query.clone(),
                     selector: if local_sel == "&" {
@@ -273,13 +324,15 @@ pub fn css_to_style(
                     },
                 })
             } else {
-                let sel = input[..start].trim().to_string();
+                let sel = selector_part.trim().to_string();
                 if sel.starts_with("@media") {
                     Some(StyleSelector::Media {
                         query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
                             .to_string(),
                         selector: None,
                     })
+                } else if sel.is_empty() {
+                    selector.clone()
                 } else {
                     Some(StyleSelector::Selector(sel))
                 }
@@ -289,10 +342,34 @@ pub fn css_to_style(
             } else {
                 css_to_style_block(block, level, sel)
             };
-            let input_end = input.rfind('}').unwrap() + 1;
 
-            input = &input[start + end + 2..input_end];
+            // Find the matching closing brace
+            let closing_brace_pos = start + 1 + end;
+
+            // Process the block
             styles.extend(block);
+
+            // Update input to continue processing after the closing brace
+            // Check if there's more content after the closing brace
+            if closing_brace_pos + 1 < input.len() {
+                let remaining = &input[closing_brace_pos + 1..].trim();
+                if !remaining.is_empty() {
+                    // If there's remaining text after the closing brace, process it
+                    // This handles cases like "} color: blue;"
+                    if remaining.contains('{') {
+                        // If it contains '{', continue the loop
+                        input = remaining;
+                    } else {
+                        // If it doesn't contain '{', process it as a block and break
+                        styles.extend(css_to_style_block(remaining, level, selector));
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
     } else {
         styles.extend(css_to_style_block(input, level, selector));
@@ -667,6 +744,33 @@ mod tests {
         vec![
             ("background-color", "red", None),
             ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue;`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue; &:active { background-color: blue; }`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+            ("background-color", "blue", Some(StyleSelector::Selector("&:active".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue; &:active { background-color: blue; } transform: rotate(90deg);`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+            ("background-color", "blue", Some(StyleSelector::Selector("&:active".to_string()))),
+            ("transform", "rotate(90deg)", None),
         ]
     )]
     fn test_css_to_style_literal(
