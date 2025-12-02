@@ -656,6 +656,19 @@ mod tests {
             ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
         ]
     )]
+    #[case(
+        "`&:hover { background-color: red; }`",
+        vec![
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; }`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+        ]
+    )]
     fn test_css_to_style_literal(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
