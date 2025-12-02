@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     ExtractStyleProp,
-    css_utils::css_to_style,
+    css_utils::{CssToStyleResult, css_to_style_literal},
     extract_style::{
         extract_font_face::ExtractFontFace, extract_import::ExtractImport,
         extract_style_value::ExtractStyleValue,
@@ -116,18 +116,16 @@ pub fn extract_global_style_from_expression<'a>(
                                             file: file.to_string(),
                                         })));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
-                                        let css_styles = css_to_style(
-                                            t.quasis
-                                                .iter()
-                                                .map(|q| q.value.raw.as_str())
-                                                .collect::<String>()
-                                                .trim(),
-                                            0,
-                                            &None,
-                                        )
-                                        .into_iter()
-                                        .map(ExtractStyleValue::Static)
-                                        .collect::<Vec<_>>();
+                                        let css_styles = css_to_style_literal(&t, 0, &None)
+                                            .into_iter()
+                                            .filter_map(|ex| {
+                                                if let CssToStyleResult::Static(st) = ex {
+                                                    Some(ExtractStyleValue::Static(st))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect::<Vec<_>>();
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::FontFace(ExtractFontFace {
                                                 properties: BTreeMap::from_iter(

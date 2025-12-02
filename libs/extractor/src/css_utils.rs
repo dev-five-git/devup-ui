@@ -9,14 +9,28 @@ use oxc_ast::ast::TemplateLiteral;
 
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+    extract_style_value::ExtractStyleValue,
 };
 
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum CssToStyleResult {
     Static(ExtractStaticStyle),
     Dynamic(ExtractDynamicStyle),
 }
 
-pub fn css_to_style_literal<'a>(css: &TemplateLiteral<'a>) -> Vec<CssToStyleResult> {
+impl From<CssToStyleResult> for ExtractStyleValue {
+    fn from(value: CssToStyleResult) -> Self {
+        match value {
+            CssToStyleResult::Static(style) => ExtractStyleValue::Static(style),
+            CssToStyleResult::Dynamic(style) => ExtractStyleValue::Dynamic(style),
+        }
+    }
+}
+pub fn css_to_style_literal<'a>(
+    css: &TemplateLiteral<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> Vec<CssToStyleResult> {
     use crate::utils::expression_to_code;
 
     let mut styles = vec![];
@@ -25,7 +39,7 @@ pub fn css_to_style_literal<'a>(css: &TemplateLiteral<'a>) -> Vec<CssToStyleResu
     if css.expressions.is_empty() {
         for quasi in css.quasis.iter() {
             styles.extend(
-                css_to_style(&quasi.value.raw, 0, &None)
+                css_to_style(&quasi.value.raw, level, selector)
                     .into_iter()
                     .map(|ex| CssToStyleResult::Static(ex)),
             );
@@ -57,7 +71,7 @@ pub fn css_to_style_literal<'a>(css: &TemplateLiteral<'a>) -> Vec<CssToStyleResu
     let combined_css = css_parts.join("");
 
     // Parse CSS to extract static styles
-    let static_styles = css_to_style(&combined_css, 0, &None);
+    let static_styles = css_to_style(&combined_css, level, selector);
 
     // Process each static style and check if it contains expression placeholders
     for style in static_styles {
@@ -652,7 +666,7 @@ mod tests {
         if let Statement::ExpressionStatement(expr) = &css.program.body[0]
             && let Expression::TemplateLiteral(tmp) = &expr.expression
         {
-            let styles = css_to_style_literal(tmp);
+            let styles = css_to_style_literal(tmp, 0, &None);
             let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
                 .iter()
                 .map(|prop| match prop {

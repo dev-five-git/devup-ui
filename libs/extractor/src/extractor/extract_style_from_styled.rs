@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ExtractStyleProp,
     component::ExportVariableKind,
-    css_utils::css_to_style,
+    css_utils::css_to_style_literal,
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{ExtractResult, extract_style_from_expression::extract_style_from_expression},
     gen_class_name::gen_class_names,
@@ -86,17 +86,11 @@ pub fn extract_style_from_styled<'a>(
 
             if let Some(tag_name) = tag_name {
                 // Extract CSS from template literal
-                let css_str = tag
-                    .quasi
-                    .quasis
-                    .iter()
-                    .map(|quasi| quasi.value.raw.to_string())
-                    .collect::<String>();
 
-                let styles = css_to_style(&css_str, 0, &None);
+                let styles = css_to_style_literal(&tag.quasi, 0, &None);
                 let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
                     .iter()
-                    .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone())))
+                    .map(|ex| ExtractStyleProp::Static(ex.clone().into()))
                     .collect();
 
                 if let Some(default_class_name) = default_class_name {

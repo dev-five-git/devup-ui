@@ -1,6 +1,6 @@
 use crate::{
     ExtractStyleProp,
-    css_utils::css_to_style,
+    css_utils::{css_to_style, css_to_style_literal},
     extract_style::{
         extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
         extract_style_value::ExtractStyleValue,
@@ -145,17 +145,10 @@ pub fn extract_style_from_expression<'a>(
                 &None,
             ),
             Expression::TemplateLiteral(tmp) => ExtractResult {
-                styles: css_to_style(
-                    &tmp.quasis
-                        .iter()
-                        .map(|q| q.value.raw.as_str())
-                        .collect::<String>(),
-                    level,
-                    selector,
-                )
-                .into_iter()
-                .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex)))
-                .collect(),
+                styles: css_to_style_literal(&tmp, level, selector)
+                    .into_iter()
+                    .map(|ex| ExtractStyleProp::Static(ex.into()))
+                    .collect(),
                 ..ExtractResult::default()
             },
             _ => ExtractResult::default(),

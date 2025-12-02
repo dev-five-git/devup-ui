@@ -1,6 +1,6 @@
 use crate::as_visit::AsVisitor;
 use crate::component::ExportVariableKind;
-use crate::css_utils::{css_to_style, keyframes_to_keyframes_style, optimize_css_block};
+use crate::css_utils::{css_to_style_literal, keyframes_to_keyframes_style, optimize_css_block};
 use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
@@ -307,19 +307,18 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .collect::<String>();
             let r = css_type.as_ref();
             *it = if let UtilType::Css = r {
-                let styles = css_to_style(&css_str, 0, &None);
+                let styles = css_to_style_literal(&tag.quasi, 0, &None);
                 let class_name = gen_class_names(
                     &self.ast,
                     &mut styles
                         .iter()
-                        .map(|ex| ExtractStyleProp::Static(ExtractStyleValue::Static(ex.clone())))
+                        .map(|ex| ExtractStyleProp::Static(ex.clone().into()))
                         .collect::<Vec<_>>(),
                     None,
                     self.split_filename.as_deref(),
                 );
 
-                self.styles
-                    .extend(styles.into_iter().map(ExtractStyleValue::Static));
+                self.styles.extend(styles.into_iter().map(|ex| ex.into()));
                 if let Some(cls) = class_name {
                     cls
                 } else {
