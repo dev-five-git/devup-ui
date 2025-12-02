@@ -7875,54 +7875,96 @@ keyframes({
         ));
     }
 
+    #[test]
+    #[serial]
+    fn test_styled_with_variable_like_emotion() {
+        // Test 1: styled.div`css with ${variable}`
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const color = 'red';
+        const StyledDiv = styled.div`
+          color: ${color};
+          background: blue;
+        `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 2: styled("div")`css with ${variable}`
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const primaryColor = 'blue';
+        const padding = '16px';
+        const StyledDiv = styled("div")`
+          color: ${primaryColor};
+          padding: ${padding};
+        `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const primaryColor = 'blue';
+        const padding = '16px';
+        const StyledDiv = styled("div")({ bg: primaryColor, padding })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const primaryColor = 'blue';
+        const padding = '16px';
+        const StyledDiv = styled.div({ bg: primaryColor, padding })
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
     // #[test]
     // #[serial]
-    // fn test_styled_with_variable_like_emotion() {
-    //     // Test 1: styled.div`css with ${variable}` - 템플릿 리터럴에서 외부 변수 사용
-    //     reset_class_map();
-    //     assert_debug_snapshot!(ToBTreeSet::from(
-    //         extract(
-    //             "test.tsx",
-    //             r#"import {styled} from '@devup-ui/core'
-    //     const color = 'red';
-    //     const StyledDiv = styled.div`
-    //       color: ${color};
-    //       background: blue;
-    //     `
-    //     "#,
-    //             ExtractOption {
-    //                 package: "@devup-ui/core".to_string(),
-    //                 css_dir: "@devup-ui/core".to_string(),
-    //                 single_css: false,
-    //                 import_main_css: false
-    //             }
-    //         )
-    //         .unwrap()
-    //     ));
-
-    //     // Test 2: styled("div")`css with ${variable}` - 함수 호출 형태에서 외부 변수 사용
-    //     reset_class_map();
-    //     assert_debug_snapshot!(ToBTreeSet::from(
-    //         extract(
-    //             "test.tsx",
-    //             r#"import {styled} from '@devup-ui/core'
-    //     const primaryColor = 'blue';
-    //     const padding = '16px';
-    //     const StyledDiv = styled("div")`
-    //       color: ${primaryColor};
-    //       padding: ${padding};
-    //     `
-    //     "#,
-    //             ExtractOption {
-    //                 package: "@devup-ui/core".to_string(),
-    //                 css_dir: "@devup-ui/core".to_string(),
-    //                 single_css: false,
-    //                 import_main_css: false
-    //             }
-    //         )
-    //         .unwrap()
-    //     ));
-
+    // fn test_styled_with_variable_like_emotion_props() {
     //     // Test 3: styled.div`css with ${props => props.bg}` - props를 사용하는 함수형 변수
     //     reset_class_map();
     //     assert_debug_snapshot!(ToBTreeSet::from(

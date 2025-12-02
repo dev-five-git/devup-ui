@@ -5,8 +5,211 @@ use css::{
     rm_css_comment::rm_css_comment,
     style_selector::StyleSelector,
 };
+use oxc_ast::ast::TemplateLiteral;
 
-use crate::extract_style::extract_static_style::ExtractStaticStyle;
+use crate::extract_style::{
+    extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+};
+
+pub enum CssToStyleResult {
+    Static(ExtractStaticStyle),
+    Dynamic(ExtractDynamicStyle),
+}
+
+pub fn css_to_style_literal<'a>(css: &TemplateLiteral<'a>) -> Vec<CssToStyleResult> {
+    use crate::utils::expression_to_code;
+
+    let mut styles = vec![];
+
+    // If there are no expressions, just process quasis as static CSS
+    if css.expressions.is_empty() {
+        for quasi in css.quasis.iter() {
+            styles.extend(
+                css_to_style(&quasi.value.raw, 0, &None)
+                    .into_iter()
+                    .map(|ex| CssToStyleResult::Static(ex)),
+            );
+        }
+        return styles;
+    }
+
+    // Process template literal with expressions
+    // Template literal format: `text ${expr1} text ${expr2} text`
+    // We need to parse CSS and identify where expressions are used
+
+    // Build a combined CSS string with unique placeholders for expressions
+    // Use a format that won't conflict with actual CSS values
+    let mut css_parts = Vec::new();
+    let mut expression_map = std::collections::HashMap::new();
+
+    for (i, quasi) in css.quasis.iter().enumerate() {
+        css_parts.push(quasi.value.raw.to_string());
+
+        // Add expression placeholder if not the last quasi
+        if i < css.expressions.len() {
+            // Use a unique placeholder format that CSS parser won't modify
+            let placeholder = format!("__EXPR_{}__", i);
+            expression_map.insert(placeholder.clone(), i);
+            css_parts.push(placeholder);
+        }
+    }
+
+    let combined_css = css_parts.join("");
+
+    // Parse CSS to extract static styles
+    let static_styles = css_to_style(&combined_css, 0, &None);
+
+    // Process each static style and check if it contains expression placeholders
+    for style in static_styles {
+        let value = style.value();
+        let mut is_dynamic = false;
+        let mut expr_idx = None;
+
+        // Check if this value contains a dynamic expression placeholder
+        for (placeholder, &idx) in expression_map.iter() {
+            if value.contains(placeholder) {
+                is_dynamic = true;
+                expr_idx = Some(idx);
+                break;
+            }
+        }
+
+        if is_dynamic {
+            if let Some(idx) = expr_idx {
+                if idx < css.expressions.len() {
+                    // This is a dynamic style - the value comes from an expression
+                    let expr = &css.expressions[idx];
+
+                    // Check if expression is a function (arrow function or function expression)
+                    let is_function = matches!(
+                        expr,
+                        oxc_ast::ast::Expression::ArrowFunctionExpression(_)
+                            | oxc_ast::ast::Expression::FunctionExpression(_)
+                    );
+
+                    let mut identifier = expression_to_code(expr);
+
+                    // Normalize the code string
+                    // 1. Remove newlines and tabs, replace with spaces
+                    identifier = identifier.replace('\n', " ").replace('\t', " ");
+                    // 2. Normalize multiple spaces to single space
+                    while identifier.contains("  ") {
+                        identifier = identifier.replace("  ", " ");
+                    }
+                    // 3. Normalize arrow function whitespace
+                    identifier = identifier
+                        .replace(" => ", "=>")
+                        .replace(" =>", "=>")
+                        .replace("=> ", "=>");
+                    // 4. Normalize function expression formatting
+                    if is_function {
+                        // Normalize function() { } to function(){ }
+                        identifier = identifier.replace("function() {", "function(){");
+                        identifier = identifier.replace("function (", "function(");
+                        // Remove trailing semicolon and spaces before closing brace
+                        identifier = identifier.replace("; }", "}");
+                        identifier = identifier.replace(" }", "}");
+
+                        // Wrap function in parentheses if not already wrapped
+                        // and add (rest) call
+                        let trimmed = identifier.trim();
+                        // Check if already wrapped in parentheses
+                        if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
+                            identifier = format!("({})", trimmed);
+                        }
+                        // Add (rest) call
+                        identifier = format!("{}(rest)", identifier);
+                    }
+                    // 5. Normalize quotes
+                    if !is_function {
+                        // For non-function expressions, convert property access quotes
+                        // object["color"] -> object['color']
+                        identifier = identifier.replace("[\"", "['").replace("\"]", "']");
+                    } else {
+                        // For function expressions, convert string literals in ternary operators
+                        // This handles cases like: (props)=>props.b ? "a" : "b" -> (props)=>props.b ? 'a' : 'b'
+                        // Use simple pattern matching for ternary operator string literals
+                        // Pattern: ? "text" : "text" -> ? 'text' : 'text'
+                        // We'll replace " with ' but only in the context of ternary operators
+                        let mut result = String::new();
+                        let mut chars = identifier.chars().peekable();
+                        let mut in_ternary_string = false;
+
+                        while let Some(ch) = chars.next() {
+                            if ch == '?' || ch == ':' {
+                                result.push(ch);
+                                // Skip whitespace
+                                while let Some(&' ') = chars.peek() {
+                                    result.push(chars.next().unwrap());
+                                }
+                                // Check if next is a string literal
+                                if let Some(&'"') = chars.peek() {
+                                    in_ternary_string = true;
+                                    result.push('\'');
+                                    chars.next(); // consume the "
+                                    continue;
+                                }
+                            } else if in_ternary_string && ch == '"' {
+                                // Check if this is a closing quote by looking ahead
+                                let mut peeked = chars.clone();
+                                // Skip whitespace
+                                while let Some(&' ') = peeked.peek() {
+                                    peeked.next();
+                                }
+                                // If next is : or ? or ) or } or end, it's a closing quote
+                                if peeked.peek().is_none()
+                                    || matches!(
+                                        peeked.peek(),
+                                        Some(&':') | Some(&'?') | Some(&')') | Some(&'}')
+                                    )
+                                {
+                                    result.push('\'');
+                                    in_ternary_string = false;
+                                    continue;
+                                }
+                                // Not a closing quote, keep as is
+                                result.push(ch);
+                            } else {
+                                result.push(ch);
+                            }
+                        }
+                        identifier = result;
+                    }
+                    identifier = identifier.trim().to_string();
+
+                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
+                        style.property(),
+                        style.level(),
+                        &identifier,
+                        style.selector().cloned(),
+                    )));
+                    continue;
+                }
+            }
+        }
+
+        // Check if property name contains a dynamic expression placeholder
+        let property = style.property();
+        let mut prop_is_dynamic = false;
+
+        for placeholder in expression_map.keys() {
+            if property.contains(placeholder) {
+                prop_is_dynamic = true;
+                break;
+            }
+        }
+
+        if prop_is_dynamic {
+            // Property name is dynamic - skip for now as it's more complex
+            continue;
+        }
+
+        // Static style
+        styles.push(CssToStyleResult::Static(style));
+    }
+
+    styles
+}
 
 pub fn css_to_style(
     css: &str,
@@ -182,7 +385,58 @@ pub fn optimize_css_block(css: &str) -> String {
 mod tests {
     use super::*;
 
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::{Expression, Statement};
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("`background-color: red;`", vec![("background-color", "red", None)])]
+    #[case("`background-color: ${color};`", vec![("background-color", "color", None)])]
+    #[case("`background-color: ${color}`", vec![("background-color", "color", None)])]
+    #[case("`background-color: ${color};color: blue;`", vec![("background-color", "color", None), ("color", "blue", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"}`", vec![("background-color", "(()=>\"arrow dynamic\")(rest)", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"};color: blue;`", vec![("background-color", "(()=>\"arrow dynamic\")(rest)", None), ("color", "blue", None)])]
+    #[case("`color: blue;background-color: ${()=>\"arrow dynamic\"};`", vec![("color", "blue", None),("background-color", "(()=>\"arrow dynamic\")(rest)", None)])]
+    #[case("`background-color: ${function(){ return \"arrow dynamic\"}}`", vec![("background-color", "(function(){ return \"arrow dynamic\"})(rest)", None)])]
+    #[case("`background-color: ${object.color}`", vec![("background-color", "object.color", None)])]
+    #[case("`background-color: ${object['color']}`", vec![("background-color", "object['color']", None)])]
+    #[case("`background-color: ${func()}`", vec![("background-color", "func()", None)])]
+    #[case("`background-color: ${(props)=>props.b ? 'a' : 'b'}`", vec![("background-color", "((props)=>props.b ? 'a' : 'b')(rest)", None)])]
+    #[case("`background-color: ${(props)=>props.b ? null : undefined}`", vec![("background-color", "((props)=>props.b ? null : undefined)(rest)", None)])]
+    fn test_css_to_style_literal(
+        #[case] input: &str,
+        #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
+    ) {
+        // parse template literal code
+        let allocator = Allocator::default();
+        let css = Parser::new(&allocator, input, SourceType::ts()).parse();
+        if let Statement::ExpressionStatement(expr) = &css.program.body[0]
+            && let Expression::TemplateLiteral(tmp) = &expr.expression
+        {
+            let styles = css_to_style_literal(tmp);
+            let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
+                .iter()
+                .map(|prop| match prop {
+                    CssToStyleResult::Static(style) => {
+                        (style.property(), style.value(), style.selector().cloned())
+                    }
+                    CssToStyleResult::Dynamic(dynamic) => (
+                        dynamic.property(),
+                        dynamic.identifier(),
+                        dynamic.selector().cloned(),
+                    ),
+                })
+                .collect();
+            result.sort();
+            let mut expected_sorted = expected.clone();
+            expected_sorted.sort();
+            assert_eq!(result, expected_sorted);
+        } else {
+            panic!("not a template literal");
+        }
+    }
 
     #[rstest]
     #[case(

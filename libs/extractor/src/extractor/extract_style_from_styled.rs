@@ -77,7 +77,6 @@ pub fn extract_style_from_styled<'a>(
     split_filename: Option<&str>,
     imports: &HashMap<String, ExportVariableKind>,
 ) -> (ExtractResult<'a>, Expression<'a>) {
-    println!("-----------");
     let (result, new_expr) = match expression {
         // Case 1: styled.div`css` or styled("div")`css`
         Expression::TaggedTemplateExpression(tag) => {
@@ -101,11 +100,8 @@ pub fn extract_style_from_styled<'a>(
                     .collect();
 
                 if let Some(default_class_name) = default_class_name {
-                    props_styles.extend(
-                        default_class_name
-                            .into_iter()
-                            .map(ExtractStyleProp::Static),
-                    );
+                    props_styles
+                        .extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
                 }
 
                 let class_name =
@@ -135,11 +131,6 @@ pub fn extract_style_from_styled<'a>(
             let (tag_name, default_class_name) =
                 extract_base_tag_and_class_name(&call.callee, styled_name, imports);
 
-            println!(
-                "tag_name: {:?}, default_class_name: {:?}",
-                tag_name, default_class_name
-            );
-
             if let Some(tag_name) = tag_name
                 && call.arguments.len() == 1
             {
@@ -162,11 +153,7 @@ pub fn extract_style_from_styled<'a>(
                     &None,
                 );
                 if let Some(default_class_name) = default_class_name {
-                    styles.extend(
-                        default_class_name
-                            .into_iter()
-                            .map(ExtractStyleProp::Static),
-                    );
+                    styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
                 }
 
                 let class_name =
