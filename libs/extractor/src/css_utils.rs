@@ -975,6 +975,7 @@ mod tests {
     #[case("`width: ${func(\"hello\\nworld\")}px;`", vec![("width", "`${func(\"hello\\nworld\")}px`", None)])]
     #[case("`width: ${func('test\\'quote')}px;`", vec![("width", "`${func(\"test'quote\")}px`", None)])]
     #[case("`width: ${(props)=>props.b ? \"hello\\\"world\" : \"test\"}px;`", vec![("width", "`${((props)=>props.b ? 'hello\\\"world' : 'test')(rest)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${((props)=>props.b ? 'hello\\\"world\\\"more' : 'test')(rest)}px`", None)])]
     // wrong cases
     #[case(
         "`@media (min-width: 768px) {
