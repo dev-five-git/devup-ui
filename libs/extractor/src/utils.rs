@@ -26,14 +26,14 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
                 .alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
         ),
     );
-    let code = Codegen::new()
+    
+    Codegen::new()
         .with_options(CodegenOptions {
             minify: true,
             ..Default::default()
         })
         .build(&parsed.program)
-        .code;
-    code
+        .code
 }
 
 pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {

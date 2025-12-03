@@ -32,62 +32,10 @@ impl From<CssToStyleResult> for ExtractStyleValue {
     }
 }
 
-pub fn rm_last_semi_colon<'a>(code: &'a str) -> &'a str {
+pub fn rm_last_semi_colon(code: &str) -> &str {
     code.trim_end_matches(';')
 }
 
-/// Normalize whitespace while preserving string literals
-fn normalize_whitespace_preserving_strings(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut string_placeholders = Vec::new();
-    let mut placeholder_counter = 0;
-
-    while let Some(ch) = chars.next() {
-        if ch == '"' || ch == '\'' || ch == '`' {
-            // Found start of string literal
-            let quote = ch;
-            let mut string_content = String::from(quote);
-            let mut escaped = false;
-
-            while let Some(&next_ch) = chars.peek() {
-                chars.next();
-                string_content.push(next_ch);
-
-                if escaped {
-                    escaped = false;
-                } else if next_ch == '\\' {
-                    escaped = true;
-                } else if next_ch == quote {
-                    // End of string literal
-                    break;
-                }
-            }
-
-            // Replace string literal with placeholder
-            let placeholder = format!("__STRING_{}__", placeholder_counter);
-            placeholder_counter += 1;
-            string_placeholders.push((placeholder.clone(), string_content));
-            result.push_str(&placeholder);
-        } else {
-            result.push(ch);
-        }
-    }
-
-    // Normalize whitespace (newlines, tabs, multiple spaces)
-    result = result.replace(['\n', '\t'], " ");
-    while result.contains("  ") {
-        result = result.replace("  ", " ");
-    }
-    result = result.trim().to_string();
-
-    // Restore string literals
-    for (placeholder, original_string) in string_placeholders.iter().rev() {
-        result = result.replace(placeholder, original_string);
-    }
-
-    result
-}
 pub fn css_to_style_literal<'a>(
     css: &TemplateLiteral<'a>,
     level: u8,
@@ -214,7 +162,7 @@ pub fn css_to_style_literal<'a>(
                     styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
                         style.property(),
                         style.level(),
-                        &identifier,
+                        identifier,
                         style.selector().cloned(),
                     )));
                 } else {
