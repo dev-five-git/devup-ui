@@ -145,7 +145,8 @@ pub fn css_to_style_literal<'a>(
             let mut all_literals = true;
             let mut literal_values = Vec::new();
 
-            for (_, idx) in &found_placeholders {
+            let mut iter = found_placeholders.iter();
+            while all_literals && let Some((_, idx)) = iter.next() {
                 if *idx < css.expressions.len()
                     && let Some(literal_value) =
                         get_string_by_literal_expression(&css.expressions[*idx])
@@ -153,7 +154,6 @@ pub fn css_to_style_literal<'a>(
                     literal_values.push((*idx, literal_value));
                 } else {
                     all_literals = false;
-                    break;
                 }
             }
 
@@ -246,7 +246,6 @@ pub fn css_to_style_literal<'a>(
                                     in_ternary_string = true;
                                     result.push('\'');
                                     chars.next(); // consume the "
-                                    continue;
                                 }
                             } else if in_ternary_string && ch == '"' {
                                 // Check if this is a closing quote by looking ahead
@@ -264,10 +263,10 @@ pub fn css_to_style_literal<'a>(
                                 {
                                     result.push('\'');
                                     in_ternary_string = false;
-                                    continue;
+                                } else {
+                                    // Not a closing quote, keep as is
+                                    result.push(ch);
                                 }
-                                // Not a closing quote, keep as is
-                                result.push(ch);
                             } else {
                                 result.push(ch);
                             }
