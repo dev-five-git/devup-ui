@@ -1,12 +1,242 @@
 use std::collections::BTreeMap;
 
+use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
 use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
     rm_css_comment::rm_css_comment,
     style_selector::StyleSelector,
 };
+use oxc_allocator::Allocator;
+use oxc_span::SPAN;
 
-use crate::extract_style::extract_static_style::ExtractStaticStyle;
+use crate::utils::expression_to_code;
+use oxc_ast::ast::TemplateLiteral;
+
+use crate::extract_style::{
+    extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+    extract_style_value::ExtractStyleValue,
+};
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+pub enum CssToStyleResult {
+    Static(ExtractStaticStyle),
+    Dynamic(ExtractDynamicStyle),
+}
+
+impl From<CssToStyleResult> for ExtractStyleValue {
+    fn from(value: CssToStyleResult) -> Self {
+        match value {
+            CssToStyleResult::Static(style) => ExtractStyleValue::Static(style),
+            CssToStyleResult::Dynamic(style) => ExtractStyleValue::Dynamic(style),
+        }
+    }
+}
+
+pub fn rm_last_semi_colon(code: &str) -> &str {
+    code.trim_end_matches(';')
+}
+
+pub fn css_to_style_literal<'a>(
+    css: &TemplateLiteral<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> Vec<CssToStyleResult> {
+    let mut styles = vec![];
+
+    // If there are no expressions, just process quasis as static CSS
+    if css.expressions.is_empty() {
+        for quasi in css.quasis.iter() {
+            styles.extend(
+                css_to_style(&quasi.value.raw, level, selector)
+                    .into_iter()
+                    .map(CssToStyleResult::Static),
+            );
+        }
+        return styles;
+    }
+
+    // Process template literal with expressions
+    // Template literal format: `text ${expr1} text ${expr2} text`
+    // We need to parse CSS and identify where expressions are used
+
+    // Build a combined CSS string with unique placeholders for expressions
+    // Use a format that won't conflict with actual CSS values
+    let mut css_parts = Vec::new();
+    let mut expression_map = std::collections::HashMap::new();
+
+    for (i, quasi) in css.quasis.iter().enumerate() {
+        css_parts.push(quasi.value.raw.to_string());
+
+        // Add expression placeholder if not the last quasi
+        if i < css.expressions.len() {
+            // Use a unique placeholder format that CSS parser won't modify
+            let placeholder = format!("__EXPR_{}__", i);
+            expression_map.insert(placeholder.clone(), i);
+            css_parts.push(placeholder);
+        }
+    }
+
+    let combined_css = css_parts.join("");
+
+    // Parse CSS to extract static styles
+    let static_styles = css_to_style(&combined_css, level, selector);
+
+    // Process each static style and check if it contains expression placeholders
+    for style in static_styles {
+        let value = style.value();
+
+        // Find all placeholders in this value
+        let mut found_placeholders = Vec::new();
+        for (placeholder, &idx) in expression_map.iter() {
+            if value.contains(placeholder) {
+                found_placeholders.push((placeholder.clone(), idx));
+            }
+        }
+
+        if !found_placeholders.is_empty() {
+            // Check if all expressions are literals that can be statically evaluated
+
+            let mut all_literals = true;
+            let mut literal_values = Vec::new();
+
+            let mut iter = found_placeholders.iter();
+            while all_literals && let Some((_, idx)) = iter.next() {
+                if *idx < css.expressions.len()
+                    && let Some(literal_value) =
+                        get_string_by_literal_expression(&css.expressions[*idx])
+                {
+                    literal_values.push((*idx, literal_value));
+                } else {
+                    all_literals = false;
+                }
+            }
+
+            if all_literals {
+                // All expressions are literals - replace placeholders with literal values to create static style
+                let mut static_value = value.to_string();
+                for (placeholder, idx) in &found_placeholders {
+                    if let Some((_, literal_value)) = literal_values.iter().find(|(i, _)| i == idx)
+                    {
+                        static_value =
+                            static_value.replace(placeholder.as_str(), literal_value.as_str());
+                    }
+                }
+                // Create a new static style with the evaluated value
+                styles.push(CssToStyleResult::Static(ExtractStaticStyle::new(
+                    style.property(),
+                    &static_value,
+                    style.level(),
+                    style.selector().cloned(),
+                )));
+            } else {
+                // Not all expressions are literals - need to create dynamic style
+                // Check if value is just a placeholder (no surrounding text)
+                if found_placeholders.len() == 1
+                    && let (placeholder, idx) = &found_placeholders[0]
+                    && value.trim() == placeholder.as_str()
+                    && *idx < css.expressions.len()
+                {
+                    // Value is just the expression - use expression code directly
+                    let expr = &css.expressions[*idx];
+
+                    // Check if expression is a function (arrow function or function expression)
+                    let is_function = matches!(
+                        expr,
+                        oxc_ast::ast::Expression::ArrowFunctionExpression(_)
+                            | oxc_ast::ast::Expression::FunctionExpression(_)
+                    );
+
+                    let allocator = Allocator::default();
+                    let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                    let identifier = if is_function {
+                        expression_to_code(&wrap_direct_call(
+                            &ast_builder,
+                            expr,
+                            &[ast_builder.expression_identifier(SPAN, ast_builder.atom("rest"))],
+                        ))
+                    } else {
+                        expression_to_code(expr)
+                    };
+                    let identifier = rm_last_semi_colon(&identifier);
+
+                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
+                        style.property(),
+                        style.level(),
+                        identifier,
+                        style.selector().cloned(),
+                    )));
+                } else {
+                    // Value has surrounding text - need to create template literal
+                    // Reconstruct the template literal by replacing placeholders with ${expr} syntax
+                    // The value contains placeholders like "__EXPR_0__px", we need to convert to `${expr}px`
+
+                    let mut template_literal = value.to_string();
+
+                    // Sort placeholders by their position in reverse order to avoid index shifting
+                    found_placeholders.sort_by(|(a_placeholder, _), (b_placeholder, _)| {
+                        template_literal
+                            .rfind(a_placeholder)
+                            .cmp(&template_literal.rfind(b_placeholder))
+                    });
+
+                    // Replace each placeholder with the actual expression in template literal format
+                    for (placeholder, idx) in &found_placeholders {
+                        if *idx < css.expressions.len() {
+                            let expr = &css.expressions[*idx];
+
+                            // Check if expression is a function (arrow function or function expression)
+                            let is_function = matches!(
+                                expr,
+                                oxc_ast::ast::Expression::ArrowFunctionExpression(_)
+                                    | oxc_ast::ast::Expression::FunctionExpression(_)
+                            );
+
+                            let allocator = Allocator::default();
+                            let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                            let expr_code = if is_function {
+                                expression_to_code(&wrap_direct_call(
+                                    &ast_builder,
+                                    expr,
+                                    &[ast_builder
+                                        .expression_identifier(SPAN, ast_builder.atom("rest"))],
+                                ))
+                            } else {
+                                expression_to_code(expr)
+                            };
+
+                            let expr_code = rm_last_semi_colon(&expr_code);
+                            // Replace placeholder with ${expr} syntax
+                            template_literal = template_literal
+                                .replace(placeholder.as_str(), &format!("${{{}}}", expr_code));
+                        }
+                    }
+
+                    // Wrap in template literal backticks
+                    let final_identifier = format!("`{}`", template_literal);
+
+                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
+                        style.property(),
+                        style.level(),
+                        &final_identifier,
+                        style.selector().cloned(),
+                    )));
+                }
+            }
+        } else {
+            // Check if property name contains a dynamic expression placeholder
+            let property = style.property();
+
+            if !expression_map.keys().any(|p| property.contains(p)) {
+                // Static style
+                styles.push(CssToStyleResult::Static(style));
+            }
+
+            // Property name is dynamic - skip for now as it's more complex
+        }
+    }
+
+    styles
+}
 
 pub fn css_to_style(
     css: &str,
@@ -22,9 +252,10 @@ pub fn css_to_style(
             .flat_map(|s| {
                 let s = s.trim();
                 if s.is_empty() {
-                    return None;
+                    None
+                } else {
+                    Some(format!("@media{s}"))
                 }
-                Some(format!("@media{s}"))
             })
             .collect::<Vec<_>>();
         if media_inputs.len() > 1 {
@@ -37,16 +268,62 @@ pub fn css_to_style(
 
     if input.contains('{') {
         while let Some(start) = input.find('{') {
+            // Check if there are properties before the selector
+            let before_brace = &input[..start].trim();
+
+            // Split by semicolon to find the last part which should be the selector
+            let parts: Vec<&str> = before_brace.split(';').map(|s| s.trim()).collect();
+
+            // Find the selector part (the last part that doesn't contain ':')
+            // or if all parts contain ':', then the last part is the selector
+            let (plain_props, selector_part) = if parts.len() > 1 {
+                // Check if any part doesn't contain ':' (which would be a selector)
+                let mut selector_idx = parts.len();
+                for (i, part) in parts.iter().enumerate().rev() {
+                    if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
+                        selector_idx = i;
+                        break;
+                    }
+                }
+
+                // Math.min
+                let (props, sel) = parts.split_at(parts.len().min(selector_idx));
+                (props.join(";"), sel.join(";"))
+            } else {
+                ("".to_string(), before_brace.to_string())
+            };
+
+            // Process plain properties if any
+            if !plain_props.is_empty() {
+                styles.extend(css_to_style_block(&plain_props, level, selector));
+            }
+
             let rest = &input[start + 1..];
 
-            let end = if selector.is_none() {
-                rest.rfind('}').unwrap()
-            } else {
-                rest.find('}').unwrap()
-            };
+            // Find the matching closing brace by counting braces
+            let mut brace_count = 1;
+            let mut end = 0;
+            for (i, ch) in rest.char_indices() {
+                match ch {
+                    '{' => brace_count += 1,
+                    '}' => {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            end = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // If we didn't find a matching brace, use the first '}' as fallback
+            if brace_count > 0 {
+                end = rest.find('}').unwrap_or(rest.len());
+            }
             let block = &rest[..end];
             let sel = &if let Some(StyleSelector::Media { query, .. }) = selector {
-                let local_sel = input[..start].trim().to_string();
+                let local_sel = selector_part.trim().to_string();
                 Some(StyleSelector::Media {
                     query: query.clone(),
                     selector: if local_sel == "&" {
@@ -56,13 +333,15 @@ pub fn css_to_style(
                     },
                 })
             } else {
-                let sel = input[..start].trim().to_string();
+                let sel = selector_part.trim().to_string();
                 if sel.starts_with("@media") {
                     Some(StyleSelector::Media {
                         query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
                             .to_string(),
                         selector: None,
                     })
+                } else if sel.is_empty() {
+                    selector.clone()
                 } else {
                     Some(StyleSelector::Selector(sel))
                 }
@@ -72,10 +351,34 @@ pub fn css_to_style(
             } else {
                 css_to_style_block(block, level, sel)
             };
-            let input_end = input.rfind('}').unwrap() + 1;
 
-            input = &input[start + end + 2..input_end];
+            // Find the matching closing brace
+            let closing_brace_pos = start + 1 + end;
+
+            // Process the block
             styles.extend(block);
+
+            // Update input to continue processing after the closing brace
+            // Check if there's more content after the closing brace
+            if closing_brace_pos + 1 < input.len() {
+                let remaining = &input[closing_brace_pos + 1..].trim();
+                if !remaining.is_empty() {
+                    // If there's remaining text after the closing brace, process it
+                    // This handles cases like "} color: blue;"
+                    if remaining.contains('{') {
+                        // If it contains '{', continue the loop
+                        input = remaining;
+                    } else {
+                        // If it doesn't contain '{', process it as a block and break
+                        styles.extend(css_to_style_block(remaining, level, selector));
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
     } else {
         styles.extend(css_to_style_block(input, level, selector));
@@ -182,7 +485,361 @@ pub fn optimize_css_block(css: &str) -> String {
 mod tests {
     use super::*;
 
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::{Expression, Statement};
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("`background-color: red;`", vec![("background-color", "red", None)])]
+    #[case("`background-color: ${color};`", vec![("background-color", "color", None)])]
+    #[case("`background-color: ${color}`", vec![("background-color", "color", None)])]
+    #[case("`background-color: ${color};color: blue;`", vec![("background-color", "color", None), ("color", "blue", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"}`", vec![("background-color", "(()=>`arrow dynamic`)(rest)", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"};color: blue;`", vec![("background-color", "(()=>`arrow dynamic`)(rest)", None), ("color", "blue", None)])]
+    #[case("`color: blue;background-color: ${()=>\"arrow dynamic\"};`", vec![("color", "blue", None),("background-color", "(()=>`arrow dynamic`)(rest)", None)])]
+    #[case("`background-color: ${function(){ return \"arrow dynamic\"}}`", vec![("background-color", "(function(){return`arrow dynamic`})(rest)", None)])]
+    #[case("`background-color: ${function     ()      {          return \"arrow dynamic\"}              }`", vec![("background-color",  "(function(){return`arrow dynamic`})(rest)", None)])]
+    #[case("`background-color: ${object.color}`", vec![("background-color", "object.color", None)])]
+    #[case("`background-color: ${object['color']}`", vec![("background-color", "object[`color`]", None)])]
+    #[case("`background-color: ${func()}`", vec![("background-color", "func()", None)])]
+    #[case("`background-color: ${(props)=>props.b ? 'a' : 'b'}`", vec![("background-color", "(props=>props.b?`a`:`b`)(rest)", None)])]
+    #[case("`background-color: ${(props)=>props.b ? null : undefined}`", vec![("background-color", "(props=>props.b?null:undefined)(rest)", None)])]
+    #[case(
+        "`color: red; background: blue;`",
+        vec![
+            ("color", "red", None),
+            ("background", "blue", None),
+        ]
+    )]
+    #[case(
+        "`margin:0;padding:0;`",
+        vec![
+            ("margin", "0", None),
+            ("padding", "0", None),
+        ]
+    )]
+    #[case(
+        "`font-size: 16px;`",
+        vec![
+            ("font-size", "16px", None),
+        ]
+    )]
+    #[case(
+        "`border: 1px solid #000; color: #fff;`",
+        vec![
+            ("border", "1px solid #000", None),
+            ("color", "#FFF", None),
+        ]
+    )]
+    #[case(
+        "``",
+        vec![]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            border: 1px solid #000;
+            color: #fff;
+        }`",
+        vec![
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) and (max-width: 1024px) {
+            border: 1px solid #000;
+            color: #fff;
+        }
+
+        @media (min-width: 768px) {
+            border: 1px solid #000;
+            color: #fff;
+        }`",
+        vec![
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)and (max-width:1024px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover,   &:active, &:nth-child(2) {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+            &:hover {
+                border: 1px solid #000;
+                color: #000;
+            }
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+                border: 1px solid #fff;
+                color: #fff;
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+            border: 1px solid #000;
+            color: #000;
+        }`",
+        vec![
+            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#FFF", Some(StyleSelector::Media {
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+            ("border", "1px solid #000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+            ("color", "#000", Some(StyleSelector::Media {
+                query: "(max-width:768px)and (min-width:480px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+            }
+        }
+        @media (max-width: 768px) and (min-width: 480px) {
+        }`",
+        vec![]
+    )]
+    #[case(
+        "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
+        vec![
+            ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
+    #[case(
+        "`&:hover { background-color: red; }`",
+        vec![
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; }`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue;`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue; &:active { background-color: blue; }`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+            ("background-color", "blue", Some(StyleSelector::Selector("&:active".to_string()))),
+        ]
+    )]
+    #[case(
+        "`background-color: red; &:hover { background-color: red; } color: blue; &:active { background-color: blue; } transform: rotate(90deg);`",
+        vec![
+            ("background-color", "red", None),
+            ("background-color", "red", Some(StyleSelector::Selector("&:hover".to_string()))),
+            ("color", "blue", None),
+            ("background-color", "blue", Some(StyleSelector::Selector("&:active".to_string()))),
+            ("transform", "rotate(90deg)", None),
+        ]
+    )]
+    #[case("`width: ${1}px;`", vec![("width", "1px", None)])]
+    #[case("`width: ${\"1\"}px;`", vec![("width", "1px", None)])]
+    #[case("`width: ${'1'}px;`", vec![("width", "1px", None)])]
+    #[case("`width: ${`1`}px;`", vec![("width", "1px", None)])]
+    #[case("`width: ${\"1px\"};`", vec![("width", "1px", None)])]
+    #[case("`width: ${'1px'};`", vec![("width", "1px", None)])]
+    #[case("`width: ${`1px`};`", vec![("width", "1px", None)])]
+    #[case("`width: ${1 + 1}px;`", vec![("width", "`${1+1}px`", None)])]
+    #[case("`width: ${func(1)}px;`", vec![("width", "`${func(1)}px`", None)])]
+    #[case("`width: ${func(1)}${2}px;`", vec![("width", "`${func(1)}${2}px`", None)])]
+    #[case("`width: ${1}${2}px;`", vec![("width", "12px", None)])]
+    #[case("`width: ${func(\n\t  1  ,   \n\t2\n)}px;`", vec![("width", "`${func(1,2)}px`", None)])]
+    #[case("`width: ${func(\"  wow  \")}px;`", vec![("width", "`${func(`  wow  `)}px`", None)])]
+    #[case("`width: ${func(\"hello\\nworld\")}px;`", vec![("width", "`${func(`hello\nworld`)}px`", None)])]
+    #[case("`width: ${func('test\\'quote')}px;`", vec![("width", "`${func(`test'quote`)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world`:`test`)(rest)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world\"more`:`test`)(rest)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\" + \"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello`+`world`:`test`)(rest)}px`", None)])]
+    // wrong cases
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+        `",
+        vec![]
+    )]
+    fn test_css_to_style_literal(
+        #[case] input: &str,
+        #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
+    ) {
+        // parse template literal code
+        let allocator = Allocator::default();
+        let css = Parser::new(&allocator, input, SourceType::ts()).parse();
+        if let Statement::ExpressionStatement(expr) = &css.program.body[0]
+            && let Expression::TemplateLiteral(tmp) = &expr.expression
+        {
+            let styles = css_to_style_literal(tmp, 0, &None);
+            let mut result: Vec<(&str, &str, Option<StyleSelector>)> = styles
+                .iter()
+                .map(|prop| match prop {
+                    CssToStyleResult::Static(style) => {
+                        (style.property(), style.value(), style.selector().cloned())
+                    }
+                    CssToStyleResult::Dynamic(dynamic) => (
+                        dynamic.property(),
+                        dynamic.identifier(),
+                        dynamic.selector().cloned(),
+                    ),
+                })
+                .collect();
+            result.sort();
+            let mut expected_sorted = expected.clone();
+            expected_sorted.sort();
+            assert_eq!(result, expected_sorted);
+        } else {
+            panic!("not a template literal");
+        }
+    }
 
     #[rstest]
     #[case(
@@ -480,6 +1137,13 @@ mod tests {
         "ul { font-family: 'Roboto Hello',       sans-serif; }",
         vec![
             ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
+    #[case(
+        "div { color: red; ; { background: blue; } }",
+        vec![
+            ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
+            ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
         ]
     )]
     fn test_css_to_style(

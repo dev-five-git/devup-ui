@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/utils.rs
+expression: code
+---
+a;

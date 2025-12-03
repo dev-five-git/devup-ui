@@ -7,6 +7,7 @@ pub(super) mod extract_keyframes_from_expression;
 pub(super) mod extract_style_from_expression;
 pub(super) mod extract_style_from_jsx;
 pub(super) mod extract_style_from_member_expression;
+pub(super) mod extract_style_from_styled;
 
 /**
  * type

@@ -1,7 +1,13 @@
 'use client'
 
-import { Box, css, Text } from '@devup-ui/react'
+import { Box, css, styled, Text } from '@devup-ui/react'
 import { useState } from 'react'
+const color = 'yellow'
+
+const StyledFooter = styled.footer<{ type: '1' | '2' }>`
+  background-color: ${color};
+  color: ${(props) => (props.type === '1' ? 'red' : 'white')};
+`
 
 export default function HomePage() {
   const [color, setColor] = useState('yellow')
@@ -9,6 +15,7 @@ export default function HomePage() {
 
   return (
     <div>
+      <StyledFooter type="2">IMPLEMENTATION~</StyledFooter>
       <p
         style={{
           backgroundColor: 'blue',
