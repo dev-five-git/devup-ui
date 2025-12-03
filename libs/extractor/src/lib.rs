@@ -8169,5 +8169,39 @@ keyframes({
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledDiv = styled("div")({ bg: "red" }, {})
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledDiv = styled("div")({ bg: "red" }, {})``
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
     }
 }

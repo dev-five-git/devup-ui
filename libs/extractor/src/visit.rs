@@ -173,7 +173,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.styles
                     .extend(result.styles.into_iter().flat_map(|ex| ex.extract()));
                 *it = new_expr;
-                return;
             }
         }
 
