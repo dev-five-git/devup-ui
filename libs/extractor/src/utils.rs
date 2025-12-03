@@ -26,7 +26,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
                 .alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
         ),
     );
-    
+
     Codegen::new()
         .with_options(CodegenOptions {
             minify: true,
