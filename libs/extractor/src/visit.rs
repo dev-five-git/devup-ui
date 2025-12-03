@@ -135,49 +135,38 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         // Handle styled function calls
         if let Some(styled_name) = &self.styled_import {
-            let is_styled = match it {
-                Expression::TaggedTemplateExpression(tag) => match &tag.tag {
-                    Expression::StaticMemberExpression(member) => {
-                        if let Expression::Identifier(ident) = &member.object {
-                            ident.name.as_str() == styled_name.as_str()
-                        } else {
-                            false
-                        }
+            let tag_or_call = if let Expression::TaggedTemplateExpression(tag) = it {
+                Some(&tag.tag)
+            } else if let Expression::CallExpression(call) = it {
+                Some(&call.callee)
+            } else {
+                None
+            };
+
+            let is_styled = if let Some(tag_or_call) = tag_or_call {
+                if let Expression::StaticMemberExpression(member) = tag_or_call {
+                    if let Expression::Identifier(ident) = &member.object {
+                        ident.name.as_str() == styled_name.as_str()
+                    } else {
+                        false
                     }
-                    Expression::CallExpression(call) => {
-                        if let Expression::Identifier(ident) = &call.callee {
-                            ident.name.as_str() == styled_name.as_str()
-                        } else {
-                            false
-                        }
+                } else if let Expression::CallExpression(call) = tag_or_call {
+                    if let Expression::Identifier(ident) = &call.callee {
+                        ident.name.as_str() == styled_name.as_str()
+                    } else {
+                        false
                     }
-                    _ => false,
-                },
-                Expression::CallExpression(call) => match &call.callee {
-                    Expression::StaticMemberExpression(member) => {
-                        if let Expression::Identifier(ident) = &member.object {
-                            ident.name.as_str() == styled_name.as_str()
-                        } else {
-                            false
-                        }
-                    }
-                    Expression::CallExpression(inner_call) => {
-                        if let Expression::Identifier(ident) = &inner_call.callee {
-                            ident.name.as_str() == styled_name.as_str()
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                },
-                _ => false,
+                } else {
+                    false
+                }
+            } else {
+                false
             };
 
             if is_styled {
                 let (result, new_expr) = extract_style_from_styled(
                     &self.ast,
                     it,
-                    styled_name,
                     self.split_filename.as_deref(),
                     &self.imports,
                 );

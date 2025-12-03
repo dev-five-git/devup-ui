@@ -8020,7 +8020,7 @@ keyframes({
     #[test]
     #[serial]
     fn test_styled_with_variable_like_emotion_props() {
-        // Test 3: styled.div`css with ${props => props.bg}` - props를 사용하는 함수형 변수
+        // Test 3: styled.div`css with ${props => props.bg}`
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8041,7 +8041,7 @@ keyframes({
             .unwrap()
         ));
 
-        // Test 4: styled(Component)`css with ${variable}` - 컴포넌트에 외부 변수 사용
+        // Test 4: styled(Component)`css with ${variable}`
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8063,7 +8063,7 @@ keyframes({
             .unwrap()
         ));
 
-        // Test 5: styled.div`css with multiple ${variables}` - 여러 변수 조합
+        // Test 5: styled.div`css with multiple ${variables}`
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8087,7 +8087,7 @@ keyframes({
             .unwrap()
         ));
 
-        // Test 6: styled.div`css with ${expression}` - 표현식 사용
+        // Test 6: styled.div`css with ${expression}`
         reset_class_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8098,6 +8098,67 @@ keyframes({
           color: ${isActive ? 'red' : 'blue'};
           opacity: ${isActive ? 1 : 0.5};
         `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_wrong_styled_with_variable_like_emotion_props() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledDiv = styled(null)`
+          background: ${props => props.bg};
+          color: red;
+        `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledDiv = styled("div", "span")`
+          background: ${props => props.bg};
+          color: red;
+        `
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+        const StyledDiv = styled("div", "span").filter(Boolean)
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

@@ -19,41 +19,28 @@ use oxc_span::SPAN;
 
 fn extract_base_tag_and_class_name<'a>(
     input: &Expression<'a>,
-    styled_name: &str,
     imports: &HashMap<String, ExportVariableKind>,
 ) -> (Option<String>, Option<Vec<ExtractStyleValue>>) {
     match input {
         Expression::StaticMemberExpression(member) => {
-            if let Expression::Identifier(ident) = &member.object {
-                if ident.name.as_str() == styled_name {
-                    (Some(member.property.name.to_string()), None)
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            }
+            (Some(member.property.name.to_string()), None)
         }
         Expression::CallExpression(call) => {
-            if let Expression::Identifier(ident) = &call.callee {
-                if ident.name.as_str() == styled_name && call.arguments.len() == 1 {
-                    // styled("div") or styled(Component)
-                    if let Argument::StringLiteral(lit) = &call.arguments[0] {
-                        (Some(lit.value.to_string()), None)
-                    } else if let Argument::Identifier(ident) = &call.arguments[0] {
-                        if let Some(export_variable_kind) = imports.get(ident.name.as_str()) {
-                            (
-                                Some(export_variable_kind.to_tag().to_string()),
-                                Some(export_variable_kind.extract()),
-                            )
-                        } else {
-                            (Some(ident.name.to_string()), None)
-                        }
+            if call.arguments.len() == 1 {
+                // styled("div") or styled(Component)
+                if let Argument::StringLiteral(lit) = &call.arguments[0] {
+                    (Some(lit.value.to_string()), None)
+                } else if let Argument::Identifier(ident) = &call.arguments[0] {
+                    if let Some(export_variable_kind) = imports.get(ident.name.as_str()) {
+                        (
+                            Some(export_variable_kind.to_tag().to_string()),
+                            Some(export_variable_kind.extract()),
+                        )
                     } else {
-                        // Component reference - we'll handle this later
-                        (None, None)
+                        (Some(ident.name.to_string()), None)
                     }
                 } else {
+                    // Component reference - we'll handle this later
                     (None, None)
                 }
             } else {
@@ -74,7 +61,6 @@ fn extract_base_tag_and_class_name<'a>(
 pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-    styled_name: &str,
     split_filename: Option<&str>,
     imports: &HashMap<String, ExportVariableKind>,
 ) -> (ExtractResult<'a>, Expression<'a>) {
@@ -82,8 +68,7 @@ pub fn extract_style_from_styled<'a>(
         // Case 1: styled.div`css` or styled("div")`css`
         Expression::TaggedTemplateExpression(tag) => {
             // Check if tag is styled.div or styled(...)
-            let (tag_name, default_class_name) =
-                extract_base_tag_and_class_name(&tag.tag, styled_name, imports);
+            let (tag_name, default_class_name) = extract_base_tag_and_class_name(&tag.tag, imports);
 
             if let Some(tag_name) = tag_name {
                 // Extract CSS from template literal
@@ -101,13 +86,13 @@ pub fn extract_style_from_styled<'a>(
 
                 let class_name =
                     gen_class_names(ast_builder, &mut props_styles, None, split_filename);
-
-                let new_expr = create_styled_component(
+                let styled_component = create_styled_component(
                     ast_builder,
                     &tag_name,
                     &class_name,
                     &gen_styles(ast_builder, &props_styles, None),
                 );
+
                 let result = ExtractResult {
                     styles: props_styles,
                     tag: Some(ast_builder.expression_string_literal(
@@ -120,7 +105,7 @@ pub fn extract_style_from_styled<'a>(
                     props: None,
                 };
 
-                (Some(result), Some(new_expr))
+                (Some(result), Some(styled_component))
             } else {
                 (None, None)
             }
@@ -129,7 +114,7 @@ pub fn extract_style_from_styled<'a>(
         Expression::CallExpression(call) => {
             // Check if this is a call to styled.div or styled("div")
             let (tag_name, default_class_name) =
-                extract_base_tag_and_class_name(&call.callee, styled_name, imports);
+                extract_base_tag_and_class_name(&call.callee, imports);
 
             if let Some(tag_name) = tag_name
                 && call.arguments.len() == 1
@@ -196,14 +181,15 @@ fn create_styled_component<'a>(
         SPAN,
         FormalParameterKind::ArrowFormalParameters,
         oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.formal_parameter(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                ast_builder.binding_pattern(
-                    ast_builder.binding_pattern_kind_object_pattern(
-                        SPAN,
-                        oxc_allocator::Vec::from_iter_in(
-                            vec![
+            vec![
+                ast_builder.formal_parameter(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                    ast_builder.binding_pattern(
+                        ast_builder.binding_pattern_kind_object_pattern(
+                            SPAN,
+                            oxc_allocator::Vec::from_iter_in(
+                                vec![
                                     ast_builder.binding_property(
                                         SPAN,
                                         ast_builder.property_key_static_identifier(SPAN, "style"),
@@ -241,27 +227,28 @@ fn create_styled_component<'a>(
                                         false,
                                     ),
                                 ],
-                            ast_builder.allocator,
-                        ),
-                        Some(ast_builder.binding_rest_element(
-                            SPAN,
-                            ast_builder.binding_pattern(
-                                ast_builder.binding_pattern_kind_binding_identifier(
-                                    SPAN,
-                                    ast_builder.atom("rest"),
-                                ),
-                                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-                                false,
+                                ast_builder.allocator,
                             ),
-                        )),
+                            Some(ast_builder.binding_rest_element(
+                                SPAN,
+                                ast_builder.binding_pattern(
+                                    ast_builder.binding_pattern_kind_binding_identifier(
+                                        SPAN,
+                                        ast_builder.atom("rest"),
+                                    ),
+                                    None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                                    false,
+                                ),
+                            )),
+                        ),
+                        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                        false,
                     ),
-                    None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                    None,
+                    false,
                     false,
                 ),
-                None,
-                false,
-                false,
-            )],
+            ],
             ast_builder.allocator,
         ),
         None::<oxc_allocator::Box<oxc_ast::ast::BindingRestElement<'a>>>,
@@ -270,16 +257,20 @@ fn create_styled_component<'a>(
         SPAN,
         oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
         oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.statement_expression(
-                SPAN,
-                ast_builder.expression_jsx_element(
+            vec![
+                ast_builder.statement_expression(
                     SPAN,
-                    ast_builder.alloc_jsx_opening_element(
+                    ast_builder.expression_jsx_element(
                         SPAN,
-                        ast_builder.jsx_element_name_identifier(SPAN, ast_builder.atom(tag_name)),
-                        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
-                        oxc_allocator::Vec::from_iter_in(
-                            vec![
+                        ast_builder.alloc_jsx_opening_element(
+                            SPAN,
+                            ast_builder
+                                .jsx_element_name_identifier(SPAN, ast_builder.atom(tag_name)),
+                            None::<
+                                oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>,
+                            >,
+                            oxc_allocator::Vec::from_iter_in(
+                                vec![
                                     ast_builder.jsx_attribute_item_spread_attribute(
                                         SPAN,
                                         ast_builder
@@ -358,13 +349,14 @@ fn create_styled_component<'a>(
                                         ),
                                     ),
                                 ],
-                            ast_builder.allocator,
+                                ast_builder.allocator,
+                            ),
                         ),
+                        oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                        None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
                     ),
-                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                    None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
                 ),
-            )],
+            ],
             ast_builder.allocator,
         ),
     );
