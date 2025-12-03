@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "background",
                 level: 0,
-                identifier: "((props)=>props.bg)(rest)",
+                identifier: "(props=>props.bg)(rest)",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": ((props)=>props.bg)(rest) },\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--a\": (props=>props.bg)(rest) },\n\t...style\n}} />;\n",
 }

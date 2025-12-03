@@ -2,4 +2,4 @@
 source: libs/extractor/src/utils.rs
 expression: code
 ---
-[className, "class-name"].filter(Boolean).join(" ")
+[className,`class-name`].filter(Boolean).join(` `);

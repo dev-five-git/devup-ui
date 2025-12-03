@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 
-use crate::utils::get_string_by_literal_expression;
+use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
 use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
     rm_css_comment::rm_css_comment,
     style_selector::StyleSelector,
 };
+use oxc_allocator::Allocator;
+use oxc_span::SPAN;
 
 use crate::utils::expression_to_code;
 use oxc_ast::ast::TemplateLiteral;
@@ -28,6 +30,10 @@ impl From<CssToStyleResult> for ExtractStyleValue {
             CssToStyleResult::Dynamic(style) => ExtractStyleValue::Dynamic(style),
         }
     }
+}
+
+pub fn rm_last_semi_colon<'a>(code: &'a str) -> &'a str {
+    code.trim_end_matches(';')
 }
 
 /// Normalize whitespace while preserving string literals
@@ -192,88 +198,18 @@ pub fn css_to_style_literal<'a>(
                             | oxc_ast::ast::Expression::FunctionExpression(_)
                     );
 
-                    let mut identifier = expression_to_code(expr);
-
-                    // Normalize the code string
-                    // 1. Normalize whitespace while preserving string literals
-                    identifier = normalize_whitespace_preserving_strings(&identifier);
-                    // 2. Normalize arrow function whitespace
-                    identifier = identifier
-                        .replace(" => ", "=>")
-                        .replace(" =>", "=>")
-                        .replace("=> ", "=>");
-                    // 4. Normalize function expression formatting
-                    // 5. Normalize quotes
-                    if !is_function {
-                        // For non-function expressions, convert property access quotes
-                        // object["color"] -> object['color']
-                        identifier = identifier.replace("[\"", "['").replace("\"]", "']");
+                    let allocator = Allocator::default();
+                    let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                    let identifier = if is_function {
+                        expression_to_code(&wrap_direct_call(
+                            &ast_builder,
+                            expr,
+                            &[ast_builder.expression_identifier(SPAN, ast_builder.atom("rest"))],
+                        ))
                     } else {
-                        // Normalize function() { } to function(){ }
-                        identifier = identifier.replace("function() {", "function(){");
-                        identifier = identifier.replace("function (", "function(");
-                        // Remove trailing semicolon and spaces before closing brace
-                        identifier = identifier.replace("; }", "}");
-                        identifier = identifier.replace(" }", "}");
-
-                        // Wrap function in parentheses if not already wrapped
-                        // and add (rest) call
-                        let trimmed = identifier.trim();
-                        // Check if already wrapped in parentheses
-                        if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
-                            identifier = format!("({})", trimmed);
-                        }
-                        // Add (rest) call
-                        identifier = format!("{}(rest)", identifier);
-                        // For function expressions, convert string literals in ternary operators
-                        // This handles cases like: (props)=>props.b ? "a" : "b" -> (props)=>props.b ? 'a' : 'b'
-                        // Use simple pattern matching for ternary operator string literals
-                        // Pattern: ? "text" : "text" -> ? 'text' : 'text'
-                        // We'll replace " with ' but only in the context of ternary operators
-                        let mut result = String::new();
-                        let mut chars = identifier.chars().peekable();
-                        let mut in_ternary_string = false;
-
-                        while let Some(ch) = chars.next() {
-                            if ch == '?' || ch == ':' {
-                                result.push(ch);
-                                // Skip whitespace
-                                while let Some(&' ') = chars.peek() {
-                                    result.push(chars.next().unwrap());
-                                }
-                                // Check if next is a string literal
-                                if let Some(&'"') = chars.peek() {
-                                    in_ternary_string = true;
-                                    result.push('\'');
-                                    chars.next(); // consume the "
-                                }
-                            } else if in_ternary_string && ch == '"' {
-                                // Check if this is a closing quote by looking ahead
-                                let mut peeked = chars.clone();
-                                // Skip whitespace
-                                while let Some(&' ') = peeked.peek() {
-                                    peeked.next();
-                                }
-                                // If next is : or ? or ) or } or end, it's a closing quote
-                                if peeked.peek().is_none()
-                                    || matches!(
-                                        peeked.peek(),
-                                        Some(&':') | Some(&'?') | Some(&')') | Some(&'}')
-                                    )
-                                {
-                                    result.push('\'');
-                                    in_ternary_string = false;
-                                } else {
-                                    // Not a closing quote, keep as is
-                                    result.push(ch);
-                                }
-                            } else {
-                                result.push(ch);
-                            }
-                        }
-                        identifier = result;
-                    }
-                    identifier = identifier.trim().to_string();
+                        expression_to_code(expr)
+                    };
+                    let identifier = rm_last_semi_colon(&identifier);
 
                     styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
                         style.property(),
@@ -307,83 +243,23 @@ pub fn css_to_style_literal<'a>(
                                     | oxc_ast::ast::Expression::FunctionExpression(_)
                             );
 
-                            let expr_code = expression_to_code(expr);
-                            // Normalize the expression code while preserving string literals
-                            let mut normalized_code =
-                                normalize_whitespace_preserving_strings(&expr_code);
+                            let allocator = Allocator::default();
+                            let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                            let expr_code = if is_function {
+                                expression_to_code(&wrap_direct_call(
+                                    &ast_builder,
+                                    expr,
+                                    &[ast_builder
+                                        .expression_identifier(SPAN, ast_builder.atom("rest"))],
+                                ))
+                            } else {
+                                expression_to_code(expr)
+                            };
 
-                            if is_function {
-                                // Normalize arrow function whitespace
-                                normalized_code = normalized_code
-                                    .replace(" => ", "=>")
-                                    .replace(" =>", "=>")
-                                    .replace("=> ", "=>");
-                                // Normalize function() { } to function(){ }
-                                normalized_code =
-                                    normalized_code.replace("function() {", "function(){");
-                                normalized_code =
-                                    normalized_code.replace("function (", "function(");
-                                // Remove trailing semicolon and spaces before closing brace
-                                normalized_code = normalized_code.replace("; }", "}");
-                                normalized_code = normalized_code.replace(" }", "}");
-
-                                // Wrap function in parentheses if not already wrapped
-                                let trimmed = normalized_code.trim();
-                                if !(trimmed.starts_with('(') && trimmed.ends_with(')')) {
-                                    normalized_code = format!("({})", trimmed);
-                                }
-                                // Add (rest) call
-                                normalized_code = format!("{}(rest)", normalized_code);
-
-                                // For function expressions, convert string literals in ternary operators
-                                let mut result = String::new();
-                                let mut chars = normalized_code.chars().peekable();
-                                let mut in_ternary_string = false;
-
-                                while let Some(ch) = chars.next() {
-                                    if ch == '?' || ch == ':' {
-                                        result.push(ch);
-                                        // Skip whitespace
-                                        while let Some(&' ') = chars.peek() {
-                                            result.push(chars.next().unwrap());
-                                        }
-                                        // Check if next is a string literal
-                                        if let Some(&'"') = chars.peek() {
-                                            in_ternary_string = true;
-                                            result.push('\'');
-                                            chars.next(); // consume the "
-                                        }
-                                    } else if in_ternary_string && ch == '"' {
-                                        // Check if this is a closing quote by looking ahead
-                                        let mut peeked = chars.clone();
-                                        // Skip whitespace
-                                        while let Some(&' ') = peeked.peek() {
-                                            peeked.next();
-                                        }
-                                        // If next is : or ? or ) or } or end, it's a closing quote
-                                        if peeked.peek().is_none()
-                                            || matches!(
-                                                peeked.peek(),
-                                                Some(&':') | Some(&'?') | Some(&')') | Some(&'}')
-                                            )
-                                        {
-                                            result.push('\'');
-                                            in_ternary_string = false;
-                                        } else {
-                                            // Not a closing quote, keep as is
-                                            result.push(ch);
-                                        }
-                                    } else {
-                                        result.push(ch);
-                                    }
-                                }
-                                normalized_code = result;
-                            }
-
+                            let expr_code = rm_last_semi_colon(&expr_code);
                             // Replace placeholder with ${expr} syntax
-                            let expr_template = format!("${{{}}}", normalized_code);
-                            template_literal =
-                                template_literal.replace(placeholder.as_str(), &expr_template);
+                            template_literal = template_literal
+                                .replace(placeholder.as_str(), &format!("${{{}}}", expr_code));
                         }
                     }
 
@@ -672,16 +548,16 @@ mod tests {
     #[case("`background-color: ${color};`", vec![("background-color", "color", None)])]
     #[case("`background-color: ${color}`", vec![("background-color", "color", None)])]
     #[case("`background-color: ${color};color: blue;`", vec![("background-color", "color", None), ("color", "blue", None)])]
-    #[case("`background-color: ${()=>\"arrow dynamic\"}`", vec![("background-color", "(()=>\"arrow dynamic\")(rest)", None)])]
-    #[case("`background-color: ${()=>\"arrow dynamic\"};color: blue;`", vec![("background-color", "(()=>\"arrow dynamic\")(rest)", None), ("color", "blue", None)])]
-    #[case("`color: blue;background-color: ${()=>\"arrow dynamic\"};`", vec![("color", "blue", None),("background-color", "(()=>\"arrow dynamic\")(rest)", None)])]
-    #[case("`background-color: ${function(){ return \"arrow dynamic\"}}`", vec![("background-color", "(function(){ return \"arrow dynamic\"})(rest)", None)])]
-    #[case("`background-color: ${function     ()      {          return \"arrow dynamic\"}              }`", vec![("background-color", "(function(){ return \"arrow dynamic\"})(rest)", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"}`", vec![("background-color", "(()=>`arrow dynamic`)(rest)", None)])]
+    #[case("`background-color: ${()=>\"arrow dynamic\"};color: blue;`", vec![("background-color", "(()=>`arrow dynamic`)(rest)", None), ("color", "blue", None)])]
+    #[case("`color: blue;background-color: ${()=>\"arrow dynamic\"};`", vec![("color", "blue", None),("background-color", "(()=>`arrow dynamic`)(rest)", None)])]
+    #[case("`background-color: ${function(){ return \"arrow dynamic\"}}`", vec![("background-color", "(function(){return`arrow dynamic`})(rest)", None)])]
+    #[case("`background-color: ${function     ()      {          return \"arrow dynamic\"}              }`", vec![("background-color",  "(function(){return`arrow dynamic`})(rest)", None)])]
     #[case("`background-color: ${object.color}`", vec![("background-color", "object.color", None)])]
-    #[case("`background-color: ${object['color']}`", vec![("background-color", "object['color']", None)])]
+    #[case("`background-color: ${object['color']}`", vec![("background-color", "object[`color`]", None)])]
     #[case("`background-color: ${func()}`", vec![("background-color", "func()", None)])]
-    #[case("`background-color: ${(props)=>props.b ? 'a' : 'b'}`", vec![("background-color", "((props)=>props.b ? 'a' : 'b')(rest)", None)])]
-    #[case("`background-color: ${(props)=>props.b ? null : undefined}`", vec![("background-color", "((props)=>props.b ? null : undefined)(rest)", None)])]
+    #[case("`background-color: ${(props)=>props.b ? 'a' : 'b'}`", vec![("background-color", "(props=>props.b?`a`:`b`)(rest)", None)])]
+    #[case("`background-color: ${(props)=>props.b ? null : undefined}`", vec![("background-color", "(props=>props.b?null:undefined)(rest)", None)])]
     #[case(
         "`color: red; background: blue;`",
         vec![
@@ -734,7 +610,7 @@ mod tests {
             border: 1px solid #000;
             color: #fff;
         }
-        
+
         @media (min-width: 768px) {
             border: 1px solid #000;
             color: #fff;
@@ -966,16 +842,17 @@ mod tests {
     #[case("`width: ${\"1px\"};`", vec![("width", "1px", None)])]
     #[case("`width: ${'1px'};`", vec![("width", "1px", None)])]
     #[case("`width: ${`1px`};`", vec![("width", "1px", None)])]
-    #[case("`width: ${1 + 1}px;`", vec![("width", "`${1 + 1}px`", None)])]
+    #[case("`width: ${1 + 1}px;`", vec![("width", "`${1+1}px`", None)])]
     #[case("`width: ${func(1)}px;`", vec![("width", "`${func(1)}px`", None)])]
     #[case("`width: ${func(1)}${2}px;`", vec![("width", "`${func(1)}${2}px`", None)])]
     #[case("`width: ${1}${2}px;`", vec![("width", "12px", None)])]
     #[case("`width: ${func(\n\t  1  ,   \n\t2\n)}px;`", vec![("width", "`${func(1,2)}px`", None)])]
-    #[case("`width: ${func(\"  wow  \")}px;`", vec![("width", "`${func(\"  wow  \")}px`", None)])]
-    #[case("`width: ${func(\"hello\\nworld\")}px;`", vec![("width", "`${func(\"hello\\nworld\")}px`", None)])]
-    #[case("`width: ${func('test\\'quote')}px;`", vec![("width", "`${func(\"test'quote\")}px`", None)])]
-    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\" : \"test\"}px;`", vec![("width", "`${((props)=>props.b ? 'hello\\\"world' : 'test')(rest)}px`", None)])]
-    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${((props)=>props.b ? 'hello\\\"world\\\"more' : 'test')(rest)}px`", None)])]
+    #[case("`width: ${func(\"  wow  \")}px;`", vec![("width", "`${func(`  wow  `)}px`", None)])]
+    #[case("`width: ${func(\"hello\\nworld\")}px;`", vec![("width", "`${func(`hello\nworld`)}px`", None)])]
+    #[case("`width: ${func('test\\'quote')}px;`", vec![("width", "`${func(`test'quote`)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world`:`test`)(rest)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world\"more`:`test`)(rest)}px`", None)])]
+    #[case("`width: ${(props)=>props.b ? \"hello\" + \"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello`+`world`:`test`)(rest)}px`", None)])]
     // wrong cases
     #[case(
         "`@media (min-width: 768px) {

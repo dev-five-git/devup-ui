@@ -4,7 +4,7 @@ use oxc_ast::{
     ast::{Argument, Expression, JSXAttributeValue, PropertyKey, Statement},
 };
 
-use oxc_codegen::Codegen;
+use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::UnaryOperator;
@@ -26,8 +26,14 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
                 .alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
         ),
     );
-    let code = Codegen::new().build(&parsed.program).code;
-    code[0..code.len() - 2].to_string()
+    let code = Codegen::new()
+        .with_options(CodegenOptions {
+            minify: true,
+            ..Default::default()
+        })
+        .build(&parsed.program)
+        .code;
+    code
 }
 
 pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
@@ -184,6 +190,23 @@ pub(super) fn wrap_array_filter<'a>(
     ));
 
     Some(join_call)
+}
+
+pub(super) fn wrap_direct_call<'a>(
+    builder: &AstBuilder<'a>,
+    expr: &Expression<'a>,
+    args: &[Expression<'a>],
+) -> Expression<'a> {
+    builder.expression_call::<Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>>(
+        SPAN,
+        expr.clone_in(builder.allocator),
+        None,
+        oxc_allocator::Vec::from_iter_in(
+            args.iter().map(|e| e.clone_in(builder.allocator).into()),
+            builder.allocator,
+        ),
+        false,
+    )
 }
 /// merge expressions to object expression
 pub(super) fn merge_object_expressions<'a>(

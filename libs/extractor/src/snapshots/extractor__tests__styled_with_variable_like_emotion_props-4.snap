@@ -8,7 +8,7 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "color",
                 level: 0,
-                identifier: "isActive ? \"red\" : \"blue\"",
+                identifier: "isActive?`red`:`blue`",
                 selector: None,
                 style_order: None,
             },
@@ -17,11 +17,11 @@ ToBTreeSet {
             ExtractDynamicStyle {
                 property: "opacity",
                 level: 0,
-                identifier: "isActive ? 1 : .5",
+                identifier: "isActive?1:.5",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst isActive = true;\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": isActive ? 1 : .5,\n\t\t\"--b\": isActive ? \"red\" : \"blue\"\n\t},\n\t...style\n}} />;\n",
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\nconst isActive = true;\nconst StyledDiv = ({ style, className, ...rest }) => <div {...rest} className={[\"a-a a-b\", className].filter(Boolean).join(\" \")} style={{\n\t...{\n\t\t\"--a\": isActive?1:.5,\n\t\t\"--b\": isActive?`red`:`blue`\n\t},\n\t...style\n}} />;\n",
 }
