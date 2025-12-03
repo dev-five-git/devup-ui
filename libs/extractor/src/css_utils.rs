@@ -29,6 +29,59 @@ impl From<CssToStyleResult> for ExtractStyleValue {
         }
     }
 }
+
+/// Normalize whitespace while preserving string literals
+fn normalize_whitespace_preserving_strings(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut string_placeholders = Vec::new();
+    let mut placeholder_counter = 0;
+
+    while let Some(ch) = chars.next() {
+        if ch == '"' || ch == '\'' || ch == '`' {
+            // Found start of string literal
+            let quote = ch;
+            let mut string_content = String::from(quote);
+            let mut escaped = false;
+
+            while let Some(&next_ch) = chars.peek() {
+                chars.next();
+                string_content.push(next_ch);
+
+                if escaped {
+                    escaped = false;
+                } else if next_ch == '\\' {
+                    escaped = true;
+                } else if next_ch == quote {
+                    // End of string literal
+                    break;
+                }
+            }
+
+            // Replace string literal with placeholder
+            let placeholder = format!("__STRING_{}__", placeholder_counter);
+            placeholder_counter += 1;
+            string_placeholders.push((placeholder.clone(), string_content));
+            result.push_str(&placeholder);
+        } else {
+            result.push(ch);
+        }
+    }
+
+    // Normalize whitespace (newlines, tabs, multiple spaces)
+    result = result.replace(['\n', '\t'], " ");
+    while result.contains("  ") {
+        result = result.replace("  ", " ");
+    }
+    result = result.trim().to_string();
+
+    // Restore string literals
+    for (placeholder, original_string) in string_placeholders.iter().rev() {
+        result = result.replace(placeholder, original_string);
+    }
+
+    result
+}
 pub fn css_to_style_literal<'a>(
     css: &TemplateLiteral<'a>,
     level: u8,
@@ -142,14 +195,9 @@ pub fn css_to_style_literal<'a>(
                     let mut identifier = expression_to_code(expr);
 
                     // Normalize the code string
-                    // 1. Remove newlines and tabs, replace with spaces
-                    identifier = identifier.replace(['\n', '\t'], " ");
-                    // 2. Normalize multiple spaces to single space
-
-                    while identifier.contains("  ") {
-                        identifier = identifier.replace("  ", " ");
-                    }
-                    // 3. Normalize arrow function whitespace
+                    // 1. Normalize whitespace while preserving string literals
+                    identifier = normalize_whitespace_preserving_strings(&identifier);
+                    // 2. Normalize arrow function whitespace
                     identifier = identifier
                         .replace(" => ", "=>")
                         .replace(" =>", "=>")
@@ -253,12 +301,9 @@ pub fn css_to_style_literal<'a>(
                         if *idx < css.expressions.len() {
                             let expr = &css.expressions[*idx];
                             let expr_code = expression_to_code(expr);
-                            // Normalize the expression code
-                            let mut normalized_code = expr_code.replace(['\n', '\t'], " ");
-                            while normalized_code.contains("  ") {
-                                normalized_code = normalized_code.replace("  ", " ");
-                            }
-                            normalized_code = normalized_code.trim().to_string();
+                            // Normalize the expression code while preserving string literals
+                            let normalized_code =
+                                normalize_whitespace_preserving_strings(&expr_code);
 
                             // Replace placeholder with ${expr} syntax
                             let expr_template = format!("${{{}}}", normalized_code);
@@ -281,16 +326,8 @@ pub fn css_to_style_literal<'a>(
         } else {
             // Check if property name contains a dynamic expression placeholder
             let property = style.property();
-            let mut prop_is_dynamic = false;
 
-            for placeholder in expression_map.keys() {
-                if property.contains(placeholder) {
-                    prop_is_dynamic = true;
-                    break;
-                }
-            }
-
-            if !prop_is_dynamic {
+            if !expression_map.keys().any(|p| property.contains(p)) {
                 // Static style
                 styles.push(CssToStyleResult::Static(style));
             }
@@ -858,6 +895,8 @@ mod tests {
     #[case("`width: ${func(1)}px;`", vec![("width", "`${func(1)}px`", None)])]
     #[case("`width: ${func(1)}${2}px;`", vec![("width", "`${func(1)}${2}px`", None)])]
     #[case("`width: ${1}${2}px;`", vec![("width", "12px", None)])]
+    #[case("`width: ${func(\n\t  1  ,   \n\t2\n)}px;`", vec![("width", "`${func(1,2)}px`", None)])]
+    #[case("`width: ${func(\"  wow  \")}px;`", vec![("width", "`${func(\"  wow  \")}px`", None)])]
     // wrong cases
     #[case(
         "`@media (min-width: 768px) {
@@ -1194,6 +1233,13 @@ mod tests {
         "ul { font-family: 'Roboto Hello',       sans-serif; }",
         vec![
             ("font-family", "\"Roboto Hello\",sans-serif", Some(StyleSelector::Selector("ul".to_string()))),
+        ]
+    )]
+    #[case(
+        "div { color: red; ; { background: blue; } }",
+        vec![
+            ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
+            ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
         ]
     )]
     fn test_css_to_style(
