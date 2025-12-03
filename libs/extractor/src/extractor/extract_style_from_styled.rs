@@ -21,33 +21,29 @@ fn extract_base_tag_and_class_name<'a>(
     input: &Expression<'a>,
     imports: &HashMap<String, ExportVariableKind>,
 ) -> (Option<String>, Option<Vec<ExtractStyleValue>>) {
-    match input {
-        Expression::StaticMemberExpression(member) => {
-            (Some(member.property.name.to_string()), None)
-        }
-        Expression::CallExpression(call) => {
-            if call.arguments.len() == 1 {
-                // styled("div") or styled(Component)
-                if let Argument::StringLiteral(lit) = &call.arguments[0] {
-                    (Some(lit.value.to_string()), None)
-                } else if let Argument::Identifier(ident) = &call.arguments[0] {
-                    if let Some(export_variable_kind) = imports.get(ident.name.as_str()) {
-                        (
-                            Some(export_variable_kind.to_tag().to_string()),
-                            Some(export_variable_kind.extract()),
-                        )
-                    } else {
-                        (Some(ident.name.to_string()), None)
-                    }
-                } else {
-                    // Component reference - we'll handle this later
-                    (None, None)
-                }
+    if let Expression::StaticMemberExpression(member) = input {
+        (Some(member.property.name.to_string()), None)
+    } else if let Expression::CallExpression(call) = input
+        && call.arguments.len() == 1
+    {
+        // styled("div") or styled(Component)
+        if let Argument::StringLiteral(lit) = &call.arguments[0] {
+            (Some(lit.value.to_string()), None)
+        } else if let Argument::Identifier(ident) = &call.arguments[0] {
+            if let Some(export_variable_kind) = imports.get(ident.name.as_str()) {
+                (
+                    Some(export_variable_kind.to_tag().to_string()),
+                    Some(export_variable_kind.extract()),
+                )
             } else {
-                (None, None)
+                (Some(ident.name.to_string()), None)
             }
+        } else {
+            // Component reference - we'll handle this later
+            (None, None)
         }
-        _ => (None, None),
+    } else {
+        (None, None)
     }
 }
 
@@ -169,14 +165,15 @@ fn create_styled_component<'a>(
         SPAN,
         FormalParameterKind::ArrowFormalParameters,
         oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.formal_parameter(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                ast_builder.binding_pattern(
-                    ast_builder.binding_pattern_kind_object_pattern(
-                        SPAN,
-                        oxc_allocator::Vec::from_iter_in(
-                            vec![
+            vec![
+                ast_builder.formal_parameter(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                    ast_builder.binding_pattern(
+                        ast_builder.binding_pattern_kind_object_pattern(
+                            SPAN,
+                            oxc_allocator::Vec::from_iter_in(
+                                vec![
                                     ast_builder.binding_property(
                                         SPAN,
                                         ast_builder.property_key_static_identifier(SPAN, "style"),
@@ -214,27 +211,28 @@ fn create_styled_component<'a>(
                                         false,
                                     ),
                                 ],
-                            ast_builder.allocator,
-                        ),
-                        Some(ast_builder.binding_rest_element(
-                            SPAN,
-                            ast_builder.binding_pattern(
-                                ast_builder.binding_pattern_kind_binding_identifier(
-                                    SPAN,
-                                    ast_builder.atom("rest"),
-                                ),
-                                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-                                false,
+                                ast_builder.allocator,
                             ),
-                        )),
+                            Some(ast_builder.binding_rest_element(
+                                SPAN,
+                                ast_builder.binding_pattern(
+                                    ast_builder.binding_pattern_kind_binding_identifier(
+                                        SPAN,
+                                        ast_builder.atom("rest"),
+                                    ),
+                                    None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                                    false,
+                                ),
+                            )),
+                        ),
+                        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                        false,
                     ),
-                    None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                    None,
+                    false,
                     false,
                 ),
-                None,
-                false,
-                false,
-            )],
+            ],
             ast_builder.allocator,
         ),
         None::<oxc_allocator::Box<oxc_ast::ast::BindingRestElement<'a>>>,
@@ -243,16 +241,20 @@ fn create_styled_component<'a>(
         SPAN,
         oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
         oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.statement_expression(
-                SPAN,
-                ast_builder.expression_jsx_element(
+            vec![
+                ast_builder.statement_expression(
                     SPAN,
-                    ast_builder.alloc_jsx_opening_element(
+                    ast_builder.expression_jsx_element(
                         SPAN,
-                        ast_builder.jsx_element_name_identifier(SPAN, ast_builder.atom(tag_name)),
-                        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
-                        oxc_allocator::Vec::from_iter_in(
-                            vec![
+                        ast_builder.alloc_jsx_opening_element(
+                            SPAN,
+                            ast_builder
+                                .jsx_element_name_identifier(SPAN, ast_builder.atom(tag_name)),
+                            None::<
+                                oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>,
+                            >,
+                            oxc_allocator::Vec::from_iter_in(
+                                vec![
                                     ast_builder.jsx_attribute_item_spread_attribute(
                                         SPAN,
                                         ast_builder
@@ -331,13 +333,14 @@ fn create_styled_component<'a>(
                                         ),
                                     ),
                                 ],
-                            ast_builder.allocator,
+                                ast_builder.allocator,
+                            ),
                         ),
+                        oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                        None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
                     ),
-                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                    None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
                 ),
-            )],
+            ],
             ast_builder.allocator,
         ),
     );
