@@ -578,6 +578,7 @@ mod tests {
     #[case("`background-color: ${()=>\"arrow dynamic\"};color: blue;`", vec![("background-color", "(()=>\"arrow dynamic\")(rest)", None), ("color", "blue", None)])]
     #[case("`color: blue;background-color: ${()=>\"arrow dynamic\"};`", vec![("color", "blue", None),("background-color", "(()=>\"arrow dynamic\")(rest)", None)])]
     #[case("`background-color: ${function(){ return \"arrow dynamic\"}}`", vec![("background-color", "(function(){ return \"arrow dynamic\"})(rest)", None)])]
+    #[case("`background-color: ${function     ()      {          return \"arrow dynamic\"}              }`", vec![("background-color", "(function(){ return \"arrow dynamic\"})(rest)", None)])]
     #[case("`background-color: ${object.color}`", vec![("background-color", "object.color", None)])]
     #[case("`background-color: ${object['color']}`", vec![("background-color", "object['color']", None)])]
     #[case("`background-color: ${func()}`", vec![("background-color", "func()", None)])]
