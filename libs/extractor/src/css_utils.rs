@@ -6,6 +6,8 @@ use css::{
     rm_css_comment::rm_css_comment,
     style_selector::StyleSelector,
 };
+
+use crate::utils::expression_to_code;
 use oxc_ast::ast::TemplateLiteral;
 
 use crate::extract_style::{
@@ -32,8 +34,6 @@ pub fn css_to_style_literal<'a>(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<CssToStyleResult> {
-    use crate::utils::expression_to_code;
-
     let mut styles = vec![];
 
     // If there are no expressions, just process quasis as static CSS
@@ -93,15 +93,11 @@ pub fn css_to_style_literal<'a>(
             let mut literal_values = Vec::new();
 
             for (_, idx) in &found_placeholders {
-                if *idx < css.expressions.len() {
-                    if let Some(literal_value) =
+                if *idx < css.expressions.len()
+                    && let Some(literal_value) =
                         get_string_by_literal_expression(&css.expressions[*idx])
-                    {
-                        literal_values.push((*idx, literal_value));
-                    } else {
-                        all_literals = false;
-                        break;
-                    }
+                {
+                    literal_values.push((*idx, literal_value));
                 } else {
                     all_literals = false;
                     break;
@@ -125,15 +121,14 @@ pub fn css_to_style_literal<'a>(
                     style.level(),
                     style.selector().cloned(),
                 )));
-                continue;
-            }
-
-            // Not all expressions are literals - need to create dynamic style
-            // Check if value is just a placeholder (no surrounding text)
-            if found_placeholders.len() == 1 {
-                let (placeholder, idx) = &found_placeholders[0];
-                let trimmed_value = value.trim();
-                if trimmed_value == placeholder.as_str() && *idx < css.expressions.len() {
+            } else {
+                // Not all expressions are literals - need to create dynamic style
+                // Check if value is just a placeholder (no surrounding text)
+                if found_placeholders.len() == 1
+                    && let (placeholder, idx) = &found_placeholders[0]
+                    && value.trim() == placeholder.as_str()
+                    && *idx < css.expressions.len()
+                {
                     // Value is just the expression - use expression code directly
                     let expr = &css.expressions[*idx];
 
@@ -150,6 +145,7 @@ pub fn css_to_style_literal<'a>(
                     // 1. Remove newlines and tabs, replace with spaces
                     identifier = identifier.replace(['\n', '\t'], " ");
                     // 2. Normalize multiple spaces to single space
+
                     while identifier.contains("  ") {
                         identifier = identifier.replace("  ", " ");
                     }
@@ -159,7 +155,12 @@ pub fn css_to_style_literal<'a>(
                         .replace(" =>", "=>")
                         .replace("=> ", "=>");
                     // 4. Normalize function expression formatting
-                    if is_function {
+                    // 5. Normalize quotes
+                    if !is_function {
+                        // For non-function expressions, convert property access quotes
+                        // object["color"] -> object['color']
+                        identifier = identifier.replace("[\"", "['").replace("\"]", "']");
+                    } else {
                         // Normalize function() { } to function(){ }
                         identifier = identifier.replace("function() {", "function(){");
                         identifier = identifier.replace("function (", "function(");
@@ -176,13 +177,6 @@ pub fn css_to_style_literal<'a>(
                         }
                         // Add (rest) call
                         identifier = format!("{}(rest)", identifier);
-                    }
-                    // 5. Normalize quotes
-                    if !is_function {
-                        // For non-function expressions, convert property access quotes
-                        // object["color"] -> object['color']
-                        identifier = identifier.replace("[\"", "['").replace("\"]", "']");
-                    } else {
                         // For function expressions, convert string literals in ternary operators
                         // This handles cases like: (props)=>props.b ? "a" : "b" -> (props)=>props.b ? 'a' : 'b'
                         // Use simple pattern matching for ternary operator string literals
@@ -240,72 +234,69 @@ pub fn css_to_style_literal<'a>(
                         &identifier,
                         style.selector().cloned(),
                     )));
-                    continue;
-                }
-            }
+                } else {
+                    // Value has surrounding text - need to create template literal
+                    // Reconstruct the template literal by replacing placeholders with ${expr} syntax
+                    // The value contains placeholders like "__EXPR_0__px", we need to convert to `${expr}px`
 
-            // Value has surrounding text - need to create template literal
-            // Reconstruct the template literal by replacing placeholders with ${expr} syntax
-            // The value contains placeholders like "__EXPR_0__px", we need to convert to `${expr}px`
+                    let mut template_literal = value.to_string();
 
-            let mut template_literal = value.to_string();
+                    // Sort placeholders by their position in reverse order to avoid index shifting
+                    found_placeholders.sort_by(|(a_placeholder, _), (b_placeholder, _)| {
+                        template_literal
+                            .rfind(a_placeholder)
+                            .cmp(&template_literal.rfind(b_placeholder))
+                    });
 
-            // Sort placeholders by their position in reverse order to avoid index shifting
-            found_placeholders.sort_by(|(a_placeholder, _), (b_placeholder, _)| {
-                template_literal
-                    .rfind(a_placeholder)
-                    .cmp(&template_literal.rfind(b_placeholder))
-            });
+                    // Replace each placeholder with the actual expression in template literal format
+                    for (placeholder, idx) in &found_placeholders {
+                        if *idx < css.expressions.len() {
+                            let expr = &css.expressions[*idx];
+                            let expr_code = expression_to_code(expr);
+                            // Normalize the expression code
+                            let mut normalized_code = expr_code.replace(['\n', '\t'], " ");
+                            while normalized_code.contains("  ") {
+                                normalized_code = normalized_code.replace("  ", " ");
+                            }
+                            normalized_code = normalized_code.trim().to_string();
 
-            // Replace each placeholder with the actual expression in template literal format
-            for (placeholder, idx) in &found_placeholders {
-                if *idx < css.expressions.len() {
-                    let expr = &css.expressions[*idx];
-                    let expr_code = expression_to_code(expr);
-                    // Normalize the expression code
-                    let mut normalized_code = expr_code.replace(['\n', '\t'], " ");
-                    while normalized_code.contains("  ") {
-                        normalized_code = normalized_code.replace("  ", " ");
+                            // Replace placeholder with ${expr} syntax
+                            let expr_template = format!("${{{}}}", normalized_code);
+                            template_literal =
+                                template_literal.replace(placeholder.as_str(), &expr_template);
+                        }
                     }
-                    normalized_code = normalized_code.trim().to_string();
 
-                    // Replace placeholder with ${expr} syntax
-                    let expr_template = format!("${{{}}}", normalized_code);
-                    template_literal =
-                        template_literal.replace(placeholder.as_str(), &expr_template);
+                    // Wrap in template literal backticks
+                    let final_identifier = format!("`{}`", template_literal);
+
+                    styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
+                        style.property(),
+                        style.level(),
+                        &final_identifier,
+                        style.selector().cloned(),
+                    )));
+                }
+            }
+        } else {
+            // Check if property name contains a dynamic expression placeholder
+            let property = style.property();
+            let mut prop_is_dynamic = false;
+
+            for placeholder in expression_map.keys() {
+                if property.contains(placeholder) {
+                    prop_is_dynamic = true;
+                    break;
                 }
             }
 
-            // Wrap in template literal backticks
-            let final_identifier = format!("`{}`", template_literal);
-
-            styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
-                style.property(),
-                style.level(),
-                &final_identifier,
-                style.selector().cloned(),
-            )));
-            continue;
-        }
-
-        // Check if property name contains a dynamic expression placeholder
-        let property = style.property();
-        let mut prop_is_dynamic = false;
-
-        for placeholder in expression_map.keys() {
-            if property.contains(placeholder) {
-                prop_is_dynamic = true;
-                break;
+            if !prop_is_dynamic {
+                // Static style
+                styles.push(CssToStyleResult::Static(style));
             }
-        }
 
-        if prop_is_dynamic {
             // Property name is dynamic - skip for now as it's more complex
-            continue;
         }
-
-        // Static style
-        styles.push(CssToStyleResult::Static(style));
     }
 
     styles
