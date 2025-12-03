@@ -350,14 +350,9 @@ pub fn css_to_style(
                     }
                 }
 
-                if selector_idx < parts.len() {
-                    let (props, sel) = parts.split_at(selector_idx);
-                    (props.join(";"), sel.join(";"))
-                } else {
-                    // All parts contain ':', so treat the last one as selector
-                    let (props, sel) = parts.split_at(parts.len() - 1);
-                    (props.join(";"), sel.join(";"))
-                }
+                // Math.min
+                let (props, sel) = parts.split_at(parts.len().min(selector_idx));
+                (props.join(";"), sel.join(";"))
             } else {
                 ("".to_string(), before_brace.to_string())
             };
@@ -863,6 +858,13 @@ mod tests {
     #[case("`width: ${func(1)}px;`", vec![("width", "`${func(1)}px`", None)])]
     #[case("`width: ${func(1)}${2}px;`", vec![("width", "`${func(1)}${2}px`", None)])]
     #[case("`width: ${1}${2}px;`", vec![("width", "12px", None)])]
+    // wrong cases
+    #[case(
+        "`@media (min-width: 768px) {
+            & {
+        `",
+        vec![]
+    )]
     fn test_css_to_style_literal(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,
