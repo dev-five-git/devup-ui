@@ -317,6 +317,7 @@ describe('DevupUINextPlugin', () => {
         '@devup-ui/react',
         false,
         expect.any(String),
+        [],
       )
     })
     it('should create theme.d.ts file', async () => {

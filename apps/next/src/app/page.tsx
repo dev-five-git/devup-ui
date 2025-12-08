@@ -2,6 +2,7 @@
 
 import { Box, css, styled, Text } from '@devup-ui/react'
 import { useState } from 'react'
+import { Lib } from 'vite-lib-example'
 const color = 'yellow'
 
 const StyledFooter = styled.footer<{ type: '1' | '2' }>`
@@ -38,6 +39,7 @@ export default function HomePage() {
         py="28px"
       >
         <Box>hello</Box>
+        <Lib />
         <Box>hello</Box>
       </Box>
       <Text

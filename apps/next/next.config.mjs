@@ -6,4 +6,6 @@ const nextConfig = {
   /* config options here */
 }
 
-export default DevupUI(nextConfig)
+export default DevupUI(nextConfig, {
+  include: ['vite-lib-example'],
+})

@@ -1,0 +1,5 @@
+{
+  "changes": { "packages/next-plugin/package.json": "Patch" },
+  "note": "Support monorepo on turbopack",
+  "date": "2025-12-08T09:38:36.536760600Z"
+}
