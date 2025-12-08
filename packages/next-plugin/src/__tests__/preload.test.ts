@@ -70,6 +70,7 @@ describe('preload', () => {
       {
         follow: true,
         absolute: true,
+        cwd: expect.any(String),
       },
     )
   })
