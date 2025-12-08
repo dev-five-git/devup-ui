@@ -6,6 +6,9 @@ import { join } from 'node:path'
 import { codeExtract, getCss } from '@devup-ui/wasm'
 import { globSync } from 'glob'
 
+import { findTopPackageRoot } from '../find-top-package-root'
+import { getPackageName } from '../get-package-name'
+import { hasLocalPackage } from '../has-localpackage'
 import { preload } from '../preload'
 
 // Mock dependencies
@@ -31,6 +34,18 @@ vi.mock('@devup-ui/wasm', () => ({
   codeExtract: vi.fn(),
   registerTheme: vi.fn(),
   getCss: vi.fn(),
+}))
+
+vi.mock('../find-top-package-root', () => ({
+  findTopPackageRoot: vi.fn(),
+}))
+
+vi.mock('../get-package-name', () => ({
+  getPackageName: vi.fn(),
+}))
+
+vi.mock('../has-localpackage', () => ({
+  hasLocalPackage: vi.fn(),
 }))
 
 describe('preload', () => {
@@ -231,6 +246,65 @@ describe('preload', () => {
       join('/output/css', 'button.css'),
       '.button { color: blue; }',
       'utf-8',
+    )
+  })
+
+  it('should recurse into local workspaces when include is provided', () => {
+    const files = ['src/App.tsx']
+    vi.mocked(findTopPackageRoot).mockReturnValue('/repo')
+    vi.mocked(hasLocalPackage)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false)
+    vi.mocked(globSync)
+      .mockReturnValueOnce([
+        '/repo/packages/pkg-a/package.json',
+        '/repo/packages/pkg-b/package.json',
+      ])
+      .mockReturnValueOnce(files)
+    vi.mocked(getPackageName)
+      .mockReturnValueOnce('pkg-a')
+      .mockReturnValueOnce('pkg-b')
+    vi.mocked(realpathSync).mockReturnValueOnce('src/App.tsx')
+
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', ['pkg-a'])
+
+    expect(findTopPackageRoot).toHaveBeenCalled()
+    expect(globSync).toHaveBeenCalledWith(
+      ['package.json', '!**/node_modules/**'],
+      {
+        follow: true,
+        absolute: true,
+        cwd: '/repo',
+      },
+    )
+    expect(codeExtract).toHaveBeenCalledTimes(1)
+    expect(realpathSync).toHaveBeenCalledWith('src/App.tsx')
+  })
+
+  it('should skip test and build outputs based on filters', () => {
+    vi.mocked(globSync).mockReturnValue([
+      'src/App.test.tsx',
+      '.next/page.tsx',
+      'out/index.js',
+      'src/keep.ts',
+    ])
+    vi.mocked(realpathSync)
+      .mockReturnValueOnce('src/App.test.tsx')
+      .mockReturnValueOnce('.next/page.tsx')
+      .mockReturnValueOnce('out/index.js')
+      .mockReturnValueOnce('src/keep.ts')
+
+    preload(/exclude/, '@devup-ui/react', false, '/output/css', [])
+
+    expect(codeExtract).toHaveBeenCalledTimes(1)
+    expect(codeExtract).toHaveBeenCalledWith(
+      expect.stringMatching(/keep\.ts$/),
+      'const Button = () => <div>Hello</div>',
+      '@devup-ui/react',
+      '/output/css',
+      false,
+      false,
+      true,
     )
   })
 })
