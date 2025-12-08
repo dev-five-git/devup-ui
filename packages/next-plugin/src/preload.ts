@@ -1,20 +1,44 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 
 import { codeExtract, getCss } from '@devup-ui/wasm'
 import { globSync } from 'glob'
+
+import { findTopPackageRoot } from './find-top-package-root'
+import { getPackageName } from './get-package-name'
+import { hasLocalPackage } from './has-localpackage'
+
 export function preload(
   excludeRegex: RegExp,
   libPackage: string,
   singleCss: boolean,
   cssDir: string,
+  include: string[],
+  pwd = process.cwd(),
 ) {
+  if (include.length > 0 && hasLocalPackage()) {
+    const packageRoot = findTopPackageRoot()
+    const collected = globSync(['package.json', '!**/node_modules/**'], {
+      follow: true,
+      absolute: true,
+      cwd: packageRoot,
+    })
+      .filter((file) => include.includes(getPackageName(file)))
+      .map((file) => dirname(file))
+
+    for (const file of collected) {
+      preload(excludeRegex, libPackage, singleCss, cssDir, include, file)
+    }
+    return
+  }
   const collected = globSync(['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'], {
     follow: true,
     absolute: true,
+    cwd: pwd,
   })
   // fix multi core build issue
   collected.sort()
+  // console.log('collected', collected)
   for (const file of collected) {
     const filePath = relative(process.cwd(), realpathSync(file))
     if (

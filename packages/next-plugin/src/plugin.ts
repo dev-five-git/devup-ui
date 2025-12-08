@@ -97,7 +97,7 @@ export function DevupUI(
       writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
     } else {
       // build
-      preload(excludeRegex, libPackage, singleCss, cssDir)
+      preload(excludeRegex, libPackage, singleCss, cssDir, include)
     }
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())

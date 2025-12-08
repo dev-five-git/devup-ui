@@ -63,7 +63,7 @@ describe('preload', () => {
     const singleCss = false
     const cssDir = '/output/css'
 
-    preload(excludeRegex, libPackage, singleCss, cssDir)
+    preload(excludeRegex, libPackage, singleCss, cssDir, [])
 
     expect(globSync).toHaveBeenCalledWith(
       ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
@@ -81,7 +81,7 @@ describe('preload', () => {
       .mockReturnValueOnce('src/App.tsx')
       .mockReturnValueOnce('src/components/Button.tsx')
       .mockReturnValueOnce('.next/page.tsx')
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(codeExtract).toHaveBeenCalledTimes(2)
     expect(codeExtract).toHaveBeenCalledWith(
@@ -106,7 +106,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -127,7 +127,7 @@ describe('preload', () => {
     })
     vi.mocked(getCss).mockReturnValue('')
 
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'devup-ui.css'),
@@ -147,7 +147,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -167,7 +167,7 @@ describe('preload', () => {
       [Symbol.dispose]: vi.fn(),
     })
 
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(writeFileSync).toHaveBeenCalledWith(
       join('/output/css', 'styles.css'),
@@ -181,7 +181,7 @@ describe('preload', () => {
     const singleCss = true
     const cssDir = '/custom/css/dir'
 
-    preload(/node_modules/, libPackage, singleCss, cssDir)
+    preload(/node_modules/, libPackage, singleCss, cssDir, [])
 
     expect(codeExtract).toHaveBeenCalledWith(
       expect.stringMatching(/App\.tsx$/),
@@ -218,7 +218,7 @@ describe('preload', () => {
         [Symbol.dispose]: vi.fn(),
       })
 
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css')
+    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
 
     expect(writeFileSync).toHaveBeenCalledTimes(3)
     expect(writeFileSync).toHaveBeenCalledWith(
