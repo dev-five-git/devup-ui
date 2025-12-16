@@ -369,9 +369,9 @@ import { Box } from '@devup-ui/react'
 function ThemeCard() {
   return (
     <Box
-      _dark={{ bg: '$colors.background', color: '$colors.text' }}
-      bg="$colors.background"
-      color="$colors.text"
+      _dark={{ bg: '$background', color: '$text' }}
+      bg="$background"
+      color="$text"
       p={4}
     >
       This adapts to the current theme
