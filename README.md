@@ -3,8 +3,12 @@
 </div>
 
 <h3 align="center">
-    Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor
+    The Future of CSS-in-JS — Zero Runtime, Full Power
 </h3>
+
+<p align="center">
+    <strong>Zero Config · Zero FOUC · Zero Runtime · Complete CSS-in-JS Syntax Coverage</strong>
+</p>
 
 ---
 
@@ -31,6 +35,18 @@
 
 English | [한국어](README_ko.md)
 
+## Why Devup UI?
+
+**Devup UI isn't just another CSS-in-JS library — it's the next evolution.**
+
+Traditional CSS-in-JS solutions force you to choose between developer experience and performance. Devup UI eliminates this trade-off entirely by processing all styles at build time using a Rust-powered preprocessor.
+
+- **Complete Syntax Coverage**: Every CSS-in-JS pattern you know — variables, conditionals, responsive arrays, pseudo-selectors — all fully supported
+- **Familiar API**: `styled()` API compatible with styled-components and Emotion patterns
+- **True Zero Runtime**: No JavaScript execution for styling at runtime. Period.
+- **Smallest Bundle Size**: Optimized class names (`a`, `b`, ... `aa`, `ab`) minimize CSS output
+- **Fastest Build Times**: Rust + WebAssembly delivers unmatched preprocessing speed
+
 ## Install
 
 ```sh
@@ -51,25 +67,15 @@ npm install @devup-ui/webpack-plugin
 
 ## Features
 
-- Preprocessor
-- Zero Config
-- Zero FOUC
-- Zero Runtime
-- RSC Support
-- Must not use JavaScript, client-side logic, or hybrid solutions
-- Support Library mode
-- Zero Cost Dynamic Theme Support based on CSS Variables
-- Theme with Typing
-- Smallest size, fastest speed
-
-## Inspirations
-
-- Styled System
-- Chakra UI
-- Theme UI
-- Vanilla Extract
-- Rainbow Sprinkles
-- Kuma UI
+- **Preprocessor** — All CSS extraction happens at build time
+- **Zero Config** — Works out of the box with sensible defaults
+- **Zero FOUC** — No flash of unstyled content, no Provider required
+- **Zero Runtime** — No client-side JavaScript for styling
+- **RSC Support** — Full React Server Components compatibility
+- **Library Mode** — Build component libraries with extracted styles
+- **Dynamic Themes** — Zero-cost theme switching via CSS variables
+- **Type-Safe Themes** — Full TypeScript support for theme tokens
+- **Smallest & Fastest** — Proven by benchmarks
 
 ## Comparison Benchmarks
 
@@ -84,54 +90,59 @@ Next.js Build Time and Build Size (github action - ubuntu-latest)
 | panda-css                      | 1.3.1   | 20.64s     | 64,573,260 bytes  |
 | chakra-ui                      | 3.27.0  | 28.81s     | 222,435,802 bytes |
 | mui                            | 7.3.2   | 20.86s     | 97,964,458 bytes  |
-| devup-ui(per-file css)         | 1.0.18  | 16.90s     | 59,540,459 bytes  |
-| devup-ui(single css)           | 1.0.18  | 17.05s     | 59,520,196 bytes  |
+| **devup-ui(per-file css)**     | 1.0.18  | **16.90s** | 59,540,459 bytes  |
+| **devup-ui(single css)**       | 1.0.18  | **17.05s** | **59,520,196 bytes** |
 | tailwindcss(turbopack)         | 4.1.13  | 6.72s      | 5,355,082 bytes   |
-| devup-ui(single css+turbopack) | 1.0.18  | 10.34s     | 4,772,050 bytes   |
+| **devup-ui(single css+turbopack)** | 1.0.18  | 10.34s     | **4,772,050 bytes** |
 
 ## How it works
 
-Devup UI is a CSS in JS preprocessor that does not require runtime.
-Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
-We develop a preprocessor that considers all grammatical cases.
+Devup UI transforms your components at build time. Class names are generated using a compact base-37 encoding for minimal CSS size.
+
+**Basic transformation:**
 
 ```tsx
-const before = <Box bg="red" />
+// You write:
+<Box bg="red" p={4} _hover={{ bg: "blue" }} />
 
-const after = <div className="d0" />
+// Devup UI generates:
+<div className="a b c" />
+
+// With CSS:
+// .a { background-color: red; }
+// .b { padding: 1rem; }
+// .c:hover { background-color: blue; }
 ```
 
-Variables are fully supported.
+**Dynamic values become CSS variables:**
 
 ```tsx
-const before = <Box bg={colorVariable} />
+// You write:
+<Box bg={colorVariable} />
 
-const after = (
-  <div
-    className="d0"
-    style={{
-      '--d0': colorVariable,
-    }}
-  />
-)
+// Devup UI generates:
+<div className="a" style={{ '--a': colorVariable }} />
+
+// With CSS:
+// .a { background-color: var(--a); }
 ```
 
-Various expressions and responsiveness are also fully supported.
+**Complex expressions and responsive arrays — fully supported:**
 
 ```tsx
-const before = <Box bg={['red', 'blue', a > b ? 'yellow' : variable]} />
+// You write:
+<Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
 
-const after = (
-  <div
-    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
-    style={{
-      '--d2': variable,
-    }}
-  />
-)
+// Devup UI generates:
+<div
+  className={`a b ${isActive ? 'c' : 'd'}`}
+  style={{ '--d': dynamicColor }}
+/>
+
+// With responsive CSS for each breakpoint
 ```
 
-Support Theme with Typing
+**Type-safe theming:**
 
 `devup.json`
 
@@ -140,10 +151,20 @@ Support Theme with Typing
   "theme": {
     "colors": {
       "default": {
+        "primary": "#0070f3",
         "text": "#000"
       },
       "dark": {
-        "text": "white"
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    },
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
       }
     }
   }
@@ -151,21 +172,57 @@ Support Theme with Typing
 ```
 
 ```tsx
-// Type Safe
-<Text color="$text" />
+// Type-safe theme tokens
+<Text color="$primary" />
+<Box typography="$heading" />
 ```
 
-Support Responsive And Pseudo Selector
-
-You can use responsive and pseudo selector.
+**Responsive + Pseudo selectors together:**
 
 ```tsx
-// Responsive with Selector
-const box = <Box _hover={{ bg: ['red', 'blue'] }} />
+// Responsive with pseudo selector
+<Box _hover={{ bg: ['red', 'blue'] }} />
 
-// Same
-const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+// Equivalent syntax
+<Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
+
+**styled-components / Emotion compatible `styled()` API:**
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+// Familiar syntax for styled-components and Emotion users
+const Card = styled('div', {
+  bg: 'white',
+  p: 4,                // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+
+const Button = styled('button', {
+  px: 4,               // 4 * 4 = 16px
+  py: 2,               // 2 * 4 = 8px
+  borderRadius: '4px',
+  cursor: 'pointer',
+})
+
+// Usage
+<Card>Content</Card>
+<Button>Click me</Button>
+```
+
+## Inspirations
+
+- Styled System
+- Chakra UI
+- Theme UI
+- Vanilla Extract
+- Rainbow Sprinkles
+- Kuma UI
 
 ## How to Contribute
 
