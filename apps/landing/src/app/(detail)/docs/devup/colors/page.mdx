@@ -1,8 +1,8 @@
 export const metadata = {
   title: 'Colors',
   alternates: {
-    canonical: '/docs/devup/colors'
-  }
+    canonical: '/docs/devup/colors',
+  },
 }
 
 # Colors
@@ -15,19 +15,19 @@ You can pass color values directly to any component:
 
 ```tsx
 // Hex colors
-<Box bg="#FF0000" />
-<Box bg="#F00" />
+const example1 = <Box bg="#FF0000" />
+const example2 = <Box bg="#F00" />
 
 // RGB/RGBA
-<Box bg="rgb(255, 0, 0)" />
-<Box bg="rgba(255, 0, 0, 0.5)" />
+const example3 = <Box bg="rgb(255, 0, 0)" />
+const example4 = <Box bg="rgba(255, 0, 0, 0.5)" />
 
 // HSL
-<Box bg="hsl(0, 100%, 50%)" />
+const example5 = <Box bg="hsl(0, 100%, 50%)" />
 
 // Named colors
-<Box bg="red" />
-<Box bg="tomato" />
+const example6 = <Box bg="red" />
+const example7 = <Box bg="tomato" />
 ```
 
 > Devup UI automatically optimizes color values at build time. For example, `rgb(255, 0, 0)` becomes `red` and `#FF0000` becomes `#f00`.
@@ -70,9 +70,9 @@ For larger projects, define colors in `devup.json` for consistency and theme sup
 Use theme colors with the `$` prefix:
 
 ```tsx
-<Box bg="$primary" />
-<Text color="$text" />
-<Box borderColor="$border" />
+const boxExample1 = <Box bg="$primary" />
+const textExample = <Text color="$text" />
+const boxExample2 = <Box borderColor="$border" />
 ```
 
 ## Multiple Theme Variants

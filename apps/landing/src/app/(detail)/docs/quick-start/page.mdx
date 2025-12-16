@@ -27,9 +27,9 @@ npm install @devup-ui/rsbuild-plugin # for Rsbuild
 
 ```ts
 // vite.config.ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 import { DevupUI } from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), DevupUI()],
@@ -51,9 +51,9 @@ module.exports = DevupUI({
 
 ```js
 // rsbuild.config.mjs
+import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin'
 import { defineConfig } from '@rsbuild/core'
 import { pluginReact } from '@rsbuild/plugin-react'
-import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin'
 
 export default defineConfig({
   plugins: [pluginReact(), DevupUIRsbuildPlugin()],
@@ -63,15 +63,15 @@ export default defineConfig({
 ## 3. Create Your First Component
 
 ```tsx
-import { Box, Text, Flex } from '@devup-ui/react'
+import { Box, Text } from '@devup-ui/react'
 
 function Card() {
   return (
     <Box
       bg="white"
-      p={4}
       borderRadius="8px"
       boxShadow="0 2px 8px rgba(0,0,0,0.1)"
+      p={4}
     >
       <Text fontSize="20px" fontWeight={700}>
         Hello Devup UI!
@@ -117,7 +117,7 @@ Now use theme tokens in your components:
 <Box bg="$background" p={4}>
   <Text color="$text">Themed text</Text>
   <Text color="$textMuted">Muted text</Text>
-  <Box bg="$primary" p={2} mt={2}>
+  <Box bg="$primary" mt={2} p={2}>
     <Text color="white">Primary background</Text>
   </Box>
 </Box>
@@ -131,13 +131,13 @@ All components accept style props directly:
 
 ```tsx
 <Box
-  bg="red"           // background-color
-  color="white"      // color
-  p={4}              // padding (4 * 4 = 16px)
-  m={2}              // margin (2 * 4 = 8px)
-  w="100%"           // width
-  h="200px"          // height
+  bg="red" // background-color
   borderRadius="8px" // border-radius
+  color="white" // color
+  h="200px" // height
+  m={2} // margin (2 * 4 = 8px)
+  p={4} // padding (4 * 4 = 16px)
+  w="100%" // width
 />
 ```
 
@@ -149,9 +149,9 @@ Use underscore prefix for pseudo selectors:
 
 ```tsx
 <Box
-  bg="white"
-  _hover={{ bg: 'blue', color: 'white' }}
   _active={{ bg: 'darkblue' }}
+  _hover={{ bg: 'blue', color: 'white' }}
+  bg="white"
 >
   Hover me
 </Box>
@@ -163,9 +163,9 @@ Use arrays for responsive values:
 
 ```tsx
 <Box
-  w={['100%', null, '50%']}       // 100% on mobile, 50% on tablet+
-  p={[2, null, 4]}                 // 8px on mobile, 16px on tablet+
   fontSize={['14px', null, '16px']}
+  p={[2, null, 4]} // 8px on mobile, 16px on tablet+
+  w={['100%', null, '50%']} // 100% on mobile, 50% on tablet+
 >
   Responsive box
 </Box>
@@ -190,7 +190,7 @@ const Button = styled('button', {
 })
 
 // Usage
-<Button>Click me</Button>
+const buttonExample = <Button>Click me</Button>
 ```
 
 ## Next Steps

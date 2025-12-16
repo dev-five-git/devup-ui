@@ -34,14 +34,14 @@ devup-ui/
 
 ### Build-Time Transformation
 
-Components are transformed at build time. Class names are generated using a compact base-37 encoding (a-z, 0-9, _) for minimal CSS size:
+Components are transformed at build time. Class names are generated using a compact base-37 encoding (a-z, 0-9, \_) for minimal CSS size:
 
 ```tsx
 // Developer writes:
-<Box bg="red" p={4} _hover={{ bg: "blue" }} />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
 
 // Transformed to:
-<div className="a b c" />
+const generated = <div className="a b c" />
 
 // Generated CSS:
 // .a { background-color: red; }
@@ -55,10 +55,10 @@ Dynamic values become CSS variables:
 
 ```tsx
 // Developer writes:
-<Box bg={colorVariable} />
+const example = <Box bg={colorVariable} />
 
 // Transformed to:
-<div className="a" style={{ '--a': colorVariable }} />
+const generated = <div className="a" style={{ '--a': colorVariable }} />
 
 // Generated CSS:
 // .a { background-color: var(--a); }
@@ -84,12 +84,12 @@ Components accept style props directly:
 
 ```tsx
 <Box
+  _dark={{ bg: 'gray' }} // Theme variant
+  _hover={{ bg: 'blue' }} // Pseudo-selector
   bg="red"
   color="white"
+  m={[2, 4]} // Responsive: mobile=2, desktop=4
   p={4}
-  m={[2, 4]}              // Responsive: mobile=2, desktop=4
-  _hover={{ bg: "blue" }} // Pseudo-selector
-  _dark={{ bg: "gray" }}  // Theme variant
 />
 ```
 
@@ -105,10 +105,10 @@ import { css } from '@devup-ui/react'
 const styles = css({
   bg: 'red',
   p: 4,
-  _hover: { bg: 'blue' }
+  _hover: { bg: 'blue' },
 })
 
-<Box {...styles} />
+const example = <Box {...styles} />
 ```
 
 ### styled()
@@ -121,7 +121,7 @@ import { styled } from '@devup-ui/react'
 // Familiar syntax for styled-components and Emotion users
 const Card = styled('div', {
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   _hover: {
@@ -132,8 +132,8 @@ const Card = styled('div', {
 const Button = styled('button', {
   bg: 'blue',
   color: 'white',
-  px: 4,               // 4 * 4 = 16px
-  py: 2,               // 2 * 4 = 8px
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
   borderRadius: '4px',
   cursor: 'pointer',
   _hover: { bg: 'darkblue' },
@@ -150,7 +150,7 @@ import { globalCss } from '@devup-ui/react'
 
 globalCss({
   body: { margin: 0 },
-  '*': { boxSizing: 'border-box' }
+  '*': { boxSizing: 'border-box' },
 })
 ```
 
@@ -163,10 +163,10 @@ import { keyframes } from '@devup-ui/react'
 
 const spin = keyframes({
   from: { transform: 'rotate(0deg)' },
-  to: { transform: 'rotate(360deg)' }
+  to: { transform: 'rotate(360deg)' },
 })
 
-<Box animation={`${spin} 1s linear infinite`} />
+const example = <Box animation={`${spin} 1s linear infinite`} />
 ```
 
 ## Theme Configuration
@@ -219,10 +219,19 @@ Create `devup.json` in project root:
 ### Theme API
 
 ```tsx
-import { useTheme, setTheme, getTheme, initTheme, ThemeScript } from '@devup-ui/react'
+import {
+  getTheme,
+  initTheme,
+  setTheme,
+  ThemeScript,
+  useTheme,
+} from '@devup-ui/react'
 
-// Get current theme
-const theme = useTheme()
+// Get current theme (inside component)
+function MyComponent() {
+  const theme = useTheme()
+  return null
+}
 
 // Set theme
 setTheme('dark')
@@ -234,7 +243,7 @@ initTheme()
 const currentTheme = getTheme()
 
 // Hydration script (add to HTML head)
-<ThemeScript />
+const themeScript = <ThemeScript />
 ```
 
 ## Build Plugin Configuration
@@ -243,21 +252,21 @@ const currentTheme = getTheme()
 
 ```ts
 // vite.config.ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 import DevupUI from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [
     react(),
     DevupUI({
-      package: '@devup-ui/react',    // Target package
-      cssDir: 'df/devup-ui',         // CSS output directory
-      devupFile: 'devup.json',       // Theme config file
-      extractCss: true,              // Enable CSS extraction
-      singleCss: false,              // Single vs per-file CSS
-      debug: false,                  // Debug mode
-      include: [],                   // Additional packages to process
+      package: '@devup-ui/react', // Target package
+      cssDir: 'df/devup-ui', // CSS output directory
+      devupFile: 'devup.json', // Theme config file
+      extractCss: true, // Enable CSS extraction
+      singleCss: false, // Single vs per-file CSS
+      debug: false, // Debug mode
+      include: [], // Additional packages to process
     }),
   ],
 })
@@ -289,8 +298,8 @@ module.exports = {
 
 ```ts
 // rsbuild.config.ts
-import { defineConfig } from '@rsbuild/core'
 import DevupUI from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
 
 export default defineConfig({
   plugins: [DevupUI()],
@@ -333,15 +342,19 @@ pnpm benchmark
 ### Basic Component Usage
 
 ```tsx
-import { Box, Flex, Text, Button } from '@devup-ui/react'
+import { Box, Button, Flex, Text } from '@devup-ui/react'
 
 function Card() {
   return (
-    <Box bg="white" p={4} borderRadius="lg" boxShadow="md">
-      <Text fontSize="lg" fontWeight="bold">Title</Text>
+    <Box bg="white" borderRadius="lg" boxShadow="md" p={4}>
+      <Text fontSize="lg" fontWeight="bold">
+        Title
+      </Text>
       <Text color="gray.600">Description</Text>
       <Flex gap={2} mt={4}>
-        <Button bg="primary" color="white">Action</Button>
+        <Button bg="primary" color="white">
+          Action
+        </Button>
       </Flex>
     </Box>
   )
@@ -356,9 +369,9 @@ import { Box } from '@devup-ui/react'
 function ThemeCard() {
   return (
     <Box
+      _dark={{ bg: '$colors.background', color: '$colors.text' }}
       bg="$colors.background"
       color="$colors.text"
-      _dark={{ bg: '$colors.background', color: '$colors.text' }}
       p={4}
     >
       This adapts to the current theme
@@ -376,7 +389,7 @@ function DynamicBox({ isActive, color }) {
   return (
     <Box
       bg={isActive ? 'blue' : 'gray'}
-      color={color}  // Dynamic value becomes CSS variable
+      color={color} // Dynamic value becomes CSS variable
       p={4}
     />
   )

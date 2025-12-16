@@ -81,19 +81,19 @@ npm install @devup-ui/webpack-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| Library                        | Version | Build Time | Build Size        |
-| ------------------------------ | ------- | ---------- | ----------------- |
-| tailwindcss                    | 4.1.13  | 19.31s     | 59,521,539 bytes  |
-| styleX                         | 0.15.4  | 41.78s     | 86,869,452 bytes  |
-| vanilla-extract                | 1.17.4  | 19.50s     | 61,494,033 bytes  |
-| kuma-ui                        | 1.5.9   | 20.93s     | 69,924,179 bytes  |
-| panda-css                      | 1.3.1   | 20.64s     | 64,573,260 bytes  |
-| chakra-ui                      | 3.27.0  | 28.81s     | 222,435,802 bytes |
-| mui                            | 7.3.2   | 20.86s     | 97,964,458 bytes  |
-| **devup-ui(per-file css)**     | 1.0.18  | **16.90s** | 59,540,459 bytes  |
-| **devup-ui(single css)**       | 1.0.18  | **17.05s** | **59,520,196 bytes** |
-| tailwindcss(turbopack)         | 4.1.13  | 6.72s      | 5,355,082 bytes   |
-| **devup-ui(single css+turbopack)** | 1.0.18  | 10.34s     | **4,772,050 bytes** |
+| Library                            | Version | Build Time | Build Size           |
+| ---------------------------------- | ------- | ---------- | -------------------- |
+| tailwindcss                        | 4.1.13  | 19.31s     | 59,521,539 bytes     |
+| styleX                             | 0.15.4  | 41.78s     | 86,869,452 bytes     |
+| vanilla-extract                    | 1.17.4  | 19.50s     | 61,494,033 bytes     |
+| kuma-ui                            | 1.5.9   | 20.93s     | 69,924,179 bytes     |
+| panda-css                          | 1.3.1   | 20.64s     | 64,573,260 bytes     |
+| chakra-ui                          | 3.27.0  | 28.81s     | 222,435,802 bytes    |
+| mui                                | 7.3.2   | 20.86s     | 97,964,458 bytes     |
+| **devup-ui(per-file css)**         | 1.0.18  | **16.90s** | 59,540,459 bytes     |
+| **devup-ui(single css)**           | 1.0.18  | **17.05s** | **59,520,196 bytes** |
+| tailwindcss(turbopack)             | 4.1.13  | 6.72s      | 5,355,082 bytes      |
+| **devup-ui(single css+turbopack)** | 1.0.18  | 10.34s     | **4,772,050 bytes**  |
 
 ## How it works
 
@@ -103,10 +103,10 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 ```tsx
 // You write:
-<Box bg="red" p={4} _hover={{ bg: "blue" }} />
+const variable = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
 
 // Devup UI generates:
-<div className="a b c" />
+const variable = <div className="a b c" />
 
 // With CSS:
 // .a { background-color: red; }
@@ -118,10 +118,10 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 ```tsx
 // You write:
-<Box bg={colorVariable} />
+const example = <Box bg={colorVariable} />
 
 // Devup UI generates:
-<div className="a" style={{ '--a': colorVariable }} />
+const example = <div className="a" style={{ '--a': colorVariable }} />
 
 // With CSS:
 // .a { background-color: var(--a); }
@@ -131,13 +131,15 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 ```tsx
 // You write:
-<Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
 
 // Devup UI generates:
-<div
-  className={`a b ${isActive ? 'c' : 'd'}`}
-  style={{ '--d': dynamicColor }}
-/>
+const example = (
+  <div
+    className={`a b ${isActive ? 'c' : 'd'}`}
+    style={{ '--d': dynamicColor }}
+  />
+)
 
 // With responsive CSS for each breakpoint
 ```
@@ -173,18 +175,18 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 ```tsx
 // Type-safe theme tokens
-<Text color="$primary" />
-<Box typography="$heading" />
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="$heading" />
 ```
 
 **Responsive + Pseudo selectors together:**
 
 ```tsx
 // Responsive with pseudo selector
-<Box _hover={{ bg: ['red', 'blue'] }} />
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
 
 // Equivalent syntax
-<Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
 **styled-components / Emotion compatible `styled()` API:**
@@ -195,7 +197,7 @@ import { styled } from '@devup-ui/react'
 // Familiar syntax for styled-components and Emotion users
 const Card = styled('div', {
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   _hover: {
@@ -204,15 +206,15 @@ const Card = styled('div', {
 })
 
 const Button = styled('button', {
-  px: 4,               // 4 * 4 = 16px
-  py: 2,               // 2 * 4 = 8px
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
   borderRadius: '4px',
   cursor: 'pointer',
 })
 
 // Usage
-<Card>Content</Card>
-<Button>Click me</Button>
+const cardExample = <Card>Content</Card>
+const buttonExample = <Button>Click me</Button>
 ```
 
 ## Inspirations

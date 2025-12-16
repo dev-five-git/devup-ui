@@ -1,8 +1,8 @@
 export const metadata = {
   title: 'Breakpoints',
   alternates: {
-    canonical: '/docs/devup/breakpoints'
-  }
+    canonical: '/docs/devup/breakpoints',
+  },
 }
 
 # Breakpoints
@@ -11,14 +11,14 @@ Devup UI uses a mobile-first responsive design system with 6 breakpoints. Use ar
 
 ## Breakpoint Ranges
 
-| Index | Breakpoint | Range | Device |
-|-------|------------|-------|--------|
-| 0 | `xs` | 0px - 479px | Mobile (portrait) |
-| 1 | `sm` | 480px - 767px | Mobile (landscape) |
-| 2 | `md` | 768px - 991px | Tablet |
-| 3 | `lg` | 992px - 1279px | Small desktop |
-| 4 | `xl` | 1280px - 1599px | Desktop |
-| 5 | `2xl` | 1600px+ | Large desktop |
+| Index | Breakpoint | Range           | Device             |
+| ----- | ---------- | --------------- | ------------------ |
+| 0     | `xs`       | 0px - 479px     | Mobile (portrait)  |
+| 1     | `sm`       | 480px - 767px   | Mobile (landscape) |
+| 2     | `md`       | 768px - 991px   | Tablet             |
+| 3     | `lg`       | 992px - 1279px  | Small desktop      |
+| 4     | `xl`       | 1280px - 1599px | Desktop            |
+| 5     | `2xl`      | 1600px+         | Large desktop      |
 
 ## Basic Usage
 
@@ -29,6 +29,7 @@ Pass an array to any style prop. Each index corresponds to a breakpoint:
 ```
 
 This results in:
+
 - **0-479px**: red background
 - **480-767px**: blue background
 - **768-991px**: green background
@@ -45,6 +46,7 @@ Use `null` to skip a breakpoint and keep the previous value:
 ```
 
 This results in:
+
 - **0-767px**: red (index 0, then null inherits)
 - **768-1279px**: green (index 2, then null inherits)
 - **1280px+**: purple
@@ -55,29 +57,20 @@ Arrays shorter than 6 elements apply styles up to their length:
 
 ```tsx
 // Only define mobile and desktop
-<Box fontSize={['14px', null, null, null, '18px']} />
+const example = <Box fontSize={['14px', null, null, null, '18px']} />
 
 // Shorthand: mobile and tablet only
-<Box p={[2, 4]} />
+const example2 = <Box p={[2, 4]} />
 ```
 
 ## Responsive Layout Example
 
 ```tsx
-<Flex
-  direction={['column', null, 'row']}
-  gap={[2, null, 4]}
->
-  <Box
-    w={['100%', null, '50%']}
-    p={[2, null, 4]}
-  >
+<Flex direction={['column', null, 'row']} gap={[2, null, 4]}>
+  <Box p={[2, null, 4]} w={['100%', null, '50%']}>
     Left content
   </Box>
-  <Box
-    w={['100%', null, '50%']}
-    p={[2, null, 4]}
-  >
+  <Box p={[2, null, 4]} w={['100%', null, '50%']}>
     Right content
   </Box>
 </Flex>
@@ -107,7 +100,9 @@ Or use responsive typography from `devup.json`:
     "typography": {
       "h1": [
         { "fontSize": "32px", "fontWeight": 800 },
-        null, null, null,
+        null,
+        null,
+        null,
         { "fontSize": "48px", "fontWeight": 800 }
       ]
     }
@@ -125,10 +120,10 @@ Combine responsive arrays with pseudo selectors:
 
 ```tsx
 // Different hover colors per breakpoint
-<Box _hover={{ bg: ['blue', null, 'purple'] }} />
+const example = <Box _hover={{ bg: ['blue', null, 'purple'] }} />
 
 // Alternative syntax
-<Box _hover={[{ bg: 'blue' }, null, { bg: 'purple' }]} />
+const example2 = <Box _hover={[{ bg: 'blue' }, null, { bg: 'purple' }]} />
 ```
 
 ## Common Patterns
@@ -137,22 +132,22 @@ Combine responsive arrays with pseudo selectors:
 
 ```tsx
 // Hide on mobile, show on desktop
-<Box display={['none', null, null, null, 'block']}>
-  Desktop only content
-</Box>
+const example = (
+  <Box display={['none', null, null, null, 'block']}>Desktop only content</Box>
+)
 
 // Show on mobile, hide on desktop
-<Box display={['block', null, null, null, 'none']}>
-  Mobile only content
-</Box>
+const example2 = (
+  <Box display={['block', null, null, null, 'none']}>Mobile only content</Box>
+)
 ```
 
 ### Responsive Grid
 
 ```tsx
 <Grid
-  templateColumns={['1fr', null, 'repeat(2, 1fr)', null, 'repeat(4, 1fr)']}
   gap={[2, null, 4]}
+  templateColumns={['1fr', null, 'repeat(2, 1fr)', null, 'repeat(4, 1fr)']}
 >
   <Box>Item 1</Box>
   <Box>Item 2</Box>
@@ -168,10 +163,7 @@ Combine responsive arrays with pseudo selectors:
 ### Responsive Spacing
 
 ```tsx
-<Box
-  p={[2, null, 4, null, 6]}
-  m={[2, null, 4]}
->
+<Box m={[2, null, 4]} p={[2, null, 4, null, 6]}>
   Content with responsive padding and margin
 </Box>
 ```

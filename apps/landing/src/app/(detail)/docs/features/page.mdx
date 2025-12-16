@@ -19,10 +19,10 @@ Devup UI transforms your components at build time. Class names are generated usi
 
 ```tsx
 // You write:
-<Box bg="red" p={4} />
+const example = <Box bg="red" p={4} />
 
 // Devup UI generates:
-<div className="a b" />
+const generated = <div className="a b" />
 
 // CSS output:
 // .a { background-color: red; }
@@ -39,10 +39,10 @@ Full responsive support with array syntax. Each index corresponds to a breakpoin
 
 ```tsx
 // You write:
-<Box bg={['red', 'blue', 'green']} />
+const example = <Box bg={['red', 'blue', 'green']} />
 
 // Devup UI generates:
-<div className="a b c" />
+const generated = <div className="a b c" />
 
 // CSS output with media queries for each breakpoint
 ```
@@ -53,10 +53,10 @@ Variables are automatically converted to CSS custom properties.
 
 ```tsx
 // You write:
-<Box bg={colorVariable} />
+const example = <Box bg={colorVariable} />
 
 // Devup UI generates:
-<div className="a" style={{ '--a': colorVariable }} />
+const generated = <div className="a" style={{ '--a': colorVariable }} />
 
 // CSS output:
 // .a { background-color: var(--a); }
@@ -68,13 +68,12 @@ Ternary operators and logical expressions are statically analyzed.
 
 ```tsx
 // You write:
-<Box bg={isActive ? 'blue' : dynamicColor} />
+const example = <Box bg={isActive ? 'blue' : dynamicColor} />
 
 // Devup UI generates:
-<div
-  className={isActive ? 'a' : 'b'}
-  style={{ '--b': dynamicColor }}
-/>
+const generated = (
+  <div className={isActive ? 'a' : 'b'} style={{ '--b': dynamicColor }} />
+)
 ```
 
 ## Complex Expressions
@@ -83,13 +82,15 @@ Combine responsive arrays with conditionals — Devup UI handles it all.
 
 ```tsx
 // You write:
-<Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
 
 // Devup UI generates:
-<div
-  className={`a b ${isActive ? 'c' : 'd'}`}
-  style={{ '--d': dynamicColor }}
-/>
+const generated = (
+  <div
+    className={`a b ${isActive ? 'c' : 'd'}`}
+    style={{ '--d': dynamicColor }}
+  />
+)
 ```
 
 ## Pseudo Selectors
@@ -98,15 +99,17 @@ Use underscore prefix for pseudo selectors: `_hover`, `_focus`, `_active`, `_dis
 
 ```tsx
 // You write:
-<Box
-  bg="white"
-  _hover={{ bg: 'blue' }}
-  _focus={{ bg: 'green' }}
-  _active={{ bg: 'red' }}
-/>
+const example = (
+  <Box
+    _active={{ bg: 'red' }}
+    _focus={{ bg: 'green' }}
+    _hover={{ bg: 'blue' }}
+    bg="white"
+  />
+)
 
 // Devup UI generates:
-<div className="a b c d" />
+const generated = <div className="a b c d" />
 
 // CSS output:
 // .a { background-color: white; }
@@ -121,10 +124,10 @@ Combine responsive arrays with pseudo selectors for powerful responsive interact
 
 ```tsx
 // You write:
-<Box _hover={{ bg: ['red', 'blue'] }} />
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
 
 // Equivalent syntax:
-<Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
 ## Type-Safe Theming
@@ -158,8 +161,8 @@ Define themes in `devup.json` with full TypeScript support.
 
 ```tsx
 // Type-safe theme tokens with autocomplete
-<Text color="$primary" />
-<Box typography="$heading" />
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="$heading" />
 ```
 
 Theme switching happens via CSS variables — zero JavaScript execution required.
@@ -173,7 +176,7 @@ import { styled } from '@devup-ui/react'
 
 const Card = styled('div', {
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   _hover: {
@@ -184,8 +187,8 @@ const Card = styled('div', {
 const Button = styled('button', {
   bg: 'blue',
   color: 'white',
-  px: 4,               // 4 * 4 = 16px
-  py: 2,               // 2 * 4 = 8px
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
   borderRadius: '4px',
   cursor: 'pointer',
   _hover: { bg: 'darkblue' },
@@ -202,11 +205,11 @@ import { css } from '@devup-ui/react'
 
 const cardStyles = css({
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
 })
 
-<Box {...cardStyles} />
+const example = <Box {...cardStyles} />
 ```
 
 ## globalCss() API
@@ -234,5 +237,5 @@ const spin = keyframes({
   to: { transform: 'rotate(360deg)' },
 })
 
-<Box animation={`${spin} 1s linear infinite`} />
+const example = <Box animation={`${spin} 1s linear infinite`} />
 ```

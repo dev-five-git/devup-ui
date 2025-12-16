@@ -32,22 +32,22 @@ Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analy
 
 ### Key Advantages
 
-| Feature | Devup UI | styled-components | Emotion | Vanilla Extract |
-|---------|----------|-------------------|---------|-----------------|
-| Zero Runtime | Yes | No | No | Yes |
-| Dynamic Values | Yes | Yes | Yes | Limited |
-| Full Syntax Coverage | Yes | Yes | Yes | No |
-| Type-Safe Themes | Yes | Limited | Limited | Yes |
-| Build Performance | Fastest | N/A | N/A | Fast |
+| Feature              | Devup UI | styled-components | Emotion | Vanilla Extract |
+| -------------------- | -------- | ----------------- | ------- | --------------- |
+| Zero Runtime         | Yes      | No                | No      | Yes             |
+| Dynamic Values       | Yes      | Yes               | Yes     | Limited         |
+| Full Syntax Coverage | Yes      | Yes               | Yes     | No              |
+| Type-Safe Themes     | Yes      | Limited           | Limited | Yes             |
+| Build Performance    | Fastest  | N/A               | N/A     | Fast            |
 
 ### How It Works
 
 ```tsx
 // You write familiar CSS-in-JS syntax
-<Box bg="red" p={4} _hover={{ bg: "blue" }} />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
 
 // Devup UI transforms it at build time
-<div className="a b c" />
+const generated = <div className="a b c" />
 
 // With optimized atomic CSS
 // .a { background-color: red; }
@@ -68,7 +68,7 @@ import { styled } from '@devup-ui/react'
 
 const Card = styled('div', {
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   _hover: {
@@ -81,11 +81,11 @@ const Card = styled('div', {
 
 Benchmarks on Next.js (GitHub Actions - ubuntu-latest):
 
-| Library | Build Time | Build Size |
-|---------|------------|------------|
-| tailwindcss | 19.31s | 59,521,539 bytes |
-| styleX | 41.78s | 86,869,452 bytes |
-| vanilla-extract | 19.50s | 61,494,033 bytes |
+| Library                   | Build Time | Build Size           |
+| ------------------------- | ---------- | -------------------- |
+| tailwindcss               | 19.31s     | 59,521,539 bytes     |
+| styleX                    | 41.78s     | 86,869,452 bytes     |
+| vanilla-extract           | 19.50s     | 61,494,033 bytes     |
 | **devup-ui (single css)** | **17.05s** | **59,520,196 bytes** |
 
 With Turbopack, Devup UI achieves the **smallest bundle size** at just 4,772,050 bytes.

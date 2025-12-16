@@ -81,19 +81,19 @@ npm install @devup-ui/webpack-plugin
 
 Next.js Build Time and Build Size (github action - ubuntu-latest)
 
-| 라이브러리                         | 버전   | 빌드 시간  | 빌드 사이즈           |
-| ---------------------------------- | ------ | ---------- | --------------------- |
-| tailwindcss                        | 4.1.13 | 19.31s     | 59,521,539 bytes      |
-| styleX                             | 0.15.4 | 41.78s     | 86,869,452 bytes      |
-| vanilla-extract                    | 1.17.4 | 19.50s     | 61,494,033 bytes      |
-| kuma-ui                            | 1.5.9  | 20.93s     | 69,924,179 bytes      |
-| panda-css                          | 1.3.1  | 20.64s     | 64,573,260 bytes      |
-| chakra-ui                          | 3.27.0 | 28.81s     | 222,435,802 bytes     |
-| mui                                | 7.3.2  | 20.86s     | 97,964,458 bytes      |
-| **devup-ui(per-file css)**         | 1.0.18 | **16.90s** | 59,540,459 bytes      |
-| **devup-ui(single css)**           | 1.0.18 | **17.05s** | **59,520,196 bytes**  |
-| tailwindcss(turbopack)             | 4.1.13 | 6.72s      | 5,355,082 bytes       |
-| **devup-ui(single css+turbopack)** | 1.0.18 | 10.34s     | **4,772,050 bytes**   |
+| 라이브러리                         | 버전   | 빌드 시간  | 빌드 사이즈          |
+| ---------------------------------- | ------ | ---------- | -------------------- |
+| tailwindcss                        | 4.1.13 | 19.31s     | 59,521,539 bytes     |
+| styleX                             | 0.15.4 | 41.78s     | 86,869,452 bytes     |
+| vanilla-extract                    | 1.17.4 | 19.50s     | 61,494,033 bytes     |
+| kuma-ui                            | 1.5.9  | 20.93s     | 69,924,179 bytes     |
+| panda-css                          | 1.3.1  | 20.64s     | 64,573,260 bytes     |
+| chakra-ui                          | 3.27.0 | 28.81s     | 222,435,802 bytes    |
+| mui                                | 7.3.2  | 20.86s     | 97,964,458 bytes     |
+| **devup-ui(per-file css)**         | 1.0.18 | **16.90s** | 59,540,459 bytes     |
+| **devup-ui(single css)**           | 1.0.18 | **17.05s** | **59,520,196 bytes** |
+| tailwindcss(turbopack)             | 4.1.13 | 6.72s      | 5,355,082 bytes      |
+| **devup-ui(single css+turbopack)** | 1.0.18 | 10.34s     | **4,772,050 bytes**  |
 
 ## 작동 원리
 
@@ -103,10 +103,10 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 ```tsx
 // 개발자가 작성:
-<Box bg="red" p={4} _hover={{ bg: "blue" }} />
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
 
 // Devup UI가 생성:
-<div className="a b c" />
+const generated = <div className="a b c" />
 
 // CSS:
 // .a { background-color: red; }
@@ -118,10 +118,10 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 ```tsx
 // 개발자가 작성:
-<Box bg={colorVariable} />
+const example = <Box bg={colorVariable} />
 
 // Devup UI가 생성:
-<div className="a" style={{ '--a': colorVariable }} />
+const generated = <div className="a" style={{ '--a': colorVariable }} />
 
 // CSS:
 // .a { background-color: var(--a); }
@@ -131,13 +131,15 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 ```tsx
 // 개발자가 작성:
-<Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
 
 // Devup UI가 생성:
-<div
-  className={`a b ${isActive ? 'c' : 'd'}`}
-  style={{ '--d': dynamicColor }}
-/>
+const generated = (
+  <div
+    className={`a b ${isActive ? 'c' : 'd'}`}
+    style={{ '--d': dynamicColor }}
+  />
+)
 
 // 각 브레이크포인트에 대한 반응형 CSS 생성
 ```
@@ -173,18 +175,18 @@ Devup UI는 빌드 타임에 컴포넌트를 변환합니다. 클래스명은 CS
 
 ```tsx
 // 타입 세이프 테마 토큰
-<Text color="$primary" />
-<Box typography="$heading" />
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="$heading" />
 ```
 
 **반응형 + 가상 선택자 동시 사용:**
 
 ```tsx
 // 반응형과 가상 선택자 함께 사용
-<Box _hover={{ bg: ['red', 'blue'] }} />
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
 
 // 동일한 표현
-<Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
 
 **styled-components / Emotion 호환 `styled()` API:**
@@ -195,7 +197,7 @@ import { styled } from '@devup-ui/react'
 // styled-components, Emotion 사용자에게 익숙한 문법
 const Card = styled('div', {
   bg: 'white',
-  p: 4,                // 4 * 4 = 16px
+  p: 4, // 4 * 4 = 16px
   borderRadius: '8px',
   boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   _hover: {
@@ -205,15 +207,15 @@ const Card = styled('div', {
 
 // 버튼 예시
 const Button = styled('button', {
-  px: 4,               // 4 * 4 = 16px
-  py: 2,               // 2 * 4 = 8px
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
   borderRadius: '4px',
   cursor: 'pointer',
 })
 
 // 사용
-<Card>Content</Card>
-<Button>Click me</Button>
+const cardExample = <Card>Content</Card>
+const buttonExample = <Button>Click me</Button>
 ```
 
 ## 영감

@@ -1,8 +1,8 @@
 export const metadata = {
   title: 'Group Selector',
   alternates: {
-    canonical: '/docs/api/group-selector'
-  }
+    canonical: '/docs/api/group-selector',
+  },
 }
 
 # Group Selector
@@ -14,7 +14,7 @@ Group selectors allow child elements to respond to interactions on a parent elem
 Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, or `_groupActive` on children:
 
 ```tsx
-<Box role="group" p={4} bg="$background" borderRadius="8px">
+<Box bg="$background" borderRadius="8px" p={4} role="group">
   <Text _groupHover={{ color: '$primary' }}>
     This text changes color when parent is hovered
   </Text>
@@ -26,58 +26,51 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 
 ## Available Group Selectors
 
-| Selector | Triggered when |
-|----------|----------------|
-| `_groupHover` | Parent with `role="group"` is hovered |
-| `_groupFocus` | Parent with `role="group"` is focused |
-| `_groupActive` | Parent with `role="group"` is active (pressed) |
-| `_groupFocusWithin` | Any element inside the group receives focus |
+| Selector            | Triggered when                                 |
+| ------------------- | ---------------------------------------------- |
+| `_groupHover`       | Parent with `role="group"` is hovered          |
+| `_groupFocus`       | Parent with `role="group"` is focused          |
+| `_groupActive`      | Parent with `role="group"` is active (pressed) |
+| `_groupFocusWithin` | Any element inside the group receives focus    |
 
 ## Interactive Card Example
 
 ```tsx
 <Box
-  role="group"
-  p={4}
+  _hover={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
   bg="white"
   borderRadius="8px"
   boxShadow="0 1px 3px rgba(0,0,0,0.1)"
   cursor="pointer"
-  _hover={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+  p={4}
+  role="group"
 >
   <Box
-    w="100%"
-    h="200px"
     bg="$backgroundMuted"
     borderRadius="4px"
+    h="200px"
     overflow="hidden"
+    w="100%"
   >
     <Image
-      src="/image.jpg"
       _groupHover={{ transform: 'scale(1.05)' }}
+      src="/image.jpg"
       transition="transform 0.2s"
     />
   </Box>
 
-  <Text
-    mt={3}
-    fontWeight={600}
-    _groupHover={{ color: '$primary' }}
-  >
+  <Text _groupHover={{ color: '$primary' }} fontWeight={600} mt={3}>
     Card Title
   </Text>
 
-  <Text
-    color="$textMuted"
-    fontSize="14px"
-  >
+  <Text color="$textMuted" fontSize="14px">
     Card description goes here
   </Text>
 
   <Box
+    _groupHover={{ opacity: 1 }}
     mt={3}
     opacity={0}
-    _groupHover={{ opacity: 1 }}
     transition="opacity 0.2s"
   >
     <Button>View Details</Button>
@@ -88,24 +81,19 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 ## List Item Example
 
 ```tsx
-<Box as="ul" listStyle="none" p={0} m={0}>
+<Box as="ul" listStyle="none" m={0} p={0}>
   {items.map((item) => (
     <Box
-      as="li"
       key={item.id}
-      role="group"
-      p={3}
-      borderBottom="1px solid $border"
       _hover={{ bg: '$backgroundMuted' }}
+      as="li"
+      borderBottom="1px solid $border"
+      p={3}
+      role="group"
     >
-      <Flex justify="space-between" align="center">
-        <Text _groupHover={{ color: '$primary' }}>
-          {item.title}
-        </Text>
-        <Box
-          opacity={0}
-          _groupHover={{ opacity: 1 }}
-        >
+      <Flex align="center" justify="space-between">
+        <Text _groupHover={{ color: '$primary' }}>{item.title}</Text>
+        <Box _groupHover={{ opacity: 1 }} opacity={0}>
           <Button size="sm">Edit</Button>
         </Box>
       </Flex>
@@ -119,27 +107,21 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 ```tsx
 <Box as="nav">
   <Box
-    role="group"
-    p={2}
-    borderRadius="4px"
     _hover={{ bg: '$backgroundMuted' }}
+    borderRadius="4px"
+    p={2}
+    role="group"
   >
     <Flex align="center" gap={2}>
       <Box
-        w="8px"
-        h="8px"
-        borderRadius="50%"
-        bg="$textMuted"
         _groupHover={{ bg: '$primary' }}
+        bg="$textMuted"
+        borderRadius="50%"
+        h="8px"
+        w="8px"
       />
-      <Text _groupHover={{ color: '$primary' }}>
-        Menu Item
-      </Text>
-      <Box
-        ml="auto"
-        opacity={0}
-        _groupHover={{ opacity: 1 }}
-      >
+      <Text _groupHover={{ color: '$primary' }}>Menu Item</Text>
+      <Box _groupHover={{ opacity: 1 }} ml="auto" opacity={0}>
         →
       </Box>
     </Flex>
@@ -152,11 +134,11 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 Group selectors can be combined with responsive arrays:
 
 ```tsx
-<Box role="group" p={[2, null, 4]}>
+<Box p={[2, null, 4]} role="group">
   <Text
     _groupHover={{
       color: ['$primary', null, '$secondary'],
-      fontSize: ['16px', null, '18px']
+      fontSize: ['16px', null, '18px'],
     }}
   >
     Responsive group hover
@@ -169,15 +151,11 @@ Group selectors can be combined with responsive arrays:
 For nested groups, the selector applies to the nearest parent with `role="group"`:
 
 ```tsx
-<Box role="group" p={4} bg="white">
-  <Text _groupHover={{ color: 'blue' }}>
-    Responds to outer group
-  </Text>
+<Box bg="white" p={4} role="group">
+  <Text _groupHover={{ color: 'blue' }}>Responds to outer group</Text>
 
-  <Box role="group" p={2} mt={2} bg="$backgroundMuted">
-    <Text _groupHover={{ color: 'red' }}>
-      Responds to inner group
-    </Text>
+  <Box bg="$backgroundMuted" mt={2} p={2} role="group">
+    <Text _groupHover={{ color: 'red' }}>Responds to inner group</Text>
   </Box>
 </Box>
 ```
@@ -193,7 +171,7 @@ For nested groups, the selector applies to the nearest parent with `role="group"
 Generates CSS like:
 
 ```css
-[role="group"]:hover .a {
+[role='group']:hover .a {
   background-color: red;
 }
 ```

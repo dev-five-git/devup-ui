@@ -1,8 +1,8 @@
 export const metadata = {
   title: 'devup.json',
   alternates: {
-    canonical: '/docs/devup/devup-json'
-  }
+    canonical: '/docs/devup/devup-json',
+  },
 }
 
 # devup.json
@@ -15,10 +15,10 @@ The `devup.json` file is the configuration file for your Devup UI theme. Create 
 {
   "theme": {
     "colors": {
-      "default": { },
-      "dark": { }
+      "default": {},
+      "dark": {}
     },
-    "typography": { }
+    "typography": {}
   }
 }
 ```
@@ -64,7 +64,9 @@ The `devup.json` file is the configuration file for your Devup UI theme. Create 
           "fontWeight": 800,
           "lineHeight": 1.2
         },
-        null, null, null,
+        null,
+        null,
+        null,
         {
           "fontFamily": "Pretendard",
           "fontSize": "48px",
@@ -132,7 +134,9 @@ Define typography styles as objects or responsive arrays:
       },
       "responsiveHeading": [
         { "fontSize": "20px", "fontWeight": 700 },
-        null, null, null,
+        null,
+        null,
+        null,
         { "fontSize": "32px", "fontWeight": 700 }
       ]
     }
@@ -141,6 +145,7 @@ Define typography styles as objects or responsive arrays:
 ```
 
 Typography properties:
+
 - `fontFamily` - Font family name
 - `fontSize` - Font size (e.g., `"16px"`)
 - `fontWeight` - Weight (number like `700` or string like `"bold"`)
@@ -155,14 +160,14 @@ See [Typography](/docs/devup/typography) for more details.
 ### Colors
 
 ```tsx
-<Box bg="$primary" color="$text" borderColor="$border" />
+<Box bg="$primary" borderColor="$border" color="$text" />
 ```
 
 ### Typography
 
 ```tsx
-<Text typography="$h1">Heading</Text>
-<Text typography="$body">Body text</Text>
+const headingExample = <Text typography="$h1">Heading</Text>
+const bodyExample = <Text typography="$body">Body text</Text>
 ```
 
 ## File Location
@@ -190,7 +195,7 @@ import { DevupUI } from '@devup-ui/vite-plugin'
 export default defineConfig({
   plugins: [
     DevupUI({
-      devupFile: 'config/devup.json',  // custom path
+      devupFile: 'config/devup.json', // custom path
     }),
   ],
 })
@@ -202,7 +207,7 @@ export default defineConfig({
 const withDevupUI = require('@devup-ui/next-plugin')
 
 module.exports = withDevupUI({
-  devupFile: 'config/devup.json',  // custom path
+  devupFile: 'config/devup.json', // custom path
 })
 ```
 
