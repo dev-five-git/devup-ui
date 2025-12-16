@@ -7,8 +7,89 @@ export const metadata = {
 
 ## What is Devup UI?
 
-Devup UI is a CSS in JS preprocessor that does not require runtime.
+**Devup UI is not just another CSS-in-JS library — it's the future of CSS-in-JS itself.**
 
-Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
+Devup UI is a zero-runtime CSS-in-JS preprocessor powered by Rust and WebAssembly. It transforms all your styles at build time, completely eliminating runtime overhead while providing full CSS-in-JS syntax coverage.
 
-We develop a preprocessor that considers all grammatical cases.
+### The Problem with Traditional CSS-in-JS
+
+Traditional CSS-in-JS solutions force you to choose between:
+
+- **Developer Experience**: Intuitive APIs, co-located styles, dynamic theming
+- **Performance**: No runtime overhead, fast page loads, optimal Core Web Vitals
+
+Libraries like styled-components and Emotion offer great DX but execute JavaScript at runtime to generate styles. Zero-runtime alternatives like Vanilla Extract sacrifice some flexibility for performance.
+
+### The Devup UI Solution
+
+Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analyzes your code at build time and handles every CSS-in-JS pattern:
+
+- **Variables** — Dynamic values become CSS custom properties
+- **Conditionals** — Ternary expressions are statically analyzed
+- **Responsive Arrays** — Breakpoint-based styles are pre-generated
+- **Pseudo Selectors** — `_hover`, `_focus`, `_active` work seamlessly
+- **Themes** — Type-safe theme tokens with zero-cost switching
+
+### Key Advantages
+
+| Feature              | Devup UI | styled-components | Emotion | Vanilla Extract |
+| -------------------- | -------- | ----------------- | ------- | --------------- |
+| Zero Runtime         | Yes      | No                | No      | Yes             |
+| Dynamic Values       | Yes      | Yes               | Yes     | Limited         |
+| Full Syntax Coverage | Yes      | Yes               | Yes     | No              |
+| Type-Safe Themes     | Yes      | Limited           | Limited | Yes             |
+| Build Performance    | Fastest  | N/A               | N/A     | Fast            |
+
+### How It Works
+
+```tsx
+// You write familiar CSS-in-JS syntax
+const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+
+// Devup UI transforms it at build time
+const generated = <div className="a b c" />
+
+// With optimized atomic CSS
+// .a { background-color: red; }
+// .b { padding: 16px; }  /* 4 * 4 = 16px */
+// .c:hover { background-color: blue; }
+```
+
+> Numeric values are multiplied by 4. `p={4}` becomes `padding: 16px`.
+
+Class names use compact base-37 encoding (`a`, `b`, ... `z`, `_`, `aa`, `ab`, ...) for minimal CSS output.
+
+### Familiar API
+
+If you've used styled-components or Emotion, you'll feel right at home:
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+const Card = styled('div', {
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+```
+
+### Proven Performance
+
+Benchmarks on Next.js (GitHub Actions - ubuntu-latest):
+
+| Library                   | Build Time | Build Size           |
+| ------------------------- | ---------- | -------------------- |
+| tailwindcss               | 19.31s     | 59,521,539 bytes     |
+| styleX                    | 41.78s     | 86,869,452 bytes     |
+| vanilla-extract           | 19.50s     | 61,494,033 bytes     |
+| **devup-ui (single css)** | **17.05s** | **59,520,196 bytes** |
+
+With Turbopack, Devup UI achieves the **smallest bundle size** at just 4,772,050 bytes.
+
+### Get Started
+
+Ready to experience the future of CSS-in-JS? Head to the [Installation](/docs/installation) guide to get started in minutes.

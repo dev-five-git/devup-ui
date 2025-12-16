@@ -1,42 +1,232 @@
 export const metadata = {
   title: 'devup.json',
   alternates: {
-    canonical: '/docs/devup/devup-json'
-  }
-
+    canonical: '/docs/devup/devup-json',
+  },
 }
 
 # devup.json
 
-You can use `devup.json` file to create themes. Create `devup.json` at the root of your project.
-The structure of the JSON object should like this:
+The `devup.json` file is the configuration file for your Devup UI theme. Create it at the root of your project to define colors, typography, and other design tokens.
+
+## Basic Structure
 
 ```json
 {
   "theme": {
     "colors": {
-      "light": {
-        "primary": "#6159D4",
-        "secondary": "#85A5F2"
+      "default": {},
+      "dark": {}
+    },
+    "typography": {}
+  }
+}
+```
+
+## Complete Example
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryHover": "#0060df",
+        "secondary": "#7928ca",
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "text": "#000",
+        "textMuted": "#666",
+        "background": "#fff",
+        "backgroundMuted": "#fafafa",
+        "border": "#eaeaea"
       },
       "dark": {
-        "primary": "#737FE4",
-        "secondary": "#2A4586"
+        "primary": "#3291ff",
+        "primaryHover": "#2080ef",
+        "secondary": "#8a63d2",
+        "success": "#3291ff",
+        "warning": "#f7b955",
+        "error": "#f33",
+        "text": "#fff",
+        "textMuted": "#888",
+        "background": "#000",
+        "backgroundMuted": "#111",
+        "border": "#333"
       }
     },
     "typography": {
-      "h1": {
+      "h1": [
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "32px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        },
+        null,
+        null,
+        null,
+        {
+          "fontFamily": "Pretendard",
+          "fontSize": "48px",
+          "fontWeight": 800,
+          "lineHeight": 1.2
+        }
+      ],
+      "body": {
         "fontFamily": "Pretendard",
-        "fontStyle": "normal",
-        "fontWeight": 800,
-        "fontSize": "52px",
-        "lineHeight": 1.3
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      },
+      "caption": {
+        "fontFamily": "Pretendard",
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": 1.4
       }
     }
   }
 }
 ```
 
-When you pass in the variables as props, Devup will parse it in accordance with `devup.json` file.
+## Colors Configuration
 
-To see examples, check out Colors and Typography pages.
+Define color tokens for each theme variant:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "text": "#000"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    }
+  }
+}
+```
+
+- The first key (`default`) is the default theme applied on initial load
+- Each variant must have the same color token names
+- Colors are accessed with the `$` prefix: `$primary`, `$text`
+
+See [Colors](/docs/devup/colors) for more details.
+
+## Typography Configuration
+
+Define typography styles as objects or responsive arrays:
+
+```json
+{
+  "theme": {
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
+      },
+      "responsiveHeading": [
+        { "fontSize": "20px", "fontWeight": 700 },
+        null,
+        null,
+        null,
+        { "fontSize": "32px", "fontWeight": 700 }
+      ]
+    }
+  }
+}
+```
+
+Typography properties:
+
+- `fontFamily` - Font family name
+- `fontSize` - Font size (e.g., `"16px"`)
+- `fontWeight` - Weight (number like `700` or string like `"bold"`)
+- `fontStyle` - Style (e.g., `"italic"`)
+- `lineHeight` - Line height (number like `1.5` or string like `"150%"`)
+- `letterSpacing` - Letter spacing (e.g., `"-0.02em"`)
+
+See [Typography](/docs/devup/typography) for more details.
+
+## Usage in Components
+
+### Colors
+
+```tsx
+<Box bg="$primary" borderColor="$border" color="$text" />
+```
+
+### Typography
+
+```tsx
+const headingExample = <Text typography="$h1">Heading</Text>
+const bodyExample = <Text typography="$body">Body text</Text>
+```
+
+## File Location
+
+The `devup.json` file should be placed at the root of your project:
+
+```
+your-project/
+├── devup.json      <-- here
+├── package.json
+├── src/
+│   └── ...
+└── ...
+```
+
+## Plugin Configuration
+
+By default, plugins look for `devup.json` in the project root. You can customize this:
+
+### Vite
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      devupFile: 'config/devup.json', // custom path
+    }),
+  ],
+})
+```
+
+### Next.js
+
+```js
+const withDevupUI = require('@devup-ui/next-plugin')
+
+module.exports = withDevupUI({
+  devupFile: 'config/devup.json', // custom path
+})
+```
+
+## Type Generation
+
+When your project builds, Devup UI automatically generates TypeScript types from your `devup.json`. This enables:
+
+- Autocomplete for color and typography tokens
+- Type errors for invalid tokens
+- Consistent usage across your codebase
+
+The types are generated at `df/theme.d.ts`.
+
+## Hot Reload
+
+Changes to `devup.json` trigger hot reload during development. You can:
+
+1. Add new color tokens
+2. Modify existing values
+3. Add typography styles
+
+And see changes immediately without restarting the dev server.

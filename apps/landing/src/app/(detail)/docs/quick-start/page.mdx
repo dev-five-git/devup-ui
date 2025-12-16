@@ -1,0 +1,202 @@
+export const metadata = {
+  title: 'Quick Start',
+  alternates: {
+    canonical: '/docs/quick-start',
+  },
+}
+
+# Quick Start
+
+Get up and running with Devup UI in 5 minutes.
+
+## 1. Install Packages
+
+```bash
+# Install core library
+npm install @devup-ui/react
+
+# Install plugin for your framework
+npm install @devup-ui/vite-plugin    # for Vite
+npm install @devup-ui/next-plugin    # for Next.js
+npm install @devup-ui/rsbuild-plugin # for Rsbuild
+```
+
+## 2. Configure Your Build Tool
+
+### Vite
+
+```ts
+// vite.config.ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [react(), DevupUI()],
+})
+```
+
+### Next.js
+
+```js
+// next.config.js
+const { DevupUI } = require('@devup-ui/next-plugin')
+
+module.exports = DevupUI({
+  // your Next.js config
+})
+```
+
+### Rsbuild
+
+```js
+// rsbuild.config.mjs
+import { DevupUIRsbuildPlugin } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+import { pluginReact } from '@rsbuild/plugin-react'
+
+export default defineConfig({
+  plugins: [pluginReact(), DevupUIRsbuildPlugin()],
+})
+```
+
+## 3. Create Your First Component
+
+```tsx
+import { Box, Text } from '@devup-ui/react'
+
+function Card() {
+  return (
+    <Box
+      bg="white"
+      borderRadius="8px"
+      boxShadow="0 2px 8px rgba(0,0,0,0.1)"
+      p={4}
+    >
+      <Text fontSize="20px" fontWeight={700}>
+        Hello Devup UI!
+      </Text>
+      <Text color="#666" mt={2}>
+        Zero runtime CSS-in-JS
+      </Text>
+    </Box>
+  )
+}
+```
+
+That's it! Run your dev server and see the result.
+
+## 4. Add Theme (Optional)
+
+Create `devup.json` at your project root:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "text": "#000",
+        "textMuted": "#666",
+        "background": "#fff"
+      },
+      "dark": {
+        "primary": "#3291ff",
+        "text": "#fff",
+        "textMuted": "#888",
+        "background": "#000"
+      }
+    }
+  }
+}
+```
+
+Now use theme tokens in your components:
+
+```tsx
+<Box bg="$background" p={4}>
+  <Text color="$text">Themed text</Text>
+  <Text color="$textMuted">Muted text</Text>
+  <Box bg="$primary" mt={2} p={2}>
+    <Text color="white">Primary background</Text>
+  </Box>
+</Box>
+```
+
+## Understanding the Basics
+
+### Style Props
+
+All components accept style props directly:
+
+```tsx
+<Box
+  bg="red" // background-color
+  borderRadius="8px" // border-radius
+  color="white" // color
+  h="200px" // height
+  m={2} // margin (2 * 4 = 8px)
+  p={4} // padding (4 * 4 = 16px)
+  w="100%" // width
+/>
+```
+
+> **Note**: Numeric values for spacing props (`p`, `m`, `gap`, etc.) are multiplied by 4. So `p={4}` equals `padding: 16px`.
+
+### Pseudo Selectors
+
+Use underscore prefix for pseudo selectors:
+
+```tsx
+<Box
+  _active={{ bg: 'darkblue' }}
+  _hover={{ bg: 'blue', color: 'white' }}
+  bg="white"
+>
+  Hover me
+</Box>
+```
+
+### Responsive Design
+
+Use arrays for responsive values:
+
+```tsx
+<Box
+  fontSize={['14px', null, '16px']}
+  p={[2, null, 4]} // 8px on mobile, 16px on tablet+
+  w={['100%', null, '50%']} // 100% on mobile, 50% on tablet+
+>
+  Responsive box
+</Box>
+```
+
+### styled() API
+
+Create reusable styled components:
+
+```tsx
+import { styled } from '@devup-ui/react'
+
+const Button = styled('button', {
+  bg: '$primary',
+  color: 'white',
+  px: 4,
+  py: 2,
+  borderRadius: '4px',
+  border: 'none',
+  cursor: 'pointer',
+  _hover: { opacity: 0.9 },
+})
+
+// Usage
+const buttonExample = <Button>Click me</Button>
+```
+
+## Next Steps
+
+- [Features](/docs/features) - Learn all available features
+- [Components API](/docs/api/box) - Explore component props
+- [Colors](/docs/devup/colors) - Set up your color system
+- [Typography](/docs/devup/typography) - Configure typography
+- [Breakpoints](/docs/devup/breakpoints) - Responsive design guide

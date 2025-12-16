@@ -1,69 +1,158 @@
 export const metadata = {
-    title: "Features",
-    alternates: {
-        canonical: '/docs/features',
-    }
-
+  title: 'Features',
+  alternates: {
+    canonical: '/docs/features',
+  },
 }
 
 # Features
 
-Many css in js solutions are designed to be used with JavaScript, but Devup UI is designed to be used without JavaScript.
+Devup UI provides complete CSS-in-JS syntax coverage with zero runtime overhead. Every pattern you know from styled-components and Emotion works seamlessly — but without the performance cost.
 
-Devup UI is a CSS in JS preprocessor that does not require runtime.
+## Complete Syntax Coverage
 
-Devup UI eliminates the performance degradation of the browser through the CSS in JS preprocessor.
+Unlike other zero-runtime solutions that limit what you can do, Devup UI handles every CSS-in-JS pattern at build time.
 
-We develop a preprocessor that considers all grammatical cases.
+## How It Works
 
-## How it works
+Devup UI transforms your components at build time. Class names are generated using compact base-37 encoding for minimal CSS output.
 
 ```tsx
-const before = <Box bg="red" />
+// You write:
+const example = <Box bg="red" p={4} />
 
-const after = <div className="d0" />
+// Devup UI generates:
+const generated = <div className="a b" />
+
+// CSS output:
+// .a { background-color: red; }
+// .b { padding: 16px; }  /* 4 * 4 = 16px */
 ```
 
-## Responsive
+> Note: Numeric values are multiplied by 4 to convert to pixels. `p={4}` becomes `padding: 16px`.
 
-Devup UI supports responsive design.
+Class name sequence: `a`, `b`, ... `z`, `_`, `aa`, `ab`, ... `az`, `a0`, ... `a9`, `a_`, `ba`, ...
+
+## Responsive Design
+
+Full responsive support with array syntax. Each index corresponds to a breakpoint.
 
 ```tsx
-const before = <Box bg={['red', 'blue']} />
+// You write:
+const example = <Box bg={['red', 'blue', 'green']} />
 
-const after = <div className="d0 d1" />
+// Devup UI generates:
+const generated = <div className="a b c" />
+
+// CSS output with media queries for each breakpoint
 ```
 
-## Variables
+## Dynamic Values
 
-Devup UI supports variables.
+Variables are automatically converted to CSS custom properties.
 
 ```tsx
-const before = <Box bg={colorVariable} />
+// You write:
+const example = <Box bg={colorVariable} />
 
-const after = (
+// Devup UI generates:
+const generated = <div className="a" style={{ '--a': colorVariable }} />
+
+// CSS output:
+// .a { background-color: var(--a); }
+```
+
+## Conditional Expressions
+
+Ternary operators and logical expressions are statically analyzed.
+
+```tsx
+// You write:
+const example = <Box bg={isActive ? 'blue' : dynamicColor} />
+
+// Devup UI generates:
+const generated = (
+  <div className={isActive ? 'a' : 'b'} style={{ '--b': dynamicColor }} />
+)
+```
+
+## Complex Expressions
+
+Combine responsive arrays with conditionals — Devup UI handles it all.
+
+```tsx
+// You write:
+const example = <Box bg={['red', 'blue', isActive ? 'green' : dynamicColor]} />
+
+// Devup UI generates:
+const generated = (
   <div
-    className="d0"
-    style={{
-      '--d0': colorVariable,
-    }}
+    className={`a b ${isActive ? 'c' : 'd'}`}
+    style={{ '--d': dynamicColor }}
   />
 )
 ```
 
-## Theme
+## Pseudo Selectors
 
-Devup UI supports theme.
+Use underscore prefix for pseudo selectors: `_hover`, `_focus`, `_active`, `_disabled`, and more.
+
+```tsx
+// You write:
+const example = (
+  <Box
+    _active={{ bg: 'red' }}
+    _focus={{ bg: 'green' }}
+    _hover={{ bg: 'blue' }}
+    bg="white"
+  />
+)
+
+// Devup UI generates:
+const generated = <div className="a b c d" />
+
+// CSS output:
+// .a { background-color: white; }
+// .b:hover { background-color: blue; }
+// .c:focus { background-color: green; }
+// .d:active { background-color: red; }
+```
+
+## Responsive + Pseudo Selectors
+
+Combine responsive arrays with pseudo selectors for powerful responsive interactions.
+
+```tsx
+// You write:
+const example = <Box _hover={{ bg: ['red', 'blue'] }} />
+
+// Equivalent syntax:
+const example2 = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+```
+
+## Type-Safe Theming
+
+Define themes in `devup.json` with full TypeScript support.
 
 ```json
 {
   "theme": {
     "colors": {
       "default": {
+        "primary": "#0070f3",
         "text": "#000"
       },
       "dark": {
-        "text": "white"
+        "primary": "#3291ff",
+        "text": "#fff"
+      }
+    },
+    "typography": {
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3
       }
     }
   }
@@ -71,32 +160,82 @@ Devup UI supports theme.
 ```
 
 ```tsx
-<Text color="$text" />
+// Type-safe theme tokens with autocomplete
+const textExample = <Text color="$primary" />
+const boxExample = <Box typography="$heading" />
 ```
 
-## Expressions
+Theme switching happens via CSS variables — zero JavaScript execution required.
 
-Devup UI supports expressions.
+## styled() API
+
+Familiar API for styled-components and Emotion users.
 
 ```tsx
-const before = <Box bg={a > b ? 'yellow' : variable} />
+import { styled } from '@devup-ui/react'
 
-const after = (
-  <Box
-    className={`d0 d1 ${a > b ? 'd2' : 'd3'}`}
-    style={{
-      '--d2': variable,
-    }}
-  />
-)
+const Card = styled('div', {
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  _hover: {
+    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
+  },
+})
+
+const Button = styled('button', {
+  bg: 'blue',
+  color: 'white',
+  px: 4, // 4 * 4 = 16px
+  py: 2, // 2 * 4 = 8px
+  borderRadius: '4px',
+  cursor: 'pointer',
+  _hover: { bg: 'darkblue' },
+  _active: { bg: 'navy' },
+})
 ```
 
-## Pseudo Selector
+## css() API
 
-Devup UI supports pseudo selector.
+Create reusable style objects.
 
 ```tsx
-const before = <Box _hover={{ bg: 'red' }} />
+import { css } from '@devup-ui/react'
 
-const after = <Box className="d0" />
+const cardStyles = css({
+  bg: 'white',
+  p: 4, // 4 * 4 = 16px
+  borderRadius: '8px',
+})
+
+const example = <Box {...cardStyles} />
+```
+
+## globalCss() API
+
+Define global styles that are extracted at build time.
+
+```tsx
+import { globalCss } from '@devup-ui/react'
+
+globalCss({
+  body: { margin: 0, fontFamily: 'Pretendard' },
+  '*': { boxSizing: 'border-box' },
+})
+```
+
+## keyframes() API
+
+Define CSS animations.
+
+```tsx
+import { keyframes } from '@devup-ui/react'
+
+const spin = keyframes({
+  from: { transform: 'rotate(0deg)' },
+  to: { transform: 'rotate(360deg)' },
+})
+
+const example = <Box animation={`${spin} 1s linear infinite`} />
 ```
