@@ -3,9 +3,109 @@ export const metadata = {
   alternates: {
     canonical: '/docs/devup/figma-plugin'
   }
-
 }
 
 # Figma Plugin
 
-Devup UI provides a plugin for Figma which can convert layers into code snippets.
+Devup UI provides a Figma plugin that bridges the gap between design and development. Convert Figma layers directly to Devup UI code and export design tokens to `devup.json`.
+
+## Installation
+
+1. Open Figma
+2. Go to **Plugins** > **Browse plugins in Community**
+3. Search for "Devup UI"
+4. Click **Install**
+
+Or visit the [Figma Community page](https://www.figma.com/community/plugin/1446848873498976065/devup-ui) directly.
+
+## Features
+
+### Layer to Code Conversion
+
+Select any layer in Figma and convert it to Devup UI component code:
+
+1. Select a layer (frame, rectangle, text, etc.)
+2. Open Devup UI plugin
+3. Click "Convert to Code"
+4. Copy the generated code
+
+**Example Output:**
+
+```tsx
+<Box
+  bg="#ffffff"
+  borderRadius="8px"
+  boxShadow="0 4px 6px rgba(0, 0, 0, 0.1)"
+  p={4}
+  w="320px"
+>
+  <Text
+    color="#000000"
+    fontSize="24px"
+    fontWeight={700}
+  >
+    Card Title
+  </Text>
+</Box>
+```
+
+### Design Token Export
+
+Export your Figma styles as `devup.json` configuration:
+
+1. Define color styles and text styles in Figma
+2. Open Devup UI plugin
+3. Click "Export Tokens"
+4. Download the generated `devup.json`
+
+**Supported Token Types:**
+
+- **Colors**: Fill colors, stroke colors
+- **Typography**: Text styles with font family, size, weight, line height
+
+### Auto-Detection
+
+The plugin automatically detects:
+
+- Layout properties (padding, gap, alignment)
+- Border radius and shadows
+- Typography settings
+- Color values with automatic optimization
+
+## Usage Tips
+
+### Organizing Figma Styles
+
+For best results, organize your Figma styles with consistent naming:
+
+**Colors:**
+- `primary`
+- `secondary`
+- `text`
+- `background`
+
+**Typography:**
+- `heading/h1`
+- `heading/h2`
+- `body`
+- `caption`
+
+### Working with Variants
+
+Create Figma color style collections for different themes:
+
+- **Light Theme**: Default colors
+- **Dark Theme**: Dark mode colors
+
+The plugin will export these as separate theme variants in `devup.json`.
+
+## Best Practices
+
+1. **Use Figma styles** rather than one-off colors for consistent token export
+2. **Name layers descriptively** for better code readability
+3. **Use Auto Layout** for better layout translation
+4. **Keep designs simple** - complex nested structures may need manual optimization
+
+## Support
+
+For issues or feature requests, visit the [GitHub repository](https://github.com/dev-five-git/devup-ui).

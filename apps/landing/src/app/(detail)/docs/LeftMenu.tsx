@@ -6,6 +6,7 @@ export function LeftMenu() {
   return (
     <VStack gap="6px">
       <MenuItem to="/docs/overview">Overview</MenuItem>
+      <MenuItem to="/docs/quick-start">Quick Start</MenuItem>
       <MenuItem to="/docs/installation">Installation</MenuItem>
       <MenuItem
         subMenu={[

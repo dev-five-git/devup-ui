@@ -3,35 +3,165 @@ export const metadata = {
   alternates: {
     canonical: '/docs/devup/colors'
   }
-
 }
 
 # Colors
 
-You can directly pass color values to the primitive components.
+Devup UI provides flexible color management through direct values and theme tokens.
+
+## Direct Color Values
+
+You can pass color values directly to any component:
 
 ```tsx
-const box = <Box bg="#FF0000" h={25} w={25} />
+// Hex colors
+<Box bg="#FF0000" />
+<Box bg="#F00" />
+
+// RGB/RGBA
+<Box bg="rgb(255, 0, 0)" />
+<Box bg="rgba(255, 0, 0, 0.5)" />
+
+// HSL
+<Box bg="hsl(0, 100%, 50%)" />
+
+// Named colors
+<Box bg="red" />
+<Box bg="tomato" />
 ```
 
-But, when your project gets larger and more complicated, it could be better to use variables to style your project.
-Pass in the variables that you created in `devup.json`.
+> Devup UI automatically optimizes color values at build time. For example, `rgb(255, 0, 0)` becomes `red` and `#FF0000` becomes `#f00`.
+
+## Theme Colors
+
+For larger projects, define colors in `devup.json` for consistency and theme support:
 
 ```json
 {
   "theme": {
     "colors": {
-      "light": {
-        "primary": "#FF0000"
+      "default": {
+        "primary": "#0070f3",
+        "secondary": "#7928ca",
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "text": "#000",
+        "textSecondary": "#666",
+        "background": "#fff",
+        "border": "#eaeaea"
       },
       "dark": {
-        "primary": "#FF0000"
+        "primary": "#3291ff",
+        "secondary": "#8a63d2",
+        "success": "#3291ff",
+        "warning": "#f7b955",
+        "error": "#f33",
+        "text": "#fff",
+        "textSecondary": "#888",
+        "background": "#000",
+        "border": "#333"
       }
     }
   }
 }
 ```
 
+Use theme colors with the `$` prefix:
+
 ```tsx
-const color = <Box bg="$primary" h={25} w={25} />
+<Box bg="$primary" />
+<Text color="$text" />
+<Box borderColor="$border" />
 ```
+
+## Multiple Theme Variants
+
+You can define multiple theme variants beyond `default` and `dark`:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3"
+      },
+      "dark": {
+        "primary": "#3291ff"
+      },
+      "blue": {
+        "primary": "#0052cc"
+      },
+      "green": {
+        "primary": "#00875a"
+      }
+    }
+  }
+}
+```
+
+The first key (e.g., `default`) is the default theme. Other themes can be activated using the theme API.
+
+## Semantic Color Naming
+
+Organize colors by their purpose rather than their appearance:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryHover": "#0060df",
+        "primaryActive": "#0050c0",
+
+        "text": "#000",
+        "textMuted": "#666",
+        "textInverse": "#fff",
+
+        "background": "#fff",
+        "backgroundSubtle": "#fafafa",
+        "backgroundMuted": "#f5f5f5",
+
+        "border": "#eaeaea",
+        "borderFocus": "#0070f3",
+
+        "success": "#0070f3",
+        "warning": "#f5a623",
+        "error": "#e00",
+        "info": "#0070f3"
+      }
+    }
+  }
+}
+```
+
+## Using Colors with Opacity
+
+For transparent variants, use RGBA or define separate tokens:
+
+```json
+{
+  "theme": {
+    "colors": {
+      "default": {
+        "primary": "#0070f3",
+        "primaryAlpha10": "rgba(0, 112, 243, 0.1)",
+        "primaryAlpha20": "rgba(0, 112, 243, 0.2)",
+        "overlay": "rgba(0, 0, 0, 0.5)"
+      }
+    }
+  }
+}
+```
+
+## Type Safety
+
+Theme colors are fully type-safe. TypeScript will autocomplete available color tokens:
+
+```tsx
+// Autocomplete shows: $primary, $secondary, $text, etc.
+<Box bg="$" />
+```
+
+Invalid color tokens will show TypeScript errors, ensuring consistency across your codebase.
