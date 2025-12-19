@@ -13,12 +13,62 @@ const spin = keyframes({
   },
 })
 
+const CACHE_KEY = 'github_star_count'
+const CACHE_DURATION = 60 * 60 * 1000 // 1 hour in milliseconds
+
+interface CachedData {
+  count: number
+  timestamp: number
+}
+
 export default function StarButton() {
   const [starCount, setStarCount] = useState<number | null>(null)
 
   useEffect(() => {
     const abortController = new AbortController()
+
+    const getCachedData = (): CachedData | null => {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY)
+        if (!cached) return null
+
+        const data: CachedData = JSON.parse(cached)
+        const now = Date.now()
+
+        // Check if cache is still valid
+        if (now - data.timestamp < CACHE_DURATION) {
+          return data
+        }
+
+        // Cache expired, remove it
+        localStorage.removeItem(CACHE_KEY)
+        return null
+      } catch {
+        return null
+      }
+    }
+
+    const setCachedData = (count: number) => {
+      try {
+        const data: CachedData = {
+          count,
+          timestamp: Date.now(),
+        }
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+      } catch {
+        // Ignore localStorage errors
+      }
+    }
+
     const fetchStarCount = async () => {
+      // Try to get from cache first
+      const cached = getCachedData()
+      if (cached) {
+        setStarCount(cached.count)
+        return
+      }
+
+      // If no cache, fetch from API
       try {
         const data = await fetch(
           'https://api.github.com/repos/dev-five-git/devup-ui',
@@ -26,7 +76,10 @@ export default function StarButton() {
             signal: abortController.signal,
           },
         ).then((res) => res.json())
-        setStarCount(data.stargazers_count)
+
+        const count = data.stargazers_count
+        setStarCount(count)
+        setCachedData(count)
       } catch (error) {
         if (error !== 'unmounted') console.error(error)
       } finally {
