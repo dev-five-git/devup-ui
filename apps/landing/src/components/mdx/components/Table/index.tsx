@@ -3,8 +3,14 @@ import { type ComponentProps } from 'react'
 
 export const Table = ({ ...props }: ComponentProps<'table'>) => {
   return (
-    <Box borderRadius="0.5rem" overflow="visible">
-      <Box {...props} as="table" borderCollapse="collapse" borderSpacing={0} />
+    <Box borderRadius="0.5rem" overflowX="auto">
+      <Box
+        {...props}
+        as="table"
+        borderCollapse="collapse"
+        borderSpacing={0}
+        whiteSpace="nowrap"
+      />
     </Box>
   )
 }
