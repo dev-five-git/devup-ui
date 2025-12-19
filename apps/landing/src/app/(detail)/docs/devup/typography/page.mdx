@@ -1,3 +1,12 @@
+import {
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeaderCell,
+  TableCell,
+} from '@/components/mdx/components/Table'
+
 export const metadata = {
   title: 'Typography',
   alternates: {
@@ -61,15 +70,52 @@ const captionExample = <Text typography="$caption">Caption text</Text>
 
 Each typography style can include:
 
-| Property        | Description                    | Example                  |
-| --------------- | ------------------------------ | ------------------------ |
-| `fontFamily`    | Font family name               | `"Pretendard"`           |
-| `fontSize`      | Font size                      | `"16px"`                 |
-| `fontWeight`    | Font weight (number or string) | `700` or `"bold"`        |
-| `fontStyle`     | Font style                     | `"normal"` or `"italic"` |
-| `lineHeight`    | Line height (number or string) | `1.5` or `"150%"`        |
-| `letterSpacing` | Letter spacing                 | `"-0.02em"`              |
-| `textTransform` | Text transformation            | `"uppercase"`            |
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Property</TableHeaderCell>
+      <TableHeaderCell>Description</TableHeaderCell>
+      <TableHeaderCell>Example</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>`fontFamily`</TableCell>
+      <TableCell>Font family name</TableCell>
+      <TableCell>`"Pretendard"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`fontSize`</TableCell>
+      <TableCell>Font size</TableCell>
+      <TableCell>`"16px"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`fontWeight`</TableCell>
+      <TableCell>Font weight (number or string)</TableCell>
+      <TableCell>`700` or `"bold"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`fontStyle`</TableCell>
+      <TableCell>Font style</TableCell>
+      <TableCell>`"normal"` or `"italic"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`lineHeight`</TableCell>
+      <TableCell>Line height (number or string)</TableCell>
+      <TableCell>`1.5` or `"150%"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`letterSpacing`</TableCell>
+      <TableCell>Letter spacing</TableCell>
+      <TableCell>`"-0.02em"`</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>`textTransform`</TableCell>
+      <TableCell>Text transformation</TableCell>
+      <TableCell>`"uppercase"`</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ## Responsive Typography
 

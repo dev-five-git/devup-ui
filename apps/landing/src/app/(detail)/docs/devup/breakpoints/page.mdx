@@ -1,3 +1,12 @@
+import {
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeaderCell,
+  TableCell,
+} from '@/components/mdx/components/Table'
+
 export const metadata = {
   title: 'Breakpoints',
   alternates: {
@@ -11,14 +20,54 @@ Devup UI uses a mobile-first responsive design system with 6 breakpoints. Use ar
 
 ## Breakpoint Ranges
 
-| Index | Breakpoint | Range           | Device             |
-| ----- | ---------- | --------------- | ------------------ |
-| 0     | `xs`       | 0px - 479px     | Mobile (portrait)  |
-| 1     | `sm`       | 480px - 767px   | Mobile (landscape) |
-| 2     | `md`       | 768px - 991px   | Tablet             |
-| 3     | `lg`       | 992px - 1279px  | Small desktop      |
-| 4     | `xl`       | 1280px - 1599px | Desktop            |
-| 5     | `2xl`      | 1600px+         | Large desktop      |
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Index</TableHeaderCell>
+      <TableHeaderCell>Breakpoint</TableHeaderCell>
+      <TableHeaderCell>Range</TableHeaderCell>
+      <TableHeaderCell>Device</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>0</TableCell>
+      <TableCell>`xs`</TableCell>
+      <TableCell>0px - 479px</TableCell>
+      <TableCell>Mobile (portrait)</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>1</TableCell>
+      <TableCell>`sm`</TableCell>
+      <TableCell>480px - 767px</TableCell>
+      <TableCell>Mobile (landscape)</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>2</TableCell>
+      <TableCell>`md`</TableCell>
+      <TableCell>768px - 991px</TableCell>
+      <TableCell>Tablet</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>3</TableCell>
+      <TableCell>`lg`</TableCell>
+      <TableCell>992px - 1279px</TableCell>
+      <TableCell>Small desktop</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>4</TableCell>
+      <TableCell>`xl`</TableCell>
+      <TableCell>1280px - 1599px</TableCell>
+      <TableCell>Desktop</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>5</TableCell>
+      <TableCell>`2xl`</TableCell>
+      <TableCell>1600px+</TableCell>
+      <TableCell>Large desktop</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ## Basic Usage
 
