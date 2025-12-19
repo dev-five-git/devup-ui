@@ -1,3 +1,12 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
 export const metadata = {
   title: 'What is Devup UI?',
   alternates: {
@@ -32,13 +41,54 @@ Devup UI eliminates this trade-off entirely. Our Rust-powered preprocessor analy
 
 ### Key Advantages
 
-| Feature              | Devup UI | styled-components | Emotion | Vanilla Extract |
-| -------------------- | -------- | ----------------- | ------- | --------------- |
-| Zero Runtime         | Yes      | No                | No      | Yes             |
-| Dynamic Values       | Yes      | Yes               | Yes     | Limited         |
-| Full Syntax Coverage | Yes      | Yes               | Yes     | No              |
-| Type-Safe Themes     | Yes      | Limited           | Limited | Yes             |
-| Build Performance    | Fastest  | N/A               | N/A     | Fast            |
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Feature</TableHeaderCell>
+      <TableHeaderCell>Devup UI</TableHeaderCell>
+      <TableHeaderCell>styled-components</TableHeaderCell>
+      <TableHeaderCell>Emotion</TableHeaderCell>
+      <TableHeaderCell>Vanilla Extract</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>Zero Runtime</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>No</TableCell>
+      <TableCell>No</TableCell>
+      <TableCell>Yes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>Dynamic Values</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Limited</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>Full Syntax Coverage</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>No</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>Type-Safe Themes</TableCell>
+      <TableCell>Yes</TableCell>
+      <TableCell>Limited</TableCell>
+      <TableCell>Limited</TableCell>
+      <TableCell>Yes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>Build Performance</TableCell>
+      <TableCell>Fastest</TableCell>
+      <TableCell>N/A</TableCell>
+      <TableCell>N/A</TableCell>
+      <TableCell>Fast</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ### How It Works
 
@@ -81,14 +131,84 @@ const Card = styled('div', {
 
 Benchmarks on Next.js (GitHub Actions - ubuntu-latest):
 
-| Library                   | Build Time | Build Size           |
-| ------------------------- | ---------- | -------------------- |
-| tailwindcss               | 19.31s     | 59,521,539 bytes     |
-| styleX                    | 41.78s     | 86,869,452 bytes     |
-| vanilla-extract           | 19.50s     | 61,494,033 bytes     |
-| **devup-ui (single css)** | **17.05s** | **59,520,196 bytes** |
-
-With Turbopack, Devup UI achieves the **smallest bundle size** at just 4,772,050 bytes.
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Library</TableHeaderCell>
+      <TableHeaderCell>Version</TableHeaderCell>
+      <TableHeaderCell>Build Time</TableHeaderCell>
+      <TableHeaderCell>Build Size</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>tailwindcss</TableCell>
+      <TableCell>4.1.13</TableCell>
+      <TableCell>19.31s</TableCell>
+      <TableCell>59,521,539 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>styleX</TableCell>
+      <TableCell>0.15.4</TableCell>
+      <TableCell>41.78s</TableCell>
+      <TableCell>86,869,452 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>vanilla-extract</TableCell>
+      <TableCell>1.17.4</TableCell>
+      <TableCell>19.50s</TableCell>
+      <TableCell>61,494,033 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>kuma-ui</TableCell>
+      <TableCell>1.5.9</TableCell>
+      <TableCell>20.93s</TableCell>
+      <TableCell>69,924,179 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>panda-css</TableCell>
+      <TableCell>1.3.1</TableCell>
+      <TableCell>20.64s</TableCell>
+      <TableCell>64,573,260 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>chakra-ui</TableCell>
+      <TableCell>3.27.0</TableCell>
+      <TableCell>28.81s</TableCell>
+      <TableCell>222,435,802 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>mui</TableCell>
+      <TableCell>7.3.2</TableCell>
+      <TableCell>20.86s</TableCell>
+      <TableCell>97,964,458 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (per-file css)**</TableCell>
+      <TableCell>**1.0.18**</TableCell>
+      <TableCell>**16.90s**</TableCell>
+      <TableCell>59,540,459 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (single css)**</TableCell>
+      <TableCell>**1.0.18**</TableCell>
+      <TableCell>**17.05s**</TableCell>
+      <TableCell>**59,520,196 bytes**</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>tailwindcss (turbopack)</TableCell>
+      <TableCell>4.1.13</TableCell>
+      <TableCell>6.72s</TableCell>
+      <TableCell>5,355,082 bytes</TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>**devup-ui (single css + turbopack)**</TableCell>
+      <TableCell>**1.0.18**</TableCell>
+      <TableCell>10.34s</TableCell>
+      <TableCell>**4,772,050 bytes**</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ### Get Started
 

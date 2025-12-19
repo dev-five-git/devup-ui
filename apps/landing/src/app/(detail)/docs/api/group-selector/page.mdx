@@ -1,3 +1,12 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
 export const metadata = {
   title: 'Group Selector',
   alternates: {
@@ -26,12 +35,46 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 
 ## Available Group Selectors
 
-| Selector            | Triggered when                                 |
-| ------------------- | ---------------------------------------------- |
-| `_groupHover`       | Parent with `role="group"` is hovered          |
-| `_groupFocus`       | Parent with `role="group"` is focused          |
-| `_groupActive`      | Parent with `role="group"` is active (pressed) |
-| `_groupFocusWithin` | Any element inside the group receives focus    |
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Selector</TableHeaderCell>
+      <TableHeaderCell>Triggered when</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>
+        <code>_groupHover</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is hovered
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupFocus</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is focused
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupActive</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is active (pressed)
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>_groupFocusWithin</code>
+      </TableCell>
+      <TableCell>Any element inside the group receives focus</TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ## Interactive Card Example
 

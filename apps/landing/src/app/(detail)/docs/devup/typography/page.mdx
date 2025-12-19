@@ -1,3 +1,12 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@/components/mdx/components/Table'
+
 export const metadata = {
   title: 'Typography',
   alternates: {
@@ -61,15 +70,80 @@ const captionExample = <Text typography="$caption">Caption text</Text>
 
 Each typography style can include:
 
-| Property        | Description                    | Example                  |
-| --------------- | ------------------------------ | ------------------------ |
-| `fontFamily`    | Font family name               | `"Pretendard"`           |
-| `fontSize`      | Font size                      | `"16px"`                 |
-| `fontWeight`    | Font weight (number or string) | `700` or `"bold"`        |
-| `fontStyle`     | Font style                     | `"normal"` or `"italic"` |
-| `lineHeight`    | Line height (number or string) | `1.5` or `"150%"`        |
-| `letterSpacing` | Letter spacing                 | `"-0.02em"`              |
-| `textTransform` | Text transformation            | `"uppercase"`            |
+<Table>
+  <TableHead>
+    <TableRow>
+      <TableHeaderCell>Property</TableHeaderCell>
+      <TableHeaderCell>Description</TableHeaderCell>
+      <TableHeaderCell>Example</TableHeaderCell>
+    </TableRow>
+  </TableHead>
+  <TableBody>
+    <TableRow>
+      <TableCell>
+        <code>fontFamily</code>
+      </TableCell>
+      <TableCell>Font family name</TableCell>
+      <TableCell>
+        <code>&quot;Pretendard&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontSize</code>
+      </TableCell>
+      <TableCell>Font size</TableCell>
+      <TableCell>
+        <code>&quot;16px&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontWeight</code>
+      </TableCell>
+      <TableCell>Font weight (number or string)</TableCell>
+      <TableCell>
+        <code>700</code> or <code>&quot;bold&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>fontStyle</code>
+      </TableCell>
+      <TableCell>Font style</TableCell>
+      <TableCell>
+        <code>&quot;normal&quot;</code> or <code>&quot;italic&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>lineHeight</code>
+      </TableCell>
+      <TableCell>Line height (number or string)</TableCell>
+      <TableCell>
+        <code>1.5</code> or <code>&quot;150%&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>letterSpacing</code>
+      </TableCell>
+      <TableCell>Letter spacing</TableCell>
+      <TableCell>
+        <code>&quot;-0.02em&quot;</code>
+      </TableCell>
+    </TableRow>
+    <TableRow>
+      <TableCell>
+        <code>textTransform</code>
+      </TableCell>
+      <TableCell>Text transformation</TableCell>
+      <TableCell>
+        <code>&quot;uppercase&quot;</code>
+      </TableCell>
+    </TableRow>
+  </TableBody>
+</Table>
 
 ## Responsive Typography
 
