@@ -1,10 +1,10 @@
 import {
   Table,
-  TableHead,
   TableBody,
-  TableRow,
-  TableHeaderCell,
   TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
 } from '@/components/mdx/components/Table'
 
 export const metadata = {
@@ -44,19 +44,33 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
   </TableHead>
   <TableBody>
     <TableRow>
-      <TableCell><code>_groupHover</code></TableCell>
-      <TableCell>Parent with <code>role="group"</code> is hovered</TableCell>
+      <TableCell>
+        <code>_groupHover</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is hovered
+      </TableCell>
     </TableRow>
     <TableRow>
-      <TableCell><code>_groupFocus</code></TableCell>
-      <TableCell>Parent with <code>role="group"</code> is focused</TableCell>
+      <TableCell>
+        <code>_groupFocus</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is focused
+      </TableCell>
     </TableRow>
     <TableRow>
-      <TableCell><code>_groupActive</code></TableCell>
-      <TableCell>Parent with <code>role="group"</code> is active (pressed)</TableCell>
+      <TableCell>
+        <code>_groupActive</code>
+      </TableCell>
+      <TableCell>
+        Parent with <code>role=&quot;group&quot;</code> is active (pressed)
+      </TableCell>
     </TableRow>
     <TableRow>
-      <TableCell><code>_groupFocusWithin</code></TableCell>
+      <TableCell>
+        <code>_groupFocusWithin</code>
+      </TableCell>
       <TableCell>Any element inside the group receives focus</TableCell>
     </TableRow>
   </TableBody>
