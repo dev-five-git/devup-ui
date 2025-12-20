@@ -1,4 +1,4 @@
-import { DevupUI } from '@devup-ui/vite-plugin'
+import { DevupUI, withVanillaExtract } from '@devup-ui/vite-plugin'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -9,6 +9,9 @@ export default defineConfig({
     DevupUI({
       include: ['vite-lib-example'],
       singleCss: true,
+      vanillaExtract: withVanillaExtract({
+        identifiers: 'short',
+      }),
     }),
   ],
 })

@@ -1,9 +1,12 @@
 import { Box, Text } from '@devup-ui/react'
 import { Lib } from 'vite-lib-example'
 
+import { VanillaExtractExample } from './VanillaExtractExample'
+
 export default function App() {
   return (
     <div>
+      <VanillaExtractExample />
       <Box
         _hover={{
           bg: 'blue',

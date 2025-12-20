@@ -10,7 +10,19 @@ import {
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
-import { type PluginOption, type UserConfig } from 'vite'
+import { type Plugin, type PluginOption, type UserConfig } from 'vite'
+
+export interface VanillaExtractOptions {
+  identifiers?: 'short' | 'debug'
+  emitCssInSsr?: boolean
+  esbuildOptions?: Record<string, any>
+  [key: string]: any
+}
+
+export interface VanillaExtractConfig {
+  plugin?: PluginOption
+  options?: VanillaExtractOptions
+}
 
 export interface DevupUIPluginOptions {
   package: string
@@ -21,6 +33,7 @@ export interface DevupUIPluginOptions {
   debug: boolean
   include: string[]
   singleCss: boolean
+  vanillaExtract?: boolean | VanillaExtractConfig
 }
 
 function getFileNumByFilename(filename: string) {
@@ -29,7 +42,10 @@ function getFileNumByFilename(filename: string) {
 }
 
 async function writeDataFiles(
-  options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
+  options: Omit<
+    DevupUIPluginOptions,
+    'extractCss' | 'debug' | 'include' | 'vanillaExtract'
+  >,
 ) {
   try {
     const content = existsSync(options.devupFile)
@@ -78,10 +94,12 @@ export function DevupUI({
   debug = false,
   include = [],
   singleCss = false,
+  vanillaExtract,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
   const cssMap = new Map()
-  return {
+
+  const devupPlugin: Plugin = {
     name: 'devup-ui',
     async configResolved() {
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
@@ -134,7 +152,7 @@ export function DevupUI({
     apply() {
       return true
     },
-    async watchChange(id) {
+    async watchChange(id: string) {
       if (resolve(id) === resolve(devupFile) && existsSync(devupFile)) {
         try {
           await writeDataFiles({
@@ -149,7 +167,7 @@ export function DevupUI({
         }
       }
     },
-    resolveId(id, importer) {
+    resolveId(id: string, importer?: string) {
       const fileName = basename(id).split('?')[0]
       if (
         /devup-ui(-\d+)?\.css$/.test(fileName) &&
@@ -165,7 +183,7 @@ export function DevupUI({
         )
       }
     },
-    load(id) {
+    load(id: string) {
       const fileName = basename(id).split('?')[0]
       if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
         const fileNum = getFileNumByFilename(fileName)
@@ -174,8 +192,8 @@ export function DevupUI({
         return css
       }
     },
-    enforce: 'pre',
-    async transform(code, id) {
+    enforce: 'pre' as const,
+    async transform(code: string, id: string) {
       if (!extractCss) return
 
       const fileName = id.split('?')[0]
@@ -228,7 +246,7 @@ export function DevupUI({
         map,
       }
     },
-    async generateBundle(_options, bundle) {
+    async generateBundle(_options: any, bundle: any) {
       if (!extractCss) return
 
       const cssFile = Object.keys(bundle).find(
@@ -239,4 +257,17 @@ export function DevupUI({
       }
     },
   }
+
+  // Return plugins array if vanilla-extract is enabled
+  if (vanillaExtract) {
+    const plugins: PluginOption[] = [devupPlugin]
+
+    if (typeof vanillaExtract === 'object' && vanillaExtract.plugin) {
+      plugins.push(vanillaExtract.plugin)
+    }
+
+    return plugins
+  }
+
+  return devupPlugin
 }
