@@ -12,6 +12,7 @@ use crate::extractor::{
     extract_style_from_expression::extract_style_from_expression,
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::extract_style_from_styled,
+    extract_vanilla_extract::extract_vanilla_extract_style,
 };
 use crate::gen_class_name::gen_class_names;
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
@@ -54,6 +55,7 @@ pub struct DevupVisitor<'a> {
     pub css_files: Vec<String>,
     pub styles: HashSet<ExtractStyleValue>,
     styled_import: Option<String>,
+    vanilla_extract_imports: HashMap<String, String>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -77,6 +79,7 @@ impl<'a> DevupVisitor<'a> {
             util_imports: HashMap::new(),
             split_filename,
             styled_import: None,
+            vanilla_extract_imports: HashMap::new(),
         }
     }
 }
@@ -339,6 +342,29 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
+        // Check for vanilla-extract calls first
+        if let Expression::Identifier(ident) = &it.callee {
+            if let Some(ve_function) = self.vanilla_extract_imports.get(ident.name.as_str()) {
+                if matches!(ve_function.as_str(), "style" | "styleVariants" | "globalStyle") {
+                    if let Some((result, _class_expr)) = extract_vanilla_extract_style(
+                        &self.ast,
+                        it,
+                        self.split_filename.as_deref(),
+                        &self.imports,
+                    ) {
+                        // Extract styles and add to the set
+                        result.styles.iter().for_each(|style| {
+                            self.styles.extend(style.extract());
+                        });
+                        // Replace the call expression with the class name
+                        // Note: this would need more sophisticated handling in real implementation
+                    }
+                }
+                walk_call_expression(self, it);
+                return;
+            }
+        }
+
         let jsx = if let Expression::Identifier(ident) = &it.callee {
             self.jsx_imports.get(ident.name.as_str()).cloned()
         } else if let Some(name) = &self.jsx_object
@@ -468,7 +494,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_variable_declarator(self, it);
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
-        if it.source.value != self.package
+        // Handle vanilla-extract imports
+        if it.source.value == "@vanilla-extract/css"
+            && let Some(specifiers) = &it.specifiers
+        {
+            for specifier in specifiers {
+                if let ImportSpecifier(import) = specifier {
+                    let imported = import.imported.to_string();
+                    if matches!(imported.as_str(), "style" | "styleVariants" | "globalStyle" | "keyframes" | "createVar") {
+                        self.vanilla_extract_imports
+                            .insert(import.local.to_string(), imported);
+                    }
+                }
+            }
+        } else if it.source.value != self.package
             && it.source.value == "react/jsx-runtime"
             && let Some(specifiers) = &it.specifiers
         {

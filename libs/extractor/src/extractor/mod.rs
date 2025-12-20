@@ -8,6 +8,7 @@ pub(super) mod extract_style_from_expression;
 pub(super) mod extract_style_from_jsx;
 pub(super) mod extract_style_from_member_expression;
 pub(super) mod extract_style_from_styled;
+pub(super) mod extract_vanilla_extract;
 
 /**
  * type
