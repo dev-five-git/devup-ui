@@ -19,5 +19,15 @@ export {
   useStepper,
 } from './components/Stepper'
 export { Toggle } from './components/Toggle'
+export {
+  Pagination,
+  PaginationContainer,
+  PaginationEllipsis,
+  PaginationNextButton,
+  PaginationPageButton,
+  PaginationPages,
+  PaginationPrevButton,
+  usePagination,
+} from './components/Pagination'
 export { SelectContext, useSelect } from './contexts/useSelect'
 export type { SelectType, SelectValue } from './types/select'
