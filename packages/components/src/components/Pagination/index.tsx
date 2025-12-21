@@ -34,6 +34,8 @@ type PaginationProps = {
   onPageChange?: (page: number) => void
   siblingCount?: number
   showFirstLast?: boolean
+  showPrevNext?: boolean
+  className?: string
 }
 
 function Pagination({
@@ -44,6 +46,8 @@ function Pagination({
   onPageChange,
   siblingCount = 1,
   showFirstLast = true,
+  showPrevNext = true,
+  className,
 }: PaginationProps) {
   const [internalPage, setInternalPage] = useState(defaultPage)
 
@@ -58,6 +62,14 @@ function Pagination({
     }
   }
 
+  const content = children ?? (
+    <PaginationContainer className={className}>
+      {showPrevNext && <PaginationPrevButton />}
+      <PaginationPages />
+      {showPrevNext && <PaginationNextButton />}
+    </PaginationContainer>
+  )
+
   return (
     <PaginationContext.Provider
       value={{
@@ -68,7 +80,7 @@ function Pagination({
         showFirstLast,
       }}
     >
-      {children}
+      {content}
     </PaginationContext.Provider>
   )
 }

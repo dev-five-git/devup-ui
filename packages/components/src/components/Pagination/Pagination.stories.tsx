@@ -28,6 +28,30 @@ export const Default: Story = {
     totalPages: 10,
     defaultPage: 1,
   },
+}
+
+export const PropsBasedSimple: Story = {
+  args: {
+    totalPages: 10,
+    defaultPage: 1,
+  },
+  render: (args) => <Pagination {...args} />,
+}
+
+export const WithoutPrevNext: Story = {
+  args: {
+    totalPages: 10,
+    defaultPage: 1,
+    showPrevNext: false,
+  },
+  render: (args) => <Pagination {...args} />,
+}
+
+export const CompositionBased: Story = {
+  args: {
+    totalPages: 10,
+    defaultPage: 1,
+  },
   render: (args) => (
     <Pagination {...args}>
       <PaginationContainer>
@@ -50,13 +74,7 @@ export const Controlled: Story = {
           currentPage={currentPage}
           onPageChange={setCurrentPage}
           totalPages={15}
-        >
-          <PaginationContainer>
-            <PaginationPrevButton />
-            <PaginationPages />
-            <PaginationNextButton />
-          </PaginationContainer>
-        </Pagination>
+        />
       </div>
     )
   },
@@ -67,15 +85,6 @@ export const ManyPages: Story = {
     totalPages: 100,
     defaultPage: 50,
   },
-  render: (args) => (
-    <Pagination {...args}>
-      <PaginationContainer>
-        <PaginationPrevButton />
-        <PaginationPages />
-        <PaginationNextButton />
-      </PaginationContainer>
-    </Pagination>
-  ),
 }
 
 export const FewPages: Story = {
@@ -83,15 +92,6 @@ export const FewPages: Story = {
     totalPages: 5,
     defaultPage: 1,
   },
-  render: (args) => (
-    <Pagination {...args}>
-      <PaginationContainer>
-        <PaginationPrevButton />
-        <PaginationPages />
-        <PaginationNextButton />
-      </PaginationContainer>
-    </Pagination>
-  ),
 }
 
 export const WithoutFirstLast: Story = {
@@ -100,14 +100,19 @@ export const WithoutFirstLast: Story = {
     defaultPage: 10,
     showFirstLast: false,
   },
+}
+
+export const CustomClassName: Story = {
+  args: {
+    totalPages: 10,
+    defaultPage: 1,
+    className: 'custom-pagination',
+  },
   render: (args) => (
-    <Pagination {...args}>
-      <PaginationContainer>
-        <PaginationPrevButton />
-        <PaginationPages />
-        <PaginationNextButton />
-      </PaginationContainer>
-    </Pagination>
+    <div>
+      <style>{`.custom-pagination { padding: 10px; background: rgba(129, 99, 225, 0.1); border-radius: 8px; }`}</style>
+      <Pagination {...args} />
+    </div>
   ),
 }
 

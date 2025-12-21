@@ -10,7 +10,7 @@ import {
 } from '..'
 
 describe('Pagination', () => {
-  it('should render', () => {
+  it('should render with composition pattern', () => {
     const { container } = render(
       <Pagination totalPages={10}>
         <PaginationContainer>
@@ -21,6 +21,26 @@ describe('Pagination', () => {
       </Pagination>,
     )
     expect(container).toMatchSnapshot()
+  })
+
+  it('should render with props-based pattern', () => {
+    const { container } = render(<Pagination totalPages={10} />)
+    expect(container).toMatchSnapshot()
+    expect(container.querySelector('[aria-label="Previous page"]')).toBeInTheDocument()
+    expect(container.querySelector('[aria-label="Next page"]')).toBeInTheDocument()
+    expect(container.querySelector('[aria-label="Page 1"]')).toBeInTheDocument()
+  })
+
+  it('should render without prev/next buttons when showPrevNext is false', () => {
+    const { container } = render(<Pagination showPrevNext={false} totalPages={10} />)
+    expect(container.querySelector('[aria-label="Previous page"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[aria-label="Next page"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[aria-label="Page 1"]')).toBeInTheDocument()
+  })
+
+  it('should apply custom className to container', () => {
+    const { container } = render(<Pagination className="custom-class" totalPages={10} />)
+    expect(container.querySelector('.custom-class')).toBeInTheDocument()
   })
 
   it('should throw error if children are used outside of Pagination', () => {
