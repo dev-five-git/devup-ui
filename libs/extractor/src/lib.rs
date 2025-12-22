@@ -8204,4 +8204,33 @@ keyframes({
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_mask_properties_with_korean() {
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r###"import {Box} from '@devup-ui/core'
+        <Box
+          aspectRatio="5.49"
+          bg="#752E2E"
+          h="22px"
+          maskImage="url('/icons/BI-타이틀.svg')"
+          maskRepeat="no-repeat"
+          maskSize="contain"
+          w="121px"
+        />
+        "###,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
 }

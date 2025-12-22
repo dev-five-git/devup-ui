@@ -54,18 +54,20 @@ pub fn optimize_value(value: &str) -> String {
                 let index = tmp.find(f).unwrap() + f.len();
                 let mut zero_idx = vec![];
                 let mut depth = 0;
-                for i in index..tmp.len() {
-                    if tmp[i..i + 1].eq("(") {
+                let chars: Vec<char> = tmp.chars().collect();
+                let byte_indices: Vec<usize> = tmp.char_indices().map(|(i, _)| i).collect();
+
+                for (char_idx, &ch) in chars.iter().enumerate().skip(index) {
+                    if ch == '(' {
                         depth += 1;
-                    } else if tmp[i..i + 1].eq(")") {
+                    } else if ch == ')' {
                         depth -= 1;
-                    } else if tmp[i..i + 1].eq("0")
-                        && !tmp[i - 1..i].chars().next().unwrap().is_ascii_digit()
-                        && (tmp.len() == i + 1
-                            || !tmp[i + 1..i + 2].chars().next().unwrap().is_ascii_digit())
+                    } else if ch == '0'
+                        && (char_idx == 0 || !chars[char_idx - 1].is_ascii_digit())
+                        && (char_idx + 1 >= chars.len() || !chars[char_idx + 1].is_ascii_digit())
                         && depth == 0
                     {
-                        zero_idx.push(i);
+                        zero_idx.push(byte_indices[char_idx]);
                     }
                 }
                 for i in zero_idx.iter().rev() {
@@ -93,10 +95,10 @@ pub fn optimize_value(value: &str) -> String {
 
     if ret.contains("(") || ret.contains(")") {
         let mut depth = 0;
-        for i in 0..ret.len() {
-            if ret[i..i + 1].eq("(") {
+        for ch in ret.chars() {
+            if ch == '(' {
                 depth += 1;
-            } else if ret[i..i + 1].eq(")") {
+            } else if ch == ')' {
                 depth -= 1;
             }
         }
