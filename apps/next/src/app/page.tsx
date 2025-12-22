@@ -17,15 +17,6 @@ export default function HomePage() {
   return (
     <div>
       <StyledFooter type="2">IMPLEMENTATION~</StyledFooter>
-      <Box
-        aspectRatio="5.49"
-        bg="#752E2E"
-        h="22px"
-        maskImage="url('/icons/BI-타이틀.svg')"
-        maskRepeat="no-repeat"
-        maskSize="contain"
-        w="121px"
-      />
       <p
         style={{
           backgroundColor: 'blue',
