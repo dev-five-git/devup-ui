@@ -13,13 +13,13 @@
     "@emotion/react": "^11.14",
     "@emotion/styled": "^11.14",
     "@mui/material": "7.3",
-    "next": "^16.0",
+    "next": "^16.1",
     "react": "^19.2",
     "react-dom": "^19.2",
     "react-icons": "^5.5"
   },
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "typescript": "^5"

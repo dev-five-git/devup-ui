@@ -49,13 +49,13 @@
   ],
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@devup-ui/webpack-plugin": "workspace:*",
-    "next": "^16.0",
-    "@devup-ui/wasm": "workspace:*",
+    "@devup-ui/webpack-plugin": "^workspace:*",
+    "next": "^16.1",
+    "@devup-ui/wasm": "^workspace:*",
     "glob": "^13.0"
   },
   "devDependencies": {
-    "vite": "^7.2",
+    "vite": "^7.3",
     "vite-plugin-dts": "^4.5",
     "vitest": "^4.0",
     "typescript": "^5.9",
