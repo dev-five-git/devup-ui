@@ -40,17 +40,17 @@
     "dist"
   ],
   "dependencies": {
-    "typescript-eslint": "^8.48",
-    "@typescript-eslint/utils": "^8.48"
+    "typescript-eslint": "^8.50",
+    "@typescript-eslint/utils": "^8.50"
   },
   "peerDependencies": {
     "typescript-eslint": "*",
     "@typescript-eslint/utils": "*"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.48",
+    "@typescript-eslint/rule-tester": "^8.50",
     "typescript": "^5.9",
-    "vite": "^7.2",
+    "vite": "^7.3",
     "vite-plugin-dts": "^4.5"
   }
 }

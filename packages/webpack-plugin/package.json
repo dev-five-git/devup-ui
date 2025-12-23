@@ -49,13 +49,13 @@
     "dist"
   ],
   "dependencies": {
-    "@devup-ui/wasm": "workspace:*"
+    "@devup-ui/wasm": "workspace:^"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*"
   },
   "devDependencies": {
-    "vite": "^7.2",
+    "vite": "^7.3",
     "@types/webpack": "^5.28",
     "vite-plugin-dts": "^4.5",
     "vitest": "^4.0",
