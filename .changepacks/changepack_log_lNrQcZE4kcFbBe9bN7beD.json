@@ -1,1 +1,15 @@
-{"changes":{"packages/reset-css/package.json":"Patch","packages/eslint-plugin/package.json":"Patch","packages/next-plugin/package.json":"Patch","bindings/devup-ui-wasm/package.json":"Patch","packages/vite-plugin/package.json":"Patch","packages/rsbuild-plugin/package.json":"Patch","packages/webpack-plugin/package.json":"Patch","packages/react/package.json":"Patch","packages/components/package.json":"Patch"},"note":"Update dep","date":"2025-12-23T04:02:38.514562Z"}
+{
+  "changes": {
+    "packages/reset-css/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/components/package.json": "Patch"
+  },
+  "note": "Update dep",
+  "date": "2025-12-23T04:02:38.514562Z"
+}
