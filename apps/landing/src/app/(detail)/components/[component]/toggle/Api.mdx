@@ -1,0 +1,70 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Toggle` component props.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'value',
+      description: 'The controlled value of the toggle',
+      type: '`boolean | null`',
+      default: '`null`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'The default value of the toggle (uncontrolled)',
+      type: '`boolean | null`',
+      default: '`null`',
+    },
+    {
+      property: 'onChange',
+      description: 'Callback when the toggle value changes',
+      type: '`(value: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the toggle is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'variant',
+      description: 'The visual variant of the toggle',
+      type: "`'default' | 'switch'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'className',
+      description: 'Additional class name for the toggle container',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'style',
+      description: 'Inline styles for the toggle container',
+      type: '`React.CSSProperties`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  toggle?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: 'Custom inline styles for inner elements',
+      type: '```{<br>  toggle?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the toggle',
+      type: '```{<br>  primary?: string<br>  bg?: string<br>  hoverBg?: string<br>  primaryHoverBg?: string<br>  disabledBg?: string<br>  switchHoverOutline?: string<br>  switchShadow?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

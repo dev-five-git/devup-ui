@@ -1,0 +1,70 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Input` props extends the input HTML attributes (except `type`).
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'type',
+      description: 'The type of the input (excludes file type)',
+      type: "`Exclude<InputType, 'file'>`",
+      default: '`undefined`',
+    },
+    {
+      property: 'typography',
+      description: 'Typography style key from the theme',
+      type: '`keyof DevupThemeTypography`',
+      default: '`undefined`',
+    },
+    {
+      property: 'error',
+      description: 'Whether the input is in an error state',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'errorMessage',
+      description: 'Error message to display below the input',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'allowClear',
+      description: 'Whether to show a clear button when input has value',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClear',
+      description: 'Callback when the clear button is clicked',
+      type: '`() => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'icon',
+      description: 'Icon to display on the left side of the input',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the input is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  container?: string<br>  input?: string<br>  icon?: string<br>  errorMessage?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the input',
+      type: '```{<br>  primary?: string<br>  error?: string<br>  text?: string<br>  base?: string<br>  iconBold?: string<br>  border?: string<br>  inputBackground?: string<br>  primaryFocus?: string<br>  negative20?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>

@@ -1,0 +1,133 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Radio` props extends the input HTML attributes (except `type`).
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The label content of the radio',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'checked',
+      description: 'Whether the radio is checked',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the radio is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'variant',
+      description: 'The visual variant of the radio',
+      type: "`'default' | 'button'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'firstButton',
+      description: 'Whether this is the first button in a button group (only for button variant)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'lastButton',
+      description: 'Whether this is the last button in a button group (only for button variant)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  label?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: 'Custom inline styles for inner elements',
+      type: '```{<br>  label?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the radio',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  text?: string<br>  bg?: string<br>  hoverBg?: string<br>  hoverBorder?: string<br>  hoverColor?: string<br>  checkedBg?: string<br>  checkedBorder?: string<br>  checkedColor?: string<br>  disabledBg?: string<br>  disabledColor?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### RadioGroup API
+
+`RadioGroup` component for managing a group of radio buttons.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'options',
+      description: 'Array of options for the radio group',
+      type: '```{ value: string | number | boolean; label: React.ReactNode }[]```',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: 'The controlled value of the radio group',
+      type: '`string | number | boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'The default value of the radio group (uncontrolled)',
+      type: '`string | number | boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'onChange',
+      description: 'Callback when the selected value changes',
+      type: '`(value: string | number | boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether all radios in the group are disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'direction',
+      description: 'The layout direction of the radio group',
+      type: "`'row' | 'column'`",
+      default: "`'row'`",
+    },
+    {
+      property: 'variant',
+      description: 'The visual variant of the radio buttons',
+      type: "`'default' | 'button'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables (same as Radio colors)',
+      type: '`RadioColors`',
+      default: '`undefined`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  label?: string<br>  container?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'styles',
+      description: 'Custom inline styles for inner elements',
+      type: '```{<br>  label?: React.CSSProperties<br>  container?: React.CSSProperties<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
