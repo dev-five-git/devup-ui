@@ -15,8 +15,8 @@
     "changepacks": "pnpm dlx @changepacks/cli"
   },
   "devDependencies": {
-    "@devup-ui/eslint-plugin": "^workspace:*",
-    "@devup-ui/vite-plugin": "^workspace:*",
+    "@devup-ui/eslint-plugin": "workspace:^",
+    "@devup-ui/vite-plugin": "workspace:^",
     "@testing-library/jest-dom": "^6.9",
     "@testing-library/react": "^16.3",
     "@testing-library/user-event": "14.6",
@@ -36,7 +36,7 @@
   "author": "devfive",
   "packageManager": "pnpm@10.26.1",
   "resolutions": {
-    "@devup-ui/eslint-plugin": "^workspace:*"
+    "@devup-ui/eslint-plugin": "workspace:^"
   },
   "workspaces": [
     "packages/*",

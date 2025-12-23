@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "react": "^19.2",
-    "@devup-ui/react": "^workspace:*"
+    "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
     "vite-plugin-dts": "^4.5",
-    "@devup-ui/vite-plugin": "^workspace:*",
+    "@devup-ui/vite-plugin": "workspace:^",
     "@vitejs/plugin-react": "^5.1.2",
     "vite": "^7.3",
     "typescript": "^5",

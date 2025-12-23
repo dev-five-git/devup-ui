@@ -49,9 +49,9 @@
   ],
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@devup-ui/webpack-plugin": "^workspace:*",
+    "@devup-ui/webpack-plugin": "workspace:^",
     "next": "^16.1",
-    "@devup-ui/wasm": "^workspace:*",
+    "@devup-ui/wasm": "workspace:^",
     "glob": "^13.0"
   },
   "devDependencies": {

@@ -13,11 +13,11 @@
     "react": "^19.2",
     "react-dom": "^19.2",
     "next": "^16.1",
-    "@devup-ui/react": "^workspace:*",
-    "vite-lib-example": "^workspace:*"
+    "@devup-ui/react": "workspace:^",
+    "vite-lib-example": "workspace:^"
   },
   "devDependencies": {
-    "@devup-ui/next-plugin": "^workspace:*",
+    "@devup-ui/next-plugin": "workspace:^",
     "typescript": "^5",
     "@types/node": "^25",
     "@types/react": "^19.2",

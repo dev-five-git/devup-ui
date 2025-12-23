@@ -39,7 +39,7 @@
   ],
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@devup-ui/react": "^workspace:*"
+    "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.9",
@@ -48,6 +48,6 @@
     "rollup-plugin-preserve-directives": "^0.4"
   },
   "peerDependencies": {
-    "@devup-ui/react": "^workspace:*"
+    "@devup-ui/react": "workspace:^"
   }
 }

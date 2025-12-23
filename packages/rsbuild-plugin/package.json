@@ -49,7 +49,7 @@
     "dist"
   ],
   "dependencies": {
-    "@devup-ui/wasm": "^workspace:*"
+    "@devup-ui/wasm": "workspace:^"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*",

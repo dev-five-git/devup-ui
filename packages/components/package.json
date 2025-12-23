@@ -42,14 +42,14 @@
   ],
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@devup-ui/react": "^workspace:*",
+    "@devup-ui/react": "workspace:^",
     "csstype-extra": "latest",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "clsx": "^2.1"
   },
   "devDependencies": {
-    "@devup-ui/vite-plugin": "^workspace:*",
+    "@devup-ui/vite-plugin": "workspace:^",
     "@storybook/addon-docs": "^10.1",
     "@storybook/addon-onboarding": "^10.1",
     "@storybook/react-vite": "^10.1",
@@ -63,7 +63,7 @@
     "vitest": "^4.0"
   },
   "peerDependencies": {
-    "@devup-ui/react": "^workspace:*",
+    "@devup-ui/react": "workspace:^",
     "csstype-extra": "*",
     "react": "*"
   }

@@ -11,9 +11,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@devup-ui/components": "^workspace:*",
-    "@devup-ui/react": "^workspace:*",
-    "@devup-ui/reset-css": "^workspace:*",
+    "@devup-ui/components": "workspace:^",
+    "@devup-ui/react": "workspace:^",
+    "@devup-ui/reset-css": "workspace:^",
     "@mdx-js/loader": "^3.1",
     "@mdx-js/react": "^3.1",
     "@next/mdx": "^16.1",
@@ -27,7 +27,7 @@
     "react-syntax-highlighter": "^16.1"
   },
   "devDependencies": {
-    "@devup-ui/next-plugin": "^workspace:*",
+    "@devup-ui/next-plugin": "workspace:^",
     "@types/body-scroll-lock": "^3.1",
     "@types/mdx": "^2.0",
     "@types/node": "^25",
