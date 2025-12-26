@@ -1,12 +1,9 @@
-/**
- * ## With Options Prop
- * Use the `options` prop as a shorthand to define options without compound components.
- * Each option can have `label`, `value`, `disabled`, and `onClick` properties.
- */
-'use client'
-
 import { Select } from '@devup-ui/components'
 
+/**
+ * **Options**
+ * Use the `options` prop as a shorthand to define options without compound components. Each option can have `label`, `value`, `disabled`, and `onClick` properties.
+ */
 export default function WithOptions() {
   return (
     <Select

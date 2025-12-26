@@ -1,8 +1,3 @@
-/**
- * ## Checkbox Type
- * Set `type="checkbox"` for multiple selection mode. Users can select multiple options,
- * and use `showConfirmButton` on the container to add a confirm button.
- */
 'use client'
 
 import { useState } from 'react'
@@ -13,6 +8,10 @@ import {
   SelectTrigger,
 } from '@devup-ui/components'
 
+/**
+ * **Checkbox Type**
+ * Use `type="checkbox"` for multiple selection mode. Users can select multiple options, and use `showConfirmButton` on the container to add a confirm button.
+ */
 export default function Checkbox() {
   const [value, setValue] = useState<string[]>([])
 

@@ -1,10 +1,3 @@
-/**
- * ## Default
- * Compound component with trigger and dropdown. Use `SelectTrigger` to create the button,
- * `SelectContainer` for the dropdown, and `SelectOption` for each option.
- */
-'use client'
-
 import {
   Select,
   SelectContainer,
@@ -12,6 +5,10 @@ import {
   SelectTrigger,
 } from '@devup-ui/components'
 
+/**
+ * **Default**
+ * Compound component with trigger and dropdown. Use `SelectTrigger` to create the button, `SelectContainer` for the dropdown, and `SelectOption` for each option.
+ */
 export default function Default() {
   return (
     <Select>

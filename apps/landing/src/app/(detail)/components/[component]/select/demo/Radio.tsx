@@ -1,8 +1,3 @@
-/**
- * ## Radio Type
- * Set `type="radio"` for single selection mode. The selected option is highlighted
- * with a check icon, and the dropdown closes after selection.
- */
 'use client'
 
 import { useState } from 'react'
@@ -13,6 +8,10 @@ import {
   SelectTrigger,
 } from '@devup-ui/components'
 
+/**
+ * **Radio Type**
+ * Use `type="radio"` for single selection mode. The selected option is highlighted with a check icon, and the dropdown closes after selection.
+ */
 export default function Radio() {
   const [value, setValue] = useState('')
 

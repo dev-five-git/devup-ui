@@ -1,12 +1,9 @@
-/**
- * ## Column Direction
- * Set `direction="column"` to stack radio buttons vertically.
- * Default direction is `"row"` which displays options horizontally.
- */
-'use client'
-
 import { RadioGroup } from '@devup-ui/components'
 
+/**
+ * **Direction**
+ * Use `direction="column"` to stack radio buttons vertically. Default direction is `"row"` which displays options horizontally.
+ */
 export default function Column() {
   return (
     <RadioGroup
