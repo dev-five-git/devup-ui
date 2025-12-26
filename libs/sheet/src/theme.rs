@@ -220,19 +220,17 @@ impl<'de> Deserialize<'de> for Typographies {
             Value::Array(arr) => {
                 let mut result = Vec::with_capacity(arr.len());
                 for item in arr {
-                    match item {
-                        Value::Null => result.push(None),
-                        Value::Object(_) => {
-                            let typo: Typography =
-                                serde_json::from_value(item.clone()).map_err(D::Error::custom)?;
-                            result.push(Some(typo));
-                        }
+                    if item.is_null() {
+                        result.push(None);
+                    } else if item.is_object() {
+                        let typo: Typography =
+                            serde_json::from_value(item.clone()).map_err(D::Error::custom)?;
+                        result.push(Some(typo));
+                    } else {
                         // Non-object/null values mean this is not a valid traditional array format
-                        _ => {
-                            return Err(D::Error::custom(
-                                "Typography value cannot start with an array. Use object format with property-level arrays instead.",
-                            ));
-                        }
+                        return Err(D::Error::custom(
+                            "Typography value cannot start with an array. Use object format with property-level arrays instead.",
+                        ));
                     }
                 }
                 Ok(Self(result))
