@@ -227,15 +227,15 @@ impl<'de> Deserialize<'de> for Typographies {
                         match item {
                             Value::Null => result.push(None),
                             Value::Object(_) => {
-                                let typo: Typography =
-                                    serde_json::from_value(item.clone()).map_err(D::Error::custom)?;
+                                let typo: Typography = serde_json::from_value(item.clone())
+                                    .map_err(D::Error::custom)?;
                                 result.push(Some(typo));
                             }
                             _ => {
                                 return Err(D::Error::custom(format!(
                                     "Typography array must contain objects or null, got: {:?}",
                                     item
-                                )))
+                                )));
                             }
                         }
                     }
