@@ -216,8 +216,6 @@ pub fn get_theme_interface(
 }
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
@@ -341,7 +339,7 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
 
-        assert_eq!(color_theme.0.keys().count(), 1);
+        assert_eq!(color_theme.css_keys().count(), 1);
 
         theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::default();
@@ -391,151 +389,44 @@ mod tests {
         );
         assert_eq!(theme.to_css(), "");
 
-        let mut theme = Theme::default();
-        theme.add_color_theme(
-            "default",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        // Helper to create a ColorTheme with a single color
+        fn make_color_theme(name: &str, value: &str) -> ColorTheme {
+            let mut ct = ColorTheme::default();
+            ct.add_color(name, value);
+            ct
+        }
 
-        theme.add_color_theme(
-            "dark",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        let mut theme = Theme::default();
+        theme.add_color_theme("default", make_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "dark",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("a", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "c",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_color_theme("primary", "#000"));
+        theme.add_color_theme("c", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#001".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#002".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "c",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#001"));
+        theme.add_color_theme("a", make_color_theme("primary", "#002"));
+        theme.add_color_theme("c", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
     }
 
@@ -584,7 +475,7 @@ mod tests {
                 "TypographyInterface",
                 "ThemeInterface"
             ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface ThemeInterface{dark:null}}"
         );
 
         // test wrong case
@@ -612,7 +503,7 @@ mod tests {
                 "TypographyInterface",
                 "ThemeInterface"
             ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
+            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null}interface TypographyInterface{[`prim\\`\\`ary`]:null}interface ThemeInterface{dark:null}}"
         );
     }
 

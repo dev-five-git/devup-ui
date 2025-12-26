@@ -40,7 +40,13 @@ function IndexMenu({
 
 export function RightIndex() {
   const pathname = usePathname()
-  const editUrl = `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/components/${pathname.split('components')[1]}/`
+  const isDocs = pathname.startsWith('/docs/')
+  const isComponents = pathname.startsWith('/components/')
+  const editUrl = isDocs
+    ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/docs${pathname.replace('/docs', '')}/page.mdx`
+    : isComponents
+      ? `https://github.com/dev-five-git/devup-ui/tree/main/apps/landing/src/app/(detail)/components${pathname.replace('/components', '')}/`
+      : ''
   const [menus, setMenus] = useState<
     {
       text: string
@@ -49,19 +55,42 @@ export function RightIndex() {
     }[]
   >([])
   useEffect(() => {
-    const elements = document.querySelectorAll(
-      '.markdown-body h4, .markdown-body h6',
-    )
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMenus(
-      [...elements].map((element) => ({
-        text: element.textContent!,
-        sub: element.tagName === 'H6',
-        onClick: () => {
-          element.scrollIntoView({ behavior: 'smooth' })
-        },
-      })),
-    )
+    const updateMenus = () => {
+      const elements = document.querySelectorAll(
+        '.markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h6',
+      )
+
+      setMenus(
+        [...elements].map((element) => ({
+          text: element.textContent!,
+          sub:
+            element.tagName === 'H3' ||
+            element.tagName === 'H4' ||
+            element.tagName === 'H6',
+          onClick: () => {
+            element.scrollIntoView({ behavior: 'smooth' })
+          },
+        })),
+      )
+    }
+
+    updateMenus()
+
+    const timeoutId = setTimeout(updateMenus, 100)
+    const observer = new MutationObserver(updateMenus)
+
+    const markdownBody = document.querySelector('.markdown-body')
+    if (markdownBody) {
+      observer.observe(markdownBody, {
+        childList: true,
+        subtree: true,
+      })
+    }
+
+    return () => {
+      clearTimeout(timeoutId)
+      observer.disconnect()
+    }
   }, [pathname])
 
   return (

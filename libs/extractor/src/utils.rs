@@ -197,16 +197,7 @@ pub(super) fn wrap_direct_call<'a>(
     expr: &Expression<'a>,
     args: &[Expression<'a>],
 ) -> Expression<'a> {
-    builder.expression_call::<Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>>(
-        SPAN,
-        expr.clone_in(builder.allocator),
-        None,
-        oxc_allocator::Vec::from_iter_in(
-            args.iter().map(|e| e.clone_in(builder.allocator).into()),
-            builder.allocator,
-        ),
-        false,
-    )
+    builder.expression_call::<Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>>(SPAN, expr.clone_in(builder.allocator), None, oxc_allocator::Vec::from_iter_in(args.iter().map(|e| e.clone_in(builder.allocator).into()), builder.allocator), false)
 }
 /// merge expressions to object expression
 pub(super) fn merge_object_expressions<'a>(

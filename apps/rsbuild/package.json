@@ -13,11 +13,11 @@
   "dependencies": {
     "react": "^19.2",
     "react-dom": "^19.2",
-    "@devup-ui/react": "workspace:*"
+    "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
     "@rsbuild/core": "^1.6",
     "@rsbuild/plugin-react": "^1.4",
-    "@devup-ui/rsbuild-plugin": "workspace:*"
+    "@devup-ui/rsbuild-plugin": "workspace:^"
   }
 }

@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: "sheet.create_interface(\"package\", \"ColorInterface\", \"TypographyInterface\",\n\"ThemeInterface\")"
+---
+"import \"package\";declare module \"package\"{interface ColorInterface{[`$brand.primary.dark`]:null;[`$brand.primary.light`]:null}interface TypographyInterface{}interface ThemeInterface{dark:null}}"

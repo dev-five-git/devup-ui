@@ -72,7 +72,7 @@ impl ExtractStyle for StyleSheetProperty {
     }
 }
 
-static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
+static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$[\w.]+").unwrap());
 static INTERFACE_KEY_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
 
@@ -88,7 +88,7 @@ fn convert_theme_variable_value(value: &str) -> String {
     if value.contains("$") {
         VAR_RE
             .replace_all(value, |caps: &regex::Captures| {
-                format!("var(--{})", &caps[0][1..])
+                format!("var(--{})", &caps[0][1..].replace('.', "-"))
             })
             .to_string()
     } else {
@@ -383,11 +383,11 @@ impl StyleSheet {
         typography_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
-        let mut color_keys = HashSet::new();
-        let mut typography_keys = HashSet::new();
-        let mut theme_keys = HashSet::new();
+        let mut color_keys = BTreeSet::new();
+        let mut typography_keys = BTreeSet::new();
+        let mut theme_keys = BTreeSet::new();
         for color_theme in self.theme.colors.values() {
-            color_theme.0.keys().for_each(|key| {
+            color_theme.interface_keys().for_each(|key| {
                 color_keys.insert(key.clone());
             });
         }
@@ -409,19 +409,21 @@ impl StyleSheet {
                 color_interface_name,
                 color_keys
                     .into_iter()
-                    .map(|key| format!("{}:null;", convert_interface_key(&format!("${key}"))))
-                    .collect::<String>(),
+                    .map(|key| format!("{}:null", convert_interface_key(&format!("${key}"))))
+                    .collect::<Vec<_>>()
+                    .join(";"),
                 typography_interface_name,
                 typography_keys
                     .into_iter()
-                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<String>(),
+                    .map(|key| format!("{}:null", convert_interface_key(&key)))
+                    .collect::<Vec<_>>()
+                    .join(";"),
                 theme_interface_name,
                 theme_keys
                     .into_iter()
-                    // key to pascal
-                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<String>()
+                    .map(|key| format!("{}:null", convert_interface_key(&key)))
+                    .collect::<Vec<_>>()
+                    .join(";")
             )
         }
     }
@@ -592,11 +594,11 @@ impl StyleSheet {
 
             let theme_css = self.theme.to_css();
             let mut layers_vec = Vec::new();
-            if !theme_css.is_empty() {
-                layers_vec.push("t".to_string());
-            }
             if style_orders.remove(&0) {
                 layers_vec.push("b".to_string());
+            }
+            if !theme_css.is_empty() {
+                layers_vec.push("t".to_string());
             }
             layers_vec.extend(style_orders.iter().map(|v| format!("o{v}")));
             if !layers_vec.is_empty() {
@@ -688,20 +690,22 @@ mod tests {
     use extractor::{ExtractOption, extract};
     use insta::assert_debug_snapshot;
 
-    #[test]
-    fn test_convert_theme_variable_value() {
-        assert_eq!(convert_theme_variable_value("1px"), "1px");
-        assert_eq!(convert_theme_variable_value("$var"), "var(--var)");
+    use rstest::rstest;
 
-        assert_eq!(
-            convert_theme_variable_value("$var $var"),
-            "var(--var) var(--var)"
-        );
-
-        assert_eq!(
-            convert_theme_variable_value("1px solid $red"),
-            "1px solid var(--red)"
-        );
+    #[rstest]
+    #[case("1px", "1px")]
+    #[case("$var", "var(--var)")]
+    #[case("$var $var", "var(--var) var(--var)")]
+    #[case("1px solid $red", "1px solid var(--red)")]
+    // Test dot notation theme variables (e.g., $primary.100)
+    // Dots should be converted to dashes for CSS variable names
+    #[case("$primary.100", "var(--primary-100)")]
+    #[case("$gray.200 $blue.500", "var(--gray-200) var(--blue-500)")]
+    #[case("1px solid $border.primary", "1px solid var(--border-primary)")]
+    // Test deep nested dot notation
+    #[case("$color.brand.primary.100", "var(--color-brand-primary-100)")]
+    fn test_convert_theme_variable_value(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(convert_theme_variable_value(input), expected);
     }
 
     #[test]
@@ -1628,17 +1632,14 @@ mod tests {
         color_theme.add_color("primary", "#000");
         theme.add_color_theme("dark", color_theme);
         sheet.set_theme(theme);
-        assert_eq!(
-            sheet.create_interface(
-                "package",
-                "ColorInterface",
-                "TypographyInterface",
-                "ThemeInterface"
-            ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
-        );
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
 
-        // test wrong case
+        // test wrong case (backticks and special characters)
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -1655,15 +1656,62 @@ mod tests {
             ))],
         );
         sheet.set_theme(theme);
-        assert_eq!(
-            sheet.create_interface(
-                "package",
-                "ColorInterface",
-                "TypographyInterface",
-                "ThemeInterface"
-            ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
-        );
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
+
+        // test nested colors - interface keys should use dots for TypeScript
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "gray": {
+                            "100": "#f5f5f5",
+                            "200": "#eee"
+                        },
+                        "primary": "#000",
+                        "secondary.light": "#ccc"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
+
+        // test deep nested colors
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "dark": {
+                        "brand": {
+                            "primary": {
+                                "light": "#f0f",
+                                "dark": "#0f0"
+                            }
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
     }
 
     #[test]
