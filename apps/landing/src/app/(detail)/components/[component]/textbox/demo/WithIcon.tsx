@@ -1,3 +1,8 @@
+/**
+ * ## With Icon
+ * Pass a React node to the `icon` prop to display an icon on the left side of the input.
+ * Useful for search fields or inputs with visual context.
+ */
 'use client'
 
 import { Input } from '@devup-ui/components'

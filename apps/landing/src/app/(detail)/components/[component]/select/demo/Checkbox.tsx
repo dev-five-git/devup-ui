@@ -1,3 +1,8 @@
+/**
+ * ## Checkbox Type
+ * Set `type="checkbox"` for multiple selection mode. Users can select multiple options,
+ * and use `showConfirmButton` on the container to add a confirm button.
+ */
 'use client'
 
 import { useState } from 'react'

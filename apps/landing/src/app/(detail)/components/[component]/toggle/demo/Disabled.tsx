@@ -1,3 +1,8 @@
+/**
+ * ## Disabled
+ * Set `disabled` prop to prevent user interaction. The toggle will have a muted appearance
+ * and cannot be toggled.
+ */
 'use client'
 
 import { Flex } from '@devup-ui/react'
