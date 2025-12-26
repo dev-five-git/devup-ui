@@ -592,11 +592,11 @@ impl StyleSheet {
 
             let theme_css = self.theme.to_css();
             let mut layers_vec = Vec::new();
-            if !theme_css.is_empty() {
-                layers_vec.push("t".to_string());
-            }
             if style_orders.remove(&0) {
                 layers_vec.push("b".to_string());
+            }
+            if !theme_css.is_empty() {
+                layers_vec.push("t".to_string());
             }
             layers_vec.extend(style_orders.iter().map(|v| format!("o{v}")));
             if !layers_vec.is_empty() {
