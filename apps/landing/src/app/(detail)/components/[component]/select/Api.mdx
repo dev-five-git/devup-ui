@@ -1,0 +1,184 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+The Select component is a compound component that consists of multiple parts.
+
+###### Select
+
+The root component that provides context for the select.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The select content (Trigger, Container, Options)',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: 'The controlled value of the select',
+      type: '`string | string[]`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'The default value of the select (uncontrolled)',
+      type: '`string | string[]`',
+      default: '`undefined`',
+    },
+    {
+      property: 'onChange',
+      description: 'Callback when the selected value changes',
+      type: '`(value: string) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'open',
+      description: 'Whether the select dropdown is open (controlled)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultOpen',
+      description: 'Whether the select dropdown is open by default',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'onOpenChange',
+      description: 'Callback when the open state changes',
+      type: '`(open: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'type',
+      description: 'The selection mode of the select',
+      type: "`'default' | 'radio' | 'checkbox'`",
+      default: "`'default'`",
+    },
+    {
+      property: 'typography',
+      description: 'Typography style key from the theme',
+      type: '`DevupThemeTypographyKeys`',
+      default: '`undefined`',
+    },
+    {
+      property: 'options',
+      description:
+        'Shorthand for defining options without using compound components',
+      type: '```{ label?: string; disabled?: boolean; value: string; showCheck?: boolean; onClick?: (value, e) => void }[]```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the select',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  inputBackground?: string<br>  inputDisabledBackground?: string<br>  inputDisabledText?: string<br>  base10?: string<br>  title?: string<br>  selectDisabled?: string<br>  primaryBg?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### SelectTrigger
+
+The button that triggers the dropdown to open/close.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The trigger content',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'asChild',
+      description: 'Render as the child element instead of a Button',
+      type: '`boolean`',
+      default: '`false`',
+    },
+  ]}
+/>
+
+###### SelectContainer
+
+The dropdown container that holds the options.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The container content (Options)',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'showConfirmButton',
+      description: 'Whether to show a confirm button (for checkbox type)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'confirmButtonText',
+      description: 'Text for the confirm button',
+      type: '`string`',
+      default: "`'D�'`",
+    },
+    {
+      property: 'x',
+      description: 'Horizontal offset for the dropdown position',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'y',
+      description: 'Vertical offset for the dropdown position',
+      type: '`number`',
+      default: '`0`',
+    },
+  ]}
+/>
+
+###### SelectOption
+
+An individual option within the select dropdown.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The option content',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'value',
+      description: 'The value of the option',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the option is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'showCheck',
+      description: 'Whether to show a check icon when selected',
+      type: '`boolean`',
+      default: '`true`',
+    },
+    {
+      property: 'onClick',
+      description: 'Custom click handler for the option',
+      type: '`(value: string | undefined, e?: React.MouseEvent) => void`',
+      default: '`undefined`',
+    },
+  ]}
+/>
+
+###### SelectDivider
+
+A visual divider between options.

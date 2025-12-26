@@ -1,0 +1,73 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+The Stepper component is a compound component that consists of multiple parts.
+
+###### Stepper
+
+The root component that provides context for the stepper.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The stepper content (Container, Buttons, Input)',
+      type: '`React.ReactNode`',
+      default: '`undefined`',
+    },
+    {
+      property: 'value',
+      description: 'The controlled value of the stepper',
+      type: '`number`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultValue',
+      description: 'The default value of the stepper (uncontrolled)',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'onValueChange',
+      description: 'Callback when the stepper value changes',
+      type: '`(value: number) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'min',
+      description: 'The minimum value allowed',
+      type: '`number`',
+      default: '`0`',
+    },
+    {
+      property: 'max',
+      description: 'The maximum value allowed',
+      type: '`number`',
+      default: '`100`',
+    },
+    {
+      property: 'type',
+      description:
+        'Whether the value is editable via input or displayed as text',
+      type: "`'input' | 'text'`",
+      default: "`'input'`",
+    },
+  ]}
+/>
+
+###### StepperContainer
+
+A flex container that wraps the stepper elements.
+
+###### StepperDecreaseButton
+
+Button to decrease the stepper value by 1. Automatically disabled when value reaches min.
+
+###### StepperIncreaseButton
+
+Button to increase the stepper value by 1. Automatically disabled when value reaches max.
+
+###### StepperInput
+
+Displays the current value. When type is 'input', users can edit the value directly.

@@ -1,0 +1,19 @@
+import { RadioGroup } from '@devup-ui/components'
+
+/**
+ * **Variant**
+ * Use `variant="button"` to display radio options as a segmented button group. Options are displayed inline with connected borders.
+ */
+export default function ButtonVariant() {
+  return (
+    <RadioGroup
+      defaultValue="option1"
+      options={[
+        { value: 'option1', label: 'Option 1' },
+        { value: 'option2', label: 'Option 2' },
+        { value: 'option3', label: 'Option 3' },
+      ]}
+      variant="button"
+    />
+  )
+}

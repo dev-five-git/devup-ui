@@ -1,0 +1,46 @@
+import { PropsTable } from '@/components/PropsTable'
+
+###### API
+
+`Checkbox` props extends the input HTML attributes (except `type` and `onChange`).
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'children',
+      description: 'The label content of the checkbox',
+      type: '`React.ReactNode`',
+      default: '-',
+    },
+    {
+      property: 'checked',
+      description: 'Whether the checkbox is checked (controlled)',
+      type: '`boolean`',
+      default: '`undefined`',
+    },
+    {
+      property: 'defaultChecked',
+      description: 'Whether the checkbox is checked by default (uncontrolled)',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'disabled',
+      description: 'Whether the checkbox is disabled',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'onChange',
+      description: 'Callback when the checked state changes',
+      type: '`(checked: boolean) => void`',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the checkbox',
+      type: '```{<br>  primary?: string<br>  border?: string<br>  text?: string<br>  inputBg?: string<br>  checkIcon?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
