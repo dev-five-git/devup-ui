@@ -1,5 +1,0 @@
-{
-  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
-  "note": "Change layer order",
-  "date": "2025-12-26T13:09:51.486654900Z"
-}
