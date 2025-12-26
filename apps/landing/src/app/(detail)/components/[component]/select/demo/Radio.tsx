@@ -1,3 +1,8 @@
+/**
+ * ## Radio Type
+ * Set `type="radio"` for single selection mode. The selected option is highlighted
+ * with a check icon, and the dropdown closes after selection.
+ */
 'use client'
 
 import { useState } from 'react'

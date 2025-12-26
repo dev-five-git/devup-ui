@@ -1,3 +1,8 @@
+/**
+ * ## Disabled
+ * Set `disabled` prop to prevent user interaction with all radio options.
+ * All radios will have a muted appearance and cannot be selected.
+ */
 'use client'
 
 import { RadioGroup } from '@devup-ui/components'

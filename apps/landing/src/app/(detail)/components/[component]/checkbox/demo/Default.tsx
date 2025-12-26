@@ -1,3 +1,7 @@
+/**
+ * ## Default
+ * Basic checkbox with a label. Users can click to toggle the checked state.
+ */
 'use client'
 
 import { Checkbox } from '@devup-ui/components'

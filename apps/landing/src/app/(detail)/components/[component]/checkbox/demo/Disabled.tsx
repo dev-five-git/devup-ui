@@ -1,3 +1,8 @@
+/**
+ * ## Disabled
+ * Set `disabled` prop to prevent user interaction. The checkbox will have a muted appearance
+ * and cannot be toggled.
+ */
 'use client'
 
 import { VStack } from '@devup-ui/react'

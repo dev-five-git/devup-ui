@@ -1,3 +1,8 @@
+/**
+ * ## Button Variant
+ * Set `variant="button"` to display radio options as a segmented button group.
+ * Options are displayed inline with connected borders.
+ */
 'use client'
 
 import { RadioGroup } from '@devup-ui/components'

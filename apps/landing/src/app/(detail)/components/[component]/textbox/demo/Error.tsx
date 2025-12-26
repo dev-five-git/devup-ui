@@ -1,3 +1,8 @@
+/**
+ * ## Error
+ * Set `error` prop to display the input in an error state with a red border.
+ * Use `errorMessage` prop to show a validation message below the input.
+ */
 'use client'
 
 import { Input } from '@devup-ui/components'

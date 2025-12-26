@@ -1,3 +1,8 @@
+/**
+ * ## Default
+ * Compound component with trigger and dropdown. Use `SelectTrigger` to create the button,
+ * `SelectContainer` for the dropdown, and `SelectOption` for each option.
+ */
 'use client'
 
 import {

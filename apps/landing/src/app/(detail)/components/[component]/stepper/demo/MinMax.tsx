@@ -1,3 +1,8 @@
+/**
+ * ## Min/Max
+ * Set `min` and `max` props to limit the value range. The decrease button is disabled
+ * at min value, and the increase button is disabled at max value.
+ */
 'use client'
 
 import {
