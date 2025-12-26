@@ -176,27 +176,159 @@ impl Typography {
 }
 
 #[derive(Serialize, Debug)]
-pub struct Typographies(Vec<Option<Typography>>);
+pub struct Typographies(pub Vec<Option<Typography>>);
 
 impl From<Vec<Option<Typography>>> for Typographies {
     fn from(v: Vec<Option<Typography>>) -> Self {
         Self(v)
     }
 }
+
+/// Helper to deserialize a typography property that can be either a single value or an array
+fn deserialize_typo_prop(value: &Value) -> Result<Vec<Option<String>>, String> {
+    match value {
+        Value::Null => Ok(vec![None]),
+        Value::String(s) => Ok(vec![Some(s.clone())]),
+        Value::Number(n) => Ok(vec![Some(n.to_string())]),
+        Value::Array(arr) => {
+            let mut result = Vec::with_capacity(arr.len());
+            for item in arr {
+                match item {
+                    Value::Null => result.push(None),
+                    Value::String(s) => result.push(Some(s.clone())),
+                    Value::Number(n) => result.push(Some(n.to_string())),
+                    _ => return Err(format!("Invalid typography property value: {:?}", item)),
+                }
+            }
+            Ok(result)
+        }
+        _ => Err(format!("Invalid typography property value: {:?}", value)),
+    }
+}
+
 impl<'de> Deserialize<'de> for Typographies {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum ArrayOrSingle {
-            Array(Vec<Option<Typography>>),
-            Single(Typography),
-        }
-        match ArrayOrSingle::deserialize(deserializer)? {
-            ArrayOrSingle::Array(v) => Ok(Self(v)),
-            ArrayOrSingle::Single(v) => Ok(Self(vec![Some(v)])),
+        use serde::de::Error;
+
+        let value = Value::deserialize(deserializer)?;
+
+        match &value {
+            // Traditional array format: [{ fontFamily: "Arial", ... }, null, { ... }]
+            Value::Array(arr) => {
+                let mut result = Vec::with_capacity(arr.len());
+                for item in arr {
+                    if item.is_null() {
+                        result.push(None);
+                    } else if item.is_object() {
+                        let typo: Typography =
+                            serde_json::from_value(item.clone()).map_err(D::Error::custom)?;
+                        result.push(Some(typo));
+                    } else {
+                        // Non-object/null values mean this is not a valid traditional array format
+                        return Err(D::Error::custom(
+                            "Typography value cannot start with an array. Use object format with property-level arrays instead.",
+                        ));
+                    }
+                }
+                Ok(Self(result))
+            }
+            // Compact object format: { fontFamily: "Arial", fontSize: ["16px", null, "20px"], ... }
+            Value::Object(obj) => {
+                // Extract each property, which can be a single value or an array
+                let font_family = obj
+                    .get("fontFamily")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let font_size = obj
+                    .get("fontSize")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let font_weight = obj
+                    .get("fontWeight")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let line_height = obj
+                    .get("lineHeight")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let letter_spacing = obj
+                    .get("letterSpacing")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                let font_style = obj
+                    .get("fontStyle")
+                    .map(deserialize_typo_prop)
+                    .transpose()
+                    .map_err(D::Error::custom)?
+                    .unwrap_or_else(|| vec![None]);
+
+                // Find the maximum length among all properties
+                let max_len = [
+                    font_family.len(),
+                    font_size.len(),
+                    font_weight.len(),
+                    line_height.len(),
+                    letter_spacing.len(),
+                    font_style.len(),
+                ]
+                .into_iter()
+                .max()
+                .unwrap_or(1);
+
+                // Build typography for each breakpoint level
+                let mut result = Vec::with_capacity(max_len);
+                for i in 0..max_len {
+                    let ff = font_family.get(i).cloned().unwrap_or(None);
+                    let fs = font_size.get(i).cloned().unwrap_or(None);
+                    let fw = font_weight.get(i).cloned().unwrap_or(None);
+                    let lh = line_height.get(i).cloned().unwrap_or(None);
+                    let ls = letter_spacing.get(i).cloned().unwrap_or(None);
+                    let fst = font_style.get(i).cloned().unwrap_or(None);
+
+                    // If all properties are None for this level, push None
+                    if ff.is_none()
+                        && fs.is_none()
+                        && fw.is_none()
+                        && lh.is_none()
+                        && ls.is_none()
+                        && fst.is_none()
+                    {
+                        result.push(None);
+                    } else {
+                        result.push(Some(Typography {
+                            font_family: ff,
+                            font_size: fs,
+                            font_weight: fw,
+                            line_height: lh,
+                            letter_spacing: ls,
+                        }));
+                    }
+                }
+
+                Ok(Self(result))
+            }
+            _ => Err(D::Error::custom(format!(
+                "Typography must be an object or array, got: {:?}",
+                value
+            ))),
         }
     }
 }
@@ -793,5 +925,601 @@ mod tests {
         assert!(interface_keys.contains(&"a.b.c".to_string()));
         // CSS key uses dashes
         assert!(css_keys.contains(&"a-b-c".to_string()));
+    }
+
+    #[test]
+    fn test_compact_typography_format() {
+        // Test new compact format with property-level arrays
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontFamily": "Pretendard",
+                        "fontStyle": "normal",
+                        "fontWeight": 800,
+                        "fontSize": ["38px", null, null, null, "52px"],
+                        "lineHeight": 1.3,
+                        "letterSpacing": "-0.03em"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(h1.0.len(), 5);
+
+        // First breakpoint
+        let first = h1.0[0].as_ref().unwrap();
+        assert_eq!(first.font_family, Some("Pretendard".to_string()));
+        assert_eq!(first.font_size, Some("38px".to_string()));
+        assert_eq!(first.font_weight, Some("800".to_string()));
+        assert_eq!(first.line_height, Some("1.3".to_string()));
+        assert_eq!(first.letter_spacing, Some("-0.03em".to_string()));
+
+        // Middle breakpoints should be None (all properties are single values except fontSize)
+        assert!(h1.0[1].is_none());
+        assert!(h1.0[2].is_none());
+        assert!(h1.0[3].is_none());
+
+        // Last breakpoint (only fontSize changes)
+        let last = h1.0[4].as_ref().unwrap();
+        assert_eq!(last.font_size, Some("52px".to_string()));
+    }
+
+    #[test]
+    fn test_compact_typography_all_arrays() {
+        // Test compact format where multiple properties have arrays
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "body": {
+                        "fontFamily": "Pretendard",
+                        "fontSize": ["14px", null, "16px"],
+                        "fontWeight": [500, null, 600],
+                        "lineHeight": [1.3, null, 1.5]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let body = theme.typography.get("body").unwrap();
+        assert_eq!(body.0.len(), 3);
+
+        // First breakpoint
+        let first = body.0[0].as_ref().unwrap();
+        assert_eq!(first.font_family, Some("Pretendard".to_string()));
+        assert_eq!(first.font_size, Some("14px".to_string()));
+        assert_eq!(first.font_weight, Some("500".to_string()));
+        assert_eq!(first.line_height, Some("1.3".to_string()));
+
+        // Middle is None
+        assert!(body.0[1].is_none());
+
+        // Third breakpoint
+        let third = body.0[2].as_ref().unwrap();
+        assert_eq!(third.font_size, Some("16px".to_string()));
+        assert_eq!(third.font_weight, Some("600".to_string()));
+        assert_eq!(third.line_height, Some("1.5".to_string()));
+    }
+
+    #[test]
+    fn test_compact_typography_single_value() {
+        // Test compact format with all single values (no arrays)
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "caption": {
+                        "fontFamily": "Pretendard",
+                        "fontStyle": "normal",
+                        "fontWeight": 500,
+                        "fontSize": "14px",
+                        "lineHeight": 1.4,
+                        "letterSpacing": "-0.03em"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let caption = theme.typography.get("caption").unwrap();
+        assert_eq!(caption.0.len(), 1);
+
+        let first = caption.0[0].as_ref().unwrap();
+        assert_eq!(first.font_family, Some("Pretendard".to_string()));
+        assert_eq!(first.font_size, Some("14px".to_string()));
+        assert_eq!(first.font_weight, Some("500".to_string()));
+        assert_eq!(first.line_height, Some("1.4".to_string()));
+        assert_eq!(first.letter_spacing, Some("-0.03em".to_string()));
+    }
+
+    #[test]
+    fn test_traditional_typography_array_still_works() {
+        // Ensure backward compatibility with traditional array format
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": [
+                        {
+                            "fontFamily": "Pretendard",
+                            "fontWeight": 800,
+                            "fontSize": "38px",
+                            "lineHeight": 1.3
+                        },
+                        null,
+                        null,
+                        null,
+                        {
+                            "fontFamily": "Pretendard",
+                            "fontWeight": 800,
+                            "fontSize": "52px",
+                            "lineHeight": 1.3
+                        }
+                    ]
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(h1.0.len(), 5);
+
+        let first = h1.0[0].as_ref().unwrap();
+        assert_eq!(first.font_size, Some("38px".to_string()));
+
+        assert!(h1.0[1].is_none());
+        assert!(h1.0[2].is_none());
+        assert!(h1.0[3].is_none());
+
+        let last = h1.0[4].as_ref().unwrap();
+        assert_eq!(last.font_size, Some("52px".to_string()));
+    }
+
+    #[test]
+    fn test_compact_typography_css_output() {
+        // Verify CSS output is correct for compact format
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontFamily": "Pretendard",
+                        "fontSize": ["38px", null, null, null, "52px"],
+                        "fontWeight": 800,
+                        "lineHeight": 1.3
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let css = theme.to_css();
+        // Should have base style
+        assert!(css.contains(".typo-h1{"));
+        assert!(css.contains("font-family:Pretendard"));
+        assert!(css.contains("font-size:38px"));
+        assert!(css.contains("font-weight:800"));
+        // Should have media query for breakpoint 4 (1280px)
+        assert!(css.contains("@media(min-width:1280px)"));
+        assert!(css.contains("font-size:52px"));
+    }
+
+    #[test]
+    fn test_invalid_top_level_array_should_fail() {
+        // Top-level array that's not traditional format should fail
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": ["38px", null, "52px"]
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_mixed_typography_formats() {
+        // Test that both formats can coexist in the same theme
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": [
+                        { "fontFamily": "Pretendard", "fontSize": "38px" },
+                        null,
+                        { "fontFamily": "Pretendard", "fontSize": "52px" }
+                    ],
+                    "body": {
+                        "fontFamily": "Pretendard",
+                        "fontSize": ["14px", null, "16px"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        // Traditional format
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(h1.0.len(), 3);
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().font_size,
+            Some("38px".to_string())
+        );
+
+        // Compact format
+        let body = theme.typography.get("body").unwrap();
+        assert_eq!(body.0.len(), 3);
+        assert_eq!(
+            body.0[0].as_ref().unwrap().font_size,
+            Some("14px".to_string())
+        );
+    }
+
+    #[test]
+    fn test_deserialize_typo_prop_null_value() {
+        // Test compact format with null values in arrays
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontFamily": null,
+                        "fontSize": ["14px", null, "16px"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(h1.0.len(), 3);
+        // fontFamily is null at all levels
+        assert!(h1.0[0].as_ref().unwrap().font_family.is_none());
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().font_size,
+            Some("14px".to_string())
+        );
+    }
+
+    #[test]
+    fn test_deserialize_typo_prop_invalid_array_value() {
+        // Test that invalid values in typography arrays fail
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontSize": ["14px", {"invalid": "object"}, "16px"]
+                    }
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_typo_prop_invalid_single_value() {
+        // Test that invalid single value fails
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontSize": true
+                    }
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_typography_invalid_type() {
+        // Test that typography with invalid type (string) fails
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": "invalid string"
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("must be an object or array"));
+    }
+
+    #[test]
+    fn test_get_default_theme_priority() {
+        fn make_color_theme() -> ColorTheme {
+            let mut ct = ColorTheme::default();
+            ct.add_color("primary", "#000");
+            ct
+        }
+
+        // Test "default" theme has highest priority
+        let mut theme = Theme::default();
+        theme.add_color_theme("default", make_color_theme());
+        theme.add_color_theme("light", make_color_theme());
+        theme.add_color_theme("dark", make_color_theme());
+        assert_eq!(theme.get_default_theme(), Some("default".to_string()));
+
+        // Test "light" theme has second priority when "default" is absent
+        let mut theme = Theme::default();
+        theme.add_color_theme("light", make_color_theme());
+        theme.add_color_theme("dark", make_color_theme());
+        theme.add_color_theme("custom", make_color_theme());
+        assert_eq!(theme.get_default_theme(), Some("light".to_string()));
+
+        // Test first theme when neither "default" nor "light" exists
+        let mut theme = Theme::default();
+        theme.add_color_theme("dark", make_color_theme());
+        theme.add_color_theme("custom", make_color_theme());
+        // BTreeMap returns keys in alphabetical order, so "custom" comes first
+        assert_eq!(theme.get_default_theme(), Some("custom".to_string()));
+
+        // Test None when no color themes exist
+        let theme = Theme::default();
+        assert_eq!(theme.get_default_theme(), None);
+    }
+
+    #[test]
+    fn test_css_entries_iterator() {
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        color_theme.add_color("secondary.100", "#111");
+        color_theme.add_color("gray.200", "#222");
+
+        let entries: Vec<_> = color_theme.css_entries().collect();
+        assert_eq!(entries.len(), 3);
+
+        // Verify we can find all entries
+        assert!(entries.iter().any(|(k, v)| *k == "primary" && *v == "#000"));
+        assert!(
+            entries
+                .iter()
+                .any(|(k, v)| *k == "secondary-100" && *v == "#111")
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|(k, v)| *k == "gray-200" && *v == "#222")
+        );
+    }
+
+    #[test]
+    fn test_typography_empty_properties_all_none() {
+        // Test that empty compact format with no properties creates None
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "empty": {}
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let empty = theme.typography.get("empty").unwrap();
+        assert_eq!(empty.0.len(), 1);
+        assert!(empty.0[0].is_none());
+    }
+
+    #[test]
+    fn test_typography_with_only_letter_spacing() {
+        // Test typography with only letterSpacing property
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "letterSpacing": ["-0.02em", null, "-0.03em"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(h1.0.len(), 3);
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().letter_spacing,
+            Some("-0.02em".to_string())
+        );
+        assert!(h1.0[1].is_none());
+        assert_eq!(
+            h1.0[2].as_ref().unwrap().letter_spacing,
+            Some("-0.03em".to_string())
+        );
+    }
+
+    #[test]
+    fn test_color_theme_empty() {
+        let color_theme = ColorTheme::default();
+        assert_eq!(color_theme.css_keys().count(), 0);
+        assert_eq!(color_theme.interface_keys().count(), 0);
+        assert_eq!(color_theme.css_entries().count(), 0);
+        assert!(!color_theme.contains_key("any"));
+        assert!(color_theme.get("any").is_none());
+    }
+
+    #[test]
+    fn test_traditional_typography_with_invalid_item() {
+        // Test that traditional array with invalid item (not object/null) fails
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": [
+                        { "fontFamily": "Arial" },
+                        "invalid string item",
+                        null
+                    ]
+                }
+            }"##,
+        );
+        // This should fail because "invalid string item" is not null or object
+        // But the current implementation detects this as non-traditional and fails differently
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compact_typography_different_array_lengths() {
+        // Test when different properties have different array lengths
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "fontSize": ["14px", "16px"],
+                        "fontWeight": ["400", "500", "600", "700"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        // Should use max length (4)
+        assert_eq!(h1.0.len(), 4);
+
+        // First two should have both properties
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().font_size,
+            Some("14px".to_string())
+        );
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().font_weight,
+            Some("400".to_string())
+        );
+
+        assert_eq!(
+            h1.0[1].as_ref().unwrap().font_size,
+            Some("16px".to_string())
+        );
+        assert_eq!(
+            h1.0[1].as_ref().unwrap().font_weight,
+            Some("500".to_string())
+        );
+
+        // Last two should only have fontWeight (fontSize array is shorter)
+        assert!(h1.0[2].as_ref().unwrap().font_size.is_none());
+        assert_eq!(
+            h1.0[2].as_ref().unwrap().font_weight,
+            Some("600".to_string())
+        );
+
+        assert!(h1.0[3].as_ref().unwrap().font_size.is_none());
+        assert_eq!(
+            h1.0[3].as_ref().unwrap().font_weight,
+            Some("700".to_string())
+        );
+    }
+
+    #[test]
+    fn test_typography_float_values() {
+        // Test that float values are properly converted
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "h1": {
+                        "lineHeight": [1.2, 1.5, 1.8],
+                        "fontWeight": [400.5, 500, 600]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let h1 = theme.typography.get("h1").unwrap();
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().line_height,
+            Some("1.2".to_string())
+        );
+        assert_eq!(
+            h1.0[0].as_ref().unwrap().font_weight,
+            Some("400.5".to_string())
+        );
+    }
+
+    #[test]
+    fn test_typographies_direct_traditional_array_deserialize() {
+        // Directly deserialize Typographies to ensure Value::Object branch is covered (line 183)
+        let typographies: Typographies = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial", "fontSize": "16px" },
+                null,
+                { "fontFamily": "Helvetica", "fontSize": "18px" }
+            ]"##,
+        )
+        .unwrap();
+
+        assert_eq!(typographies.0.len(), 3);
+        assert_eq!(
+            typographies.0[0].as_ref().unwrap().font_family,
+            Some("Arial".to_string())
+        );
+        assert!(typographies.0[1].is_none());
+        assert_eq!(
+            typographies.0[2].as_ref().unwrap().font_family,
+            Some("Helvetica".to_string())
+        );
+    }
+
+    #[test]
+    fn test_typographies_direct_invalid_array_item() {
+        // Directly deserialize Typographies with invalid array item to cover line 188
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                "invalid string",
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_number_in_array() {
+        // Test with number in traditional array to ensure error branch is hit
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                123,
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_bool_in_array() {
+        // Test with boolean in traditional array
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                null,
+                { "fontFamily": "Arial" },
+                true
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_nested_array_in_array() {
+        // Test with nested array in traditional array
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                ["nested", "array"],
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
     }
 }
