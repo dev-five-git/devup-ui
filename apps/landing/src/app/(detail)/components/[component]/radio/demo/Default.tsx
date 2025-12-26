@@ -1,12 +1,9 @@
-/**
- * ## Default
- * Use `RadioGroup` with an `options` array to create a group of radio buttons.
- * Only one option can be selected at a time.
- */
-'use client'
-
 import { RadioGroup } from '@devup-ui/components'
 
+/**
+ * **Default**
+ * Use `RadioGroup` with an `options` array to create a group of radio buttons. Only one option can be selected at a time.
+ */
 export default function Default() {
   return (
     <RadioGroup
