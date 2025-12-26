@@ -1,13 +1,129 @@
 use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-#[derive(Default, Serialize, Deserialize, Debug)]
-pub struct ColorTheme(pub HashMap<String, String>);
+/// ColorEntry stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
+#[derive(Debug, Clone, Serialize)]
+pub struct ColorEntry {
+    /// Original key with dots for TypeScript interface (e.g., "gray.100")
+    pub interface_key: String,
+    /// CSS variable key with dashes (e.g., "gray-100")
+    pub css_key: String,
+    /// Color value
+    pub value: String,
+}
+
+/// ColorTheme stores flattened color entries
+/// Supports:
+/// - Simple: `primary: "#000"` -> interface_key: "primary", css_key: "primary"
+/// - Dot notation: `"primary.100": "#000"` -> interface_key: "primary.100", css_key: "primary-100"
+/// - Nested object: `hello: { 100: "#000" }` -> interface_key: "hello.100", css_key: "hello-100"
+/// - Deep nested: `gray: { light: { 100: "#000" } }` -> interface_key: "gray.light.100", css_key: "gray-light-100"
+#[derive(Default, Serialize, Debug)]
+pub struct ColorTheme {
+    /// Map from css_key to ColorEntry for quick lookup
+    entries: HashMap<String, ColorEntry>,
+}
+
+/// Recursively flatten a JSON value into ColorEntry list
+/// interface_prefix uses dots, css_prefix uses dashes
+fn flatten_color_value(
+    interface_prefix: &str,
+    css_prefix: &str,
+    value: &Value,
+    result: &mut HashMap<String, ColorEntry>,
+) -> Result<(), String> {
+    match value {
+        Value::String(s) => {
+            result.insert(
+                css_prefix.to_string(),
+                ColorEntry {
+                    interface_key: interface_prefix.to_string(),
+                    css_key: css_prefix.to_string(),
+                    value: s.clone(),
+                },
+            );
+            Ok(())
+        }
+        Value::Object(obj) => {
+            for (key, val) in obj {
+                let new_interface_prefix = if interface_prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{}.{}", interface_prefix, key)
+                };
+                let new_css_prefix = if css_prefix.is_empty() {
+                    key.replace('.', "-")
+                } else {
+                    format!("{}-{}", css_prefix, key.replace('.', "-"))
+                };
+                flatten_color_value(&new_interface_prefix, &new_css_prefix, val, result)?;
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "color value for key '{}' must be a string or an object, got {:?}",
+            interface_prefix, value
+        )),
+    }
+}
+
+impl<'de> Deserialize<'de> for ColorTheme {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let raw: HashMap<String, Value> = HashMap::deserialize(deserializer)?;
+        let mut entries = HashMap::new();
+
+        for (key, value) in raw {
+            let css_key = key.replace('.', "-");
+            flatten_color_value(&key, &css_key, &value, &mut entries).map_err(D::Error::custom)?;
+        }
+
+        Ok(ColorTheme { entries })
+    }
+}
 
 impl ColorTheme {
     pub fn add_color(&mut self, name: &str, value: &str) {
-        self.0.insert(name.to_string(), value.to_string());
+        let css_key = name.replace('.', "-");
+        self.entries.insert(
+            css_key.clone(),
+            ColorEntry {
+                interface_key: name.to_string(),
+                css_key,
+                value: value.to_string(),
+            },
+        );
+    }
+
+    /// Get all interface keys (for TypeScript interface generation, with dots)
+    pub fn interface_keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.values().map(|e| &e.interface_key)
+    }
+
+    /// Get all CSS keys (for CSS variable generation, with dashes)
+    pub fn css_keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.keys()
+    }
+
+    /// Get iterator over (css_key, value) pairs for CSS generation
+    pub fn css_entries(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.entries.iter().map(|(k, e)| (k, &e.value))
+    }
+
+    /// Get value by CSS key
+    pub fn get(&self, css_key: &str) -> Option<&String> {
+        self.entries.get(css_key).map(|e| &e.value)
+    }
+
+    /// Check if CSS key exists
+    pub fn contains_key(&self, css_key: &str) -> bool {
+        self.entries.contains_key(css_key)
     }
 }
 
@@ -188,13 +304,13 @@ impl Theme {
                         css_contents.push("color-scheme:light".to_string());
                     }
                 }
-                for (prop, value) in theme_properties.0.iter() {
+                for (prop, value) in theme_properties.css_entries() {
                     let optimized_value = optimize_value(value);
                     if theme_key.is_some() {
                         if other_theme_key.is_none()
                             && let Some(default_value) =
                                 self.colors.get(&default_theme_key).and_then(|v| {
-                                    v.0.get(prop).and_then(|v| {
+                                    v.get(prop).and_then(|v| {
                                         if optimize_value(v) == optimized_value {
                                             None
                                         } else {
@@ -209,7 +325,7 @@ impl Theme {
                         let other_theme_value =
                             other_theme_key.as_ref().and_then(|other_theme_key| {
                                 self.colors.get(other_theme_key).and_then(|v| {
-                                    v.0.get(prop).and_then(|v| {
+                                    v.get(prop).and_then(|v| {
                                         let other_theme_value = optimize_value(v.as_str());
                                         if other_theme_value == optimized_value {
                                             None
@@ -310,7 +426,7 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
 
-        assert_eq!(color_theme.0.keys().count(), 1);
+        assert_eq!(color_theme.css_keys().count(), 1);
 
         theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::default();
@@ -360,151 +476,44 @@ mod tests {
         );
         assert_eq!(theme.to_css(), "");
 
-        let mut theme = Theme::default();
-        theme.add_color_theme(
-            "default",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        // Helper to create a ColorTheme with a single color
+        fn make_color_theme(name: &str, value: &str) -> ColorTheme {
+            let mut ct = ColorTheme::default();
+            ct.add_color(name, value);
+            ct
+        }
 
-        theme.add_color_theme(
-            "dark",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        let mut theme = Theme::default();
+        theme.add_color_theme("default", make_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "dark",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("a", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "c",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_color_theme("primary", "#000"));
+        theme.add_color_theme("c", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme(
-            "light",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "b",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#001".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "a",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#002".to_string());
-                map
-            }),
-        );
-
-        theme.add_color_theme(
-            "c",
-            ColorTheme({
-                let mut map = HashMap::new();
-                map.insert("primary".to_string(), "#000".to_string());
-                map
-            }),
-        );
+        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_color_theme("primary", "#001"));
+        theme.add_color_theme("a", make_color_theme("primary", "#002"));
+        theme.add_color_theme("c", make_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
     }
 
@@ -525,5 +534,264 @@ mod tests {
         let mut theme = Theme::default();
         theme.update_breakpoints(input);
         assert_eq!(theme.breakpoints, expected);
+    }
+
+    #[test]
+    fn test_nested_color_theme_deserialization() {
+        // Test simple string values
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "primary": "#000"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        assert!(theme.colors.get("light").unwrap().contains_key("primary"));
+        assert_eq!(
+            theme.colors.get("light").unwrap().get("primary").unwrap(),
+            "#000"
+        );
+
+        // Test dot notation keys (e.g., "primary.100" -> "primary-100")
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "primary.100": "#100",
+                        "primary.200": "#200"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+        assert!(light.contains_key("primary-100"));
+        assert!(light.contains_key("primary-200"));
+        assert_eq!(light.get("primary-100").unwrap(), "#100");
+        assert_eq!(light.get("primary-200").unwrap(), "#200");
+
+        // Test nested object (e.g., "hello": { "100": "#000" } -> "hello-100")
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "hello": {
+                            "100": "#100",
+                            "200": "#200"
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+        assert!(light.contains_key("hello-100"));
+        assert!(light.contains_key("hello-200"));
+        assert_eq!(light.get("hello-100").unwrap(), "#100");
+        assert_eq!(light.get("hello-200").unwrap(), "#200");
+
+        // Test mixed: simple, dot notation, and nested
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "primary": "#000",
+                        "secondary.100": "#sec100",
+                        "gray": {
+                            "50": "#gray50",
+                            "100": "#gray100"
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+        assert_eq!(light.get("primary").unwrap(), "#000");
+        assert_eq!(light.get("secondary-100").unwrap(), "#sec100");
+        assert_eq!(light.get("gray-50").unwrap(), "#gray50");
+        assert_eq!(light.get("gray-100").unwrap(), "#gray100");
+    }
+
+    #[test]
+    fn test_nested_color_theme_to_css() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "primary": "#000",
+                        "gray": {
+                            "100": "#f5f5f5",
+                            "200": "#eee"
+                        }
+                    },
+                    "dark": {
+                        "primary": "#fff",
+                        "gray": {
+                            "100": "#333",
+                            "200": "#444"
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let css = theme.to_css();
+        // Should contain CSS variables for flattened keys
+        assert!(css.contains("--primary:"));
+        assert!(css.contains("--gray-100:"));
+        assert!(css.contains("--gray-200:"));
+        // Check light-dark() function is used for color switching
+        assert!(css.contains("light-dark(#000,#FFF)") || css.contains("light-dark(#000,#fff)"));
+        assert!(css.contains("color-scheme:light"));
+        assert!(css.contains("color-scheme:dark"));
+    }
+
+    #[test]
+    fn test_add_color_with_dot_notation() {
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary.100", "#100");
+        color_theme.add_color("primary.200", "#200");
+
+        // CSS keys should have dashes instead of dots
+        assert!(color_theme.contains_key("primary-100"));
+        assert!(color_theme.contains_key("primary-200"));
+        assert!(!color_theme.contains_key("primary.100"));
+    }
+
+    #[test]
+    fn test_deep_nested_color_should_succeed() {
+        // Deep nesting should be flattened with dashes
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "primary": {
+                            "100": {
+                                "light": "#f0f",
+                                "dark": "#0f0"
+                            },
+                            "200": "#200"
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+        // primary -> 100 -> light = "primary-100-light"
+        assert!(light.contains_key("primary-100-light"));
+        assert!(light.contains_key("primary-100-dark"));
+        assert!(light.contains_key("primary-200"));
+        assert_eq!(light.get("primary-100-light").unwrap(), "#f0f");
+        assert_eq!(light.get("primary-100-dark").unwrap(), "#0f0");
+        assert_eq!(light.get("primary-200").unwrap(), "#200");
+    }
+
+    #[test]
+    fn test_very_deep_nested_color() {
+        // 4 levels deep: a -> b -> c -> d -> value
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "a": {
+                            "b": {
+                                "c": {
+                                    "d": "#deep"
+                                }
+                            }
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+        assert!(light.contains_key("a-b-c-d"));
+        assert_eq!(light.get("a-b-c-d").unwrap(), "#deep");
+    }
+
+    #[test]
+    fn test_nested_with_number_value_should_fail() {
+        // Nested object with non-string value should fail
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "gray": {
+                            "100": 123
+                        }
+                    }
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_interface_keys_vs_css_keys() {
+        // interface_keys should preserve dots, css_keys should use dashes
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "gray": {
+                            "100": "#f5f5f5",
+                            "200": "#eee"
+                        },
+                        "primary.light": "#000"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+
+        // Collect interface keys
+        let interface_keys: Vec<_> = light.interface_keys().cloned().collect();
+        // Collect CSS keys
+        let css_keys: Vec<_> = light.css_keys().cloned().collect();
+
+        // Interface keys should use dots for nested objects
+        assert!(interface_keys.contains(&"gray.100".to_string()));
+        assert!(interface_keys.contains(&"gray.200".to_string()));
+        // Dot notation in original key stays as is
+        assert!(interface_keys.contains(&"primary.light".to_string()));
+
+        // CSS keys should use dashes
+        assert!(css_keys.contains(&"gray-100".to_string()));
+        assert!(css_keys.contains(&"gray-200".to_string()));
+        assert!(css_keys.contains(&"primary-light".to_string()));
+    }
+
+    #[test]
+    fn test_deep_nested_interface_keys() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "a": {
+                            "b": {
+                                "c": "#deep"
+                            }
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let light = theme.colors.get("light").unwrap();
+
+        let interface_keys: Vec<_> = light.interface_keys().cloned().collect();
+        let css_keys: Vec<_> = light.css_keys().cloned().collect();
+
+        // Interface key uses dots
+        assert!(interface_keys.contains(&"a.b.c".to_string()));
+        // CSS key uses dashes
+        assert!(css_keys.contains(&"a-b-c".to_string()));
     }
 }

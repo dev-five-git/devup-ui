@@ -4,16 +4,24 @@ expression: theme
 ---
 Theme {
     colors: {
-        "dark": ColorTheme(
-            {
-                "primary": "#fff",
+        "dark": ColorTheme {
+            entries: {
+                "primary": ColorEntry {
+                    interface_key: "primary",
+                    css_key: "primary",
+                    value: "#fff",
+                },
             },
-        ),
-        "default": ColorTheme(
-            {
-                "primary": "#000",
+        },
+        "default": ColorTheme {
+            entries: {
+                "primary": ColorEntry {
+                    interface_key: "primary",
+                    css_key: "primary",
+                    value: "#000",
+                },
             },
-        ),
+        },
     },
     breakpoints: [
         0,

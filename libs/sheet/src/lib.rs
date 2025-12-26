@@ -383,11 +383,11 @@ impl StyleSheet {
         typography_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
-        let mut color_keys = HashSet::new();
-        let mut typography_keys = HashSet::new();
-        let mut theme_keys = HashSet::new();
+        let mut color_keys = BTreeSet::new();
+        let mut typography_keys = BTreeSet::new();
+        let mut theme_keys = BTreeSet::new();
         for color_theme in self.theme.colors.values() {
-            color_theme.0.keys().for_each(|key| {
+            color_theme.interface_keys().for_each(|key| {
                 color_keys.insert(key.clone());
             });
         }
@@ -409,19 +409,21 @@ impl StyleSheet {
                 color_interface_name,
                 color_keys
                     .into_iter()
-                    .map(|key| format!("{}:null;", convert_interface_key(&format!("${key}"))))
-                    .collect::<String>(),
+                    .map(|key| format!("{}:null", convert_interface_key(&format!("${key}"))))
+                    .collect::<Vec<_>>()
+                    .join(";"),
                 typography_interface_name,
                 typography_keys
                     .into_iter()
-                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<String>(),
+                    .map(|key| format!("{}:null", convert_interface_key(&key)))
+                    .collect::<Vec<_>>()
+                    .join(";"),
                 theme_interface_name,
                 theme_keys
                     .into_iter()
-                    // key to pascal
-                    .map(|key| format!("{}:null;", convert_interface_key(&key)))
-                    .collect::<String>()
+                    .map(|key| format!("{}:null", convert_interface_key(&key)))
+                    .collect::<Vec<_>>()
+                    .join(";")
             )
         }
     }
@@ -1628,17 +1630,14 @@ mod tests {
         color_theme.add_color("primary", "#000");
         theme.add_color_theme("dark", color_theme);
         sheet.set_theme(theme);
-        assert_eq!(
-            sheet.create_interface(
-                "package",
-                "ColorInterface",
-                "TypographyInterface",
-                "ThemeInterface"
-            ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null;}interface TypographyInterface{}interface ThemeInterface{dark:null;}}"
-        );
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
 
-        // test wrong case
+        // test wrong case (backticks and special characters)
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -1655,15 +1654,62 @@ mod tests {
             ))],
         );
         sheet.set_theme(theme);
-        assert_eq!(
-            sheet.create_interface(
-                "package",
-                "ColorInterface",
-                "TypographyInterface",
-                "ThemeInterface"
-            ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null;}interface TypographyInterface{[`prim\\`\\`ary`]:null;}interface ThemeInterface{dark:null;}}"
-        );
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
+
+        // test nested colors - interface keys should use dots for TypeScript
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "light": {
+                        "gray": {
+                            "100": "#f5f5f5",
+                            "200": "#eee"
+                        },
+                        "primary": "#000",
+                        "secondary.light": "#ccc"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
+
+        // test deep nested colors
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "colors": {
+                    "dark": {
+                        "brand": {
+                            "primary": {
+                                "light": "#f0f",
+                                "dark": "#0f0"
+                            }
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "ThemeInterface"
+        ));
     }
 
     #[test]
