@@ -218,34 +218,24 @@ impl<'de> Deserialize<'de> for Typographies {
         match &value {
             // Traditional array format: [{ fontFamily: "Arial", ... }, null, { ... }]
             Value::Array(arr) => {
-                // Check if this looks like a traditional typography array (array of objects/nulls)
-                // vs a compact format that accidentally starts with an array
-                let is_traditional = arr.iter().all(|v| v.is_object() || v.is_null());
-                if is_traditional {
-                    let mut result = Vec::with_capacity(arr.len());
-                    for item in arr {
-                        match item {
-                            Value::Null => result.push(None),
-                            Value::Object(_) => {
-                                let typo: Typography = serde_json::from_value(item.clone())
-                                    .map_err(D::Error::custom)?;
-                                result.push(Some(typo));
-                            }
-                            _ => {
-                                return Err(D::Error::custom(format!(
-                                    "Typography array must contain objects or null, got: {:?}",
-                                    item
-                                )));
-                            }
+                let mut result = Vec::with_capacity(arr.len());
+                for item in arr {
+                    match item {
+                        Value::Null => result.push(None),
+                        Value::Object(_) => {
+                            let typo: Typography =
+                                serde_json::from_value(item.clone()).map_err(D::Error::custom)?;
+                            result.push(Some(typo));
+                        }
+                        // Non-object/null values mean this is not a valid traditional array format
+                        _ => {
+                            return Err(D::Error::custom(
+                                "Typography value cannot start with an array. Use object format with property-level arrays instead.",
+                            ));
                         }
                     }
-                    Ok(Self(result))
-                } else {
-                    // Top-level array that's not a traditional format is an error
-                    Err(D::Error::custom(
-                        "Typography value cannot start with an array. Use object format with property-level arrays instead.",
-                    ))
                 }
+                Ok(Self(result))
             }
             // Compact object format: { fontFamily: "Arial", fontSize: ["16px", null, "20px"], ... }
             Value::Object(obj) => {
