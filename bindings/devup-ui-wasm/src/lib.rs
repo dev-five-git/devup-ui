@@ -216,8 +216,6 @@ pub fn get_theme_interface(
 }
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
