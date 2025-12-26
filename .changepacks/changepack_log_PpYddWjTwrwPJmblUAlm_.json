@@ -1,0 +1,5 @@
+{
+  "changes": { "bindings/devup-ui-wasm/package.json": "Patch" },
+  "note": "Optimize theme interface support deep colors",
+  "date": "2025-12-26T12:30:04.669317200Z"
+}
