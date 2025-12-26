@@ -1436,4 +1436,92 @@ mod tests {
             Some("400.5".to_string())
         );
     }
+
+    #[test]
+    fn test_typographies_direct_traditional_array_deserialize() {
+        // Directly deserialize Typographies to ensure Value::Object branch is covered (line 183)
+        let typographies: Typographies = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial", "fontSize": "16px" },
+                null,
+                { "fontFamily": "Helvetica", "fontSize": "18px" }
+            ]"##,
+        )
+        .unwrap();
+
+        assert_eq!(typographies.0.len(), 3);
+        assert_eq!(
+            typographies.0[0].as_ref().unwrap().font_family,
+            Some("Arial".to_string())
+        );
+        assert!(typographies.0[1].is_none());
+        assert_eq!(
+            typographies.0[2].as_ref().unwrap().font_family,
+            Some("Helvetica".to_string())
+        );
+    }
+
+    #[test]
+    fn test_typographies_direct_invalid_array_item() {
+        // Directly deserialize Typographies with invalid array item to cover line 188
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                "invalid string",
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_number_in_array() {
+        // Test with number in traditional array to ensure error branch is hit
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                123,
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_bool_in_array() {
+        // Test with boolean in traditional array
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                null,
+                { "fontFamily": "Arial" },
+                true
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typographies_direct_nested_array_in_array() {
+        // Test with nested array in traditional array
+        let result: Result<Typographies, _> = serde_json::from_str(
+            r##"[
+                { "fontFamily": "Arial" },
+                ["nested", "array"],
+                null
+            ]"##,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot start with an array"));
+    }
 }
