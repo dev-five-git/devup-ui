@@ -72,7 +72,7 @@ impl ExtractStyle for StyleSheetProperty {
     }
 }
 
-static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
+static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$[\w.]+").unwrap());
 static INTERFACE_KEY_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
 
@@ -88,7 +88,7 @@ fn convert_theme_variable_value(value: &str) -> String {
     if value.contains("$") {
         VAR_RE
             .replace_all(value, |caps: &regex::Captures| {
-                format!("var(--{})", &caps[0][1..])
+                format!("var(--{})", &caps[0][1..].replace('.', "-"))
             })
             .to_string()
     } else {
@@ -690,20 +690,22 @@ mod tests {
     use extractor::{ExtractOption, extract};
     use insta::assert_debug_snapshot;
 
-    #[test]
-    fn test_convert_theme_variable_value() {
-        assert_eq!(convert_theme_variable_value("1px"), "1px");
-        assert_eq!(convert_theme_variable_value("$var"), "var(--var)");
+    use rstest::rstest;
 
-        assert_eq!(
-            convert_theme_variable_value("$var $var"),
-            "var(--var) var(--var)"
-        );
-
-        assert_eq!(
-            convert_theme_variable_value("1px solid $red"),
-            "1px solid var(--red)"
-        );
+    #[rstest]
+    #[case("1px", "1px")]
+    #[case("$var", "var(--var)")]
+    #[case("$var $var", "var(--var) var(--var)")]
+    #[case("1px solid $red", "1px solid var(--red)")]
+    // Test dot notation theme variables (e.g., $primary.100)
+    // Dots should be converted to dashes for CSS variable names
+    #[case("$primary.100", "var(--primary-100)")]
+    #[case("$gray.200 $blue.500", "var(--gray-200) var(--blue-500)")]
+    #[case("1px solid $border.primary", "1px solid var(--border-primary)")]
+    // Test deep nested dot notation
+    #[case("$color.brand.primary.100", "var(--color-brand-primary-100)")]
+    fn test_convert_theme_variable_value(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(convert_theme_variable_value(input), expected);
     }
 
     #[test]
