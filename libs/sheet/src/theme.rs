@@ -81,8 +81,7 @@ impl<'de> Deserialize<'de> for ColorTheme {
 
         for (key, value) in raw {
             let css_key = key.replace('.', "-");
-            flatten_color_value(&key, &css_key, &value, &mut entries)
-                .map_err(D::Error::custom)?;
+            flatten_color_value(&key, &css_key, &value, &mut entries).map_err(D::Error::custom)?;
         }
 
         Ok(ColorTheme { entries })
