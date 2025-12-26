@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
 import {
   Select,
   SelectContainer,
   SelectOption,
   SelectTrigger,
 } from '@devup-ui/components'
+import { useState } from 'react'
 
 /**
  * **Checkbox Type**
