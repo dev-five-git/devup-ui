@@ -11,8 +11,10 @@ mod selector_separator;
 pub mod style_selector;
 pub mod utils;
 
+use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Mutex;
 
 use crate::class_map::GLOBAL_CLASS_MAP;
 use crate::constant::{
@@ -24,6 +26,16 @@ use crate::num_to_nm_base::num_to_nm_base;
 use crate::optimize_value::optimize_value;
 use crate::style_selector::StyleSelector;
 use crate::utils::to_kebab_case;
+
+static GLOBAL_PREFIX: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn set_prefix(prefix: Option<String>) {
+    *GLOBAL_PREFIX.lock().unwrap() = prefix;
+}
+
+pub fn get_prefix() -> Option<String> {
+    GLOBAL_PREFIX.lock().unwrap().clone()
+}
 
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
@@ -114,8 +126,9 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
 }
 
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
+    let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
-        format!("k-{keyframes}")
+        format!("{}k-{keyframes}", prefix)
     } else {
         let key = format!("k-{keyframes}");
         let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
@@ -133,12 +146,13 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
             });
         if !filename.is_empty() {
             format!(
-                "{}-{}",
+                "{}{}-{}",
+                prefix,
                 num_to_nm_base(get_file_num_by_filename(&filename)),
                 class_num
             )
         } else {
-            class_num
+            format!("{}{}", prefix, class_num)
         }
     }
 }
@@ -151,6 +165,7 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> String {
+    let prefix = get_prefix().unwrap_or_default();
     // base style
     let filename = if style_order == Some(0) {
         None
@@ -160,7 +175,8 @@ pub fn sheet_to_classname(
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "{}-{}-{}-{}-{}{}",
+            "{}{}-{}-{}-{}-{}{}",
+            prefix,
             property.trim(),
             level,
             optimize_value(value.unwrap_or_default()),
@@ -203,21 +219,24 @@ pub fn sheet_to_classname(
             });
         if !filename.is_empty() {
             format!(
-                "{}-{}",
+                "{}{}-{}",
+                prefix,
                 num_to_nm_base(get_file_num_by_filename(&filename)),
                 clas_num
             )
         } else {
-            clas_num
+            format!("{}{}", prefix, clas_num)
         }
     }
 }
 
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
+    let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "--{}-{}-{}",
+            "--{}{}-{}-{}",
+            prefix,
             property,
             level,
             if selector.is_empty() {
@@ -239,12 +258,12 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         map.entry("".to_string())
             .or_default()
             .get(&key)
-            .map(|v| format!("--{}", num_to_nm_base(*v)))
+            .map(|v| format!("--{}{}", prefix, num_to_nm_base(*v)))
             .unwrap_or_else(|| {
                 let m = map.entry("".to_string()).or_default();
                 let len = m.len();
                 m.insert(key, len);
-                format!("--{}", num_to_nm_base(len))
+                format!("--{}{}", prefix, num_to_nm_base(len))
             })
     }
 }
@@ -717,5 +736,81 @@ mod tests {
                 selector: Some("&:is(test)".to_string())
             }
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_sheet_to_classname_with_prefix() {
+        set_debug(false);
+        reset_class_map();
+        set_prefix(Some("app-".to_string()));
+
+        let class1 = sheet_to_classname("background", 0, Some("red"), None, None, None);
+        assert!(class1.starts_with("app-"));
+        assert_eq!(class1, "app-a");
+
+        let class2 = sheet_to_classname("color", 0, Some("blue"), None, None, None);
+        assert!(class2.starts_with("app-"));
+
+        set_prefix(None);
+        reset_class_map();
+    }
+
+    #[test]
+    #[serial]
+    fn test_debug_sheet_to_classname_with_prefix() {
+        set_debug(true);
+        set_prefix(Some("my-".to_string()));
+
+        let class_name = sheet_to_classname("background", 0, Some("red"), None, None, None);
+        assert_eq!(class_name, "my-background-0-red--255");
+
+        let with_selector =
+            sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None);
+        assert!(with_selector.starts_with("my-"));
+
+        set_prefix(None);
+    }
+
+    #[test]
+    #[serial]
+    fn test_sheet_to_variable_name_with_prefix() {
+        set_debug(false);
+        reset_class_map();
+        set_prefix(Some("app-".to_string()));
+
+        assert_eq!(sheet_to_variable_name("background", 0, None), "--app-a");
+
+        set_prefix(None);
+        reset_class_map();
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyframes_with_prefix() {
+        reset_class_map();
+        set_debug(false);
+        set_prefix(Some("app-".to_string()));
+
+        let name = keyframes_to_keyframes_name("spin", None);
+        assert!(name.starts_with("app-"));
+
+        set_prefix(None);
+    }
+
+    #[test]
+    #[serial]
+    fn test_empty_prefix_is_same_as_none() {
+        set_debug(false);
+        reset_class_map();
+
+        set_prefix(Some("".to_string()));
+        let class1 = sheet_to_classname("background", 0, Some("red"), None, None, None);
+
+        reset_class_map();
+        set_prefix(None);
+        let class2 = sheet_to_classname("background", 0, Some("red"), None, None, None);
+
+        assert_eq!(class1, class2);
     }
 }

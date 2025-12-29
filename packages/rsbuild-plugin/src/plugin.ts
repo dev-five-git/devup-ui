@@ -9,6 +9,7 @@ import {
   getThemeInterface,
   registerTheme,
   setDebug,
+  setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
 
@@ -21,6 +22,7 @@ export interface DevupUIRsbuildPluginOptions {
   debug: boolean
   include: string[]
   singleCss: boolean
+  prefix?: string
 }
 
 let globalCss = ''
@@ -78,10 +80,14 @@ export const DevupUI = ({
   devupFile = 'devup.json',
   debug = false,
   singleCss = false,
+  prefix,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => ({
   name: 'devup-ui-rsbuild-plugin',
   async setup(api) {
     setDebug(debug)
+    if (prefix) {
+      setPrefix(prefix)
+    }
 
     if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
     await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')

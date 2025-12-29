@@ -9,6 +9,7 @@ import {
   getDefaultTheme,
   getThemeInterface,
   registerTheme,
+  setPrefix,
 } from '@devup-ui/wasm'
 import {
   DevupUIWebpackPlugin,
@@ -47,7 +48,12 @@ export function DevupUI(
       singleCss = false,
       devupFile = 'devup.json',
       include = [],
+      prefix,
     } = options
+
+    if (prefix) {
+      setPrefix(prefix)
+    }
 
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')

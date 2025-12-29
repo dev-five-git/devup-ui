@@ -9,6 +9,7 @@ import {
   getThemeInterface,
   registerTheme,
   setDebug,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { type PluginOption, type UserConfig } from 'vite'
 
@@ -21,6 +22,7 @@ export interface DevupUIPluginOptions {
   debug: boolean
   include: string[]
   singleCss: boolean
+  prefix?: string
 }
 
 function getFileNumByFilename(filename: string) {
@@ -78,8 +80,12 @@ export function DevupUI({
   debug = false,
   include = [],
   singleCss = false,
+  prefix,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
+  if (prefix) {
+    setPrefix(prefix)
+  }
   const cssMap = new Map()
   return {
     name: 'devup-ui',

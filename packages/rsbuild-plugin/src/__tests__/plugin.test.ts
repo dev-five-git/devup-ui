@@ -7,6 +7,7 @@ import {
   getDefaultTheme,
   getThemeInterface,
   registerTheme,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { vi } from 'vitest'
 
@@ -375,5 +376,14 @@ const App = () => <Box></Box>`,
         },
       })
     }
+  })
+
+  it('should call setPrefix when prefix option is provided', async () => {
+    const plugin = DevupUI({ prefix: 'my-prefix' })
+    await plugin.setup({
+      transform: vi.fn(),
+      modifyRsbuildConfig: vi.fn(),
+    } as any)
+    expect(setPrefix).toHaveBeenCalledWith('my-prefix')
   })
 })
