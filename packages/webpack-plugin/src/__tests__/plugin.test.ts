@@ -11,6 +11,7 @@ import {
   importSheet,
   registerTheme,
   setDebug,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { describe } from 'vitest'
 
@@ -342,5 +343,13 @@ describe('devupUIWebpackPlugin', () => {
     } else {
       expect(compiler.hooks.done.tapPromise).not.toHaveBeenCalled()
     }
+  })
+
+  it('should call setPrefix when prefix option is provided', async () => {
+    const plugin = new DevupUIWebpackPlugin({ prefix: 'my-prefix' })
+    const compiler = createCompiler()
+    vi.mocked(existsSync).mockReturnValue(false)
+    plugin.apply(compiler)
+    expect(setPrefix).toHaveBeenCalledWith('my-prefix')
   })
 })

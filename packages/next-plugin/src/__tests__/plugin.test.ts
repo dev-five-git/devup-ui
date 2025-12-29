@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { getDefaultTheme, getThemeInterface } from '@devup-ui/wasm'
+import { getDefaultTheme, getThemeInterface, setPrefix } from '@devup-ui/wasm'
 import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
 
 import { DevupUI } from '../plugin'
@@ -16,6 +16,7 @@ vi.mock('@devup-ui/wasm', async (original) => ({
   getThemeInterface: vi.fn(),
   getDefaultTheme: vi.fn(),
   getCss: vi.fn(() => ''),
+  setPrefix: vi.fn(),
   exportSheet: vi.fn(() =>
     JSON.stringify({
       css: {},
@@ -400,6 +401,16 @@ describe('DevupUINextPlugin', () => {
         CUSTOM_VAR: 'value',
         DEVUP_UI_DEFAULT_THEME: 'light',
       })
+    })
+    it('should call setPrefix when prefix option is provided', async () => {
+      vi.stubEnv('TURBOPACK', '1')
+      vi.mocked(existsSync)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
+      DevupUI({}, { prefix: 'my-prefix' })
+      expect(setPrefix).toHaveBeenCalledWith('my-prefix')
     })
     it('should handle debugPort fetch failure in development mode', async () => {
       vi.stubEnv('TURBOPACK', '1')

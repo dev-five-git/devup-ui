@@ -10,6 +10,7 @@ import {
   getThemeInterface,
   registerTheme,
   setDebug,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { describe } from 'vitest'
 
@@ -388,5 +389,10 @@ describe('devupUIVitePlugin', () => {
     const bundle = {} as any
     await (plugin as any).generateBundle({}, bundle)
     expect(bundle).toEqual({})
+  })
+
+  it('should call setPrefix when prefix option is provided', () => {
+    DevupUI({ prefix: 'my-prefix' })
+    expect(setPrefix).toHaveBeenCalledWith('my-prefix')
   })
 })
