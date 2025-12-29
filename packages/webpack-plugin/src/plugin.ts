@@ -12,6 +12,7 @@ import {
   importSheet,
   registerTheme,
   setDebug,
+  setPrefix,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
 
@@ -24,6 +25,7 @@ export interface DevupUIWebpackPluginOptions {
   debug: boolean
   include: string[]
   singleCss: boolean
+  prefix?: string
 }
 
 export class DevupUIWebpackPlugin {
@@ -41,6 +43,7 @@ export class DevupUIWebpackPlugin {
     debug = false,
     include = [],
     singleCss = false,
+    prefix,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.options = {
       package: libPackage,
@@ -51,6 +54,7 @@ export class DevupUIWebpackPlugin {
       debug,
       include,
       singleCss,
+      prefix,
     }
 
     this.sheetFile = join(this.options.distDir, 'sheet.json')
@@ -100,6 +104,9 @@ export class DevupUIWebpackPlugin {
 
   apply(compiler: Compiler) {
     setDebug(this.options.debug)
+    if (this.options.prefix) {
+      setPrefix(this.options.prefix)
+    }
     const existsDevup = existsSync(this.options.devupFile)
     // read devup.json
     if (!existsSync(this.options.distDir))

@@ -101,6 +101,56 @@ pub fn is_debug() -> bool {
     css::debug::is_debug()
 }
 
+/// Set the CSS class name prefix
+///
+/// # Example (Vite Config)
+/// ```javascript
+/// import init, { setPrefix, codeExtract } from 'devup-ui-wasm';
+///
+/// export default {
+///   plugins: [
+///     {
+///       name: 'devup-ui',
+///       apply: 'pre',
+///       async configResolved() {
+///         await init();
+///         setPrefix('du-'); // Set prefix to 'du-'
+///       },
+///       // ... other plugin code
+///     }
+///   ]
+/// }
+/// ```
+///
+/// # Example (Next.js Plugin)
+/// ```typescript
+/// import init, { setPrefix } from 'devup-ui-wasm';
+///
+/// const withDevupUI = (nextConfig) => {
+///   return {
+///     ...nextConfig,
+///     webpack: (config, options) => {
+///       if (!options.isServer && !global.devupUIInitialized) {
+///         init().then(() => {
+///           setPrefix('du-');
+///           global.devupUIInitialized = true;
+///         });
+///       }
+///       return config;
+///     }
+///   };
+/// };
+/// ```
+#[wasm_bindgen(js_name = "setPrefix")]
+pub fn set_prefix(prefix: Option<String>) {
+    css::set_prefix(prefix);
+}
+
+#[wasm_bindgen(js_name = "getPrefix")]
+pub fn get_prefix() -> Option<String> {
+    css::get_prefix()
+}
+
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
@@ -515,6 +565,16 @@ mod tests {
         assert!(is_debug());
         set_debug(false);
         assert!(!is_debug());
+    }
+
+    #[test]
+    #[serial]
+    fn test_prefix() {
+        assert_eq!(get_prefix(), None);
+        set_prefix(Some("du-".to_string()));
+        assert_eq!(get_prefix(), Some("du-".to_string()));
+        set_prefix(None);
+        assert_eq!(get_prefix(), None);
     }
 
     #[test]
