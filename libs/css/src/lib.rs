@@ -11,9 +11,9 @@ mod selector_separator;
 pub mod style_selector;
 pub mod utils;
 
+use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 use crate::class_map::GLOBAL_CLASS_MAP;
@@ -146,13 +146,10 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
             });
         if !filename.is_empty() {
             format!(
-                "{}{}",
+                "{}{}-{}",
                 prefix,
-                format!(
-                    "{}-{}",
-                    num_to_nm_base(get_file_num_by_filename(&filename)),
-                    class_num
-                )
+                num_to_nm_base(get_file_num_by_filename(&filename)),
+                class_num
             )
         } else {
             format!("{}{}", prefix, class_num)
@@ -178,25 +175,22 @@ pub fn sheet_to_classname(
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "{}{}",
+            "{}{}-{}-{}-{}-{}{}",
             prefix,
-            format!(
-                "{}-{}-{}-{}-{}{}",
-                property.trim(),
-                level,
-                optimize_value(value.unwrap_or_default()),
-                if selector.is_empty() {
-                    "".to_string()
-                } else {
-                    let mut hasher = DefaultHasher::new();
-                    selector.hash(&mut hasher);
-                    hasher.finish().to_string()
-                },
-                style_order.unwrap_or(255),
-                filename
-                    .map(|v| format!("-{}", get_file_num_by_filename(v)))
-                    .unwrap_or_default(),
-            )
+            property.trim(),
+            level,
+            optimize_value(value.unwrap_or_default()),
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            },
+            style_order.unwrap_or(255),
+            filename
+                .map(|v| format!("-{}", get_file_num_by_filename(v)))
+                .unwrap_or_default(),
         )
     } else {
         let key = format!(
@@ -225,13 +219,10 @@ pub fn sheet_to_classname(
             });
         if !filename.is_empty() {
             format!(
-                "{}{}",
+                "{}{}-{}",
                 prefix,
-                format!(
-                    "{}-{}",
-                    num_to_nm_base(get_file_num_by_filename(&filename)),
-                    clas_num
-                )
+                num_to_nm_base(get_file_num_by_filename(&filename)),
+                clas_num
             )
         } else {
             format!("{}{}", prefix, clas_num)
@@ -244,20 +235,17 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         format!(
-            "--{}{}",
+            "--{}{}-{}-{}",
             prefix,
-            format!(
-                "{}-{}-{}",
-                property,
-                level,
-                if selector.is_empty() {
-                    "".to_string()
-                } else {
-                    let mut hasher = DefaultHasher::new();
-                    selector.hash(&mut hasher);
-                    hasher.finish().to_string()
-                }
-            )
+            property,
+            level,
+            if selector.is_empty() {
+                "".to_string()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                selector.hash(&mut hasher);
+                hasher.finish().to_string()
+            }
         )
     } else {
         let key = format!(
