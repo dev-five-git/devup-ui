@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { codeExtract, getCss } from '@devup-ui/wasm'
-import { globSync } from 'glob'
+import { globSync } from 'tinyglobby'
 
 import { findTopPackageRoot } from '../find-top-package-root'
 import { getPackageName } from '../get-package-name'
@@ -14,7 +14,7 @@ import { preload } from '../preload'
 // Mock dependencies
 vi.mock('node:fs')
 vi.mock('@devup-ui/wasm')
-vi.mock('glob')
+vi.mock('tinyglobby')
 
 // Mock globSync
 vi.mock('node:fs', () => ({
@@ -25,7 +25,7 @@ vi.mock('node:fs', () => ({
   realpathSync: vi.fn().mockReturnValue('src/App.tsx'),
 }))
 
-vi.mock('glob', () => ({
+vi.mock('tinyglobby', () => ({
   globSync: vi.fn(),
 }))
 
@@ -83,7 +83,7 @@ describe('preload', () => {
     expect(globSync).toHaveBeenCalledWith(
       ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
       {
-        follow: true,
+        followSymbolicLinks: true,
         absolute: true,
         cwd: expect.any(String),
       },
@@ -272,12 +272,12 @@ describe('preload', () => {
     expect(globSync).toHaveBeenCalledWith(
       ['package.json', '!**/node_modules/**'],
       {
-        follow: true,
+        followSymbolicLinks: true,
         absolute: true,
         cwd: '/repo',
       },
     )
-    expect(codeExtract).toHaveBeenCalledTimes(1)
+    expect(codeExtract).toHaveBeenCalledTimes(3)
     expect(realpathSync).toHaveBeenCalledWith('src/App.tsx')
   })
 
@@ -305,6 +305,33 @@ describe('preload', () => {
       false,
       false,
       true,
+    )
+  })
+
+  it('should return early when nested is true and include packages exist', () => {
+    vi.mocked(findTopPackageRoot).mockReturnValue('/repo')
+    vi.mocked(hasLocalPackage).mockReturnValue(true)
+    // Return empty array so no recursive calls happen, but include.length > 0 check passes
+    vi.mocked(globSync).mockReturnValue([])
+    vi.mocked(getPackageName).mockReturnValue('pkg-a')
+
+    // Call with nested = true (7th parameter)
+    preload(
+      /node_modules/,
+      '@devup-ui/react',
+      false,
+      '/output/css',
+      ['pkg-a'],
+      '/some/path',
+      true,
+    )
+
+    // When nested is true, it should return early after processing includes
+    // and not write the final devup-ui.css file
+    expect(writeFileSync).not.toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui.css'),
+      expect.any(String),
+      'utf-8',
     )
   })
 })
