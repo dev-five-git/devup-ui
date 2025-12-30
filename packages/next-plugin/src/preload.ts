@@ -38,7 +38,6 @@ export function preload(
   })
   // fix multi core build issue
   collected.sort()
-  // console.log('collected', collected)
   for (const file of collected) {
     const filePath = relative(process.cwd(), realpathSync(file))
     if (
