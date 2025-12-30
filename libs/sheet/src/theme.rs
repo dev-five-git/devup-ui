@@ -1,20 +1,7 @@
 use css::optimize_value::optimize_value;
-use schemars::{JsonSchema, SchemaGenerator, json_schema};
-use schemars::Schema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-
-/// Schema helper for typography values that accept string or number
-fn typography_value_schema(_generator: &mut SchemaGenerator) -> Schema {
-    json_schema!({
-        "oneOf": [
-            { "type": "string" },
-            { "type": "number" },
-            { "type": "null" }
-        ]
-    })
-}
 
 /// ColorEntry stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
 #[derive(Debug, Clone, Serialize)]
@@ -37,42 +24,6 @@ pub struct ColorEntry {
 pub struct ColorTheme {
     /// Map from css_key to ColorEntry for quick lookup
     entries: HashMap<String, ColorEntry>,
-}
-
-impl JsonSchema for ColorTheme {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed("ColorTheme")
-    }
-
-    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
-        json_schema!({
-            "type": "object",
-            "additionalProperties": {
-                "oneOf": [
-                    { "type": "string", "description": "Color value (e.g., '#000', 'rgb(0,0,0)')" },
-                    {
-                        "type": "object",
-                        "additionalProperties": {
-                            "$ref": "#/$defs/ColorValue"
-                        },
-                        "description": "Nested color object"
-                    }
-                ]
-            },
-            "description": "Color theme with color name to value mappings. Supports nested objects for color scales.",
-            "$defs": {
-                "ColorValue": {
-                    "oneOf": [
-                        { "type": "string" },
-                        {
-                            "type": "object",
-                            "additionalProperties": { "$ref": "#/$defs/ColorValue" }
-                        }
-                    ]
-                }
-            }
-        })
-    }
 }
 
 /// Recursively flatten a JSON value into ColorEntry list
@@ -194,17 +145,15 @@ where
         StringOrNumber::Float(n) => Ok(Some(n.to_string())),
     }
 }
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Typography {
     pub font_family: Option<String>,
     pub font_size: Option<String>,
 
     #[serde(deserialize_with = "deserialize_string_from_number", default)]
-    #[schemars(schema_with = "typography_value_schema")]
     pub font_weight: Option<String>,
     #[serde(deserialize_with = "deserialize_string_from_number", default)]
-    #[schemars(schema_with = "typography_value_schema")]
     pub line_height: Option<String>,
     pub letter_spacing: Option<String>,
 }
@@ -232,82 +181,6 @@ pub struct Typographies(pub Vec<Option<Typography>>);
 impl From<Vec<Option<Typography>>> for Typographies {
     fn from(v: Vec<Option<Typography>>) -> Self {
         Self(v)
-    }
-}
-
-impl JsonSchema for Typographies {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed("Typographies")
-    }
-
-    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        let typography_schema = generator.subschema_for::<Typography>();
-        json_schema!({
-            "oneOf": [
-                {
-                    "type": "array",
-                    "items": {
-                        "oneOf": [
-                            typography_schema,
-                            { "type": "null" }
-                        ]
-                    },
-                    "description": "Traditional array format: array of Typography objects or null for each breakpoint"
-                },
-                {
-                    "type": "object",
-                    "properties": {
-                        "fontFamily": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        },
-                        "fontStyle": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        },
-                        "fontWeight": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "number" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        },
-                        "fontSize": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        },
-                        "lineHeight": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "number" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "number" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        },
-                        "letterSpacing": {
-                            "oneOf": [
-                                { "type": "string" },
-                                { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "null" }] } },
-                                { "type": "null" }
-                            ]
-                        }
-                    },
-                    "additionalProperties": false,
-                    "description": "Compact object format: each property can be a single value or array of values per breakpoint"
-                }
-            ],
-            "description": "Typography definition supporting both traditional array format and compact object format"
-        })
     }
 }
 
@@ -460,26 +333,15 @@ impl<'de> Deserialize<'de> for Typographies {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Theme {
-    /// Color themes by mode name (e.g., "light", "dark")
     #[serde(default)]
     pub colors: BTreeMap<String, ColorTheme>,
-    /// Breakpoints in pixels for responsive typography (default: [0, 480, 768, 992, 1280, 1600])
     #[serde(default = "default_breakpoints")]
     pub breakpoints: Vec<u16>,
-    /// Typography definitions by name (e.g., "h1", "body", "caption")
     #[serde(default)]
     pub typography: BTreeMap<String, Typographies>,
-}
-
-/// Root devup.json configuration
-#[derive(Serialize, Deserialize, Debug, JsonSchema)]
-pub struct DevupJson {
-    /// Theme configuration including colors, typography, and breakpoints
-    #[serde(default)]
-    pub theme: Option<Theme>,
 }
 
 fn default_breakpoints() -> Vec<u16> {
