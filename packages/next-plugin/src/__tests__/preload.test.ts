@@ -307,4 +307,31 @@ describe('preload', () => {
       true,
     )
   })
+
+  it('should return early when nested is true and include packages exist', () => {
+    vi.mocked(findTopPackageRoot).mockReturnValue('/repo')
+    vi.mocked(hasLocalPackage).mockReturnValue(true)
+    // Return empty array so no recursive calls happen, but include.length > 0 check passes
+    vi.mocked(globSync).mockReturnValue([])
+    vi.mocked(getPackageName).mockReturnValue('pkg-a')
+
+    // Call with nested = true (7th parameter)
+    preload(
+      /node_modules/,
+      '@devup-ui/react',
+      false,
+      '/output/css',
+      ['pkg-a'],
+      '/some/path',
+      true,
+    )
+
+    // When nested is true, it should return early after processing includes
+    // and not write the final devup-ui.css file
+    expect(writeFileSync).not.toHaveBeenCalledWith(
+      expect.stringContaining('devup-ui.css'),
+      expect.any(String),
+      'utf-8',
+    )
+  })
 })
