@@ -1,5 +1,0 @@
-{
-  "changes": { "packages/next-plugin/package.json": "Patch" },
-  "note": "Fix next version issue",
-  "date": "2025-12-30T12:41:31.107384400Z"
-}
