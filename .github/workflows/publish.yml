@@ -110,16 +110,7 @@ jobs:
 
       - uses: changepacks/action@main
         id: changepacks
-
-      - name: Publish to npm
-        run: |
-          echo '${{ steps.changepacks.outputs.changepacks }}' | jq -r '.[]' | while read package; do
-            package_dir=$(dirname "$package")
-            echo "Publishing package: $package_dir"
-            cd "$package_dir"
-            pnpm publish --access public --no-git-checks
-            cd "${{ github.workspace }}"
-          done
+        with:
+          publish: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        if: steps.changepacks.outputs.changepacks != ''

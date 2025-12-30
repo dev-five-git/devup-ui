@@ -757,12 +757,12 @@ importers:
       '@devup-ui/webpack-plugin':
         specifier: workspace:^
         version: link:../webpack-plugin
-      glob:
-        specifier: ^13.0
-        version: 13.0.0
       next:
         specifier: ^16.1
         version: 16.1.1(@babel/core@7.28.5)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      tinyglobby:
+        specifier: ^0.2
+        version: 0.2.15
     devDependencies:
       '@types/webpack':
         specifier: ^5.28

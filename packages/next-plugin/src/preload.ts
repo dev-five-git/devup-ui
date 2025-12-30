@@ -2,7 +2,7 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 
 import { codeExtract, getCss } from '@devup-ui/wasm'
-import { globSync } from 'glob'
+import { globSync } from 'tinyglobby'
 
 import { findTopPackageRoot } from './find-top-package-root'
 import { getPackageName } from './get-package-name'
@@ -15,11 +15,12 @@ export function preload(
   cssDir: string,
   include: string[],
   pwd = process.cwd(),
+  nested = false,
 ) {
   if (include.length > 0 && hasLocalPackage()) {
     const packageRoot = findTopPackageRoot()
     const collected = globSync(['package.json', '!**/node_modules/**'], {
-      follow: true,
+      followSymbolicLinks: true,
       absolute: true,
       cwd: packageRoot,
     })
@@ -27,12 +28,12 @@ export function preload(
       .map((file) => dirname(file))
 
     for (const file of collected) {
-      preload(excludeRegex, libPackage, singleCss, cssDir, include, file)
+      preload(excludeRegex, libPackage, singleCss, cssDir, include, file, true)
     }
-    return
+    if (nested) return
   }
   const collected = globSync(['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'], {
-    follow: true,
+    followSymbolicLinks: true,
     absolute: true,
     cwd: pwd,
   })
