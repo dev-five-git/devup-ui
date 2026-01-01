@@ -232,17 +232,17 @@ const buttonExample = <Button>Click me</Button>
 
 - [Node.js](https://nodejs.org) (LTS version recommended)
 - [Rust](https://rustup.rs) compiler
-- pnpm package manager (`npm install -g pnpm`)
+- [Bun](https://bun.sh) package manager
 
 ### Development Setup
 
 To set up the development environment, install the following packages:
 
 ```sh
-pnpm i
-pnpm build
+bun install
+bun run build
 cargo install cargo-tarpaulin
 cargo install wasm-pack
 ```
 
-After installation, run `pnpm test` to ensure everything works correctly.
+After installation, run `bun run test` to ensure everything works correctly.

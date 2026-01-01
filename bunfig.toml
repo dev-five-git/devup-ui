@@ -1,0 +1,6 @@
+[test]
+preload = ["bun-test-env-dom"]
+coverage = true
+coverageSkipTestFiles = true
+coverageThreshold = 0.9999
+coverageReporter  = ["text", "lcov"] 

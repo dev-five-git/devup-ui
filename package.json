@@ -6,13 +6,13 @@
   "type": "module",
   "scripts": {
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
-    "pretest": "pnpm -F @devup-ui/vite-plugin build",
-    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && vitest test --coverage --run && pnpm -r test",
-    "build": "pnpm -F wasm build && pnpm -F @devup-ui/* -F !wasm build",
-    "dev": "pnpm -r dev",
-    "benchmark": "node benchmark.js",
+    "pretest": "bun run --filter @devup-ui/vite-plugin build",
+    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && vitest test --coverage --run && bun run --filter '*' test",
+    "build": "bun run --filter wasm build && bun run --filter '@devup-ui/*' --filter '!wasm' build",
+    "dev": "bun run --filter '*' dev",
+    "benchmark": "bun benchmark.js",
     "prepare": "husky",
-    "changepacks": "pnpm dlx @changepacks/cli"
+    "changepacks": "bunx @changepacks/cli"
   },
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:^",
@@ -30,14 +30,10 @@
     "globals": "^16.5",
     "happy-dom": "^20.0",
     "husky": "^9.1",
-    "lint-staged": "^16.2",
-    "vitest": "^4.0"
+    "vitest": "^4.0",
+    "bun-test-env-dom": "^1.0"
   },
   "author": "devfive",
-  "packageManager": "pnpm@10.26.1",
-  "resolutions": {
-    "@devup-ui/eslint-plugin": "workspace:^"
-  },
   "workspaces": [
     "packages/*",
     "apps/*",
