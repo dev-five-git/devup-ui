@@ -1,6 +1,8 @@
+import * as fs from 'node:fs'
+import * as fsPromises from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type { Mock } from 'bun:test'
+import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
   beforeEach,
@@ -11,69 +13,51 @@ import {
   spyOn,
 } from 'bun:test'
 
-const mockExistsSync = mock((_path: string) => false)
-const mockReadFileSync = mock((_path: string, _encoding?: string) => '{}')
-
-mock.module('node:fs', () => ({
-  existsSync: mockExistsSync,
-  readFileSync: mockReadFileSync,
-}))
-
-mock.module('node:fs/promises', () => ({
-  writeFile: mock(),
-}))
-
-mock.module('@devup-ui/wasm', () => ({
-  codeExtract: mock(),
-  exportClassMap: mock(),
-  exportFileMap: mock(),
-  exportSheet: mock(),
-  getCss: mock(),
-  importClassMap: mock(),
-  importFileMap: mock(),
-  importSheet: mock(),
-  registerTheme: mock(),
-}))
-
-import { writeFile } from 'node:fs/promises'
-
-import {
-  codeExtract,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-  importClassMap,
-  importFileMap,
-  importSheet,
-  registerTheme,
-} from '@devup-ui/wasm'
-
 import devupUILoader from '../loader'
 
+let existsSyncSpy: ReturnType<typeof spyOn>
+let readFileSyncSpy: ReturnType<typeof spyOn>
+let writeFileSpy: ReturnType<typeof spyOn>
+let codeExtractSpy: ReturnType<typeof spyOn>
+let exportClassMapSpy: ReturnType<typeof spyOn>
+let exportFileMapSpy: ReturnType<typeof spyOn>
+let exportSheetSpy: ReturnType<typeof spyOn>
+let getCssSpy: ReturnType<typeof spyOn>
+let importClassMapSpy: ReturnType<typeof spyOn>
+let importFileMapSpy: ReturnType<typeof spyOn>
+let importSheetSpy: ReturnType<typeof spyOn>
+let registerThemeSpy: ReturnType<typeof spyOn>
 let dateNowSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  mockExistsSync.mockReset()
-  mockReadFileSync.mockReset()
-  ;(codeExtract as Mock<typeof codeExtract>).mockReset()
-  ;(exportClassMap as Mock<typeof exportClassMap>).mockReset()
-  ;(exportFileMap as Mock<typeof exportFileMap>).mockReset()
-  ;(exportSheet as Mock<typeof exportSheet>).mockReset()
-  ;(getCss as Mock<typeof getCss>).mockReset()
-  ;(importClassMap as Mock<typeof importClassMap>).mockReset()
-  ;(importFileMap as Mock<typeof importFileMap>).mockReset()
-  ;(importSheet as Mock<typeof importSheet>).mockReset()
-  ;(registerTheme as Mock<typeof registerTheme>).mockReset()
-  ;(writeFile as Mock<typeof writeFile>).mockReset()
-
-  mockExistsSync.mockReturnValue(false)
-  mockReadFileSync.mockReturnValue('{}')
-
+  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
+  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+  writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
+  codeExtractSpy = spyOn(wasm, 'codeExtract')
+  exportClassMapSpy = spyOn(wasm, 'exportClassMap')
+  exportFileMapSpy = spyOn(wasm, 'exportFileMap')
+  exportSheetSpy = spyOn(wasm, 'exportSheet')
+  getCssSpy = spyOn(wasm, 'getCss')
+  importClassMapSpy = spyOn(wasm, 'importClassMap')
+  importFileMapSpy = spyOn(wasm, 'importFileMap')
+  importSheetSpy = spyOn(wasm, 'importSheet')
+  registerThemeSpy = spyOn(wasm, 'registerTheme')
   dateNowSpy = spyOn(Date, 'now').mockReturnValue(0)
 })
 
 afterEach(() => {
+  existsSyncSpy.mockRestore()
+  readFileSyncSpy.mockRestore()
+  writeFileSpy.mockRestore()
+  codeExtractSpy.mockRestore()
+  exportClassMapSpy.mockRestore()
+  exportFileMapSpy.mockRestore()
+  exportSheetSpy.mockRestore()
+  getCssSpy.mockRestore()
+  importClassMapSpy.mockRestore()
+  importFileMapSpy.mockRestore()
+  importSheetSpy.mockRestore()
+  registerThemeSpy.mockRestore()
   dateNowSpy.mockRestore()
 })
 
@@ -116,11 +100,11 @@ describe('devupUILoader', () => {
       addDependency: mock(),
       _compiler,
     }
-    ;(exportSheet as Mock<typeof exportSheet>).mockReturnValue('sheet')
-    ;(exportClassMap as Mock<typeof exportClassMap>).mockReturnValue('classMap')
-    ;(exportFileMap as Mock<typeof exportFileMap>).mockReturnValue('fileMap')
-    ;(getCss as Mock<typeof getCss>).mockReturnValue('css')
-    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classMap')
+    exportFileMapSpy.mockReturnValue('fileMap')
+    getCssSpy.mockReturnValue('css')
+    codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),
@@ -132,7 +116,7 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
-    expect(codeExtract).toHaveBeenCalledWith(
+    expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
       'code',
       'package',
@@ -142,13 +126,13 @@ describe('devupUILoader', () => {
       true,
     )
     if (options.updatedBaseStyle) {
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'devup-ui.css'),
         'css',
         'utf-8',
       )
     } else {
-      expect(writeFile).not.toHaveBeenCalledWith(
+      expect(writeFileSpy).not.toHaveBeenCalledWith(
         join('cssFile', 'devup-ui.css'),
         'css',
         'utf-8',
@@ -156,13 +140,13 @@ describe('devupUILoader', () => {
     }
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',
       )
-      expect(writeFile).toHaveBeenCalledWith('sheetFile', 'sheet')
-      expect(writeFile).toHaveBeenCalledWith('classMapFile', 'classMap')
-      expect(writeFile).toHaveBeenCalledWith('fileMapFile', 'fileMap')
+      expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
+      expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
+      expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
     })
   })
 
@@ -182,7 +166,7 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
+    codeExtractSpy.mockReturnValue({
       code: 'code',
       css: undefined,
       free: mock(),
@@ -194,7 +178,7 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
-    expect(codeExtract).toHaveBeenCalledWith(
+    expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
       'code',
       'package',
@@ -206,7 +190,7 @@ describe('devupUILoader', () => {
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
-    expect(writeFile).not.toHaveBeenCalledWith('cssFile', 'css', {
+    expect(writeFileSpy).not.toHaveBeenCalledWith('cssFile', 'css', {
       encoding: 'utf-8',
     })
   })
@@ -227,7 +211,7 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    ;(codeExtract as Mock<typeof codeExtract>).mockImplementation(() => {
+    codeExtractSpy.mockImplementation(() => {
       throw new Error('error')
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
@@ -255,10 +239,10 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    ;(exportSheet as Mock<typeof exportSheet>).mockReturnValue('sheet')
-    ;(exportClassMap as Mock<typeof exportClassMap>).mockReturnValue('classMap')
-    ;(exportFileMap as Mock<typeof exportFileMap>).mockReturnValue('fileMap')
-    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classMap')
+    exportFileMapSpy.mockReturnValue('fileMap')
+    codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),
@@ -270,7 +254,7 @@ describe('devupUILoader', () => {
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
-    expect(codeExtract).toHaveBeenCalledWith(
+    expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
       'code',
       'package',
@@ -280,7 +264,7 @@ describe('devupUILoader', () => {
       true,
     )
     await waitFor(() => {
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',
       )
@@ -303,7 +287,7 @@ describe('devupUILoader', () => {
       resourcePath: './foo/index.tsx',
       addDependency: mock(),
     }
-    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
+    codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),
@@ -339,10 +323,8 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    ;(registerTheme as Mock<typeof registerTheme>).mockReturnValueOnce(
-      undefined,
-    )
-    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
+    registerThemeSpy.mockReturnValueOnce(undefined)
+    codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),

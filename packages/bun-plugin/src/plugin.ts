@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { codeExtract, hasDevupUI } from '@devup-ui/wasm'
+import * as wasmModule from '@devup-ui/wasm'
 import { plugin } from 'bun'
 
 const libPackage = '@devup-ui/react'
@@ -11,21 +11,14 @@ const distDir = 'df'
 const cssDir = resolve(distDir, 'devup-ui')
 const singleCss = true
 
-// Lazy load wasm module
-let wasmModule: typeof import('@devup-ui/wasm') | null = null
-async function getWasm() {
-  if (!wasmModule) {
-    wasmModule = await import('@devup-ui/wasm')
+let wasmInitialized = false
+
+function getWasm() {
+  if (!wasmInitialized) {
     wasmModule.setDebug(true)
+    wasmInitialized = true
   }
   return wasmModule
-}
-
-function _getFileNumByFilename(filename: string) {
-  if (filename.endsWith('devup-ui.css')) return null
-  const parts = filename.split('devup-ui-')[1]
-  if (!parts) return null
-  return parseInt(parts.split('.')[0])
 }
 
 async function writeDataFiles() {
@@ -64,7 +57,6 @@ async function writeDataFiles() {
   ])
 }
 
-const _cssMap = new Map<number | null, string>()
 let initialized = false
 
 async function initialize() {
@@ -132,8 +124,9 @@ plugin({
             : 'js'
       const contents = await Bun.file(filePath).text()
 
-      if (hasDevupUI(filePath, contents, libPackage)) {
-        const code = codeExtract(
+      const wasm = await getWasm()
+      if (wasm.hasDevupUI(filePath, contents, libPackage)) {
+        const code = wasm.codeExtract(
           filePath,
           contents,
           libPackage,
@@ -148,18 +141,3 @@ plugin({
     })
   },
 })
-
-export async function getDevupDefaultTheme(): Promise<string | undefined> {
-  const wasm = await getWasm()
-  return wasm.getDefaultTheme()
-}
-
-export async function getDevupDefine(): Promise<Record<string, string>> {
-  const wasm = await getWasm()
-  const theme = wasm.getDefaultTheme()
-  const define: Record<string, string> = {}
-  if (theme) {
-    define['process.env.DEVUP_UI_DEFAULT_THEME'] = JSON.stringify(theme)
-  }
-  return define
-}

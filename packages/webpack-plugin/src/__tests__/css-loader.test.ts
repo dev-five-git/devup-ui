@@ -1,30 +1,57 @@
-import { resolve } from 'node:path'
+import * as nodePath from 'node:path'
 
-import { getCss } from '@devup-ui/wasm'
-import type { Mock } from 'bun:test'
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import * as wasm from '@devup-ui/wasm'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
 import devupUICssLoader from '../css-loader'
 
-mock.module('node:path', () => ({
-  resolve: mock(),
-}))
-mock.module('@devup-ui/wasm', () => ({
-  registerTheme: mock(),
-  getCss: mock(),
-}))
+let resolveSpy: ReturnType<typeof spyOn>
+let getCssSpy: ReturnType<typeof spyOn>
+let codeExtractSpy: ReturnType<typeof spyOn>
+let registerThemeSpy: ReturnType<typeof spyOn>
+let setDebugSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  ;(resolve as Mock<typeof resolve>).mockReset()
-  ;(getCss as Mock<typeof getCss>).mockReset()
+  resolveSpy = spyOn(nodePath, 'resolve').mockReturnValue('resolved')
+  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('get css')
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
+    (_path: string, contents: string) =>
+      ({
+        css: '',
+        code: contents,
+        cssFile: '',
+        map: undefined,
+        updatedBaseStyle: false,
+        free: mock(),
+        [Symbol.dispose]: mock(),
+      }) as any,
+  )
+  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
+  setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
+})
+
+afterEach(() => {
+  resolveSpy.mockRestore()
+  getCssSpy.mockRestore()
+  codeExtractSpy.mockRestore()
+  registerThemeSpy.mockRestore()
+  setDebugSpy.mockRestore()
 })
 
 describe('devupUICssLoader', () => {
   it('should return css on no watch', () => {
     const callback = mock()
     const addContextDependency = mock()
-    ;(resolve as Mock<typeof resolve>).mockReturnValue('resolved')
-    ;(getCss as Mock<typeof getCss>).mockReturnValue('get css')
+    resolveSpy.mockReturnValue('resolved')
+    getCssSpy.mockReturnValue('get css')
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -37,8 +64,8 @@ describe('devupUICssLoader', () => {
   it('should return _compiler hit css on watch', () => {
     const callback = mock()
     const addContextDependency = mock()
-    ;(resolve as Mock<typeof resolve>).mockReturnValue('resolved')
-    ;(getCss as Mock<typeof getCss>).mockReturnValue('get css')
+    resolveSpy.mockReturnValue('resolved')
+    getCssSpy.mockReturnValue('get css')
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -46,8 +73,8 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
     expect(callback).toBeCalledWith(null, 'get css', '', undefined)
-    expect(getCss).toBeCalledTimes(1)
-    ;(getCss as Mock<typeof getCss>).mockReset()
+    expect(getCssSpy).toBeCalledTimes(1)
+    getCssSpy.mockClear()
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -55,8 +82,8 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
 
-    expect(getCss).toBeCalledTimes(1)
-    ;(getCss as Mock<typeof getCss>).mockReset()
+    expect(getCssSpy).toBeCalledTimes(1)
+    getCssSpy.mockClear()
 
     devupUICssLoader.bind({
       callback,
@@ -65,6 +92,6 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui-10.css',
     } as any)(Buffer.from(''), '')
 
-    expect(getCss).toBeCalledTimes(1)
+    expect(getCssSpy).toBeCalledTimes(1)
   })
 })

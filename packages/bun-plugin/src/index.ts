@@ -1,1 +1,1 @@
-export { getDevupDefaultTheme, getDevupDefine } from './plugin'
+export * from './plugin'

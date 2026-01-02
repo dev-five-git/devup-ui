@@ -1,20 +1,27 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
-
-const mockGetCss = mock(() => 'get css')
-const mockRegisterTheme = mock()
-
-mock.module('@devup-ui/wasm', () => ({
-  registerTheme: mockRegisterTheme,
-  getCss: mockGetCss,
-}))
+import * as wasm from '@devup-ui/wasm'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
 import devupUICssLoader from '../css-loader'
 
-beforeEach(() => {
-  mockGetCss.mockReset()
-  mockRegisterTheme.mockReset()
+let getCssSpy: ReturnType<typeof spyOn>
+let registerThemeSpy: ReturnType<typeof spyOn>
 
-  mockGetCss.mockReturnValue('get css')
+beforeEach(() => {
+  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('get css')
+  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
+})
+
+afterEach(() => {
+  getCssSpy.mockRestore()
+  registerThemeSpy.mockRestore()
 })
 
 describe('devupUICssLoader', () => {
@@ -45,8 +52,8 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
     expect(callback).toHaveBeenCalledWith(null, 'get css', '', undefined)
-    expect(mockGetCss).toHaveBeenCalledTimes(1)
-    mockGetCss.mockReset()
+    expect(getCssSpy).toHaveBeenCalledTimes(1)
+    getCssSpy.mockClear()
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -54,9 +61,9 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui.css',
     } as any)(Buffer.from('data'), '')
 
-    expect(mockGetCss).toHaveBeenCalledTimes(1)
+    expect(getCssSpy).toHaveBeenCalledTimes(1)
 
-    mockGetCss.mockReset()
+    getCssSpy.mockClear()
 
     devupUICssLoader.bind({
       callback,
@@ -65,6 +72,6 @@ describe('devupUICssLoader', () => {
       resourcePath: 'devup-ui-10.css',
     } as any)(Buffer.from(''), '')
 
-    expect(mockGetCss).toHaveBeenCalledTimes(1)
+    expect(getCssSpy).toHaveBeenCalledTimes(1)
   })
 })

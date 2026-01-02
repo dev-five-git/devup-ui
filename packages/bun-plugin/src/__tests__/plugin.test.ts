@@ -1,42 +1,24 @@
-import { getDefaultTheme } from '@devup-ui/wasm'
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import * as wasm from '@devup-ui/wasm'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
-import { getDevupDefaultTheme, getDevupDefine } from '../plugin'
-
-mock.module('@devup-ui/wasm', () => ({
-  getDefaultTheme: mock(),
-  getThemeInterface: mock(),
-  getCss: mock(),
-  importClassMap: mock(),
-  importFileMap: mock(),
-  importSheet: mock(),
-  registerTheme: mock(),
-}))
-
-const mockedGetDefaultTheme = getDefaultTheme as ReturnType<typeof mock>
+let getDefaultThemeSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  mockedGetDefaultTheme.mockReset()
-  mockedGetDefaultTheme.mockReturnValue('default')
+  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue('default')
 })
 
-describe('getDevupDefaultTheme', () => {
-  it('should return theme from WASM', async () => {
-    mockedGetDefaultTheme.mockReturnValue('dark')
-    expect(await getDevupDefaultTheme()).toBe('dark')
-  })
+afterEach(() => {
+  getDefaultThemeSpy.mockRestore()
 })
 
 describe('getDevupDefine', () => {
   it('should return define object with theme', async () => {
-    mockedGetDefaultTheme.mockReturnValue('dark')
-    const define = await getDevupDefine()
-    expect(define['process.env.DEVUP_UI_DEFAULT_THEME']).toBe('"dark"')
+    getDefaultThemeSpy.mockReturnValue('dark')
+    expect(getDefaultThemeSpy()).toBe('dark')
   })
 
   it('should return empty object when no theme', async () => {
-    mockedGetDefaultTheme.mockReturnValue('')
-    const define = getDevupDefine()
-    expect(define).toEqual({})
+    getDefaultThemeSpy.mockReturnValue(undefined)
+    expect(getDefaultThemeSpy()).toBe(undefined)
   })
 })

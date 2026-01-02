@@ -1,19 +1,42 @@
-import { describe, expect, it, mock } from 'bun:test'
+import * as wasm from '@devup-ui/wasm'
+import * as webpackPluginModule from '@devup-ui/webpack-plugin'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
-mock.module('@devup-ui/webpack-plugin', () => ({
-  DevupUIWebpackPlugin: mock(),
-}))
+let exportClassMapSpy: ReturnType<typeof spyOn>
+let exportFileMapSpy: ReturnType<typeof spyOn>
+let exportSheetSpy: ReturnType<typeof spyOn>
+let getDefaultThemeSpy: ReturnType<typeof spyOn>
+let getThemeInterfaceSpy: ReturnType<typeof spyOn>
+let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 
-mock.module('@devup-ui/wasm', () => ({
-  registerTheme: mock(),
-  getThemeInterface: mock(() => ''),
-  getDefaultTheme: mock(),
-  getCss: mock(() => ''),
-  setPrefix: mock(),
-  exportSheet: mock(() => '{}'),
-  exportClassMap: mock(() => '{}'),
-  exportFileMap: mock(() => '{}'),
-}))
+beforeEach(() => {
+  exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
+  exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
+  exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue('{}')
+  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
+  getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
+  devupUIWebpackPluginSpy = spyOn(
+    webpackPluginModule,
+    'DevupUIWebpackPlugin',
+  ).mockImplementation(mock())
+})
+
+afterEach(() => {
+  exportClassMapSpy.mockRestore()
+  exportFileMapSpy.mockRestore()
+  exportSheetSpy.mockRestore()
+  getDefaultThemeSpy.mockRestore()
+  getThemeInterfaceSpy.mockRestore()
+  devupUIWebpackPluginSpy.mockRestore()
+})
 
 describe('export', () => {
   it('should export DevupUI', async () => {
