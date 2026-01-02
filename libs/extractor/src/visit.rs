@@ -24,9 +24,8 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPatternKind, CallExpression, Expression, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeValue, JSXChild, JSXElement, Program, Statement,
-    VariableDeclarator, WithClause,
+    Argument, BindingPattern, CallExpression, Expression, ImportDeclaration, ImportOrExportKind,
+    JSXAttributeValue, JSXChild, JSXElement, Program, Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -431,9 +430,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && ident.name == "require"
         {
             if arg.value == "react/jsx-runtime" {
-                if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                if let BindingPattern::BindingIdentifier(ident) = &it.id {
                     self.jsx_object = Some(ident.name.to_string());
-                } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                } else if let BindingPattern::ObjectPattern(object) = &it.id {
                     for prop in &object.properties {
                         if let Some(name) = get_string_by_property_key(&prop.key)
                             && let Some(k) = prop
@@ -446,9 +445,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 }
             } else if arg.value == self.package {
-                if let BindingPatternKind::BindingIdentifier(ident) = &it.id.kind {
+                if let BindingPattern::BindingIdentifier(ident) = &it.id {
                     self.import_object = Some(ident.name.to_string());
-                } else if let BindingPatternKind::ObjectPattern(object) = &it.id.kind {
+                } else if let BindingPattern::ObjectPattern(object) = &it.id {
                     for prop in &object.properties {
                         if let Some(name) = get_string_by_property_key(&prop.key)
                             && let Ok(kind) = ExportVariableKind::try_from(

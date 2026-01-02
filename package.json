@@ -8,7 +8,7 @@
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
     "pretest": "bun run --filter @devup-ui/vite-plugin build",
     "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && bun test",
-    "build": "bun run --filter @devup-ui/wasm build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/webpack-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/react --filter @devup-ui/components --filter @devup-ui/reset-css build",
+    "build": "bun run --filter @devup-ui/wasm build && bun run --filter @devup-ui/react build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/webpack-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/components --filter @devup-ui/reset-css build",
     "dev": "bun run --filter '*' dev",
     "benchmark": "bun benchmark.js",
     "prepare": "husky",
