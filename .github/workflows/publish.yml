@@ -88,7 +88,7 @@ jobs:
         run: |
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
-          bun run --filter @devup-ui/landing build
+          bun run --filter landing build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

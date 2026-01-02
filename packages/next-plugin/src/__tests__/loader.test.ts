@@ -338,4 +338,119 @@ describe('devupUILoader', () => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
   })
+
+  it('should use default maps in non-watch mode on init', async () => {
+    // Reset the registry first to ensure we get a fresh module
+    Loader.registry.delete(require.resolve('../loader'))
+
+    // Mock import functions BEFORE importing to prevent actual wasm calls
+    importFileMapSpy.mockImplementation(() => {})
+    importClassMapSpy.mockImplementation(() => {})
+    importSheetSpy.mockImplementation(() => {})
+    registerThemeSpy.mockImplementation(() => {})
+
+    // Fresh import - init is false at start
+    const { default: freshLoader } = await import('../loader')
+
+    const asyncCallback = mock()
+    const defaultClassMap = {}
+    const defaultFileMap = {}
+    const defaultSheet = {}
+    const theme = { colors: { primary: '#000' } }
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+        theme,
+        defaultClassMap,
+        defaultFileMap,
+        defaultSheet,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'nowatch-init.tsx',
+      addDependency: mock(),
+    }
+
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: undefined,
+      free: mock(),
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+
+    freshLoader.bind(t as any)(Buffer.from('code'), 'nowatch-init.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+    })
+
+    // Verify the init code was executed with default maps
+    expect(importFileMapSpy).toHaveBeenCalledWith(defaultFileMap)
+    expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
+    expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
+    expect(registerThemeSpy).toHaveBeenCalledWith(theme)
+  })
+
+  it('should read theme file with theme key in watch mode on init', async () => {
+    // Reset the registry and re-import for a fresh init state
+    Loader.registry.delete(require.resolve('../loader'))
+
+    // Mock import functions BEFORE importing to prevent actual wasm calls
+    importFileMapSpy.mockImplementation(() => {})
+    importClassMapSpy.mockImplementation(() => {})
+    importSheetSpy.mockImplementation(() => {})
+    registerThemeSpy.mockImplementation(() => {})
+
+    existsSyncSpy.mockReturnValue(true)
+    readFileSyncSpy.mockReturnValue(
+      '{"theme": {"colors": {"primary": "#fff"}}}',
+    )
+
+    // Fresh import with init=false
+    const { default: freshLoader } = await import('../loader')
+
+    const asyncCallback = mock()
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        themeFile: 'themeFile',
+        watch: true,
+        singleCss: true,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'watch-init.tsx',
+      addDependency: mock(),
+    }
+
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: undefined,
+      free: mock(),
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+
+    freshLoader.bind(t as any)(Buffer.from('code'), 'watch-init.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+    })
+
+    // Verify the init code was executed with files
+    expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
+    expect(registerThemeSpy).toHaveBeenCalledWith({
+      colors: { primary: '#fff' },
+    })
+  })
 })
