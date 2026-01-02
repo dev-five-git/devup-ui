@@ -17,4 +17,3 @@ tarpaulin-report.json
 *storybook.log
 storybook-static
 .claude
-bun.lock

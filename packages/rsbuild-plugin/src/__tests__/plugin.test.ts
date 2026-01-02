@@ -4,8 +4,8 @@ import { join, resolve } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
 import {
-  afterEach,
-  beforeEach,
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it,
@@ -27,7 +27,7 @@ let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
 
-beforeEach(() => {
+beforeAll(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
   mkdirSpy = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
@@ -41,7 +41,7 @@ beforeEach(() => {
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
 })
 
-afterEach(() => {
+afterAll(() => {
   existsSyncSpy.mockRestore()
   writeFileSyncSpy.mockRestore()
   mkdirSpy.mockRestore()

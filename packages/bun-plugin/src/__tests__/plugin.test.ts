@@ -1,13 +1,13 @@
 import * as wasm from '@devup-ui/wasm'
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 
 let getDefaultThemeSpy: ReturnType<typeof spyOn>
 
-beforeEach(() => {
+beforeAll(() => {
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue('default')
 })
 
-afterEach(() => {
+afterAll(() => {
   getDefaultThemeSpy.mockRestore()
 })
 

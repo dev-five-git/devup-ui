@@ -1,9 +1,17 @@
-import { describe, expect, it, spyOn } from 'bun:test'
+import { describe, expect, it, mock, spyOn } from 'bun:test'
+import { afterAll } from 'bun:test'
 
 import { initTheme } from '../init-theme'
 
+afterAll(() => {
+  mock.restore()
+})
+
 describe('initTheme', () => {
   it('should initialize the theme', () => {
+    spyOn(window, 'matchMedia').mockReturnValue({
+      matches: false,
+    } as MediaQueryList)
     initTheme()
     expect(document.documentElement.getAttribute('data-theme')).toBe('default')
   })

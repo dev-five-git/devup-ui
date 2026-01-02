@@ -1,13 +1,13 @@
 import * as reactModule from '@devup-ui/react'
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it, spyOn } from 'bun:test'
 
 let globalCssSpy: ReturnType<typeof spyOn>
 
-beforeEach(() => {
+beforeAll(() => {
   globalCssSpy = spyOn(reactModule, 'globalCss').mockReturnValue(undefined)
 })
 
-afterEach(() => {
+afterAll(() => {
   globalCssSpy.mockRestore()
 })
 

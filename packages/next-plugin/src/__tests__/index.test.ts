@@ -1,8 +1,8 @@
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPluginModule from '@devup-ui/webpack-plugin'
 import {
-  afterEach,
-  beforeEach,
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it,
@@ -17,7 +17,7 @@ let getDefaultThemeSpy: ReturnType<typeof spyOn>
 let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 
-beforeEach(() => {
+beforeAll(() => {
   exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
   exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
   exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue('{}')
@@ -26,10 +26,10 @@ beforeEach(() => {
   devupUIWebpackPluginSpy = spyOn(
     webpackPluginModule,
     'DevupUIWebpackPlugin',
-  ).mockImplementation(mock())
+  ).mockImplementation(mock() as never)
 })
 
-afterEach(() => {
+afterAll(() => {
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
   exportSheetSpy.mockRestore()

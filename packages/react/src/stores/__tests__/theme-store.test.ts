@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 
-beforeEach(() => {
+beforeAll(() => {
   document.documentElement.removeAttribute('data-theme')
 })
 
-afterEach(() => {
+afterAll(() => {
   document.documentElement.removeAttribute('data-theme')
 })
 

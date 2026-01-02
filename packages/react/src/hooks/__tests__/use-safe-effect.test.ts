@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterAll, describe, expect, it } from 'bun:test'
 import { useEffect, useLayoutEffect } from 'react'
 
 describe('useSafeEffect', () => {
   const originalWindow = globalThis.window
 
-  afterEach(() => {
+  afterAll(() => {
     globalThis.window = originalWindow
     // Clear module cache
     Loader.registry.delete(require.resolve('../use-safe-effect'))

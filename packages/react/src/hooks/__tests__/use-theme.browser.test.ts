@@ -1,14 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { act, renderHook } from 'bun-test-env-dom'
 
-beforeEach(() => {
+beforeAll(() => {
   document.documentElement.removeAttribute('data-theme')
   // Clear module caches for fresh state
   Loader.registry.delete(require.resolve('../use-theme'))
   Loader.registry.delete(require.resolve('../../stores/theme-store'))
 })
 
-afterEach(() => {
+afterAll(() => {
   document.documentElement.removeAttribute('data-theme')
 })
 

@@ -1,7 +1,7 @@
 import * as wasm from '@devup-ui/wasm'
 import {
-  afterEach,
-  beforeEach,
+  afterAll,
+  beforeAll,
   describe,
   expect,
   it,
@@ -14,12 +14,12 @@ import devupUICssLoader from '../css-loader'
 let getCssSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 
-beforeEach(() => {
+beforeAll(() => {
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('get css')
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
 })
 
-afterEach(() => {
+afterAll(() => {
   getCssSpy.mockRestore()
   registerThemeSpy.mockRestore()
 })

@@ -64,7 +64,7 @@ beforeEach(() => {
   devupUIWebpackPluginSpy = spyOn(
     webpackPluginModule,
     'DevupUIWebpackPlugin',
-  ).mockImplementation(mock())
+  ).mockImplementation(mock() as never)
   preloadSpy = spyOn(preloadModule, 'preload').mockReturnValue(undefined)
 
   originalEnv = { ...process.env }
