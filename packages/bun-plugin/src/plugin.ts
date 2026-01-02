@@ -2,7 +2,14 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import * as wasmModule from '@devup-ui/wasm'
+import {
+  codeExtract,
+  getCss,
+  getThemeInterface,
+  hasDevupUI,
+  registerTheme,
+  setDebug,
+} from '@devup-ui/wasm'
 import { plugin } from 'bun'
 
 const libPackage = '@devup-ui/react'
@@ -11,26 +18,15 @@ const distDir = 'df'
 const cssDir = resolve(distDir, 'devup-ui')
 const singleCss = true
 
-let wasmInitialized = false
-
-function getWasm() {
-  if (!wasmInitialized) {
-    wasmModule.setDebug(true)
-    wasmInitialized = true
-  }
-  return wasmModule
-}
-
 async function writeDataFiles() {
-  const wasm = await getWasm()
   try {
     const content = existsSync(devupFile)
       ? await readFile(devupFile, 'utf-8')
       : undefined
 
     if (content) {
-      wasm.registerTheme(JSON.parse(content)?.['theme'] ?? {})
-      const interfaceCode = wasm.getThemeInterface(
+      registerTheme(JSON.parse(content)?.['theme'] ?? {})
+      const interfaceCode = getThemeInterface(
         libPackage,
         'CustomColors',
         'DevupThemeTypography',
@@ -41,28 +37,23 @@ async function writeDataFiles() {
         await writeFile(join(distDir, 'theme.d.ts'), interfaceCode, 'utf-8')
       }
     } else {
-      wasm.registerTheme({})
+      registerTheme({})
     }
   } catch (error) {
     console.error(error)
-    wasm.registerTheme({})
+    registerTheme({})
   }
   await Promise.all([
     !existsSync(cssDir)
       ? mkdir(cssDir, { recursive: true })
       : Promise.resolve(),
     !singleCss
-      ? writeFile(join(cssDir, 'devup-ui.css'), wasm.getCss(null, false))
+      ? writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false))
       : Promise.resolve(),
   ])
 }
 
-let initialized = false
-
 async function initialize() {
-  if (initialized) return
-  initialized = true
-
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeDataFiles()
@@ -74,6 +65,7 @@ plugin({
 
   async setup(build) {
     await initialize()
+    setDebug(true)
 
     // Resolve devup-ui CSS files
     build.onResolve(
@@ -124,9 +116,8 @@ plugin({
             : 'js'
       const contents = await Bun.file(filePath).text()
 
-      const wasm = await getWasm()
-      if (wasm.hasDevupUI(filePath, contents, libPackage)) {
-        const code = wasm.codeExtract(
+      if (hasDevupUI(filePath, contents, libPackage)) {
+        const code = codeExtract(
           filePath,
           contents,
           libPackage,
