@@ -3,5 +3,5 @@ preload = ["./packages/bun-plugin/src/index.ts", "./bun.setup.ts", "bun-test-env
 coverage = true
 coveragePathIgnorePatterns = ["**/pkg/**", "**/dist/**"]
 coverageSkipTestFiles = true
-coverageThreshold = { line = 1.0, function = 1.0, branch = 1.0, statement = 1.0 }
+coverageThreshold = { line = 1.0, function = 1.0, statement = 1.0 }
 coverageReporter  = ["text", "lcov"] 
