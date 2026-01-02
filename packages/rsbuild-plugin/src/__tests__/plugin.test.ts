@@ -9,20 +9,43 @@ import {
   registerTheme,
   setPrefix,
 } from '@devup-ui/wasm'
-import { vi } from 'vitest'
+import type { Mock } from 'bun:test'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 import { DevupUI } from '../plugin'
 
 // Mock dependencies
-vi.mock('node:fs/promises')
-vi.mock('node:fs')
-vi.mock('@devup-ui/wasm')
+mock.module('node:fs/promises', () => ({
+  mkdir: mock(),
+  readFile: mock(),
+  writeFile: mock(),
+}))
+mock.module('node:fs', () => ({
+  existsSync: mock(),
+  writeFileSync: mock(),
+}))
+mock.module('@devup-ui/wasm', () => ({
+  codeExtract: mock(),
+  getDefaultTheme: mock(),
+  getThemeInterface: mock(),
+  registerTheme: mock(),
+  setPrefix: mock(),
+}))
 
 describe('DevupUIRsbuildPlugin', () => {
   beforeEach(() => {
-    vi.resetAllMocks()
-    vi.mocked(mkdir).mockResolvedValue(undefined)
-    vi.mocked(writeFile).mockResolvedValue(undefined)
+    ;(mkdir as Mock<typeof mkdir>).mockReset()
+    ;(readFile as Mock<typeof readFile>).mockReset()
+    ;(writeFile as Mock<typeof writeFile>).mockReset()
+    ;(existsSync as Mock<typeof existsSync>).mockReset()
+    ;(writeFileSync as Mock<typeof writeFileSync>).mockReset()
+    ;(codeExtract as Mock<typeof codeExtract>).mockReset()
+    ;(getDefaultTheme as Mock<typeof getDefaultTheme>).mockReset()
+    ;(getThemeInterface as Mock<typeof getThemeInterface>).mockReset()
+    ;(registerTheme as Mock<typeof registerTheme>).mockReset()
+    ;(setPrefix as Mock<typeof setPrefix>).mockReset()
+    ;(mkdir as Mock<typeof mkdir>).mockResolvedValue(undefined)
+    ;(writeFile as Mock<typeof writeFile>).mockResolvedValue(undefined)
   })
 
   it('should export DevupUIRsbuildPlugin', () => {
@@ -39,8 +62,8 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.name).toBe('devup-ui-rsbuild-plugin')
     expect(typeof plugin.setup).toBe('function')
 
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -49,17 +72,21 @@ describe('DevupUIRsbuildPlugin', () => {
   })
 
   it('should write data files', async () => {
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(existsSync).mockImplementation((path) => {
+    ;(readFile as Mock<typeof readFile>).mockResolvedValueOnce(
+      JSON.stringify({}),
+    )
+    ;(getThemeInterface as Mock<typeof getThemeInterface>).mockReturnValue(
+      'interface code',
+    )
+    ;(existsSync as Mock<typeof existsSync>).mockImplementation((path) => {
       if (path === 'devup.json') return true
       return false
     })
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -67,17 +94,19 @@ describe('DevupUIRsbuildPlugin', () => {
   })
 
   it('should write data files without theme', async () => {
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
-    vi.mocked(getThemeInterface).mockReturnValue('')
-    vi.mocked(existsSync).mockImplementation((path) => {
+    ;(readFile as Mock<typeof readFile>).mockResolvedValueOnce(
+      JSON.stringify({}),
+    )
+    ;(getThemeInterface as Mock<typeof getThemeInterface>).mockReturnValue('')
+    ;(existsSync as Mock<typeof existsSync>).mockImplementation((path) => {
       if (path === 'devup.json') return true
       return false
     })
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -87,17 +116,17 @@ describe('DevupUIRsbuildPlugin', () => {
 
   it('should error when write data files', async () => {
     const originalConsoleError = console.error
-    console.error = vi.fn()
-    vi.mocked(readFile).mockRejectedValueOnce('error')
-    vi.mocked(existsSync).mockImplementation((path) => {
+    console.error = mock()
+    ;(readFile as Mock<typeof readFile>).mockRejectedValueOnce('error')
+    ;(existsSync as Mock<typeof existsSync>).mockImplementation((path) => {
       if (path === 'devup.json') return true
       return false
     })
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -112,7 +141,7 @@ describe('DevupUIRsbuildPlugin', () => {
     })
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
+    const transform = mock()
     await plugin.setup({
       transform,
     } as any)
@@ -138,8 +167,8 @@ describe('DevupUIRsbuildPlugin', () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -166,8 +195,8 @@ describe('DevupUIRsbuildPlugin', () => {
     const plugin = DevupUI()
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
-    const modifyRsbuildConfig = vi.fn()
+    const transform = mock()
+    const modifyRsbuildConfig = mock()
     await plugin.setup({
       transform,
       modifyRsbuildConfig,
@@ -185,8 +214,7 @@ describe('DevupUIRsbuildPlugin', () => {
         code: ``,
       }),
     ).toBe('')
-
-    vi.mocked(codeExtract).mockReturnValue({
+    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
       code: '<div></div>',
       css: '',
       css_file: 'devup-ui.css',
@@ -222,10 +250,10 @@ const App = () => <Box></Box>`,
     })
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
-    const transform = vi.fn()
+    const transform = mock()
     await plugin.setup({
       transform,
-      modifyRsbuildConfig: vi.fn(),
+      modifyRsbuildConfig: mock(),
     } as any)
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
@@ -234,14 +262,14 @@ const App = () => <Box></Box>`,
       },
       expect.any(Function),
     )
-    vi.mocked(codeExtract).mockReturnValue({
+    ;(codeExtract as Mock<typeof codeExtract>).mockReturnValue({
       code: '<div></div>',
       css: '.devup-ui-1 { color: red; }',
       cssFile: 'devup-ui.css',
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
-      free: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
+      free: mock(),
+      [Symbol.dispose]: mock(),
     })
     const ret = await transform.mock.calls[1][1]({
       code: `import { Box } from '@devup-ui/react'
@@ -289,11 +317,17 @@ const App = () => <Box></Box>`,
       singleCss: [true, false],
     }),
   )('should write data files', async (options) => {
-    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(getDefaultTheme).mockReturnValue(options.getDefaultTheme)
-    vi.mocked(existsSync).mockImplementation((path) => {
+    ;(writeFile as Mock<typeof writeFile>).mockResolvedValueOnce(undefined)
+    ;(readFile as Mock<typeof readFile>).mockResolvedValueOnce(
+      JSON.stringify({}),
+    )
+    ;(getThemeInterface as Mock<typeof getThemeInterface>).mockReturnValue(
+      'interface code',
+    )
+    ;(getDefaultTheme as Mock<typeof getDefaultTheme>).mockReturnValue(
+      options.getDefaultTheme,
+    )
+    ;(existsSync as Mock<typeof existsSync>).mockImplementation((path) => {
       if (path === 'devup.json') return options.existsDevupFile
       if (path === 'df') return options.existsDistDir
       if (path === resolve('df', 'devup-ui')) return options.existsCssDir
@@ -305,15 +339,15 @@ const App = () => <Box></Box>`,
     })
     const plugin = DevupUI({ singleCss: options.singleCss })
     await (plugin as any).setup({
-      transform: vi.fn(),
-      renderChunk: vi.fn(),
-      generateBundle: vi.fn(),
-      closeBundle: vi.fn(),
-      resolve: vi.fn(),
-      load: vi.fn(),
-      modifyRsbuildConfig: vi.fn(),
-      watchChange: vi.fn(),
-      resolveId: vi.fn(),
+      transform: mock(),
+      renderChunk: mock(),
+      generateBundle: mock(),
+      closeBundle: mock(),
+      resolve: mock(),
+      load: mock(),
+      modifyRsbuildConfig: mock(),
+      watchChange: mock(),
+      resolveId: mock(),
     } as any)
     if (options.existsDevupFile) {
       expect(readFile).toHaveBeenCalledWith('devup.json', 'utf-8')
@@ -333,17 +367,17 @@ const App = () => <Box></Box>`,
       expect(registerTheme).toHaveBeenCalledWith({})
     }
 
-    const modifyRsbuildConfig = vi.fn()
+    const modifyRsbuildConfig = mock()
     await (plugin as any).setup({
-      transform: vi.fn(),
-      renderChunk: vi.fn(),
-      generateBundle: vi.fn(),
-      closeBundle: vi.fn(),
-      resolve: vi.fn(),
+      transform: mock(),
+      renderChunk: mock(),
+      generateBundle: mock(),
+      closeBundle: mock(),
+      resolve: mock(),
       modifyRsbuildConfig,
-      load: vi.fn(),
-      watchChange: vi.fn(),
-      resolveId: vi.fn(),
+      load: mock(),
+      watchChange: mock(),
+      resolveId: mock(),
     } as any)
     if (options.getDefaultTheme) {
       expect(modifyRsbuildConfig).toHaveBeenCalledWith(expect.any(Function))
@@ -381,8 +415,8 @@ const App = () => <Box></Box>`,
   it('should call setPrefix when prefix option is provided', async () => {
     const plugin = DevupUI({ prefix: 'my-prefix' })
     await plugin.setup({
-      transform: vi.fn(),
-      modifyRsbuildConfig: vi.fn(),
+      transform: mock(),
+      modifyRsbuildConfig: mock(),
     } as any)
     expect(setPrefix).toHaveBeenCalledWith('my-prefix')
   })

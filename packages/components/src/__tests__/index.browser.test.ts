@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'bun:test'
+
 describe('export', () => {
   it('should export components', async () => {
     const index = await import('../index')

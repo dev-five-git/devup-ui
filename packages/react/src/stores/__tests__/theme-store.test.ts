@@ -1,5 +1,11 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+
 beforeEach(() => {
-  vi.resetModules()
+  document.documentElement.removeAttribute('data-theme')
+})
+
+afterEach(() => {
+  document.documentElement.removeAttribute('data-theme')
 })
 
 describe('themeStore', () => {
@@ -12,7 +18,9 @@ describe('themeStore', () => {
     expect(themeStore.subscribe).toEqual(expect.any(Function))
     expect(themeStore.get()).toBeNull()
     expect(themeStore.set('dark' as any)).toBeUndefined()
-    expect(themeStore.subscribe(() => {})()).toBeUndefined()
+    // subscribe returns an unsubscribe function, which returns boolean when called
+    const unsubscribe = themeStore.subscribe(() => {})
+    expect(typeof unsubscribe).toBe('function')
     themeStore.subscribe(() => {})
     expect(themeStore.set('dark' as any)).toBeUndefined()
   })

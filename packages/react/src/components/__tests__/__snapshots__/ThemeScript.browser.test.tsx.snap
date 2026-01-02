@@ -1,25 +1,25 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`ThemeScript > should apply ThemeScript 1`] = `
-<div>
+exports[`ThemeScript should apply ThemeScript 1`] = `
+"<div>
   <script>
     (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(true&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'));})()
   </script>
-</div>
+</div>"
 `;
 
-exports[`ThemeScript > should apply ThemeScript with not auto 1`] = `
-<div>
-  <script>
-    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(false&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'));})()
-  </script>
-</div>
-`;
-
-exports[`ThemeScript > should apply ThemeScript with theme 1`] = `
-<div>
+exports[`ThemeScript should apply ThemeScript with theme 1`] = `
+"<div>
   <script>
     (function (){document.documentElement.setAttribute('data-theme','default');}())
   </script>
-</div>
+</div>"
+`;
+
+exports[`ThemeScript should apply ThemeScript with not auto 1`] = `
+"<div>
+  <script>
+    (function (){document.documentElement.setAttribute('data-theme',localStorage.getItem('__DF_THEME_SELECTED__')||(false&&window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'default'));})()
+  </script>
+</div>"
 `;

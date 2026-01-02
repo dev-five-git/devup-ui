@@ -162,6 +162,37 @@ pub fn extract(
     })
 }
 
+/// Check if the code has an import from the specified package
+pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
+    if !code.contains(package) {
+        return false;
+    }
+
+    let source_type = match SourceType::from_path(filename) {
+        Ok(st) => st,
+        Err(_) => return false,
+    };
+
+    let allocator = Allocator::default();
+    let ParserReturn {
+        program, panicked, ..
+    } = Parser::new(&allocator, code, source_type).parse();
+
+    if panicked {
+        return false;
+    }
+
+    for stmt in &program.body {
+        if let oxc_ast::ast::Statement::ImportDeclaration(decl) = stmt
+            && decl.source.value == package
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;

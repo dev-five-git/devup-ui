@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'bun:test'
+
 import { getTheme } from '../get-theme'
 
 describe('getTheme', () => {

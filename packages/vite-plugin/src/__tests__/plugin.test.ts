@@ -1,40 +1,102 @@
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import * as nodePath from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import {
-  codeExtract,
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  registerTheme,
-  setDebug,
-  setPrefix,
-} from '@devup-ui/wasm'
-import { describe } from 'vitest'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
+
+const { dirname, join, resolve, relative: originalRelative } = nodePath
+
+const mockExistsSync = mock(() => false)
+const mockMkdir = mock(() => Promise.resolve())
+const mockReadFile = mock(() => Promise.resolve('{}'))
+const mockWriteFile = mock(() => Promise.resolve())
+const mockRelative = mock((from: string, to: string) =>
+  originalRelative(from, to),
+)
+
+mock.module('node:fs', () => ({
+  existsSync: mockExistsSync,
+}))
+
+mock.module('node:fs/promises', () => ({
+  mkdir: mockMkdir,
+  readFile: mockReadFile,
+  writeFile: mockWriteFile,
+}))
+
+mock.module('node:path', () => ({
+  ...nodePath,
+  relative: mockRelative,
+}))
+
+const mockCodeExtract = mock(() => ({
+  css: 'css code',
+  code: 'code',
+  cssFile: 'devup-ui.css',
+  map: undefined,
+  updatedBaseStyle: false,
+  free: mock(),
+  [Symbol.dispose]: mock(),
+}))
+const mockGetCss = mock(() => 'css code')
+const mockGetDefaultTheme = mock(() => 'default')
+const mockGetThemeInterface = mock(() => 'interface code')
+const mockRegisterTheme = mock()
+const mockSetDebug = mock()
+const mockSetPrefix = mock()
+
+mock.module('@devup-ui/wasm', () => ({
+  codeExtract: mockCodeExtract,
+  getCss: mockGetCss,
+  getDefaultTheme: mockGetDefaultTheme,
+  getThemeInterface: mockGetThemeInterface,
+  registerTheme: mockRegisterTheme,
+  setDebug: mockSetDebug,
+  setPrefix: mockSetPrefix,
+}))
 
 import { DevupUI } from '../plugin'
 
-vi.mock('@devup-ui/wasm')
-vi.mock('node:fs')
-vi.mock('node:fs/promises')
-vi.mock('node:path', async (original: any) => {
-  const origin = await original()
-  return {
-    ...origin,
-    relative: vi.fn(origin.relative),
-  }
-})
-
 const _filename = fileURLToPath(import.meta.url)
 const _dirname = resolve(dirname(_filename), '..')
+
 beforeEach(() => {
-  vi.resetAllMocks()
+  mockExistsSync.mockReset()
+  mockMkdir.mockReset()
+  mockReadFile.mockReset()
+  mockWriteFile.mockReset()
+  mockRelative.mockReset()
+  mockCodeExtract.mockReset()
+  mockGetCss.mockReset()
+  mockGetDefaultTheme.mockReset()
+  mockGetThemeInterface.mockReset()
+  mockRegisterTheme.mockReset()
+  mockSetDebug.mockReset()
+  mockSetPrefix.mockReset()
+
+  mockExistsSync.mockReturnValue(false)
+  mockMkdir.mockResolvedValue(undefined)
+  mockReadFile.mockResolvedValue('{}')
+  mockWriteFile.mockResolvedValue(undefined)
+  mockGetCss.mockReturnValue('css code')
+  mockGetDefaultTheme.mockReturnValue('default')
+  mockGetThemeInterface.mockReturnValue('interface code')
+  mockCodeExtract.mockReturnValue({
+    css: 'css code',
+    code: 'code',
+    cssFile: 'devup-ui.css',
+    map: undefined,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+  })
+  mockRelative.mockImplementation((from: string, to: string) =>
+    originalRelative(from, to),
+  )
 })
 
 describe('devupUIVitePlugin', () => {
-  console.error = vi.fn()
+  console.error = mock()
+
   it('should apply default options', () => {
     const plugin = DevupUI({})
     expect(plugin).toEqual({
@@ -51,6 +113,7 @@ describe('devupUIVitePlugin', () => {
     })
     expect((plugin as any).apply()).toBe(true)
   })
+
   it.each(
     globalThis.createTestMatrix({
       debug: [true, false],
@@ -58,7 +121,7 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should apply options', async (options) => {
     const plugin = DevupUI(options)
-    expect(setDebug).toHaveBeenCalledWith(options.debug)
+    expect(mockSetDebug).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
         (plugin as any)
@@ -89,11 +152,11 @@ describe('devupUIVitePlugin', () => {
       singleCss: [true, false],
     }),
   )('should write data files', async (options) => {
-    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(getDefaultTheme).mockReturnValue(options.getDefaultTheme)
-    vi.mocked(existsSync).mockImplementation((path) => {
+    mockWriteFile.mockResolvedValueOnce(undefined)
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({}))
+    mockGetThemeInterface.mockReturnValue('interface code')
+    mockGetDefaultTheme.mockReturnValue(options.getDefaultTheme)
+    mockExistsSync.mockImplementation((path) => {
       if (path === 'devup.json') return options.existsDevupFile
       if (path === 'df') return options.existsDistDir
       if (path === resolve('df', 'devup-ui')) return options.existsCssDir
@@ -106,21 +169,21 @@ describe('devupUIVitePlugin', () => {
     const plugin = DevupUI({ singleCss: options.singleCss })
     await (plugin as any).configResolved()
     if (options.existsDevupFile) {
-      expect(readFile).toHaveBeenCalledWith('devup.json', 'utf-8')
-      expect(registerTheme).toHaveBeenCalledWith({})
-      expect(getThemeInterface).toHaveBeenCalledWith(
+      expect(mockReadFile).toHaveBeenCalledWith('devup.json', 'utf-8')
+      expect(mockRegisterTheme).toHaveBeenCalledWith({})
+      expect(mockGetThemeInterface).toHaveBeenCalledWith(
         '@devup-ui/react',
         'CustomColors',
         'DevupThemeTypography',
         'DevupTheme',
       )
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).toHaveBeenCalledWith(
         join('df', 'theme.d.ts'),
         'interface code',
         'utf-8',
       )
     } else {
-      expect(registerTheme).toHaveBeenCalledWith({})
+      expect(mockRegisterTheme).toHaveBeenCalledWith({})
     }
 
     const config = (plugin as any).config()
@@ -136,16 +199,16 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('should reset data files when load error', async () => {
-    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFile).mockImplementation(() => {
+    mockWriteFile.mockResolvedValueOnce(undefined)
+    mockGetThemeInterface.mockReturnValue('interface code')
+    mockExistsSync.mockReturnValue(true)
+    mockReadFile.mockImplementation(() => {
       throw new Error('error')
     })
     const plugin = DevupUI({})
     await (plugin as any).configResolved()
-    expect(registerTheme).toHaveBeenCalledWith({})
-    expect(writeFile).toHaveBeenCalledWith(
+    expect(mockRegisterTheme).toHaveBeenCalledWith({})
+    expect(mockWriteFile).toHaveBeenCalledWith(
       join('df', '.gitignore'),
       '*',
       'utf-8',
@@ -153,15 +216,13 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('should watch change', async () => {
-    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(existsSync).mockReturnValue(true)
-    vi.mocked(readFile).mockResolvedValueOnce(
-      JSON.stringify({ theme: 'theme' }),
-    )
+    mockWriteFile.mockResolvedValueOnce(undefined)
+    mockGetThemeInterface.mockReturnValue('interface code')
+    mockExistsSync.mockReturnValue(true)
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({ theme: 'theme' }))
     const plugin = DevupUI({})
     await (plugin as any).watchChange('devup.json')
-    expect(writeFile).toHaveBeenCalledWith(
+    expect(mockWriteFile).toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
       'interface code',
       'utf-8',
@@ -171,10 +232,10 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('should print error when watch change error', async () => {
-    vi.mocked(writeFile).mockResolvedValueOnce(undefined)
-    vi.mocked(getThemeInterface).mockReturnValue('interface code')
-    vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValueOnce(false)
-    vi.mocked(mkdir).mockImplementation(() => {
+    mockWriteFile.mockResolvedValueOnce(undefined)
+    mockGetThemeInterface.mockReturnValue('interface code')
+    mockExistsSync.mockReturnValueOnce(true).mockReturnValueOnce(false)
+    mockMkdir.mockImplementation(() => {
       throw new Error('error')
     })
     const plugin = DevupUI({})
@@ -183,7 +244,7 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('should load', () => {
-    vi.mocked(getCss).mockReturnValue('css code')
+    mockGetCss.mockReturnValue('css code')
     const plugin = DevupUI({})
     expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
     expect((plugin as any).load('devup-ui-10.css')).toEqual(expect.any(String))
@@ -195,15 +256,15 @@ describe('devupUIVitePlugin', () => {
       updatedBaseStyle: [true, false],
     }),
   )('should transform', async (options) => {
-    vi.mocked(getCss).mockReturnValue('css code')
-    vi.mocked(codeExtract).mockReturnValue({
+    mockGetCss.mockReturnValue('css code')
+    mockCodeExtract.mockReturnValue({
       css: 'css code',
       code: 'code',
       cssFile: 'devup-ui.css',
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
-      free: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
+      free: mock(),
+      [Symbol.dispose]: mock(),
     })
 
     const plugin = DevupUI(options)
@@ -226,16 +287,16 @@ describe('devupUIVitePlugin', () => {
         ),
       ).toEqual({ code: 'code' })
 
-      vi.mocked(codeExtract).mockReturnValue({
+      mockCodeExtract.mockReturnValue({
         css: 'css code test next',
         code: 'code',
         cssFile: 'devup-ui.css',
         map: undefined,
         updatedBaseStyle: options.updatedBaseStyle,
-        free: vi.fn(),
-        [Symbol.dispose]: vi.fn(),
+        free: mock(),
+        [Symbol.dispose]: mock(),
       })
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).toHaveBeenCalledWith(
         join(resolve('df', 'devup-ui'), 'devup-ui.css'),
         expect.stringMatching(
           /\/\* node_modules[/\\]@devup-ui[/\\]hello[/\\]index\.tsx \d+ \*\//,
@@ -253,14 +314,14 @@ describe('devupUIVitePlugin', () => {
       expect.any(String),
     )
 
-    vi.mocked(codeExtract).mockReturnValue({
+    mockCodeExtract.mockReturnValue({
       css: 'long css code',
       code: 'long code',
       cssFile: 'devup-ui.css',
       map: undefined,
       updatedBaseStyle: options.updatedBaseStyle,
-      free: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
+      free: mock(),
+      [Symbol.dispose]: mock(),
     })
     expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'long code' } : undefined,
@@ -272,7 +333,7 @@ describe('devupUIVitePlugin', () => {
       extractCss: [true, false],
     }),
   )('should generateBundle', async (options) => {
-    vi.mocked(getCss).mockReturnValue('css code test')
+    mockGetCss.mockReturnValue('css code test')
     const plugin = DevupUI({ extractCss: options.extractCss, singleCss: true })
     const bundle = {
       'devup-ui.css': { source: 'css code', name: 'devup-ui.css' },
@@ -285,8 +346,9 @@ describe('devupUIVitePlugin', () => {
       expect(bundle['devup-ui.css'].source).toEqual('css code')
     }
   })
+
   it('should resolveId', () => {
-    vi.mocked(getCss).mockReturnValue('css code')
+    mockGetCss.mockReturnValue('css code')
     {
       const plugin = DevupUI({})
       expect(
@@ -307,8 +369,9 @@ describe('devupUIVitePlugin', () => {
       )
     }
   })
+
   it('should resolve id with cssMap', () => {
-    vi.mocked(getCss).mockReturnValue('css code')
+    mockGetCss.mockReturnValue('css code')
     const plugin = DevupUI({})
     expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
     expect((plugin as any).load('other.css')).toEqual(undefined)
@@ -317,13 +380,14 @@ describe('devupUIVitePlugin', () => {
       (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
     ).toEqual(expect.any(String))
   })
+
   it('should not write interface code when no theme', async () => {
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({}))
-    vi.mocked(getThemeInterface).mockReturnValue('')
-    vi.mocked(existsSync).mockReturnValue(true)
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({}))
+    mockGetThemeInterface.mockReturnValue('')
+    mockExistsSync.mockReturnValue(true)
     const plugin = DevupUI({})
     await (plugin as any).configResolved()
-    expect(writeFile).not.toHaveBeenCalledWith(
+    expect(mockWriteFile).not.toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
       expect.any(String),
       'utf-8',
@@ -331,21 +395,21 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('sholud add relative path to css file', async () => {
-    vi.mocked(getCss).mockReturnValue('css code')
-    vi.mocked(codeExtract).mockReturnValue({
+    mockGetCss.mockReturnValue('css code')
+    mockCodeExtract.mockReturnValue({
       css: 'css code',
       code: 'code',
       cssFile: 'devup-ui.css',
       map: undefined,
       updatedBaseStyle: false,
-      free: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
+      free: mock(),
+      [Symbol.dispose]: mock(),
     })
     const plugin = DevupUI({})
-    vi.mocked(relative).mockReturnValue('./df/devup-ui/devup-ui.css')
+    mockRelative.mockReturnValue('./df/devup-ui/devup-ui.css')
     await (plugin as any).transform('code', 'foo.tsx')
 
-    expect(codeExtract).toHaveBeenCalledWith(
+    expect(mockCodeExtract).toHaveBeenCalledWith(
       'foo.tsx',
       'code',
       '@devup-ui/react',
@@ -355,9 +419,9 @@ describe('devupUIVitePlugin', () => {
       false,
     )
 
-    vi.mocked(relative).mockReturnValue('df/devup-ui/devup-ui.css')
+    mockRelative.mockReturnValue('df/devup-ui/devup-ui.css')
     await (plugin as any).transform('code', 'foo.tsx')
-    expect(codeExtract).toHaveBeenCalledWith(
+    expect(mockCodeExtract).toHaveBeenCalledWith(
       'foo.tsx',
       'code',
       '@devup-ui/react',
@@ -369,19 +433,19 @@ describe('devupUIVitePlugin', () => {
   })
 
   it('should not create css file when cssFile is empty', async () => {
-    vi.mocked(getCss).mockReturnValue('css code')
-    vi.mocked(codeExtract).mockReturnValue({
+    mockGetCss.mockReturnValue('css code')
+    mockCodeExtract.mockReturnValue({
       css: 'css code',
       code: 'code',
       cssFile: '',
       map: undefined,
       updatedBaseStyle: false,
-      free: vi.fn(),
-      [Symbol.dispose]: vi.fn(),
+      free: mock(),
+      [Symbol.dispose]: mock(),
     })
     const plugin = DevupUI({})
     await (plugin as any).transform('code', 'foo.tsx')
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(mockWriteFile).not.toHaveBeenCalled()
   })
 
   it('should not generate bundle when css file is not found', async () => {
@@ -393,6 +457,6 @@ describe('devupUIVitePlugin', () => {
 
   it('should call setPrefix when prefix option is provided', () => {
     DevupUI({ prefix: 'my-prefix' })
-    expect(setPrefix).toHaveBeenCalledWith('my-prefix')
+    expect(mockSetPrefix).toHaveBeenCalledWith('my-prefix')
   })
 })

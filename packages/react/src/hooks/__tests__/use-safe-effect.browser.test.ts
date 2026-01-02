@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'bun:test'
 import { useLayoutEffect } from 'react'
 
 import { useSafeEffect } from '../use-safe-effect'

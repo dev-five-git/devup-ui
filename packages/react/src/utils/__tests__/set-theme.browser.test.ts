@@ -1,5 +1,15 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+
 import type { DevupTheme } from '../../types/theme'
 import { setTheme } from '../set-theme'
+
+beforeEach(() => {
+  document.documentElement.removeAttribute('data-theme')
+})
+
+afterEach(() => {
+  document.documentElement.removeAttribute('data-theme')
+})
 
 describe('setTheme', () => {
   it('should set theme', async () => {

@@ -21,29 +21,20 @@
   "version": "1.0.46",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && vite build"
+    "build": "tsc && bun build --target node src/index.ts --production --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
   },
   "sideEffects": false,
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
-    },
-    "./loader": {
-      "import": "./dist/loader.js",
-      "require": "./dist/loader.cjs"
-    },
-    "./css-loader": {
-      "import": "./dist/css-loader.js",
-      "require": "./dist/css-loader.cjs"
-    },
-    "./dist/*": "./dist/*"
+    }
   },
   "files": [
     "dist"

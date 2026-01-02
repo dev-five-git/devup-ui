@@ -7,8 +7,8 @@
   "scripts": {
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
     "pretest": "bun run --filter @devup-ui/vite-plugin build",
-    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && vitest test --coverage --run && bun run --filter '*' test",
-    "build": "bun run --filter wasm build && bun run --filter '@devup-ui/*' --filter '!wasm' build",
+    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets && bun test",
+    "build": "bun run --filter @devup-ui/wasm build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/webpack-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/react --filter @devup-ui/components --filter @devup-ui/reset-css build",
     "dev": "bun run --filter '*' dev",
     "benchmark": "bun benchmark.js",
     "prepare": "husky",
@@ -16,22 +16,17 @@
   },
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:^",
-    "@devup-ui/vite-plugin": "workspace:^",
-    "@testing-library/jest-dom": "^6.9",
-    "@testing-library/react": "^16.3",
-    "@testing-library/user-event": "14.6",
+    "@types/bun": "latest",
     "@types/node": "^25.0",
-    "@vitest/coverage-v8": "^4.0",
+    "bun-test-env-dom": "^1.0.3",
     "eslint": "^9.39",
     "eslint-plugin-devup": "^2.0",
     "eslint-plugin-eslint-plugin": "^7.2",
     "eslint-plugin-jsonc": "^2.21",
     "eslint-plugin-mdx": "^3.6",
     "globals": "^16.5",
-    "happy-dom": "^20.0",
     "husky": "^9.1",
-    "vitest": "^4.0",
-    "bun-test-env-dom": "^1.0"
+    "vite": "^7.3"
   },
   "author": "devfive",
   "workspaces": [

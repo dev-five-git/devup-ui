@@ -1,213 +1,121 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`Toggle > should Toggle snapshot 1`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
-    />
+exports[`Toggle should Toggle snapshot 1`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    ">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 2`] = `
-<div>
-  <div
-    aria-disabled="true"
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
-    />
+exports[`Toggle should Toggle snapshot 2`] = `
+"<div>
+  <div aria-disabled="true" role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    ">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 3`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-28px--255 justify-content-0-flex-end--255 padding-0-4px--255 background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-50px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255"
-    />
+exports[`Toggle should Toggle snapshot 3`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-28px--255 justify-content-0-flex-end--255 padding-0-4px--255 background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-50px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 4`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-28px--255 justify-content-0-flex-end--255 padding-0-4px--255 background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-50px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255"
-    />
+exports[`Toggle should Toggle snapshot 4`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-28px--255 justify-content-0-flex-end--255 padding-0-4px--255 background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-50px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    transform-0-translateX(calc(100% + 2px))--255">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 5`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
-    />
+exports[`Toggle should Toggle snapshot 5`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 ">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 6`] = `
-<div>
-  <div
-    aria-disabled="true"
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
-    />
+exports[`Toggle should Toggle snapshot 6`] = `
+"<div>
+  <div aria-disabled="true" role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 ">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 7`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
-    />
+exports[`Toggle should Toggle snapshot 7`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 8`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
-    />
+exports[`Toggle should Toggle snapshot 8`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 9`] = `
-<div>
-  <div
-    class="test-toggle-wrapper   border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-  >
-    <div
-      class="test-toggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
-    />
+exports[`Toggle should Toggle snapshot 9`] = `
+"<div>
+  <div role="group" class="test-toggle-wrapper   border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255">
+    <div class="test-toggle background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 10`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-    style="background-color: blue;"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255"
-      style="background-color: blue;"
-    />
+exports[`Toggle should Toggle snapshot 10`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--primary)--255 height-0-8px--255 justify-content-0-flex-end--255  background-0-var(--primaryHoverBg,light-dark(color-mix(in srgb,var(--primary) 100%,#000 15%),color-mix(in srgb,var(--primary) 100%,#FFF 15%)))-8554804559691125144-255 width-0-40px--255" style="background-color: blue;">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 transform-0-translateX(calc(100% + 2px))--255" style="background-color: blue;">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="true"
-  />
-</div>
+  <input type="hidden" value="true">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 11`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255"
-    role="group"
-    style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    "
-      style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;"
-    />
+exports[`Toggle should Toggle snapshot 11`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-28px--255  padding-0-4px--255 background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-50px--255" style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255    " style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;
 
-exports[`Toggle > should Toggle snapshot 12`] = `
-<div>
-  <div
-    class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255"
-    role="group"
-    style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;"
-  >
-    <div
-      class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 "
-      style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;"
-    />
+exports[`Toggle should Toggle snapshot 12`] = `
+"<div>
+  <div role="group" class=" border-radius-0-500px--255 box-sizing-0-border-box--255 cursor-0-pointer--255 position-0-relative--255 cursor-0-not-allowed-7839325038755874321-255 background-0-var(--disabledBg,light-dark(#D6D7DE,#373737))-7839325038755874321-255 test-id-0-toggle-wrapper--255 transition-0-.25s--255 background-0-var(--bg,light-dark(#E4E4E4,#383838))--255 height-0-8px--255   background-0-var(--hoverBg,light-dark(#C3C2C8,#696A6F))-8554804559691125144-255 width-0-40px--255" style="--primary: blue; --bg: blue; --primaryHoverBg: blue; --hoverBg: blue; --disabledBg: blue;">
+    <div class=" background-color-0-#FFF--255 border-radius-0-100%--255 height-0-20px--255 width-0-20px--255 outline-0-4px--255 position-0-absolute--255 transition-0-.25s--255 outline-0-4px solid-3782712413200905402-255 outline-color-0-var(--switchHoverOutline,light-dark(color-mix(in srgb,var(--primary) 20%,transparent),color-mix(in srgb,var(--primary) 50%,transparent)))-3782712413200905402-255 filter-0-drop-shadow(0 0 3px var(--switchShadow,#0000001A))--255 top-0--6px--255 " style="--primary: blue; --primaryHoverBg: blue; --switchShadow: blue; --switchHoverOutline: blue;">
+    </div>
   </div>
-  <input
-    type="hidden"
-    value="false"
-  />
-</div>
+  <input type="hidden" value="false">
+</div>"
 `;

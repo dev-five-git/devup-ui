@@ -1,25 +1,30 @@
 import { resolve } from 'node:path'
 
 import { getCss } from '@devup-ui/wasm'
+import type { Mock } from 'bun:test'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 import devupUICssLoader from '../css-loader'
 
-vi.mock('node:path')
-vi.mock('@devup-ui/wasm', () => ({
-  registerTheme: vi.fn(),
-  getCss: vi.fn(),
+mock.module('node:path', () => ({
+  resolve: mock(),
+}))
+mock.module('@devup-ui/wasm', () => ({
+  registerTheme: mock(),
+  getCss: mock(),
 }))
 
 beforeEach(() => {
-  vi.resetAllMocks()
+  ;(resolve as Mock<typeof resolve>).mockReset()
+  ;(getCss as Mock<typeof getCss>).mockReset()
 })
 
 describe('devupUICssLoader', () => {
   it('should return css on no watch', () => {
-    const callback = vi.fn()
-    const addContextDependency = vi.fn()
-    vi.mocked(resolve).mockReturnValue('resolved')
-    vi.mocked(getCss).mockReturnValue('get css')
+    const callback = mock()
+    const addContextDependency = mock()
+    ;(resolve as Mock<typeof resolve>).mockReturnValue('resolved')
+    ;(getCss as Mock<typeof getCss>).mockReturnValue('get css')
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -30,10 +35,10 @@ describe('devupUICssLoader', () => {
   })
 
   it('should return _compiler hit css on watch', () => {
-    const callback = vi.fn()
-    const addContextDependency = vi.fn()
-    vi.mocked(resolve).mockReturnValue('resolved')
-    vi.mocked(getCss).mockReturnValue('get css')
+    const callback = mock()
+    const addContextDependency = mock()
+    ;(resolve as Mock<typeof resolve>).mockReturnValue('resolved')
+    ;(getCss as Mock<typeof getCss>).mockReturnValue('get css')
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -42,7 +47,7 @@ describe('devupUICssLoader', () => {
     } as any)(Buffer.from('data'), '')
     expect(callback).toBeCalledWith(null, 'get css', '', undefined)
     expect(getCss).toBeCalledTimes(1)
-    vi.mocked(getCss).mockReset()
+    ;(getCss as Mock<typeof getCss>).mockReset()
     devupUICssLoader.bind({
       callback,
       addContextDependency,
@@ -51,8 +56,7 @@ describe('devupUICssLoader', () => {
     } as any)(Buffer.from('data'), '')
 
     expect(getCss).toBeCalledTimes(1)
-
-    vi.mocked(getCss).mockReset()
+    ;(getCss as Mock<typeof getCss>).mockReset()
 
     devupUICssLoader.bind({
       callback,

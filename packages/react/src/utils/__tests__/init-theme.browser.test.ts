@@ -1,3 +1,5 @@
+import { describe, expect, it, spyOn } from 'bun:test'
+
 import { initTheme } from '../init-theme'
 
 describe('initTheme', () => {
@@ -11,7 +13,7 @@ describe('initTheme', () => {
   })
 
   it('should initialize the theme with the default theme', () => {
-    vi.spyOn(window, 'matchMedia').mockReturnValue({
+    spyOn(window, 'matchMedia').mockReturnValue({
       matches: true,
     } as MediaQueryList)
 

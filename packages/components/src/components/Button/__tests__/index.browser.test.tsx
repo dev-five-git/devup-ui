@@ -1,5 +1,6 @@
 import { css, DevupThemeTypography } from '@devup-ui/react'
-import { render } from '@testing-library/react'
+import { describe, expect, it } from 'bun:test'
+import { render } from 'bun-test-env-dom'
 
 import { IconSpinner } from '../IconSpinner'
 import { Button } from '../index'
