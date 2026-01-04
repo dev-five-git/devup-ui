@@ -38,10 +38,10 @@ beforeEach(() => {
   exportFileMapSpy = spyOn(wasm, 'exportFileMap')
   exportSheetSpy = spyOn(wasm, 'exportSheet')
   getCssSpy = spyOn(wasm, 'getCss')
-  importClassMapSpy = spyOn(wasm, 'importClassMap')
-  importFileMapSpy = spyOn(wasm, 'importFileMap')
-  importSheetSpy = spyOn(wasm, 'importSheet')
-  registerThemeSpy = spyOn(wasm, 'registerTheme')
+  importClassMapSpy = spyOn(wasm, 'importClassMap').mockImplementation(() => {})
+  importFileMapSpy = spyOn(wasm, 'importFileMap').mockImplementation(() => {})
+  importSheetSpy = spyOn(wasm, 'importSheet').mockImplementation(() => {})
+  registerThemeSpy = spyOn(wasm, 'registerTheme').mockImplementation(() => {})
   dateNowSpy = spyOn(Date, 'now').mockReturnValue(0)
 })
 
@@ -75,14 +75,124 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
-  it.each(
-    createTestMatrix({
-      updatedBaseStyle: [true, false],
-    }),
-  )('should extract code with css', async (options) => {
-    const _compiler = {
-      __DEVUP_CACHE: '',
+  // TEST ORDER MATTERS: First test for each mode initializes that mode
+
+  // 1. First test for BUILD mode (watch: false) - covers non-watch init (lines 70-74)
+  it('should use default maps in non-watch mode on init', async () => {
+    const asyncCallback = mock()
+    const defaultClassMap = { test: 'classMap' }
+    const defaultFileMap = { test: 'fileMap' }
+    const defaultSheet = { test: 'sheet' }
+    const theme = { colors: { primary: '#000' } }
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssFile',
+        watch: false,
+        singleCss: true,
+        theme,
+        defaultClassMap,
+        defaultFileMap,
+        defaultSheet,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'nowatch-init.tsx',
+      addDependency: mock(),
     }
+
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: undefined,
+      free: mock(),
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+
+    devupUILoader.bind(t as any)(Buffer.from('code'), 'nowatch-init.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+    })
+
+    // Verify non-watch init was executed
+    expect(importFileMapSpy).toHaveBeenCalledWith(defaultFileMap)
+    expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
+    expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
+    expect(registerThemeSpy).toHaveBeenCalledWith(theme)
+  })
+
+  // 2. First test for WATCH mode - covers watch init (lines 57-69) AND css writing (lines 96-112)
+  it('should initialize watch mode and write css files', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    readFileSyncSpy.mockReturnValue(
+      '{"theme": {"colors": {"primary": "#fff"}}}',
+    )
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classMap')
+    exportFileMapSpy.mockReturnValue('fileMap')
+    getCssSpy.mockReturnValue('base-css')
+
+    const asyncCallback = mock()
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssDir',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        themeFile: 'themeFile',
+        watch: true,
+        singleCss: true,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'watch-init.tsx',
+      addDependency: mock(),
+    }
+
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: mock(),
+      map: '{}',
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: true,
+      [Symbol.dispose]: mock(),
+    })
+
+    devupUILoader.bind(t as any)(Buffer.from('code'), 'watch-init.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
+    })
+
+    // Verify watch mode init was executed
+    expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
+    expect(registerThemeSpy).toHaveBeenCalledWith({
+      colors: { primary: '#fff' },
+    })
+
+    // Verify updatedBaseStyle && watch branch (lines 96-100)
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('cssDir', 'devup-ui.css'),
+      'base-css',
+      'utf-8',
+    )
+
+    // Verify cssFile && watch branch (lines 102-112)
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('cssDir', 'devup-ui-1.css'),
+      '/* watch-init.tsx 0 */',
+    )
+    expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
+    expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
+    expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
+  })
+
+  // Remaining tests - init already done for both modes
+
+  it('should extract code without css in watch mode', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
@@ -98,59 +208,24 @@ describe('devupUILoader', () => {
       async: mock().mockReturnValue(asyncCallback),
       resourcePath: 'index.tsx',
       addDependency: mock(),
-      _compiler,
     }
-    exportSheetSpy.mockReturnValue('sheet')
-    exportClassMapSpy.mockReturnValue('classMap')
-    exportFileMapSpy.mockReturnValue('fileMap')
-    getCssSpy.mockReturnValue('css')
     codeExtractSpy.mockReturnValue({
       code: 'code',
-      css: 'css',
+      css: undefined,
       free: mock(),
-      map: '{}',
-      cssFile: 'cssFile',
-      updatedBaseStyle: options.updatedBaseStyle,
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
       [Symbol.dispose]: mock(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
-    expect(t.async).toHaveBeenCalled()
-    expect(codeExtractSpy).toHaveBeenCalledWith(
-      'index.tsx',
-      'code',
-      'package',
-      './cssFile',
-      true,
-      false,
-      true,
-    )
-    if (options.updatedBaseStyle) {
-      expect(writeFileSpy).toHaveBeenCalledWith(
-        join('cssFile', 'devup-ui.css'),
-        'css',
-        'utf-8',
-      )
-    } else {
-      expect(writeFileSpy).not.toHaveBeenCalledWith(
-        join('cssFile', 'devup-ui.css'),
-        'css',
-        'utf-8',
-      )
-    }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
-      expect(writeFileSpy).toHaveBeenCalledWith(
-        join('cssFile', 'cssFile'),
-        '/* index.tsx 0 */',
-      )
-      expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
-      expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
-      expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
   })
 
-  it('should extract code without css', async () => {
+  it('should extract code without css in build mode', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
@@ -177,7 +252,6 @@ describe('devupUILoader', () => {
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
-    expect(t.async).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
       'code',
@@ -190,12 +264,9 @@ describe('devupUILoader', () => {
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
-    expect(writeFileSpy).not.toHaveBeenCalledWith('cssFile', 'css', {
-      encoding: 'utf-8',
-    })
   })
 
-  it('should handle error', async () => {
+  it('should handle error in build mode', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
@@ -216,14 +287,14 @@ describe('devupUILoader', () => {
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
-    expect(t.async).toHaveBeenCalled()
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(new Error('error'))
     })
   })
 
-  it('should load with date now on watch', async () => {
+  it('should handle error in watch mode', async () => {
     const asyncCallback = mock()
+    const consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {})
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -236,42 +307,23 @@ describe('devupUILoader', () => {
         singleCss: true,
       }),
       async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
+      resourcePath: 'error-test.tsx',
       addDependency: mock(),
     }
-    exportSheetSpy.mockReturnValue('sheet')
-    exportClassMapSpy.mockReturnValue('classMap')
-    exportFileMapSpy.mockReturnValue('fileMap')
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
 
-    expect(t.async).toHaveBeenCalled()
-    expect(codeExtractSpy).toHaveBeenCalledWith(
-      'index.tsx',
-      'code',
-      'package',
-      './cssFile',
-      true,
-      false,
-      true,
-    )
-    await waitFor(() => {
-      expect(writeFileSpy).toHaveBeenCalledWith(
-        join('cssFile', 'cssFile'),
-        '/* index.tsx 0 */',
-      )
+    codeExtractSpy.mockImplementation(() => {
+      throw new Error('extraction error')
     })
+
+    devupUILoader.bind(t as any)(Buffer.from('code'), 'error-test.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
+    })
+    consoleErrorSpy.mockRestore()
   })
 
-  it('should load with nowatch', async () => {
+  it('should use correct relative css path', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
@@ -302,7 +354,7 @@ describe('devupUILoader', () => {
     })
   })
 
-  it('should load with theme', async () => {
+  it('should not write css files in build mode even with cssFile', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
@@ -310,11 +362,6 @@ describe('devupUILoader', () => {
         cssDir: 'cssFile',
         watch: false,
         singleCss: true,
-        theme: {
-          colors: {
-            primary: '#000',
-          },
-        },
         defaultClassMap: {},
         defaultFileMap: {},
         defaultSheet: {},
@@ -323,134 +370,21 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
-    registerThemeSpy.mockReturnValueOnce(undefined)
     codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),
-      map: undefined,
+      map: '{}',
       cssFile: 'cssFile',
-      updatedBaseStyle: false,
+      updatedBaseStyle: true,
       [Symbol.dispose]: mock(),
     })
     devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
-  })
-
-  it('should use default maps in non-watch mode on init', async () => {
-    // Reset the registry first to ensure we get a fresh module
-    Loader.registry.delete(require.resolve('../loader'))
-
-    // Mock import functions BEFORE importing to prevent actual wasm calls
-    importFileMapSpy.mockImplementation(() => {})
-    importClassMapSpy.mockImplementation(() => {})
-    importSheetSpy.mockImplementation(() => {})
-    registerThemeSpy.mockImplementation(() => {})
-
-    // Fresh import - init is false at start
-    const { default: freshLoader } = await import('../loader')
-
-    const asyncCallback = mock()
-    const defaultClassMap = {}
-    const defaultFileMap = {}
-    const defaultSheet = {}
-    const theme = { colors: { primary: '#000' } }
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        watch: false,
-        singleCss: true,
-        theme,
-        defaultClassMap,
-        defaultFileMap,
-        defaultSheet,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'nowatch-init.tsx',
-      addDependency: mock(),
-    }
-
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-
-    freshLoader.bind(t as any)(Buffer.from('code'), 'nowatch-init.tsx')
 
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
     })
-
-    // Verify the init code was executed with default maps
-    expect(importFileMapSpy).toHaveBeenCalledWith(defaultFileMap)
-    expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
-    expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
-    expect(registerThemeSpy).toHaveBeenCalledWith(theme)
-  })
-
-  it('should read theme file with theme key in watch mode on init', async () => {
-    // Reset the registry and re-import for a fresh init state
-    Loader.registry.delete(require.resolve('../loader'))
-
-    // Mock import functions BEFORE importing to prevent actual wasm calls
-    importFileMapSpy.mockImplementation(() => {})
-    importClassMapSpy.mockImplementation(() => {})
-    importSheetSpy.mockImplementation(() => {})
-    registerThemeSpy.mockImplementation(() => {})
-
-    existsSyncSpy.mockReturnValue(true)
-    readFileSyncSpy.mockReturnValue(
-      '{"theme": {"colors": {"primary": "#fff"}}}',
-    )
-
-    // Fresh import with init=false
-    const { default: freshLoader } = await import('../loader')
-
-    const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
-        package: 'package',
-        cssDir: 'cssFile',
-        sheetFile: 'sheetFile',
-        classMapFile: 'classMapFile',
-        fileMapFile: 'fileMapFile',
-        themeFile: 'themeFile',
-        watch: true,
-        singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'watch-init.tsx',
-      addDependency: mock(),
-    }
-
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-
-    freshLoader.bind(t as any)(Buffer.from('code'), 'watch-init.tsx')
-
-    await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
-    })
-
-    // Verify the init code was executed with files
-    expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
-    expect(registerThemeSpy).toHaveBeenCalledWith({
-      colors: { primary: '#fff' },
-    })
+    // In build mode (watch=false), no CSS files should be written
+    expect(writeFileSpy).not.toHaveBeenCalled()
   })
 })

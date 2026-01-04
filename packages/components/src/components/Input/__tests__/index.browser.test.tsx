@@ -177,6 +177,12 @@ describe('Controlled Input', () => {
     expect(container.querySelector('input')!.value).toBe('test')
   })
 
+  it('should update value when typing with userEvent', async () => {
+    const { container } = render(<Controlled />)
+    await userEvent.type(container.querySelector('input')!, 'hello')
+    expect(container.querySelector('input')!.value).toBe('hello')
+  })
+
   it('should clear value when clear button is clicked', () => {
     // Use Input with defaultValue since fireEvent.change doesn't trigger React's onChange in Happy-DOM
     const { container } = render(<Input defaultValue="test" />)

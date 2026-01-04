@@ -1,1 +1,1 @@
-export * from './plugin'
+import './plugin'

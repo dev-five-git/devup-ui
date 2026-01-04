@@ -4,7 +4,6 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   codeExtract,
-  getCss,
   getThemeInterface,
   hasDevupUI,
   registerTheme,
@@ -19,44 +18,79 @@ const cssDir = resolve(distDir, 'devup-ui')
 const singleCss = true
 
 async function writeDataFiles() {
+  let theme = {}
   try {
     const content = existsSync(devupFile)
       ? await readFile(devupFile, 'utf-8')
       : undefined
 
     if (content) {
-      registerTheme(JSON.parse(content)?.['theme'] ?? {})
-      const interfaceCode = getThemeInterface(
-        libPackage,
-        'CustomColors',
-        'DevupThemeTypography',
-        'DevupTheme',
-      )
-
-      if (interfaceCode) {
-        await writeFile(join(distDir, 'theme.d.ts'), interfaceCode, 'utf-8')
-      }
-    } else {
-      registerTheme({})
+      theme = JSON.parse(content)?.['theme'] ?? {}
     }
-  } catch (error) {
-    console.error(error)
-    registerTheme({})
+  } catch {
+    // Error reading devup.json, use empty theme
   }
-  await Promise.all([
-    !existsSync(cssDir)
-      ? mkdir(cssDir, { recursive: true })
-      : Promise.resolve(),
-    !singleCss
-      ? writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false))
-      : Promise.resolve(),
-  ])
+  registerTheme(theme)
+
+  // Generate theme interface after registration (always write, even if empty)
+  await writeFile(
+    join(distDir, 'theme.d.ts'),
+    getThemeInterface(
+      libPackage,
+      'CustomColors',
+      'DevupThemeTypography',
+      'DevupTheme',
+    ),
+    'utf-8',
+  )
+
+  if (!existsSync(cssDir)) {
+    await mkdir(cssDir, { recursive: true })
+  }
 }
 
 async function initialize() {
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeDataFiles()
+}
+
+function resolveCssPath(path: string, importer?: string) {
+  const fileName = basename(path).split('?')[0]
+  const resolvedPath = importer
+    ? resolve(dirname(importer), path)
+    : resolve(path)
+  const expectedPath = resolve(join(cssDir, fileName))
+
+  if (!relative(resolvedPath, expectedPath) || path.startsWith(cssDir)) {
+    return { path: join(cssDir, fileName) }
+  }
+  return undefined
+}
+
+async function loadSourceFile(filePath: string) {
+  const loader: 'tsx' | 'ts' | 'jsx' | 'js' = filePath.endsWith('.tsx')
+    ? 'tsx'
+    : filePath.endsWith('.ts')
+      ? 'ts'
+      : filePath.endsWith('.jsx')
+        ? 'jsx'
+        : 'js'
+  const contents = await Bun.file(filePath).text()
+
+  if (hasDevupUI(filePath, contents, libPackage)) {
+    const code = codeExtract(
+      filePath,
+      contents,
+      libPackage,
+      relative(dirname(filePath), cssDir).replaceAll('\\', '/'),
+      singleCss,
+      true,
+      false,
+    )
+    return { contents: code.code, loader }
+  }
+  return { contents, loader }
 }
 
 // Register plugin immediately before any other imports
@@ -68,67 +102,13 @@ plugin({
     setDebug(true)
 
     // Resolve devup-ui CSS files
-    build.onResolve(
-      { filter: /devup-ui(-\d+)?\.css$/ },
-      ({ path, importer }) => {
-        const fileName = basename(path).split('?')[0]
-        const resolvedPath = importer
-          ? resolve(dirname(importer), path)
-          : resolve(path)
-        const expectedPath = resolve(join(cssDir, fileName))
-        // console.log('wtf', resolvedPath, expectedPath)
-
-        if (!relative(resolvedPath, expectedPath) || path.startsWith(cssDir)) {
-          // Return external to skip CSS in test environment
-          return {
-            path: join(cssDir, fileName),
-          }
-        }
-      },
+    build.onResolve({ filter: /devup-ui(-\d+)?\.css$/ }, ({ path, importer }) =>
+      resolveCssPath(path, importer),
     )
 
-    // Load CSS files
-    // build.onLoad({ filter: /\.css/ }, async ({ path }) => {
-    //   console.log('wtf22', path)
-    //   const fileName = basename(path).split('?')[0]
-    //   if (!/devup-ui(-\d+)?\.css$/.test(fileName)) {
-    //     return { contents: '', loader: 'css' }
-    //   }
-
-    //   const fileNum = getFileNumByFilename(fileName)
-    //   const css = getCss(fileNum, false)
-    //   cssMap.set(fileNum, css)
-    //   return {
-    //     contents: css,
-    //     loader: 'css',
-    //   }
-    // })
-
     // Load source files from packages directory (file namespace)
-    build.onLoad({ filter: /.*\.(tsx|ts|jsx|mjs)/ }, async ({ path }) => {
-      const filePath = path
-      const loader = filePath.endsWith('.tsx')
-        ? 'tsx'
-        : filePath.endsWith('.ts')
-          ? 'ts'
-          : filePath.endsWith('.jsx')
-            ? 'jsx'
-            : 'js'
-      const contents = await Bun.file(filePath).text()
-
-      if (hasDevupUI(filePath, contents, libPackage)) {
-        const code = codeExtract(
-          filePath,
-          contents,
-          libPackage,
-          relative(dirname(filePath), cssDir).replaceAll('\\', '/'),
-          singleCss,
-          true,
-          false,
-        )
-        return { contents: code.code, loader }
-      }
-      return { contents, loader }
-    })
+    build.onLoad({ filter: /.*\.(tsx|ts|jsx|mjs)/ }, ({ path }) =>
+      loadSourceFile(path),
+    )
   },
 })
