@@ -32,19 +32,19 @@
   "module": "./dist/index.mjs",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     },
     "./css-loader": {
+      "types": "./dist/css-loader.d.ts",
       "import": "./dist/css-loader.mjs",
-      "require": "./dist/css-loader.cjs",
-      "types": "./dist/css-loader.d.ts"
+      "require": "./dist/css-loader.cjs"
     },
     "./loader": {
+      "types": "./dist/loader.d.ts",
       "import": "./dist/loader.mjs",
-      "require": "./dist/loader.cjs",
-      "types": "./dist/loader.d.ts"
+      "require": "./dist/loader.cjs"
     }
   },
   "files": [

@@ -38,9 +38,9 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./pkg/index.d.ts",
       "import": "./pkg/index.js",
-      "require": "./pkg/index.js",
-      "types": "./pkg/index.d.ts"
+      "require": "./pkg/index.js"
     }
   },
   "types": "./pkg/index.d.ts"
