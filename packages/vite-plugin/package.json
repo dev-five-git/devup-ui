@@ -41,12 +41,14 @@
     "dist"
   ],
   "dependencies": {
-    "@devup-ui/wasm": "workspace:^"
+    "@devup-ui/wasm": "workspace:^",
+    "vite": "^7.3"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@devup-ui/wasm": "*"
+    "@devup-ui/wasm": "*",
+    "vite": "*"
   }
 }

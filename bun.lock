@@ -462,12 +462,14 @@
       "version": "1.0.51",
       "dependencies": {
         "@devup-ui/wasm": "workspace:^",
+        "vite": "^7.3",
       },
       "devDependencies": {
         "typescript": "^5.9.3",
       },
       "peerDependencies": {
         "@devup-ui/wasm": "*",
+        "vite": "*",
       },
     },
     "packages/webpack-plugin": {
