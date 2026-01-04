@@ -58,9 +58,6 @@
     "tinyglobby": "^0.2"
   },
   "devDependencies": {
-    "vite": "^7.3",
-    "vite-plugin-dts": "^4.5",
-    "vitest": "^4.0",
     "typescript": "^5.9",
     "@types/webpack": "^5.28"
   },
