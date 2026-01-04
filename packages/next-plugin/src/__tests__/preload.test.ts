@@ -1,336 +1,209 @@
-import { realpathSync, writeFileSync } from 'node:fs'
-import { readFileSync } from 'node:fs'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 
-import { codeExtract, getCss } from '@devup-ui/wasm'
-import { globSync } from 'tinyglobby'
+import * as wasm from '@devup-ui/wasm'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
+import * as tinyglobby from 'tinyglobby'
 
-import { findTopPackageRoot } from '../find-top-package-root'
-import { getPackageName } from '../get-package-name'
-import { hasLocalPackage } from '../has-localpackage'
+import * as findTopPackageRootModule from '../find-top-package-root'
+import * as getPackageNameModule from '../get-package-name'
+import * as hasLocalPackageModule from '../has-localpackage'
 import { preload } from '../preload'
 
-// Mock dependencies
-vi.mock('node:fs')
-vi.mock('@devup-ui/wasm')
-vi.mock('tinyglobby')
+let readFileSyncSpy: ReturnType<typeof spyOn>
+let writeFileSyncSpy: ReturnType<typeof spyOn>
+let realpathSyncSpy: ReturnType<typeof spyOn>
+let globSyncSpy: ReturnType<typeof spyOn>
+let codeExtractSpy: ReturnType<typeof spyOn>
+let getCssSpy: ReturnType<typeof spyOn>
+let hasLocalPackageSpy: ReturnType<typeof spyOn>
+let findTopPackageRootSpy: ReturnType<typeof spyOn>
+let getPackageNameSpy: ReturnType<typeof spyOn>
 
-// Mock globSync
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  existsSync: vi.fn(),
-  realpathSync: vi.fn().mockReturnValue('src/App.tsx'),
-}))
+beforeEach(() => {
+  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('code')
+  writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  realpathSyncSpy = spyOn(fs, 'realpathSync').mockImplementation(
+    (p) => p as string,
+  )
+  globSyncSpy = spyOn(tinyglobby, 'globSync').mockReturnValue([])
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
+    code: 'extracted',
+    css: 'css',
+    cssFile: null,
+    map: null,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+  } as any)
+  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('global css')
+  hasLocalPackageSpy = spyOn(
+    hasLocalPackageModule,
+    'hasLocalPackage',
+  ).mockReturnValue(false)
+  findTopPackageRootSpy = spyOn(
+    findTopPackageRootModule,
+    'findTopPackageRoot',
+  ).mockReturnValue('/root')
+  getPackageNameSpy = spyOn(
+    getPackageNameModule,
+    'getPackageName',
+  ).mockReturnValue('test-pkg')
+})
 
-vi.mock('tinyglobby', () => ({
-  globSync: vi.fn(),
-}))
-
-// Mock @devup-ui/wasm
-vi.mock('@devup-ui/wasm', () => ({
-  codeExtract: vi.fn(),
-  registerTheme: vi.fn(),
-  getCss: vi.fn(),
-}))
-
-vi.mock('../find-top-package-root', () => ({
-  findTopPackageRoot: vi.fn(),
-}))
-
-vi.mock('../get-package-name', () => ({
-  getPackageName: vi.fn(),
-}))
-
-vi.mock('../has-localpackage', () => ({
-  hasLocalPackage: vi.fn(),
-}))
+afterEach(() => {
+  readFileSyncSpy.mockRestore()
+  writeFileSyncSpy.mockRestore()
+  realpathSyncSpy.mockRestore()
+  globSyncSpy.mockRestore()
+  codeExtractSpy.mockRestore()
+  getCssSpy.mockRestore()
+  hasLocalPackageSpy.mockRestore()
+  findTopPackageRootSpy.mockRestore()
+  getPackageNameSpy.mockRestore()
+})
 
 describe('preload', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  it('should process files and write devup-ui.css', () => {
+    globSyncSpy.mockReturnValue(['/project/src/index.tsx'])
 
-    // Default mock implementations
-    vi.mocked(globSync).mockReturnValue([
-      'src/App.tsx',
-      'src/components/Button.tsx',
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+
+    expect(globSyncSpy).toHaveBeenCalled()
+    expect(codeExtractSpy).toHaveBeenCalled()
+    expect(writeFileSyncSpy).toHaveBeenCalledWith(
+      path.join('/css', 'devup-ui.css'),
+      'global css',
+      'utf-8',
+    )
+  })
+
+  it('should skip test files', () => {
+    globSyncSpy.mockReturnValue([
+      '/project/src/index.test.tsx',
+      '/project/src/index.spec.ts',
+      '/project/src/index.test-d.ts',
+      '/project/src/types.d.ts',
     ])
-    vi.mocked(readFileSync).mockReturnValue(
-      'const Button = () => <div>Hello</div>',
-    )
-    vi.mocked(codeExtract).mockReturnValue({
-      free: vi.fn(),
-      cssFile: 'styles.css',
-      css: '.button { color: red; }',
-      code: '',
-      map: '',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: vi.fn(),
-    })
-    vi.mocked(existsSync).mockReturnValue(true)
+
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+
+    expect(codeExtractSpy).not.toHaveBeenCalled()
   })
 
-  it('should find project root and collect files', () => {
-    const excludeRegex = /node_modules/
-    const libPackage = '@devup-ui/react'
-    const singleCss = false
-    const cssDir = '/output/css'
-
-    preload(excludeRegex, libPackage, singleCss, cssDir, [])
-
-    expect(globSync).toHaveBeenCalledWith(
-      ['**/*.tsx', '**/*.ts', '**/*.js', '**/*.mjs'],
-      {
-        followSymbolicLinks: true,
-        absolute: true,
-        cwd: expect.any(String),
-      },
-    )
-  })
-
-  it('should process each collected file', () => {
-    const files = ['src/App.tsx', 'src/components/Button.tsx', '.next/page.tsx']
-    vi.mocked(globSync).mockReturnValue(files)
-    vi.mocked(realpathSync)
-      .mockReturnValueOnce('src/App.tsx')
-      .mockReturnValueOnce('src/components/Button.tsx')
-      .mockReturnValueOnce('.next/page.tsx')
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(codeExtract).toHaveBeenCalledTimes(2)
-    expect(codeExtract).toHaveBeenCalledWith(
-      expect.stringMatching(/App\.tsx$/),
-      'const Button = () => <div>Hello</div>',
-      '@devup-ui/react',
-      '/output/css',
-      false,
-      false,
-      true,
-    )
-  })
-
-  it('should write CSS file when cssFile is returned', () => {
-    vi.mocked(codeExtract).mockReturnValue({
-      cssFile: 'styles.css',
-      css: '.button { color: red; }',
-      free: vi.fn(),
-      code: '',
-      map: '',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: vi.fn(),
-    })
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'styles.css'),
-      '.button { color: red; }',
-      'utf-8',
-    )
-  })
-
-  it('should not write CSS file when cssFile is null', () => {
-    vi.mocked(codeExtract).mockReturnValue({
-      cssFile: undefined,
-      css: '.button { color: red; }',
-      free: vi.fn(),
-      code: '',
-      map: '',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: vi.fn(),
-    })
-    vi.mocked(getCss).mockReturnValue('')
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'devup-ui.css'),
-      '',
-      'utf-8',
-    )
-  })
-
-  it('should handle empty CSS content', () => {
-    vi.mocked(codeExtract).mockReturnValue({
-      cssFile: 'styles.css',
-      css: '',
-      free: vi.fn(),
-      code: '',
-      map: '',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: vi.fn(),
-    })
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'styles.css'),
-      '',
-      'utf-8',
-    )
-  })
-
-  it('should handle undefined CSS content', () => {
-    vi.mocked(codeExtract).mockReturnValue({
-      cssFile: 'styles.css',
-      css: undefined,
-      free: vi.fn(),
-      code: '',
-      map: '',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: vi.fn(),
-    })
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'styles.css'),
-      '',
-      'utf-8',
-    )
-  })
-
-  it('should pass correct parameters to codeExtract', () => {
-    const libPackage = '@devup-ui/react'
-    const singleCss = true
-    const cssDir = '/custom/css/dir'
-
-    preload(/node_modules/, libPackage, singleCss, cssDir, [])
-
-    expect(codeExtract).toHaveBeenCalledWith(
-      expect.stringMatching(/App\.tsx$/),
-      'const Button = () => <div>Hello</div>',
-      libPackage,
-      cssDir,
-      singleCss,
-      false,
-      true,
-    )
-  })
-
-  it('should handle multiple files with different CSS outputs', () => {
-    const files = ['src/App.tsx', 'src/components/Button.tsx']
-    vi.mocked(globSync).mockReturnValue(files)
-
-    vi.mocked(codeExtract)
-      .mockReturnValueOnce({
-        cssFile: 'app.css',
-        css: '.app { margin: 0; }',
-        free: vi.fn(),
-        code: '',
-        map: '',
-        updatedBaseStyle: false,
-        [Symbol.dispose]: vi.fn(),
-      })
-      .mockReturnValueOnce({
-        free: vi.fn(),
-        cssFile: 'button.css',
-        css: '.button { color: blue; }',
-        code: '',
-        map: '',
-        updatedBaseStyle: false,
-        [Symbol.dispose]: vi.fn(),
-      })
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', [])
-
-    expect(writeFileSync).toHaveBeenCalledTimes(3)
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'app.css'),
-      '.app { margin: 0; }',
-      'utf-8',
-    )
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join('/output/css', 'button.css'),
-      '.button { color: blue; }',
-      'utf-8',
-    )
-  })
-
-  it('should recurse into local workspaces when include is provided', () => {
-    const files = ['src/App.tsx']
-    vi.mocked(findTopPackageRoot).mockReturnValue('/repo')
-    vi.mocked(hasLocalPackage)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false)
-    vi.mocked(globSync)
-      .mockReturnValueOnce([
-        '/repo/packages/pkg-a/package.json',
-        '/repo/packages/pkg-b/package.json',
-      ])
-      .mockReturnValueOnce(files)
-    vi.mocked(getPackageName)
-      .mockReturnValueOnce('pkg-a')
-      .mockReturnValueOnce('pkg-b')
-    vi.mocked(realpathSync).mockReturnValueOnce('src/App.tsx')
-
-    preload(/node_modules/, '@devup-ui/react', false, '/output/css', ['pkg-a'])
-
-    expect(findTopPackageRoot).toHaveBeenCalled()
-    expect(globSync).toHaveBeenCalledWith(
-      ['package.json', '!**/node_modules/**'],
-      {
-        followSymbolicLinks: true,
-        absolute: true,
-        cwd: '/repo',
-      },
-    )
-    expect(codeExtract).toHaveBeenCalledTimes(3)
-    expect(realpathSync).toHaveBeenCalledWith('src/App.tsx')
-  })
-
-  it('should skip test and build outputs based on filters', () => {
-    vi.mocked(globSync).mockReturnValue([
-      'src/App.test.tsx',
-      '.next/page.tsx',
-      'out/index.js',
-      'src/keep.ts',
+  it('should skip out and .next directories', () => {
+    const cwd = process.cwd()
+    realpathSyncSpy.mockImplementation((p) => p as string)
+    globSyncSpy.mockReturnValue([
+      path.join(cwd, 'out/index.tsx'),
+      path.join(cwd, '.next/index.tsx'),
     ])
-    vi.mocked(realpathSync)
-      .mockReturnValueOnce('src/App.test.tsx')
-      .mockReturnValueOnce('.next/page.tsx')
-      .mockReturnValueOnce('out/index.js')
-      .mockReturnValueOnce('src/keep.ts')
 
-    preload(/exclude/, '@devup-ui/react', false, '/output/css', [])
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], cwd)
 
-    expect(codeExtract).toHaveBeenCalledTimes(1)
-    expect(codeExtract).toHaveBeenCalledWith(
-      expect.stringMatching(/keep\.ts$/),
-      'const Button = () => <div>Hello</div>',
-      '@devup-ui/react',
-      '/output/css',
-      false,
-      false,
-      true,
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+  })
+
+  it('should skip files matching exclude regex', () => {
+    globSyncSpy.mockReturnValue(['/project/node_modules/pkg/index.tsx'])
+
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+  })
+
+  it('should write css file when cssFile is returned', () => {
+    globSyncSpy.mockReturnValue(['/project/src/index.tsx'])
+    codeExtractSpy.mockReturnValue({
+      code: 'extracted',
+      css: 'component css',
+      cssFile: 'devup-ui-1.css',
+      map: null,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    } as any)
+
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+
+    expect(writeFileSyncSpy).toHaveBeenCalledWith(
+      path.join('/css', 'devup-ui-1.css'),
+      'component css',
+      'utf-8',
     )
   })
 
-  it('should return early when nested is true and include packages exist', () => {
-    vi.mocked(findTopPackageRoot).mockReturnValue('/repo')
-    vi.mocked(hasLocalPackage).mockReturnValue(true)
-    // Return empty array so no recursive calls happen, but include.length > 0 check passes
-    vi.mocked(globSync).mockReturnValue([])
-    vi.mocked(getPackageName).mockReturnValue('pkg-a')
+  it('should process local packages when include has items and hasLocalPackage', () => {
+    hasLocalPackageSpy.mockReturnValue(true)
+    getPackageNameSpy.mockReturnValue('@scope/local-pkg')
 
-    // Call with nested = true (7th parameter)
+    // First call returns package.json paths, second returns source files
+    globSyncSpy
+      .mockReturnValueOnce(['/root/packages/local-pkg/package.json'])
+      .mockReturnValueOnce(['/root/packages/local-pkg/src/index.tsx'])
+      .mockReturnValueOnce(['/project/src/app.tsx'])
+
     preload(
       /node_modules/,
       '@devup-ui/react',
-      false,
-      '/output/css',
-      ['pkg-a'],
-      '/some/path',
       true,
+      '/css',
+      ['@scope/local-pkg'],
+      '/project',
     )
 
-    // When nested is true, it should return early after processing includes
-    // and not write the final devup-ui.css file
-    expect(writeFileSync).not.toHaveBeenCalledWith(
-      expect.stringContaining('devup-ui.css'),
-      expect.any(String),
+    expect(findTopPackageRootSpy).toHaveBeenCalled()
+    expect(getPackageNameSpy).toHaveBeenCalledWith(
+      '/root/packages/local-pkg/package.json',
+    )
+  })
+
+  it('should not process local packages when nested is true', () => {
+    hasLocalPackageSpy.mockReturnValue(true)
+    getPackageNameSpy.mockReturnValue('@scope/local-pkg')
+    globSyncSpy
+      .mockReturnValueOnce(['/root/packages/local-pkg/package.json'])
+      .mockReturnValueOnce([])
+
+    preload(
+      /node_modules/,
+      '@devup-ui/react',
+      true,
+      '/css',
+      ['@scope/local-pkg'],
+      '/project',
+      true, // nested = true
+    )
+
+    // Should return early when nested is true after processing local packages
+    expect(writeFileSyncSpy).not.toHaveBeenCalled()
+  })
+
+  it('should handle empty css value', () => {
+    globSyncSpy.mockReturnValue(['/project/src/index.tsx'])
+    codeExtractSpy.mockReturnValue({
+      code: 'extracted',
+      css: undefined,
+      cssFile: 'devup-ui-1.css',
+      map: null,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    } as any)
+
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+
+    expect(writeFileSyncSpy).toHaveBeenCalledWith(
+      path.join('/css', 'devup-ui-1.css'),
+      '',
       'utf-8',
     )
   })

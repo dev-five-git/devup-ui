@@ -310,22 +310,22 @@ export default defineConfig({
 
 ```bash
 # Install dependencies
-pnpm install
+bun install
 
 # Build all packages
-pnpm build
+bun run build
 
 # Run development servers
-pnpm dev
+bun run dev
 
 # Run tests
-pnpm test
+bun run test
 
 # Run linting
-pnpm lint
+bun run lint
 
 # Run benchmarks
-pnpm benchmark
+bun run benchmark
 ```
 
 ## Guidelines

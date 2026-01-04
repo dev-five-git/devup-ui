@@ -1,5 +1,5 @@
-import { act, render } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, expect, it, mock } from 'bun:test'
+import { act, render, userEvent } from 'bun-test-env-dom'
 
 import { Checkbox } from '../index'
 
@@ -43,7 +43,7 @@ describe('Checkbox', () => {
 
   // onChange 로직 테스트
   it('should call onChange with true when checkbox is clicked and unchecked', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox checked={false} onChange={onChange}>
         Test Checkbox
@@ -62,7 +62,7 @@ describe('Checkbox', () => {
   })
 
   it('should call onChange with false when checkbox is clicked and checked', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox checked={true} onChange={onChange}>
         Test Checkbox
@@ -80,7 +80,7 @@ describe('Checkbox', () => {
   })
 
   it('should not call onChange when disabled is true', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox disabled onChange={onChange}>
         Test Checkbox
@@ -111,7 +111,7 @@ describe('Checkbox', () => {
   })
 
   it('should not call onChange when both disabled and onChange are provided', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox checked={false} disabled onChange={onChange}>
         Test Checkbox
@@ -128,7 +128,7 @@ describe('Checkbox', () => {
   })
 
   it('should handle label click and trigger onChange', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox checked={false} onChange={onChange}>
         Test Checkbox
@@ -146,7 +146,7 @@ describe('Checkbox', () => {
   })
 
   it('should not trigger onChange on label click when disabled', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox disabled onChange={onChange}>
         Test Checkbox
@@ -163,7 +163,7 @@ describe('Checkbox', () => {
   })
 
   it('should pass correct event target checked value to onChange', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Checkbox checked={false} onChange={onChange}>
         Test Checkbox
@@ -397,7 +397,7 @@ describe('Checkbox', () => {
   })
 
   it('should work properly with onChange when colors are applied', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const customColors = {
       primary: '#ff0000',
       border: '#00ff00',

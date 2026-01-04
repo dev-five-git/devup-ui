@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'bun:test'
+
 import { globalCss } from '../global-css'
 
 describe('globalCss', () => {

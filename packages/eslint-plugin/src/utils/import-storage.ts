@@ -15,8 +15,13 @@ const defaultImports = {
 }
 
 export class ImportStorage {
-  private imports: Record<string, string> = {}
-  private importObject: Set<string> = new Set()
+  private imports: Record<string, string>
+  private importObject: Set<string>
+
+  constructor() {
+    this.imports = {}
+    this.importObject = new Set()
+  }
 
   public addImportByDeclaration(node: TSESTree.ImportDeclaration) {
     if (node.source.value !== '@devup-ui/react') return

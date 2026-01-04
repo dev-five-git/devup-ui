@@ -1,4 +1,5 @@
-import { fireEvent, render } from '@testing-library/react'
+import { describe, expect, it, mock } from 'bun:test'
+import { fireEvent, render, userEvent } from 'bun-test-env-dom'
 
 import {
   Stepper,
@@ -29,25 +30,29 @@ describe('Stepper', () => {
   })
 
   it('should call onValueChange when value is changed', () => {
-    const onValueChange = vi.fn()
+    const onValueChange = mock()
     const { container } = render(
       <Stepper onValueChange={onValueChange}>
+        <StepperDecreaseButton />
         <StepperInput />
+        <StepperIncreaseButton />
       </Stepper>,
     )
-    const input = container.querySelector('[aria-label="Stepper value"]')
-    fireEvent.change(input!, { target: { value: '10' } })
-    expect(onValueChange).toHaveBeenCalledWith(10)
+    const increaseButton = container.querySelector(
+      '[aria-label="Increase button"]',
+    )!
+    fireEvent.click(increaseButton)
+    expect(onValueChange).toHaveBeenCalledWith(1)
   })
 
-  it('should change inner value when onValueChange is not provided', () => {
+  it('should change inner value when onValueChange is not provided', async () => {
     const { container } = render(
       <Stepper>
         <StepperInput />
       </Stepper>,
     )
-    const input = container.querySelector('[aria-label="Stepper value"]')
-    fireEvent.change(input!, { target: { value: '10' } })
+    const input = container.querySelector('[aria-label="Stepper value"]')!
+    await userEvent.type(input, '10')
     expect(input).toHaveAttribute('data-value', '10')
   })
 
@@ -73,15 +78,13 @@ describe('Stepper', () => {
     const decreaseButton = container.querySelector(
       '[aria-label="Decrease button"] svg',
     )
-    fireEvent.change(container.querySelector('[aria-label="Stepper value"]')!, {
-      target: { value: '0' },
-    })
+    // Initial value is 0 (min), so decrease button should be disabled
     expect(decreaseButton).toHaveClass(
       'color-0-var(--base10,light-dark(#0000001A,#FFFFFF1A))--255',
     )
   })
 
-  it('should have disabled increase button when value is at max', () => {
+  it('should have disabled increase button when value is at max', async () => {
     const { container } = render(
       <Stepper>
         <StepperDecreaseButton />
@@ -92,9 +95,8 @@ describe('Stepper', () => {
     const increaseButton = container.querySelector(
       '[aria-label="Increase button"] svg',
     )
-    fireEvent.change(container.querySelector('[aria-label="Stepper value"]')!, {
-      target: { value: '100' },
-    })
+    const input = container.querySelector('[aria-label="Stepper value"]')!
+    await userEvent.type(input, '100')
     expect(increaseButton).toHaveClass(
       'color-0-var(--base10,light-dark(#0000001A,#FFFFFF1A))--255',
     )

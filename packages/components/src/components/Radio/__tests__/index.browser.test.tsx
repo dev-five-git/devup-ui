@@ -1,14 +1,8 @@
-import { render } from '@testing-library/react'
+import { describe, expect, it } from 'bun:test'
+import { render } from 'bun-test-env-dom'
 
 import { Radio } from '../index'
 
-vi.mock('react', async (originImport: any) => {
-  const origin = await originImport()
-  return {
-    ...origin,
-    cache: vi.fn((arg) => arg),
-  }
-})
 describe('Radio', () => {
   it('should Radio snapshot', () => {
     expect(render(<Radio />).container).toMatchSnapshot()

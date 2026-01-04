@@ -23,7 +23,7 @@
     "build": "tsc && vite build",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "package": "pnpm pack --pack-destination \"../../dist\""
+    "package": "bun pm pack --pack-destination \"../../dist\""
   },
   "publishConfig": {
     "access": "public"
@@ -34,7 +34,8 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [
@@ -59,8 +60,7 @@
     "storybook": "^10.1",
     "typescript": "^5.9",
     "vite": "^7.3",
-    "vite-plugin-dts": "^4.5",
-    "vitest": "^4.0"
+    "vite-plugin-dts": "^4.5"
   },
   "peerDependencies": {
     "@devup-ui/react": "workspace:^",

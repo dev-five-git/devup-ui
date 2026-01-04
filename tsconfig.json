@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["bun"],
     "strict": true,
     "target": "ESNext",
     "declaration": true,
@@ -19,6 +20,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "jsx": "react-jsx"
   }
 }

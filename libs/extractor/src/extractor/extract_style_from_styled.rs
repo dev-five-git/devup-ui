@@ -161,80 +161,57 @@ fn create_styled_component<'a>(
     class_name: &Option<Expression<'a>>,
     style_vars: &Option<Expression<'a>>,
 ) -> Expression<'a> {
-    let params = ast_builder.formal_parameters(
-        SPAN,
-        FormalParameterKind::ArrowFormalParameters,
-        oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.formal_parameter(
-                SPAN,
-                oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                ast_builder.binding_pattern(
-                    ast_builder.binding_pattern_kind_object_pattern(
+    let params =
+        ast_builder.formal_parameters(
+            SPAN,
+            FormalParameterKind::ArrowFormalParameters,
+            oxc_allocator::Vec::from_iter_in(
+                vec![ast_builder.formal_parameter(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                    ast_builder.binding_pattern_object_pattern(
                         SPAN,
                         oxc_allocator::Vec::from_iter_in(
                             vec![
-                                    ast_builder.binding_property(
-                                        SPAN,
-                                        ast_builder.property_key_static_identifier(SPAN, "style"),
-                                        ast_builder.binding_pattern(
-                                            ast_builder.binding_pattern_kind_binding_identifier(
-                                                SPAN, "style",
-                                            ),
-                                            None::<
-                                                oxc_allocator::Box<
-                                                    oxc_ast::ast::TSTypeAnnotation<'a>,
-                                                >,
-                                            >,
-                                            false,
-                                        ),
-                                        true,
-                                        false,
-                                    ),
-                                    ast_builder.binding_property(
-                                        SPAN,
-                                        ast_builder
-                                            .property_key_static_identifier(SPAN, "className"),
-                                        ast_builder.binding_pattern(
-                                            ast_builder.binding_pattern_kind_binding_identifier(
-                                                SPAN,
-                                                "className",
-                                            ),
-                                            None::<
-                                                oxc_allocator::Box<
-                                                    oxc_ast::ast::TSTypeAnnotation<'a>,
-                                                >,
-                                            >,
-                                            false,
-                                        ),
-                                        true,
-                                        false,
-                                    ),
-                                ],
+                                ast_builder.binding_property(
+                                    SPAN,
+                                    ast_builder.property_key_static_identifier(SPAN, "style"),
+                                    ast_builder.binding_pattern_binding_identifier(SPAN, "style"),
+                                    true,
+                                    false,
+                                ),
+                                ast_builder.binding_property(
+                                    SPAN,
+                                    ast_builder.property_key_static_identifier(SPAN, "className"),
+                                    ast_builder
+                                        .binding_pattern_binding_identifier(SPAN, "className"),
+                                    true,
+                                    false,
+                                ),
+                            ],
                             ast_builder.allocator,
                         ),
-                        Some(ast_builder.binding_rest_element(
-                            SPAN,
-                            ast_builder.binding_pattern(
-                                ast_builder.binding_pattern_kind_binding_identifier(
+                        Some(
+                            ast_builder.binding_rest_element(
+                                SPAN,
+                                ast_builder.binding_pattern_binding_identifier(
                                     SPAN,
                                     ast_builder.atom("rest"),
                                 ),
-                                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-                                false,
                             ),
-                        )),
+                        ),
                     ),
                     None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                    None::<oxc_allocator::Box<Expression<'a>>>,
                     false,
-                ),
-                None,
-                false,
-                false,
-            )],
-            ast_builder.allocator,
-        ),
-        None::<oxc_allocator::Box<oxc_ast::ast::BindingRestElement<'a>>>,
-    );
+                    None,
+                    false,
+                    false,
+                )],
+                ast_builder.allocator,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+        );
     let body = ast_builder.alloc_function_body(
         SPAN,
         oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
