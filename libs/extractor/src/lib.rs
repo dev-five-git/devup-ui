@@ -200,6 +200,7 @@ mod tests {
     use super::*;
     use css::class_map::reset_class_map;
     use insta::assert_debug_snapshot;
+    use rstest::rstest;
     use serial_test::serial;
 
     #[derive(Debug)]
@@ -8339,5 +8340,77 @@ keyframes({
             )
             .unwrap()
         ));
+    }
+
+    #[rstest]
+    #[case("test.tsx", "const x = 1;", "@devup-ui/react", false)] // no package string
+    #[case(
+        "test.invalid",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        false
+    )] // invalid extension
+    #[case(
+        "test.tsx",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // named import
+    #[case(
+        "test.tsx",
+        "// import from @devup-ui/react\nconst x = 1;",
+        "@devup-ui/react",
+        false
+    )] // in comment
+    #[case(
+        "test.tsx",
+        "import { Box } from '@devup-ui/core';",
+        "@devup-ui/react",
+        false
+    )] // different package
+    #[case(
+        "test.tsx",
+        "import Box from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // default import
+    #[case(
+        "test.tsx",
+        "import * as DevupUI from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // namespace import
+    #[case(
+        "test.tsx",
+        "import React from 'react';\nimport { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // multiple imports
+    #[case("test.tsx", "const pkg = '@devup-ui/react';", "@devup-ui/react", false)] // string literal
+    #[case(
+        "test.js",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .js
+    #[case(
+        "test.ts",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .ts
+    #[case(
+        "test.jsx",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .jsx
+    fn test_has_devup_ui(
+        #[case] filename: &str,
+        #[case] code: &str,
+        #[case] package: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(has_devup_ui(filename, code, package), expected);
     }
 }
