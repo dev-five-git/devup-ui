@@ -151,17 +151,32 @@ pub fn get_prefix() -> Option<String> {
     css::get_prefix()
 }
 
+/// Internal function to import a StyleSheet (testable without JsValue)
+pub fn import_sheet_internal(sheet: StyleSheet) {
+    *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+}
+
 #[wasm_bindgen(js_name = "importSheet")]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    *GLOBAL_STYLE_SHEET.lock().unwrap() = serde_wasm_bindgen::from_value(sheet_object)
+    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    import_sheet_internal(sheet);
     Ok(())
+}
+
+/// Internal function to export StyleSheet as JSON string (testable without JsValue)
+pub fn export_sheet_internal() -> Result<String, String> {
+    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap()).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 pub fn export_sheet() -> Result<String, JsValue> {
-    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap())
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    export_sheet_internal().map_err(|e| JsValue::from_str(&e))
+}
+
+/// Internal function to export class map as JSON string (testable without JsValue)
+pub fn export_class_map_internal() -> Result<String, String> {
+    serde_json::to_string(&get_class_map()).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
@@ -175,7 +190,12 @@ pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
 
 #[wasm_bindgen(js_name = "exportClassMap")]
 pub fn export_class_map() -> Result<String, JsValue> {
-    serde_json::to_string(&get_class_map()).map_err(|e| JsValue::from_str(&e.to_string()))
+    export_class_map_internal().map_err(|e| JsValue::from_str(&e))
+}
+
+/// Internal function to export file map as JSON string (testable without JsValue)
+pub fn export_file_map_internal() -> Result<String, String> {
+    serde_json::to_string(&get_file_map()).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
@@ -189,11 +209,11 @@ pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
 
 #[wasm_bindgen(js_name = "exportFileMap")]
 pub fn export_file_map() -> Result<String, JsValue> {
-    serde_json::to_string(&get_file_map()).map_err(|e| JsValue::from_str(&e.to_string()))
+    export_file_map_internal().map_err(|e| JsValue::from_str(&e))
 }
 
-#[wasm_bindgen(js_name = "codeExtract")]
-pub fn code_extract(
+/// Internal function to extract code (testable without JsValue)
+pub fn code_extract_internal(
     filename: &str,
     code: &str,
     package: &str,
@@ -201,7 +221,7 @@ pub fn code_extract(
     single_css: bool,
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
-) -> Result<Output, JsValue> {
+) -> Result<Output, String> {
     match extract(
         filename,
         code,
@@ -221,16 +241,42 @@ pub fn code_extract(
             output.css_file,
             import_main_css_in_css,
         )),
-        Err(error) => Err(JsValue::from_str(error.to_string().as_str())),
+        Err(error) => Err(error.to_string()),
     }
+}
+
+#[wasm_bindgen(js_name = "codeExtract")]
+pub fn code_extract(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+) -> Result<Output, JsValue> {
+    code_extract_internal(
+        filename,
+        code,
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+    )
+    .map_err(|e| JsValue::from_str(&e))
+}
+
+/// Internal function to register theme (testable without JsValue)
+pub fn register_theme_internal(theme: sheet::theme::Theme) {
+    GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(theme);
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(
-        serde_wasm_bindgen::from_value(theme_object)
-            .map_err(|e| JsValue::from_str(e.to_string().as_str()))?,
-    );
+    let theme: sheet::theme::Theme = serde_wasm_bindgen::from_value(theme_object)
+        .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
+    register_theme_internal(theme);
     Ok(())
 }
 
@@ -610,5 +656,301 @@ mod tests {
         sheet.set_theme(theme);
         *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
         assert_eq!(get_default_theme().unwrap(), Some("dark".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn test_output_new_and_getters() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Use extract to get real styles
+        let result = extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+<Box bg="red" />"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: false,
+                import_main_css: false,
+            },
+        )
+        .unwrap();
+
+        let output = Output::new(
+            result.code.clone(),
+            result.styles,
+            Some("//# sourceMappingURL=test".to_string()),
+            false,
+            "test.tsx".to_string(),
+            Some("devup-ui-0.css".to_string()),
+            false,
+        );
+
+        // Test getters
+        assert!(!output.code().is_empty());
+        assert_eq!(output.css_file(), Some("devup-ui-0.css".to_string()));
+        assert_eq!(output.map(), Some("//# sourceMappingURL=test".to_string()));
+        assert!(output.css().is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_output_updated_base_style() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Create output with empty styles
+        let styles = HashSet::new();
+        let output = Output::new(
+            "code".to_string(),
+            styles,
+            None,
+            true,
+            "test.tsx".to_string(),
+            None,
+            false,
+        );
+
+        // Test updated_base_style getter
+        let _ = output.updated_base_style();
+        assert!(output.css().is_none()); // No styles = no CSS
+    }
+
+    #[test]
+    #[serial]
+    fn test_has_devup_ui_wasm_function() {
+        // Test positive case
+        assert!(has_devup_ui_wasm(
+            "test.tsx",
+            "import { Box } from '@devup-ui/react';",
+            "@devup-ui/react"
+        ));
+
+        // Test negative case
+        assert!(!has_devup_ui_wasm(
+            "test.tsx",
+            "const x = 1;",
+            "@devup-ui/react"
+        ));
+
+        // Test invalid extension
+        assert!(!has_devup_ui_wasm(
+            "test.invalid",
+            "import { Box } from '@devup-ui/react';",
+            "@devup-ui/react"
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_output_single_css_mode() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Use extract to get real styles in single_css mode
+        let result = extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+<Box color="blue" />"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: true,
+            },
+        )
+        .unwrap();
+
+        let output = Output::new(
+            result.code,
+            result.styles,
+            None,
+            true, // single_css = true
+            "test.tsx".to_string(),
+            Some("devup-ui.css".to_string()),
+            true, // import_main_css = true
+        );
+
+        assert!(output.css().is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_output_with_global_css_removal() {
+        // Reset global state
+        let mut sheet = StyleSheet::default();
+
+        // Add some global CSS first
+        sheet.add_property(
+            "test.tsx",
+            "margin",
+            0,
+            "0",
+            Some(&css::style_selector::StyleSelector::Global(
+                "body".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(0),
+            None,
+        );
+
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+        css::class_map::reset_class_map();
+
+        // Now create output which should trigger rm_global_css
+        let styles = HashSet::new();
+        let output = Output::new(
+            "new code".to_string(),
+            styles,
+            None,
+            false,
+            "test.tsx".to_string(),
+            None,
+            false,
+        );
+
+        // The updated_base_style should be true because global CSS was removed
+        assert!(output.updated_base_style());
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_sheet_internal() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Create a custom sheet with a property
+        let mut custom_sheet = StyleSheet::default();
+        custom_sheet.add_property("custom.tsx", "color", 0, "red", None, Some(0), None);
+
+        // Import the custom sheet
+        import_sheet_internal(custom_sheet);
+
+        // Verify the sheet was imported by exporting it
+        let result = export_sheet_internal();
+        assert!(result.is_ok());
+        // The exported JSON should contain the property we added
+        let json = result.unwrap();
+        assert!(json.contains("color") || json.contains("red"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_sheet_internal() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+
+        // Export the sheet
+        let result = export_sheet_internal();
+        assert!(result.is_ok());
+
+        // The result should be valid JSON
+        let json_str = result.unwrap();
+        assert!(json_str.starts_with("{"));
+        assert!(json_str.ends_with("}"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_class_map_internal() {
+        // Reset class map
+        css::class_map::reset_class_map();
+
+        // Export the class map
+        let result = export_class_map_internal();
+        assert!(result.is_ok());
+
+        // The result should be valid JSON (empty map)
+        let json_str = result.unwrap();
+        assert_eq!(json_str, "{}");
+    }
+
+    #[test]
+    #[serial]
+    fn test_export_file_map_internal() {
+        // Reset file map
+        css::file_map::reset_file_map();
+
+        // Export the file map
+        let result = export_file_map_internal();
+        assert!(result.is_ok());
+
+        // The result should be valid JSON (empty map)
+        let json_str = result.unwrap();
+        assert!(json_str.starts_with("{") || json_str.starts_with("[]"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_code_extract_internal_success() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Test successful extraction
+        let result = code_extract_internal(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/react'
+<Box color="red" />"#,
+            "@devup-ui/react",
+            "@devup-ui/react".to_string(),
+            false,
+            false,
+            false,
+        );
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.code().is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn test_code_extract_internal_error() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        // Test extraction with invalid file extension (should fail)
+        let result = code_extract_internal(
+            "test.invalid_extension", // Invalid extension will cause SourceType::from_path to fail
+            "import { Box } from '@devup-ui/react'; <Box />",
+            "@devup-ui/react",
+            "@devup-ui/react".to_string(),
+            false,
+            false,
+            false,
+        );
+
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(!error.is_empty());
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_register_theme_internal() {
+        // Reset global state
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+
+        // Create and register a theme
+        let mut theme = sheet::theme::Theme::default();
+        let mut color_theme = sheet::theme::ColorTheme::default();
+        color_theme.add_color("primary", "#ff0000");
+        theme.add_color_theme("default", color_theme);
+
+        register_theme_internal(theme);
+
+        // Verify the theme was registered
+        let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
+        let default_theme = sheet.theme.get_default_theme();
+        assert_eq!(default_theme, Some("default".to_string()));
     }
 }
