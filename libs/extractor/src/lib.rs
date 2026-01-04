@@ -162,6 +162,37 @@ pub fn extract(
     })
 }
 
+/// Check if the code has an import from the specified package
+pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
+    if !code.contains(package) {
+        return false;
+    }
+
+    let source_type = match SourceType::from_path(filename) {
+        Ok(st) => st,
+        Err(_) => return false,
+    };
+
+    let allocator = Allocator::default();
+    let ParserReturn {
+        program, panicked, ..
+    } = Parser::new(&allocator, code, source_type).parse();
+
+    if panicked {
+        return false;
+    }
+
+    for stmt in &program.body {
+        if let oxc_ast::ast::Statement::ImportDeclaration(decl) = stmt
+            && decl.source.value == package
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -169,6 +200,7 @@ mod tests {
     use super::*;
     use css::class_map::reset_class_map;
     use insta::assert_debug_snapshot;
+    use rstest::rstest;
     use serial_test::serial;
 
     #[derive(Debug)]
@@ -8308,5 +8340,241 @@ keyframes({
             )
             .unwrap()
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_styled_with_spread() {
+        reset_class_map();
+        // Test styled with spread element
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {styled} from '@devup-ui/core'
+const baseStyles = { bg: "red" };
+const StyledDiv = styled.div({ ...baseStyles })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_function_no_args() {
+        reset_class_map();
+        // Test css() with no arguments
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {css} from '@devup-ui/core'
+const className = css()
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_function_empty_object() {
+        reset_class_map();
+        // Test css() with empty object
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {css} from '@devup-ui/core'
+const className = css({})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_keyframes_function() {
+        reset_class_map();
+        // Test keyframes() function
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {keyframes} from '@devup-ui/core'
+const spin = keyframes({
+    from: { transform: "rotate(0deg)" },
+    to: { transform: "rotate(360deg)" }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_function() {
+        reset_class_map();
+        // Test globalCss() function
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    body: { margin: 0, padding: 0 }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_conditional_styles() {
+        reset_class_map();
+        // Test conditional styles with both branches having different properties
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+const Component = () => {
+    const isActive = true;
+    return <Box bg={isActive ? "red" : undefined} color={isActive ? undefined : "blue"} />;
+}
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_variable_reassignment() {
+        reset_class_map();
+        // Test css import reassignment
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {css as cssFunction} from '@devup-ui/core'
+const myCss = cssFunction;
+const className = myCss({ bg: "red" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[rstest]
+    #[case("test.tsx", "const x = 1;", "@devup-ui/react", false)] // no package string
+    #[case(
+        "test.invalid",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        false
+    )] // invalid extension
+    #[case(
+        "test.tsx",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // named import
+    #[case(
+        "test.tsx",
+        "// import from @devup-ui/react\nconst x = 1;",
+        "@devup-ui/react",
+        false
+    )] // in comment
+    #[case(
+        "test.tsx",
+        "import { Box } from '@devup-ui/core';",
+        "@devup-ui/react",
+        false
+    )] // different package
+    #[case(
+        "test.tsx",
+        "import Box from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // default import
+    #[case(
+        "test.tsx",
+        "import * as DevupUI from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // namespace import
+    #[case(
+        "test.tsx",
+        "import React from 'react';\nimport { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // multiple imports
+    #[case("test.tsx", "const pkg = '@devup-ui/react';", "@devup-ui/react", false)] // string literal
+    #[case(
+        "test.js",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .js
+    #[case(
+        "test.ts",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .ts
+    #[case(
+        "test.jsx",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .jsx
+    fn test_has_devup_ui(
+        #[case] filename: &str,
+        #[case] code: &str,
+        #[case] package: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(has_devup_ui(filename, code, package), expected);
     }
 }

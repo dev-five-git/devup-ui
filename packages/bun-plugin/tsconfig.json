@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "types": ["bun"],
+    "strict": true,
+    "target": "ESNext",
+    "declaration": true,
+    "declarationMap": true,
+    "removeComments": true,
+    "sourceMap": true,
+    "useDefineForClassFields": true,
+    "allowJs": false,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "strictFunctionTypes": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}

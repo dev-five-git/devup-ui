@@ -1,3 +1,5 @@
+import { describe, expect, it } from 'bun:test'
+
 describe('export', () => {
   it('should export components and css', async () => {
     const index = await import('../index')
@@ -15,7 +17,7 @@ describe('export', () => {
       css: expect.any(Function),
       globalCss: expect.any(Function),
       keyframes: expect.any(Function),
-      styled: expect.any(Function),
+      styled: expect.any(Object),
 
       ThemeScript: expect.any(Function),
 

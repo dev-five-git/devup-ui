@@ -1,6 +1,6 @@
 import { css, Flex } from '@devup-ui/react'
-import { fireEvent, render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, mock } from 'bun:test'
+import { fireEvent, render } from 'bun-test-env-dom'
 
 import {
   Select,
@@ -48,10 +48,6 @@ const children = (
 )
 
 describe('Select', () => {
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
   it('should render', () => {
     const { container } = render(<Select>{children}</Select>)
     expect(container).toMatchSnapshot()
@@ -80,7 +76,7 @@ describe('Select', () => {
   })
 
   it('should call onOpenChange function when it is provided', () => {
-    const onOpenChange = vi.fn()
+    const onOpenChange = mock()
     const { container } = render(
       <Select onOpenChange={onOpenChange} type="radio">
         {children}
@@ -92,7 +88,7 @@ describe('Select', () => {
   })
 
   it('should call onValueChange function when it is provided', () => {
-    const onValueChange = vi.fn()
+    const onValueChange = mock()
     const { container } = render(
       <Select onChange={onValueChange} type="radio">
         {children}
@@ -156,7 +152,7 @@ describe('Select', () => {
   })
 
   it('should call onClick function when it is provided to SelectOption', () => {
-    const onClick = vi.fn()
+    const onClick = mock()
     const { container } = render(
       <Select>
         <SelectTrigger>Select</SelectTrigger>
@@ -390,7 +386,7 @@ describe('Select', () => {
   })
 
   it('should call onChange function when it is provided to SelectOption', () => {
-    const onValueChange = vi.fn()
+    const onValueChange = mock()
     const { container } = render(
       <Select
         onChange={onValueChange}
@@ -434,11 +430,11 @@ describe('Select', () => {
       '[aria-label="Select container"]',
     )! as HTMLDivElement
 
-    // happy-dom defualt viewport 1024x768
+    // happy-dom default viewport 1024x768
     // offsetHeight > 768px
-    vi.spyOn(selectContainer, 'offsetHeight', 'get').mockReturnValue(800)
+    Object.defineProperty(selectContainer, 'offsetHeight', { value: 800 })
     // offsetWidth > 1024px
-    vi.spyOn(selectContainer, 'offsetWidth', 'get').mockReturnValue(1100)
+    Object.defineProperty(selectContainer, 'offsetWidth', { value: 1100 })
 
     // rerender
     rerender(<Select>{children}</Select>)
@@ -447,7 +443,7 @@ describe('Select', () => {
   })
 
   it('should change value when clicking on SelectOption without value prop', () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Select className="test" onChange={onChange}>
         <SelectTrigger>Select</SelectTrigger>
@@ -465,7 +461,7 @@ describe('Select', () => {
   })
 
   it('should render with typography prop', () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Select onChange={onChange} typography="body1">
         <SelectTrigger>Select</SelectTrigger>

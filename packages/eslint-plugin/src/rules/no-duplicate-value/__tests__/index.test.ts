@@ -1,4 +1,5 @@
 import { RuleTester } from '@typescript-eslint/rule-tester'
+import { describe } from 'bun:test'
 
 import { noDuplicateValue } from '../index'
 

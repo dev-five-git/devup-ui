@@ -58,7 +58,7 @@ export default [
     files: ['packages/eslint-plugin/**/*.{js,jsx,ts,tsx}'],
   },
   {
-    ignores: ['packages/eslint-plugin/**/*.md'],
+    ignores: ['**/*.md'],
   },
   ...devupUi.configs.recommended,
 ]

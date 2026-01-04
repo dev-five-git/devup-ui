@@ -21,33 +21,34 @@
   "version": "1.0.51",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && vite build"
+    "build": "tsc && bun build --target node src/index.ts --production --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
   },
   "sideEffects": false,
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [
     "dist"
   ],
   "dependencies": {
-    "@devup-ui/wasm": "workspace:^"
+    "@devup-ui/wasm": "workspace:^",
+    "vite": "^7.3"
   },
   "devDependencies": {
-    "vite-plugin-dts": "^4.5.4",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "vite": "*",
-    "@devup-ui/wasm": "*"
+    "@devup-ui/wasm": "*",
+    "vite": "*"
   }
 }

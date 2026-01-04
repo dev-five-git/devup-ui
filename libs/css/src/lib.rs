@@ -813,4 +813,43 @@ mod tests {
 
         assert_eq!(class1, class2);
     }
+
+    #[test]
+    #[serial]
+    fn test_keyframes_to_keyframes_name_with_filename() {
+        reset_class_map();
+        set_debug(false);
+        // Test with filename to cover lines 148-151
+        let name = keyframes_to_keyframes_name("spin", Some("test.tsx"));
+        // Should include file number prefix
+        assert!(name.contains("-"));
+
+        // Same keyframe in same file should return same name
+        let name2 = keyframes_to_keyframes_name("spin", Some("test.tsx"));
+        assert_eq!(name, name2);
+
+        // Different file should have different prefix
+        let name3 = keyframes_to_keyframes_name("spin", Some("other.tsx"));
+        assert_ne!(name, name3);
+    }
+
+    #[test]
+    #[serial]
+    fn test_sheet_to_classname_with_filename() {
+        reset_class_map();
+        set_debug(false);
+        // Test with filename to cover the filename branch
+        let class1 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
+        // Should include file number prefix
+        assert!(class1.contains("-"));
+
+        // Same property in same file should return same classname
+        let class2 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
+        assert_eq!(class1, class2);
+
+        // Different file should have different prefix
+        let class3 =
+            sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
+        assert_ne!(class1, class3);
+    }
 }

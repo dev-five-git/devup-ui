@@ -21,18 +21,16 @@
   "main": "dist/index.cjs",
   "type": "module",
   "scripts": {
-    "test": "vitest run --coverage",
-    "test:s": "vitest run -u",
-    "lint": "eslint",
-    "build": "tsc && vite build"
+    "build": "tsc && bun build --target node src/index.ts --production --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
     }
   },
   "types": "./dist/index.d.ts",
@@ -40,17 +38,15 @@
     "dist"
   ],
   "dependencies": {
-    "typescript-eslint": "^8.50",
-    "@typescript-eslint/utils": "^8.50"
+    "typescript-eslint": "^8.51",
+    "@typescript-eslint/utils": "^8.51"
   },
   "peerDependencies": {
     "typescript-eslint": "*",
     "@typescript-eslint/utils": "*"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.50",
-    "typescript": "^5.9",
-    "vite": "^7.3",
-    "vite-plugin-dts": "^4.5"
+    "@typescript-eslint/rule-tester": "^8.51",
+    "typescript": "^5.9"
   }
 }

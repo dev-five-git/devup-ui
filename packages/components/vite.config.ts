@@ -1,17 +1,8 @@
 import preserveDirectives from 'rollup-plugin-preserve-directives'
+import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
-import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  test: {
-    globals: true,
-    coverage: {
-      provider: 'v8',
-      thresholds: {
-        '100': true,
-      },
-    },
-  },
   plugins: [
     dts({
       entryRoot: 'src',

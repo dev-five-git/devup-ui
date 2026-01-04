@@ -1,15 +1,13 @@
-import { render } from '@testing-library/react'
-import { expect } from 'vitest'
+import { describe, expect, it } from 'bun:test'
+import { render } from 'bun-test-env-dom'
 
 import { DevupTheme } from '../../types/theme'
 import { ThemeScript } from '../ThemeScript'
 
 describe('ThemeScript', () => {
   it('should apply ThemeScript', () => {
-    vi.stubEnv('DEVUP_UI_DEFAULT_THEME', undefined)
     const { container } = render(<ThemeScript />)
     expect(container).toMatchSnapshot()
-    vi.unstubAllEnvs()
   })
   it('should apply ThemeScript with theme', () => {
     const { container } = render(

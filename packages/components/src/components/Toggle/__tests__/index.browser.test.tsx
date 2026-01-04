@@ -1,15 +1,8 @@
-import { act, render } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, expect, it, mock } from 'bun:test'
+import { act, render, userEvent } from 'bun-test-env-dom'
 
 import { Toggle } from '../index'
 
-vi.mock('react', async (originImport: any) => {
-  const origin = await originImport()
-  return {
-    ...origin,
-    cache: vi.fn((arg) => arg),
-  }
-})
 describe('Toggle', () => {
   it('should Toggle snapshot', () => {
     expect(render(<Toggle />).container).toMatchSnapshot()
@@ -86,7 +79,7 @@ describe('Toggle', () => {
   })
 
   it('should change value when use onChange prop', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { container } = render(
       <Toggle className="test" onChange={onChange} />,
     )

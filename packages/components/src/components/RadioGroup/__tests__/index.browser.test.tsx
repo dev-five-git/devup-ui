@@ -1,15 +1,8 @@
-import { act, render } from '@testing-library/react'
-import { userEvent } from '@testing-library/user-event'
+import { describe, expect, it, mock } from 'bun:test'
+import { act, render, userEvent } from 'bun-test-env-dom'
 
 import { RadioGroup } from '../index'
 
-vi.mock('react', async (originImport: any) => {
-  const origin = await originImport()
-  return {
-    ...origin,
-    cache: vi.fn((arg) => arg),
-  }
-})
 describe('RadioGroup', () => {
   const options = [
     { value: '1', label: '옵션 1' },
@@ -96,7 +89,7 @@ describe('RadioGroup', () => {
     ).toMatchSnapshot()
   })
   it('should change value when click', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { getByText } = render(
       <RadioGroup defaultValue="1" onChange={onChange} options={options} />,
     )
@@ -104,7 +97,7 @@ describe('RadioGroup', () => {
       await userEvent.click(getByText('옵션 2'))
       await userEvent.click(getByText('옵션 1'))
     })
-    expect(onChange).toBeCalledTimes(2)
+    expect(onChange).toHaveBeenCalledTimes(2)
     expect(onChange).toHaveBeenNthCalledWith(1, '2')
     expect(onChange).toHaveBeenNthCalledWith(2, '1')
   })
@@ -113,7 +106,7 @@ describe('RadioGroup', () => {
       { value: 1, label: '옵션 1' },
       { value: 2, label: '옵션 2' },
     ]
-    const onChange = vi.fn()
+    const onChange = mock()
     const { getByText } = render(
       <RadioGroup
         defaultValue={1}
@@ -125,7 +118,7 @@ describe('RadioGroup', () => {
       await userEvent.click(getByText('옵션 2'))
       await userEvent.click(getByText('옵션 1'))
     })
-    expect(onChange).toBeCalledTimes(2)
+    expect(onChange).toHaveBeenCalledTimes(2)
     expect(onChange).toHaveBeenNthCalledWith(1, '2')
     expect(onChange).toHaveBeenNthCalledWith(2, '1')
   })
@@ -134,7 +127,7 @@ describe('RadioGroup', () => {
       { value: true, label: '옵션 1' },
       { value: false, label: '옵션 2' },
     ]
-    const onChange = vi.fn()
+    const onChange = mock()
     const { getByText } = render(
       <RadioGroup
         defaultValue={true}
@@ -146,12 +139,12 @@ describe('RadioGroup', () => {
       await userEvent.click(getByText('옵션 2'))
       await userEvent.click(getByText('옵션 1'))
     })
-    expect(onChange).toBeCalledTimes(2)
+    expect(onChange).toHaveBeenCalledTimes(2)
     expect(onChange).toHaveBeenNthCalledWith(1, 'false')
     expect(onChange).toHaveBeenNthCalledWith(2, 'true')
   })
   it('should have correct value with value prop', async () => {
-    const onChange = vi.fn()
+    const onChange = mock()
     const { getByText } = render(
       <RadioGroup onChange={onChange} options={options} value="1" />,
     )

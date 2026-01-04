@@ -30,7 +30,8 @@ export interface DevupUILoaderOptions {
   defaultClassMap: object
   defaultFileMap: object
 }
-let init = false
+// Track initialization per mode (watch vs non-watch are separate configurations)
+const initialized = { watch: false, build: false }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
@@ -50,8 +51,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     } = this.getOptions()
 
     const promises: Promise<void>[] = []
-    if (!init) {
-      init = true
+    const mode = watch ? 'watch' : 'build'
+    if (!initialized[mode]) {
+      initialized[mode] = true
       if (watch) {
         // restart loader issue
         // loader should read files when they exist in watch mode

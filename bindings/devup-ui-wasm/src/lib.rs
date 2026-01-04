@@ -1,7 +1,7 @@
 use css::class_map::{get_class_map, set_class_map};
 use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, extract};
+use extractor::{ExtractOption, extract, has_devup_ui};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
 use std::collections::HashSet;
@@ -264,6 +264,12 @@ pub fn get_theme_interface(
         theme_interface_name,
     )
 }
+
+#[wasm_bindgen(js_name = "hasDevupUI")]
+pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
+    has_devup_ui(filename, code, package)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

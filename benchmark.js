@@ -102,7 +102,7 @@ clearBuildFile()
 function benchmark(target) {
   performance.mark(target + '-start')
   console.profile(target)
-  execSync('pnpm -F next-' + target + '-benchmark build', {
+  execSync('bun run --filter next-' + target + '-benchmark build', {
     stdio: 'inherit',
   })
   console.profileEnd(target)

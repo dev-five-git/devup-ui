@@ -1,15 +1,11 @@
 {
   "compilerOptions": {
-    "types": [
-      "vite/client",
-      "vitest/importMeta",
-      "vitest/globals",
-      "@testing-library/jest-dom",
-      "node"
-    ],
+    "types": ["bun"],
     "strict": true,
     "target": "ESNext",
     "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
     "declarationMap": true,
     "removeComments": true,
     "sourceMap": true,
@@ -25,8 +21,9 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
     "baseUrl": ".",
     "jsx": "react-jsx"
-  }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "src/**/__tests__"]
 }

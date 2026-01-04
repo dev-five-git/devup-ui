@@ -1,32 +1,92 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import * as fs from 'node:fs'
+import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
+import * as wasm from '@devup-ui/wasm'
 import {
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  importClassMap,
-  importFileMap,
-  importSheet,
-  registerTheme,
-  setDebug,
-  setPrefix,
-} from '@devup-ui/wasm'
-import { describe } from 'vitest'
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
 import { DevupUIWebpackPlugin } from '../plugin'
 
-vi.mock('@devup-ui/wasm')
-vi.mock('node:fs')
-vi.mock('node:fs/promises')
+let codeExtractSpy: ReturnType<typeof spyOn>
+let getCssSpy: ReturnType<typeof spyOn>
+let getDefaultThemeSpy: ReturnType<typeof spyOn>
+let getThemeInterfaceSpy: ReturnType<typeof spyOn>
+let importClassMapSpy: ReturnType<typeof spyOn>
+let importFileMapSpy: ReturnType<typeof spyOn>
+let importSheetSpy: ReturnType<typeof spyOn>
+let registerThemeSpy: ReturnType<typeof spyOn>
+let setDebugSpy: ReturnType<typeof spyOn>
+let setPrefixSpy: ReturnType<typeof spyOn>
+let existsSyncSpy: ReturnType<typeof spyOn>
+let mkdirSyncSpy: ReturnType<typeof spyOn>
+let readFileSyncSpy: ReturnType<typeof spyOn>
+let writeFileSyncSpy: ReturnType<typeof spyOn>
+let mkdirSpy: ReturnType<typeof spyOn>
+let readFileSpy: ReturnType<typeof spyOn>
+let statSpy: ReturnType<typeof spyOn>
+let writeFileSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  vi.resetAllMocks()
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
+    (_path: string, contents: string) =>
+      ({
+        css: '',
+        code: contents,
+        cssFile: '',
+        map: undefined,
+        updatedBaseStyle: false,
+        free: mock(),
+        [Symbol.dispose]: mock(),
+      }) as any,
+  )
+  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
+  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
+  getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
+  importClassMapSpy = spyOn(wasm, 'importClassMap').mockReturnValue(undefined)
+  importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
+  importSheetSpy = spyOn(wasm, 'importSheet').mockReturnValue(undefined)
+  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
+  setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
+  setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
+  mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
+  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+  writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  mkdirSpy = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
+  readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
+  statSpy = spyOn(fsPromises, 'stat').mockResolvedValue({ mtimeMs: 0 } as any)
+  writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
 })
-afterAll(() => {
-  vi.restoreAllMocks()
+
+afterEach(() => {
+  codeExtractSpy.mockRestore()
+  getCssSpy.mockRestore()
+  getDefaultThemeSpy.mockRestore()
+  getThemeInterfaceSpy.mockRestore()
+  importClassMapSpy.mockRestore()
+  importFileMapSpy.mockRestore()
+  importSheetSpy.mockRestore()
+  registerThemeSpy.mockRestore()
+  setDebugSpy.mockRestore()
+  setPrefixSpy.mockRestore()
+  existsSyncSpy.mockRestore()
+  mkdirSyncSpy.mockRestore()
+  readFileSyncSpy.mockRestore()
+  writeFileSyncSpy.mockRestore()
+  mkdirSpy.mockRestore()
+  readFileSpy.mockRestore()
+  statSpy.mockRestore()
+  writeFileSpy.mockRestore()
 })
+
 function createCompiler() {
   return {
     options: {
@@ -36,27 +96,27 @@ function createCompiler() {
       plugins: [],
     },
     webpack: {
-      DefinePlugin: vi.fn(),
+      DefinePlugin: mock(),
     },
     hooks: {
       watchRun: {
-        tapPromise: vi.fn(),
+        tapPromise: mock(),
       },
       beforeRun: {
-        tapPromise: vi.fn(),
+        tapPromise: mock(),
       },
       done: {
-        tapPromise: vi.fn(),
+        tapPromise: mock(),
       },
       afterCompile: {
-        tap: vi.fn(),
+        tap: mock(),
       },
     },
   } as any
 }
 
 describe('devupUIWebpackPlugin', () => {
-  console.error = vi.fn()
+  console.error = mock()
 
   it('should apply default options', () => {
     expect(new DevupUIWebpackPlugin({}).options).toEqual({
@@ -72,7 +132,7 @@ describe('devupUIWebpackPlugin', () => {
   })
 
   describe.each(
-    globalThis.createTestMatrix({
+    createTestMatrix({
       watch: [true, false],
       debug: [true, false],
       singleCss: [true, false],
@@ -94,45 +154,45 @@ describe('devupUIWebpackPlugin', () => {
         getCss: ['css', 'css-core'],
       }),
     )('should write data files', async (_options) => {
-      vi.mocked(readFileSync).mockReturnValue(JSON.stringify(_options.readFile))
-      vi.mocked(getThemeInterface).mockReturnValue(_options.getThemeInterface)
-      vi.mocked(getCss).mockReturnValue(_options.getCss)
-      vi.mocked(existsSync).mockReturnValueOnce(_options.readFile !== undefined)
-      vi.mocked(writeFileSync).mockReturnValue()
-      vi.mocked(mkdirSync)
+      readFileSyncSpy.mockReturnValue(JSON.stringify(_options.readFile))
+      getThemeInterfaceSpy.mockReturnValue(_options.getThemeInterface)
+      getCssSpy.mockReturnValue(_options.getCss)
+      existsSyncSpy.mockReturnValueOnce(_options.readFile !== undefined)
+      writeFileSyncSpy.mockReturnValue(undefined)
 
       const plugin = new DevupUIWebpackPlugin(options)
       await plugin.writeDataFiles()
 
       if (_options.readFile !== undefined) {
-        expect(readFileSync).toHaveBeenCalledWith(options.devupFile, 'utf-8')
+        expect(readFileSyncSpy).toHaveBeenCalledWith(options.devupFile, 'utf-8')
 
-        expect(registerTheme).toHaveBeenCalledWith(
+        expect(registerThemeSpy).toHaveBeenCalledWith(
           _options.readFile?.theme ?? {},
         )
-        expect(getThemeInterface).toHaveBeenCalledWith(
+        expect(getThemeInterfaceSpy).toHaveBeenCalledWith(
           options.package,
           'CustomColors',
           'DevupThemeTypography',
           'DevupTheme',
         )
         if (_options.getThemeInterface)
-          expect(writeFileSync).toHaveBeenCalledWith(
+          expect(writeFileSyncSpy).toHaveBeenCalledWith(
             join(options.distDir, 'theme.d.ts'),
             _options.getThemeInterface,
             {
               encoding: 'utf-8',
             },
           )
-        else expect(writeFileSync).toHaveBeenCalledTimes(options.watch ? 1 : 0)
-      } else expect(readFile).not.toHaveBeenCalled()
+        else
+          expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
+      } else expect(readFileSpy).not.toHaveBeenCalled()
       if (options.watch)
-        expect(writeFileSync).toHaveBeenCalledWith(
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
           join(options.cssDir, 'devup-ui.css'),
           _options.getCss,
         )
       else
-        expect(writeFileSync).toHaveBeenCalledTimes(
+        expect(writeFileSyncSpy).toHaveBeenCalledTimes(
           _options.getThemeInterface && _options.readFile !== undefined ? 1 : 0,
         )
     })
@@ -165,15 +225,7 @@ describe('devupUIWebpackPlugin', () => {
     const plugin = new DevupUIWebpackPlugin({
       include: options.include.input,
     })
-    vi.mocked(existsSync).mockReturnValue(false)
-    vi.mocked(mkdir)
-    vi.mocked(writeFile)
-    vi.mocked(readFile)
-    vi.mocked(getThemeInterface)
-    vi.mocked(getCss)
-    vi.mocked(registerTheme)
-    vi.mocked(stat)
-    vi.mocked(readFile)
+    existsSyncSpy.mockReturnValue(false)
 
     const compiler = createCompiler()
     await plugin.apply(compiler)
@@ -194,7 +246,7 @@ describe('devupUIWebpackPlugin', () => {
     const compiler = createCompiler()
 
     await plugin.apply(compiler)
-    expect(setDebug).toHaveBeenCalledWith(options.debug)
+    expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
   })
 
   it('should reset data files when load error', async () => {
@@ -202,18 +254,18 @@ describe('devupUIWebpackPlugin', () => {
       watch: true,
     })
     const compiler = createCompiler()
-    vi.mocked(readFileSync).mockImplementation(() => {
+    readFileSyncSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    vi.mocked(stat).mockReturnValue({
+    statSpy.mockReturnValue({
       mtimeMs: 1,
     } as any)
-    vi.mocked(existsSync).mockReturnValue(true)
+    existsSyncSpy.mockReturnValue(true)
     plugin.apply(compiler as any)
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
-    expect(importSheet).toHaveBeenCalledWith({})
-    expect(importClassMap).toHaveBeenCalledWith({})
-    expect(importFileMap).toHaveBeenCalledWith({})
+    expect(importSheetSpy).toHaveBeenCalledWith({})
+    expect(importClassMapSpy).toHaveBeenCalledWith({})
+    expect(importFileMapSpy).toHaveBeenCalledWith({})
   })
 
   it.each(
@@ -232,7 +284,7 @@ describe('devupUIWebpackPlugin', () => {
     })
     const compiler = createCompiler()
 
-    vi.mocked(existsSync).mockImplementation((path) => {
+    existsSyncSpy.mockImplementation((path: string) => {
       if (path === plugin.options.devupFile) return options.existsDevupFile
       if (path === plugin.options.distDir) return options.existsDistDir
       if (path === plugin.options.cssDir) return options.existsCssDir
@@ -244,62 +296,73 @@ describe('devupUIWebpackPlugin', () => {
         return options.existsFileMapFile
       return false
     })
-    vi.mocked(getDefaultTheme).mockReturnValue('defaultTheme')
-    vi.mocked(stat).mockResolvedValueOnce({
+    getDefaultThemeSpy.mockReturnValue('defaultTheme')
+    statSpy.mockResolvedValueOnce({
       mtimeMs: 1,
     } as any)
-    vi.mocked(stat).mockResolvedValueOnce({
+    statSpy.mockResolvedValueOnce({
       mtimeMs: 2,
     } as any)
-    vi.mocked(mkdirSync)
-    if (options.existsSheetFile)
-      vi.mocked(readFileSync).mockReturnValueOnce('{"sheet": "sheet"}')
-    if (options.existsClassMapFile)
-      vi.mocked(readFileSync).mockReturnValueOnce('{"classMap": "classMap"}')
-    if (options.existsFileMapFile)
-      vi.mocked(readFileSync).mockReturnValueOnce('{"fileMap": "fileMap"}')
+    readFileSyncSpy.mockImplementation((path: string) => {
+      if (
+        path === join(plugin.options.distDir, 'sheet.json') &&
+        options.existsSheetFile
+      )
+        return '{"sheet": "sheet"}'
+      if (
+        path === join(plugin.options.distDir, 'classMap.json') &&
+        options.existsClassMapFile
+      )
+        return '{"classMap": "classMap"}'
+      if (
+        path === join(plugin.options.distDir, 'fileMap.json') &&
+        options.existsFileMapFile
+      )
+        return '{"fileMap": "fileMap"}'
+      return '{}'
+    })
 
     plugin.apply(compiler)
 
     if (options.existsDistDir)
-      expect(mkdirSync).not.toHaveBeenCalledWith(plugin.options.distDir, {
+      expect(mkdirSyncSpy).not.toHaveBeenCalledWith(plugin.options.distDir, {
         recursive: true,
       })
     else
-      expect(mkdirSync).toHaveBeenCalledWith(plugin.options.distDir, {
+      expect(mkdirSyncSpy).toHaveBeenCalledWith(plugin.options.distDir, {
         recursive: true,
       })
-    expect(writeFileSync).toHaveBeenCalledWith(
+    expect(writeFileSyncSpy).toHaveBeenCalledWith(
       join(plugin.options.distDir, '.gitignore'),
       '*',
       'utf-8',
     )
     if (options.watch) {
       if (options.existsSheetFile)
-        expect(importSheet).toHaveBeenCalledWith(
+        expect(importSheetSpy).toHaveBeenCalledWith(
           JSON.parse('{"sheet": "sheet"}'),
         )
       if (options.existsClassMapFile)
-        expect(importClassMap).toHaveBeenCalledWith(
+        expect(importClassMapSpy).toHaveBeenCalledWith(
           JSON.parse('{"classMap": "classMap"}'),
         )
       if (options.existsFileMapFile)
-        expect(importFileMap).toHaveBeenCalledWith(
+        expect(importFileMapSpy).toHaveBeenCalledWith(
           JSON.parse('{"fileMap": "fileMap"}'),
         )
       expect(compiler.hooks.watchRun.tapPromise).toHaveBeenCalled()
 
       await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
       if (options.existsDevupFile) {
-        expect(stat).toHaveBeenCalledWith(plugin.options.devupFile)
+        expect(statSpy).toHaveBeenCalledWith(plugin.options.devupFile)
         await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
       } else {
-        expect(stat).not.toHaveBeenCalled()
+        expect(statSpy).not.toHaveBeenCalled()
       }
     } else expect(compiler.hooks.watchRun.tapPromise).not.toHaveBeenCalled()
     if (options.existsDevupFile) {
       expect(compiler.hooks.afterCompile.tap).toHaveBeenCalled()
-      const add = vi.fn()
+      const add = mock()
       compiler.hooks.afterCompile.tap.mock.calls[0][1]({
         fileDependencies: {
           add,
@@ -308,17 +371,19 @@ describe('devupUIWebpackPlugin', () => {
       expect(add).toHaveBeenCalledWith(resolve(plugin.options.devupFile))
     } else expect(compiler.hooks.afterCompile.tap).not.toHaveBeenCalled()
     if (options.existsCssDir) {
-      expect(mkdir).not.toHaveBeenCalledWith(plugin.options.cssDir, {
+      expect(mkdirSpy).not.toHaveBeenCalledWith(plugin.options.cssDir, {
         recursive: true,
       })
     } else {
-      expect(mkdirSync).toHaveBeenCalledWith(plugin.options.cssDir, {
+      expect(mkdirSyncSpy).toHaveBeenCalledWith(plugin.options.cssDir, {
         recursive: true,
       })
     }
 
     expect(compiler.webpack.DefinePlugin).toHaveBeenCalledWith({
-      'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(getDefaultTheme()),
+      'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(
+        getDefaultThemeSpy.mock.results[0]?.value,
+      ),
     })
 
     if (!options.watch) {
@@ -326,18 +391,18 @@ describe('devupUIWebpackPlugin', () => {
       compiler.hooks.done.tapPromise.mock.calls[0][1]({
         hasErrors: () => true,
       })
-      expect(writeFile).not.toHaveBeenCalledWith(
+      expect(writeFileSpy).not.toHaveBeenCalledWith(
         join(plugin.options.cssDir, 'devup-ui.css'),
-        getCss(null, true),
+        getCssSpy.mock.results[0]?.value,
         'utf-8',
       )
 
       await compiler.hooks.done.tapPromise.mock.calls[0][1]({
         hasErrors: () => false,
       })
-      expect(writeFile).toHaveBeenCalledWith(
+      expect(writeFileSpy).toHaveBeenCalledWith(
         join(plugin.options.cssDir, 'devup-ui.css'),
-        getCss(null, true),
+        getCssSpy.mock.results[0]?.value,
         'utf-8',
       )
     } else {
@@ -348,8 +413,8 @@ describe('devupUIWebpackPlugin', () => {
   it('should call setPrefix when prefix option is provided', async () => {
     const plugin = new DevupUIWebpackPlugin({ prefix: 'my-prefix' })
     const compiler = createCompiler()
-    vi.mocked(existsSync).mockReturnValue(false)
+    existsSyncSpy.mockReturnValue(false)
     plugin.apply(compiler)
-    expect(setPrefix).toHaveBeenCalledWith('my-prefix')
+    expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })

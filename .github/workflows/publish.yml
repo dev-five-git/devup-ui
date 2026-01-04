@@ -25,10 +25,8 @@ jobs:
         run: |
           cargo install cargo-tarpaulin
           rustup component add rustfmt clippy
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          run_install: false
+      - uses: oven-sh/setup-bun@v2
+        name: Install bun
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -38,11 +36,10 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: 22
-          cache: 'pnpm'
-      - run: pnpm i
-      - run: pnpm build
+      - run: bun install
+      - run: bun run build
       - name: Benchmark
-        run: pnpm benchmark
+        run: bun run benchmark
 
   publish:
     runs-on: ubuntu-latest
@@ -55,10 +52,8 @@ jobs:
         run: |
           cargo install cargo-tarpaulin
           rustup component add rustfmt clippy
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          run_install: false
+      - uses: oven-sh/setup-bun@v2
+        name: Install bun
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -68,13 +63,12 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: 22
-          cache: 'pnpm'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: pnpm i
-      - run: pnpm build
+      - run: bun install
+      - run: bun run build
       - run: |
-          pnpm lint
+          bun run lint
           # rust coverage issue
           echo 'max_width = 100000' > .rustfmt.toml
           echo 'tab_spaces = 4' >> .rustfmt.toml
@@ -85,16 +79,16 @@ jobs:
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
-      - run: pnpm test
+      - run: bun run test
       - name: Format Rollback
         run: |
           rm -rf .rustfmt.toml
           cargo fmt
       - name: Build Landing
         run: |
-          pnpm -F components build-storybook
+          bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
-          pnpm -F landing build
+          bun run --filter landing build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -107,10 +101,11 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+          files: ./coverage/lcov.info
 
       - uses: changepacks/action@main
         id: changepacks
         with:
           publish: true
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}

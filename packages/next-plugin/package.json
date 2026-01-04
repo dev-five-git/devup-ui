@@ -22,26 +22,29 @@
   "version": "1.0.63",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && vite build"
+    "build": "tsc && bun build --target node src/index.ts --production --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --outfile dist/css-loader.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
   },
   "sideEffects": false,
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
     },
     "./css-loader": {
-      "import": "./dist/css-loader.js",
-      "require": "./dist/css-loader.cjs"
+      "import": "./dist/css-loader.mjs",
+      "require": "./dist/css-loader.cjs",
+      "types": "./dist/css-loader.d.ts"
     },
     "./loader": {
-      "import": "./dist/loader.js",
-      "require": "./dist/loader.cjs"
+      "import": "./dist/loader.mjs",
+      "require": "./dist/loader.cjs",
+      "types": "./dist/loader.d.ts"
     }
   },
   "files": [
@@ -55,9 +58,6 @@
     "tinyglobby": "^0.2"
   },
   "devDependencies": {
-    "vite": "^7.3",
-    "vite-plugin-dts": "^4.5",
-    "vitest": "^4.0",
     "typescript": "^5.9",
     "@types/webpack": "^5.28"
   },

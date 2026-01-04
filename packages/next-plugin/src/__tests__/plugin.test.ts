@@ -1,23 +1,51 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import { getDefaultTheme, getThemeInterface, setPrefix } from '@devup-ui/wasm'
-import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+import * as wasm from '@devup-ui/wasm'
+import * as webpackPluginModule from '@devup-ui/webpack-plugin'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
 import { DevupUI } from '../plugin'
-import { preload } from '../preload'
+import * as preloadModule from '../preload'
 
-vi.mock('@devup-ui/webpack-plugin')
-vi.mock('node:fs')
-vi.mock('../preload')
-vi.mock('@devup-ui/wasm', async (original) => ({
-  ...(await original()),
-  registerTheme: vi.fn(),
-  getThemeInterface: vi.fn(),
-  getDefaultTheme: vi.fn(),
-  getCss: vi.fn(() => ''),
-  setPrefix: vi.fn(),
-  exportSheet: vi.fn(() =>
+let existsSyncSpy: ReturnType<typeof spyOn>
+let mkdirSyncSpy: ReturnType<typeof spyOn>
+let readFileSyncSpy: ReturnType<typeof spyOn>
+let writeFileSyncSpy: ReturnType<typeof spyOn>
+let getDefaultThemeSpy: ReturnType<typeof spyOn>
+let getThemeInterfaceSpy: ReturnType<typeof spyOn>
+let setPrefixSpy: ReturnType<typeof spyOn>
+let registerThemeSpy: ReturnType<typeof spyOn>
+let getCssSpy: ReturnType<typeof spyOn>
+let exportSheetSpy: ReturnType<typeof spyOn>
+let exportClassMapSpy: ReturnType<typeof spyOn>
+let exportFileMapSpy: ReturnType<typeof spyOn>
+let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
+let preloadSpy: ReturnType<typeof spyOn>
+
+let originalEnv: NodeJS.ProcessEnv
+let originalFetch: typeof global.fetch
+let originalDebugPort: number
+
+beforeEach(() => {
+  existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
+  mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue('' as any)
+  readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+  writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
+  getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
+  setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
+  getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
+  exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue(
     JSON.stringify({
       css: {},
       font_faces: {},
@@ -26,10 +54,44 @@ vi.mock('@devup-ui/wasm', async (original) => ({
       keyframes: {},
       properties: {},
     }),
-  ),
-  exportClassMap: vi.fn(() => JSON.stringify({})),
-  exportFileMap: vi.fn(() => JSON.stringify({})),
-}))
+  )
+  exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue(
+    JSON.stringify({}),
+  )
+  exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue(
+    JSON.stringify({}),
+  )
+  devupUIWebpackPluginSpy = spyOn(
+    webpackPluginModule,
+    'DevupUIWebpackPlugin',
+  ).mockImplementation(mock() as never)
+  preloadSpy = spyOn(preloadModule, 'preload').mockReturnValue(undefined)
+
+  originalEnv = { ...process.env }
+  originalFetch = global.fetch
+  originalDebugPort = process.debugPort
+  global.fetch = mock(() => Promise.resolve({} as Response)) as any
+})
+
+afterEach(() => {
+  process.env = originalEnv
+  global.fetch = originalFetch
+  process.debugPort = originalDebugPort
+  existsSyncSpy.mockRestore()
+  mkdirSyncSpy.mockRestore()
+  readFileSyncSpy.mockRestore()
+  writeFileSyncSpy.mockRestore()
+  getDefaultThemeSpy.mockRestore()
+  getThemeInterfaceSpy.mockRestore()
+  setPrefixSpy.mockRestore()
+  registerThemeSpy.mockRestore()
+  getCssSpy.mockRestore()
+  exportSheetSpy.mockRestore()
+  exportClassMapSpy.mockRestore()
+  exportFileMapSpy.mockRestore()
+  devupUIWebpackPluginSpy.mockRestore()
+  preloadSpy.mockRestore()
+})
 
 describe('DevupUINextPlugin', () => {
   describe('webpack', () => {
@@ -38,7 +100,7 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
-      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
     })
@@ -48,7 +110,7 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId', dev: true } as any)
 
-      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('df', 'devup-ui_tmpBuildId'),
         watch: true,
       })
@@ -64,14 +126,14 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
-      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
         cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
     })
 
     it('should apply webpack plugin with webpack obj', async () => {
-      const webpack = vi.fn()
+      const webpack = mock()
       const ret = DevupUI(
         {
           webpack,
@@ -83,7 +145,7 @@ describe('DevupUINextPlugin', () => {
 
       ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
 
-      expect(DevupUIWebpackPlugin).toHaveBeenCalledWith({
+      expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
         cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
       })
@@ -91,18 +153,9 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
-    beforeEach(() => {
-      // Mock fetch globally to prevent "http://localhost:undefined" errors
-      global.fetch = vi.fn(() => Promise.resolve({} as Response))
-    })
-
-    afterEach(() => {
-      vi.restoreAllMocks()
-    })
-
     it('should apply turbo config', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
@@ -165,10 +218,10 @@ describe('DevupUINextPlugin', () => {
       })
     })
     it('should apply turbo config with create df', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync).mockReturnValue(false)
-      vi.mocked(mkdirSync).mockReturnValue('')
-      vi.mocked(writeFileSync).mockReturnValue()
+      process.env.TURBOPACK = '1'
+      existsSyncSpy.mockReturnValue(false)
+      mkdirSyncSpy.mockReturnValue('')
+      writeFileSyncSpy.mockReturnValue(undefined)
       const ret = DevupUI({})
 
       expect(ret).toEqual({
@@ -225,19 +278,20 @@ describe('DevupUINextPlugin', () => {
           },
         },
       })
-      expect(mkdirSync).toHaveBeenCalledWith('df', {
+      expect(mkdirSyncSpy).toHaveBeenCalledWith('df', {
         recursive: true,
       })
-      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join('df', '.gitignore'),
+        '*',
+      )
     })
     it('should apply turbo config with exists df and devup.json', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ theme: 'theme' }),
-      )
-      vi.mocked(mkdirSync).mockReturnValue('')
-      vi.mocked(writeFileSync).mockReturnValue()
+      process.env.TURBOPACK = '1'
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
+      mkdirSyncSpy.mockReturnValue('')
+      writeFileSyncSpy.mockReturnValue(undefined)
       const ret = DevupUI({})
 
       expect(ret).toEqual({
@@ -294,22 +348,25 @@ describe('DevupUINextPlugin', () => {
           },
         },
       })
-      expect(mkdirSync).toHaveBeenCalledWith('df', {
-        recursive: true,
-      })
-      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
+      // mkdirSync is NOT called when existsSync returns true
+      expect(mkdirSyncSpy).not.toHaveBeenCalled()
+      // gitignore is also NOT written when it exists
+      expect(writeFileSyncSpy).not.toHaveBeenCalledWith(
+        join('df', '.gitignore'),
+        '*',
+      )
     })
     it('should throw error if NODE_ENV is production', () => {
-      vi.stubEnv('NODE_ENV', 'production')
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(preload).mockReturnValue()
+      ;(process.env as any).NODE_ENV = 'production'
+      process.env.TURBOPACK = '1'
+      preloadSpy.mockReturnValue(undefined)
       const ret = DevupUI({})
       expect(ret).toEqual({
         turbopack: {
           rules: expect.any(Object),
         },
       })
-      expect(preload).toHaveBeenCalledWith(
+      expect(preloadSpy).toHaveBeenCalledWith(
         new RegExp(
           `(node_modules(?!.*(${['@devup-ui']
             .join('|')
@@ -322,33 +379,29 @@ describe('DevupUINextPlugin', () => {
       )
     })
     it('should create theme.d.ts file', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(getThemeInterface).mockReturnValue('interface code')
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ theme: 'theme' }),
-      )
-      vi.mocked(mkdirSync).mockReturnValue('')
-      vi.mocked(writeFileSync).mockReturnValue()
+      process.env.TURBOPACK = '1'
+      existsSyncSpy.mockReturnValue(true)
+      getThemeInterfaceSpy.mockReturnValue('interface code')
+      readFileSyncSpy.mockReturnValue(JSON.stringify({ theme: 'theme' }))
+      mkdirSyncSpy.mockReturnValue('')
+      writeFileSyncSpy.mockReturnValue(undefined)
       DevupUI({})
-      expect(writeFileSync).toHaveBeenCalledWith(
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
         join('df', 'theme.d.ts'),
         'interface code',
       )
-      expect(mkdirSync).toHaveBeenCalledWith('df', {
-        recursive: true,
-      })
-      expect(writeFileSync).toHaveBeenCalledWith(join('df', '.gitignore'), '*')
+      // mkdirSync is NOT called when existsSync returns true
+      expect(mkdirSyncSpy).not.toHaveBeenCalled()
     })
     it('should set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns a value', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_DEFAULT_THEME = ''
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false)
-      vi.mocked(getDefaultTheme).mockReturnValue('dark')
+      getDefaultThemeSpy.mockReturnValue('dark')
       const config: any = {}
       const ret = DevupUI(config)
 
@@ -361,14 +414,14 @@ describe('DevupUINextPlugin', () => {
       })
     })
     it('should not set DEVUP_UI_DEFAULT_THEME when getDefaultTheme returns undefined', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_DEFAULT_THEME = ''
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false)
-      vi.mocked(getDefaultTheme).mockReturnValue(undefined)
+      getDefaultThemeSpy.mockReturnValue(undefined)
       const config: any = {}
       const ret = DevupUI(config)
 
@@ -377,14 +430,14 @@ describe('DevupUINextPlugin', () => {
       expect(config.env).toBeUndefined()
     })
     it('should set DEVUP_UI_DEFAULT_THEME and preserve existing env vars', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.stubEnv('DEVUP_UI_DEFAULT_THEME', '')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_DEFAULT_THEME = ''
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false)
-      vi.mocked(getDefaultTheme).mockReturnValue('light')
+      getDefaultThemeSpy.mockReturnValue('light')
       const config: any = {
         env: {
           CUSTOM_VAR: 'value',
@@ -403,38 +456,36 @@ describe('DevupUINextPlugin', () => {
       })
     })
     it('should call setPrefix when prefix option is provided', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false)
       DevupUI({}, { prefix: 'my-prefix' })
-      expect(setPrefix).toHaveBeenCalledWith('my-prefix')
+      expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
     })
     it('should handle debugPort fetch failure in development mode', async () => {
-      vi.stubEnv('TURBOPACK', '1')
-      vi.stubEnv('NODE_ENV', 'development')
-      vi.stubEnv('PORT', '3000')
-      vi.mocked(existsSync)
+      process.env.TURBOPACK = '1'
+      ;(process.env as any).NODE_ENV = 'development'
+      process.env.PORT = '3000'
+      existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(false)
-      vi.mocked(writeFileSync).mockReturnValue()
+      writeFileSyncSpy.mockReturnValue(undefined)
 
       // Mock process.exit to prevent actual exit
       const originalExit = process.exit
-      const exitSpy = vi.fn()
+      const exitSpy = mock()
       process.exit = exitSpy as any
 
       // Mock process.debugPort
-      const originalDebugPort = process.debugPort
       process.debugPort = 9229
 
       // Mock fetch globally before calling DevupUI
-      const originalFetch = global.fetch
-      const fetchMock = vi.fn((url: string | URL) => {
+      const fetchMock = mock((url: string | URL) => {
         const urlString = typeof url === 'string' ? url : url.toString()
         if (urlString.includes('9229')) {
           return Promise.reject(new Error('Connection refused'))
@@ -443,24 +494,17 @@ describe('DevupUINextPlugin', () => {
       })
       global.fetch = fetchMock as any
 
-      // Use fake timers to control setTimeout
-      vi.useFakeTimers()
-
       try {
         DevupUI({})
 
-        // Wait for the fetch promise to reject (this triggers the catch handler)
-        // The catch handler sets up a setTimeout, so we need to wait for that
-        await vi.runAllTimersAsync()
+        // Wait for the fetch promise to reject and setTimeout to fire (500ms in plugin.ts + buffer)
+        await new Promise((resolve) => setTimeout(resolve, 600))
 
         // Verify process.exit was called with code 77
         expect(exitSpy).toHaveBeenCalledWith(77)
       } finally {
         // Restore
-        vi.useRealTimers()
-        global.fetch = originalFetch
         process.exit = originalExit
-        process.debugPort = originalDebugPort
       }
     })
   })
