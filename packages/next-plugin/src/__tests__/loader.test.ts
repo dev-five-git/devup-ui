@@ -13,7 +13,7 @@ import {
   spyOn,
 } from 'bun:test'
 
-import devupUILoader from '../loader'
+import devupUILoader, { resetInit } from '../loader'
 
 let existsSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -30,6 +30,7 @@ let registerThemeSpy: ReturnType<typeof spyOn>
 let dateNowSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
+  resetInit()
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
@@ -75,9 +76,7 @@ const waitFor = async (fn: () => void, timeout = 1000) => {
 }
 
 describe('devupUILoader', () => {
-  // TEST ORDER MATTERS: First test for each mode initializes that mode
-
-  // 1. First test for BUILD mode (watch: false) - covers non-watch init (lines 70-74)
+  // Test BUILD mode init (lines 68-73)
   it('should use default maps in non-watch mode on init', async () => {
     const asyncCallback = mock()
     const defaultClassMap = { test: 'classMap' }
@@ -116,14 +115,14 @@ describe('devupUILoader', () => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
 
-    // Verify non-watch init was executed
+    // Verify non-watch init was executed (lines 68-73)
     expect(importFileMapSpy).toHaveBeenCalledWith(defaultFileMap)
     expect(importClassMapSpy).toHaveBeenCalledWith(defaultClassMap)
     expect(importSheetSpy).toHaveBeenCalledWith(defaultSheet)
     expect(registerThemeSpy).toHaveBeenCalledWith(theme)
   })
 
-  // 2. First test for WATCH mode - covers watch init (lines 57-69) AND css writing (lines 96-112)
+  // Test WATCH mode init (lines 55-67) + CSS writing (lines 94-111)
   it('should initialize watch mode and write css files', async () => {
     existsSyncSpy.mockReturnValue(true)
     readFileSyncSpy.mockReturnValue(
@@ -167,20 +166,23 @@ describe('devupUILoader', () => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
     })
 
-    // Verify watch mode init was executed
+    // Verify watch mode init was executed (lines 55-67)
+    expect(existsSyncSpy).toHaveBeenCalledWith('sheetFile')
+    expect(existsSyncSpy).toHaveBeenCalledWith('classMapFile')
+    expect(existsSyncSpy).toHaveBeenCalledWith('fileMapFile')
     expect(existsSyncSpy).toHaveBeenCalledWith('themeFile')
     expect(registerThemeSpy).toHaveBeenCalledWith({
       colors: { primary: '#fff' },
     })
 
-    // Verify updatedBaseStyle && watch branch (lines 96-100)
+    // Verify updatedBaseStyle && watch branch (lines 94-99)
     expect(writeFileSpy).toHaveBeenCalledWith(
       join('cssDir', 'devup-ui.css'),
       'base-css',
       'utf-8',
     )
 
-    // Verify cssFile && watch branch (lines 102-112)
+    // Verify cssFile && watch branch (lines 100-111)
     expect(writeFileSpy).toHaveBeenCalledWith(
       join('cssDir', 'devup-ui-1.css'),
       '/* watch-init.tsx 0 */',
@@ -189,8 +191,6 @@ describe('devupUILoader', () => {
     expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
     expect(writeFileSpy).toHaveBeenCalledWith('fileMapFile', 'fileMap')
   })
-
-  // Remaining tests - init already done for both modes
 
   it('should extract code without css in watch mode', async () => {
     const asyncCallback = mock()
