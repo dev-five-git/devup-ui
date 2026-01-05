@@ -112,3 +112,5 @@ plugin({
     )
   },
 })
+
+export { plugin }
