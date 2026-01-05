@@ -13,7 +13,6 @@ pub mod utils;
 
 use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Mutex;
 
 use crate::class_map::GLOBAL_CLASS_MAP;
@@ -157,6 +156,53 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
     }
 }
 
+fn encode_selector(selector: &str) -> String {
+    let mut result = String::with_capacity(selector.len() * 2);
+    for c in selector.chars() {
+        match c {
+            '&' => result.push_str("_a_"),
+            ':' => result.push_str("_c_"),
+            '(' => result.push_str("_lp_"),
+            ')' => result.push_str("_rp_"),
+            '[' => result.push_str("_lb_"),
+            ']' => result.push_str("_rb_"),
+            '=' => result.push_str("_eq_"),
+            '>' => result.push_str("_gt_"),
+            '<' => result.push_str("_lt_"),
+            '~' => result.push_str("_tl_"),
+            '+' => result.push_str("_pl_"),
+            ' ' => result.push_str("_s_"),
+            '*' => result.push_str("_st_"),
+            '.' => result.push_str("_d_"),
+            '#' => result.push_str("_h_"),
+            ',' => result.push_str("_cm_"),
+            '"' => result.push_str("_dq_"),
+            '\'' => result.push_str("_sq_"),
+            '/' => result.push_str("_sl_"),
+            '\\' => result.push_str("_bs_"),
+            '%' => result.push_str("_pc_"),
+            '^' => result.push_str("_cr_"),
+            '$' => result.push_str("_dl_"),
+            '|' => result.push_str("_pp_"),
+            '@' => result.push_str("_at_"),
+            '!' => result.push_str("_ex_"),
+            '?' => result.push_str("_qm_"),
+            ';' => result.push_str("_sc_"),
+            '{' => result.push_str("_lc_"),
+            '}' => result.push_str("_rc_"),
+            '-' => result.push('-'),
+            '_' => result.push('_'),
+            _ if c.is_ascii_alphanumeric() => result.push(c),
+            _ => {
+                result.push_str("_u");
+                result.push_str(&format!("{:04x}", c as u32));
+                result.push('_');
+            }
+        }
+    }
+    result
+}
+
 pub fn sheet_to_classname(
     property: &str,
     level: u8,
@@ -183,9 +229,7 @@ pub fn sheet_to_classname(
             if selector.is_empty() {
                 "".to_string()
             } else {
-                let mut hasher = DefaultHasher::new();
-                selector.hash(&mut hasher);
-                hasher.finish().to_string()
+                encode_selector(selector)
             },
             style_order.unwrap_or(255),
             filename
@@ -242,9 +286,7 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
             if selector.is_empty() {
                 "".to_string()
             } else {
-                let mut hasher = DefaultHasher::new();
-                selector.hash(&mut hasher);
-                hasher.finish().to_string()
+                encode_selector(selector)
             }
         )
     } else {
@@ -278,7 +320,36 @@ mod tests {
     };
 
     use super::*;
+    use rstest::rstest;
     use serial_test::serial;
+
+    #[rstest]
+    #[case("hover", "hover")]
+    #[case("&:hover", "_a__c_hover")]
+    #[case("&::before", "_a__c__c_before")]
+    #[case("nth(1)", "nth_lp_1_rp_")]
+    #[case("nth-child(2)", "nth-child_lp_2_rp_")]
+    #[case("&:nth-child(2n+1)", "_a__c_nth-child_lp_2n_pl_1_rp_")]
+    #[case("[data-theme=dark]", "_lb_data-theme_eq_dark_rb_")]
+    #[case("& > div", "_a__s__gt__s_div")]
+    #[case("& + span", "_a__s__pl__s_span")]
+    #[case("& ~ p", "_a__s__tl__s_p")]
+    #[case(".class-name", "_d_class-name")]
+    #[case("#id-name", "_h_id-name")]
+    #[case("&:hover:focus", "_a__c_hover_c_focus")]
+    #[case("&::placeholder", "_a__c__c_placeholder")]
+    #[case(
+        ":root[data-theme=\"dark\"]",
+        "_c_root_lb_data-theme_eq__dq_dark_dq__rb_"
+    )]
+    #[case("&:not(.active)", "_a__c_not_lp__d_active_rp_")]
+    #[case("simple", "simple")]
+    #[case("with-dash", "with-dash")]
+    #[case("with_underscore", "with_underscore")]
+    #[case("CamelCase123", "CamelCase123")]
+    fn test_encode_selector(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(encode_selector(input), expected);
+    }
 
     #[test]
     #[serial]
@@ -307,7 +378,7 @@ mod tests {
         );
         assert_eq!(
             sheet_to_variable_name("background", 0, Some("hover")),
-            "--background-0-12448419602614487988"
+            "--background-0-hover"
         );
         assert_eq!(
             sheet_to_variable_name("background", 1, None),
@@ -315,7 +386,7 @@ mod tests {
         );
         assert_eq!(
             sheet_to_variable_name("background", 1, Some("hover")),
-            "--background-1-12448419602614487988"
+            "--background-1-hover"
         );
     }
 
@@ -601,7 +672,7 @@ mod tests {
         );
         assert_eq!(
             sheet_to_classname("background", 0, Some("red"), Some("hover"), None, None),
-            "background-0-red-12448419602614487988-255"
+            "background-0-red-hover-255"
         );
         assert_eq!(
             sheet_to_classname("background", 1, None, None, None, None),
@@ -609,7 +680,7 @@ mod tests {
         );
         assert_eq!(
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
-            "background-1-red-12448419602614487988-255"
+            "background-1-red-hover-255"
         );
     }
 
