@@ -21,7 +21,7 @@
   "version": "1.0.47",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && bun build --target node src/index.ts --production --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --outfile dist/index.mjs --format esm --packages external"
+    "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"

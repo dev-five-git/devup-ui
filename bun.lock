@@ -392,7 +392,7 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.64",
+      "version": "1.0.65",
       "dependencies": {
         "@devup-ui/wasm": "workspace:^",
         "@devup-ui/webpack-plugin": "workspace:^",
