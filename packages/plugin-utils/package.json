@@ -1,6 +1,6 @@
 {
-  "name": "@devup-ui/rsbuild-plugin",
-  "description": "Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor",
+  "name": "@devup-ui/plugin-utils",
+  "description": "Shared utilities for Devup UI build plugins",
   "repository": "https://github.com/dev-five-git/devup-ui",
   "author": "devfive",
   "license": "Apache-2.0",
@@ -10,15 +10,12 @@
     "email": "contact@devfive.kr"
   },
   "keywords": [
-    "css",
-    "css-in-js",
-    "css-in-js-preprocessor",
-    "css-in-js-framework",
-    "react",
-    "rsbuild"
+    "devup-ui",
+    "plugin",
+    "utils"
   ],
   "type": "module",
-  "version": "1.0.48",
+  "version": "1.0.0",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
@@ -40,16 +37,7 @@
   "files": [
     "dist"
   ],
-  "dependencies": {
-    "@devup-ui/plugin-utils": "workspace:^",
-    "@devup-ui/wasm": "workspace:^"
-  },
-  "peerDependencies": {
-    "@devup-ui/wasm": "*",
-    "@rsbuild/core": "*"
-  },
   "devDependencies": {
-    "@rsbuild/core": "^1.7",
-    "typescript": "^5.9"
+    "typescript": "^5.9.3"
   }
 }

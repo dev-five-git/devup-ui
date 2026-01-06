@@ -329,12 +329,13 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.55",
+      "version": "1.0.56",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "dependencies": {
+        "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
       },
       "devDependencies": {
@@ -376,7 +377,7 @@
     },
     "packages/eslint-plugin": {
       "name": "@devup-ui/eslint-plugin",
-      "version": "1.0.7",
+      "version": "1.0.8",
       "dependencies": {
         "@typescript-eslint/utils": "^8.51",
         "typescript-eslint": "^8.51",
@@ -392,8 +393,9 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.65",
+      "version": "1.0.66",
       "dependencies": {
+        "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
         "@devup-ui/webpack-plugin": "workspace:^",
         "next": "^16.1",
@@ -407,6 +409,13 @@
         "@devup-ui/wasm": "*",
         "@devup-ui/webpack-plugin": "*",
         "next": "*",
+      },
+    },
+    "packages/plugin-utils": {
+      "name": "@devup-ui/plugin-utils",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^5.9.3",
       },
     },
     "packages/react": {
@@ -431,7 +440,7 @@
     },
     "packages/reset-css": {
       "name": "@devup-ui/reset-css",
-      "version": "1.0.20",
+      "version": "1.0.21",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
       },
@@ -444,8 +453,9 @@
     },
     "packages/rsbuild-plugin": {
       "name": "@devup-ui/rsbuild-plugin",
-      "version": "1.0.47",
+      "version": "1.0.48",
       "dependencies": {
+        "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
       },
       "devDependencies": {
@@ -459,8 +469,9 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.52",
+      "version": "1.0.53",
       "dependencies": {
+        "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
         "vite": "^7.3",
       },
@@ -474,8 +485,9 @@
     },
     "packages/webpack-plugin": {
       "name": "@devup-ui/webpack-plugin",
-      "version": "1.0.52",
+      "version": "1.0.53",
       "dependencies": {
+        "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
       },
       "devDependencies": {
@@ -717,6 +729,8 @@
     "@devup-ui/eslint-plugin": ["@devup-ui/eslint-plugin@workspace:packages/eslint-plugin"],
 
     "@devup-ui/next-plugin": ["@devup-ui/next-plugin@workspace:packages/next-plugin"],
+
+    "@devup-ui/plugin-utils": ["@devup-ui/plugin-utils@workspace:packages/plugin-utils"],
 
     "@devup-ui/react": ["@devup-ui/react@workspace:packages/react"],
 

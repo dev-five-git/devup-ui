@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
+import { loadDevupConfigSync } from '@devup-ui/plugin-utils'
 import {
   exportClassMap,
   exportFileMap,
@@ -68,9 +69,9 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
-    const theme = existsSync(devupFile)
-      ? JSON.parse(readFileSync(devupFile, 'utf-8'))?.['theme']
-      : {}
+    const devupConfig = loadDevupConfigSync(devupFile)
+
+    const theme: any = devupConfig.theme ?? {}
     registerTheme(theme)
     const themeInterface = getThemeInterface(
       libPackage,

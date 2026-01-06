@@ -50,6 +50,7 @@
     "dist"
   ],
   "dependencies": {
+    "@devup-ui/plugin-utils": "workspace:^",
     "@devup-ui/wasm": "workspace:^"
   },
   "peerDependencies": {
