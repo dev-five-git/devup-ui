@@ -3,6 +3,7 @@ import { stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
+import { loadDevupConfigSync } from '@devup-ui/plugin-utils'
 import {
   getCss,
   getDefaultTheme,
@@ -64,30 +65,21 @@ export class DevupUIWebpackPlugin {
 
   writeDataFiles() {
     try {
-      const content = existsSync(this.options.devupFile)
-        ? readFileSync(this.options.devupFile, 'utf-8')
-        : undefined
+      const config = loadDevupConfigSync(this.options.devupFile)
+      const theme = config.theme ?? {}
 
-      if (content) {
-        registerTheme(JSON.parse(content)?.['theme'] ?? {})
-        const interfaceCode = getThemeInterface(
-          this.options.package,
-          'CustomColors',
-          'DevupThemeTypography',
-          'DevupTheme',
-        )
+      registerTheme(theme)
+      const interfaceCode = getThemeInterface(
+        this.options.package,
+        'CustomColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
 
-        if (interfaceCode) {
-          writeFileSync(
-            join(this.options.distDir, 'theme.d.ts'),
-            interfaceCode,
-            {
-              encoding: 'utf-8',
-            },
-          )
-        }
-      } else {
-        registerTheme({})
+      if (interfaceCode) {
+        writeFileSync(join(this.options.distDir, 'theme.d.ts'), interfaceCode, {
+          encoding: 'utf-8',
+        })
       }
     } catch (error) {
       console.error(error)

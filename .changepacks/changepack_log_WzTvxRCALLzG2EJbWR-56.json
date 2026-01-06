@@ -1,0 +1,1 @@
+{"changes":{"packages/next-plugin/package.json":"Patch","packages/rsbuild-plugin/package.json":"Patch","packages/vite-plugin/package.json":"Patch","packages/webpack-plugin/package.json":"Patch","packages/bun-plugin/package.json":"Patch"},"note":"Add extends key","date":"2026-01-06T18:00:01.029206300Z"}

@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
+import * as pluginUtils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -25,6 +26,7 @@ let importSheetSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let setDebugSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
+let loadDevupConfigSyncSpy: ReturnType<typeof spyOn>
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -56,6 +58,10 @@ beforeEach(() => {
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
+  loadDevupConfigSyncSpy = spyOn(
+    pluginUtils,
+    'loadDevupConfigSync',
+  ).mockReturnValue({})
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
@@ -77,6 +83,7 @@ afterEach(() => {
   registerThemeSpy.mockRestore()
   setDebugSpy.mockRestore()
   setPrefixSpy.mockRestore()
+  loadDevupConfigSyncSpy.mockRestore()
   existsSyncSpy.mockRestore()
   mkdirSyncSpy.mockRestore()
   readFileSyncSpy.mockRestore()
@@ -154,38 +161,38 @@ describe('devupUIWebpackPlugin', () => {
         getCss: ['css', 'css-core'],
       }),
     )('should write data files', async (_options) => {
-      readFileSyncSpy.mockReturnValue(JSON.stringify(_options.readFile))
+      loadDevupConfigSyncSpy.mockReturnValue(
+        _options.readFile !== undefined
+          ? { theme: _options.readFile.theme }
+          : {},
+      )
       getThemeInterfaceSpy.mockReturnValue(_options.getThemeInterface)
       getCssSpy.mockReturnValue(_options.getCss)
-      existsSyncSpy.mockReturnValueOnce(_options.readFile !== undefined)
       writeFileSyncSpy.mockReturnValue(undefined)
 
       const plugin = new DevupUIWebpackPlugin(options)
       await plugin.writeDataFiles()
 
-      if (_options.readFile !== undefined) {
-        expect(readFileSyncSpy).toHaveBeenCalledWith(options.devupFile, 'utf-8')
+      expect(loadDevupConfigSyncSpy).toHaveBeenCalledWith(options.devupFile)
+      expect(registerThemeSpy).toHaveBeenCalledWith(
+        _options.readFile?.theme ?? {},
+      )
+      expect(getThemeInterfaceSpy).toHaveBeenCalledWith(
+        options.package,
+        'CustomColors',
+        'DevupThemeTypography',
+        'DevupTheme',
+      )
+      if (_options.getThemeInterface)
+        expect(writeFileSyncSpy).toHaveBeenCalledWith(
+          join(options.distDir, 'theme.d.ts'),
+          _options.getThemeInterface,
+          {
+            encoding: 'utf-8',
+          },
+        )
+      else expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
 
-        expect(registerThemeSpy).toHaveBeenCalledWith(
-          _options.readFile?.theme ?? {},
-        )
-        expect(getThemeInterfaceSpy).toHaveBeenCalledWith(
-          options.package,
-          'CustomColors',
-          'DevupThemeTypography',
-          'DevupTheme',
-        )
-        if (_options.getThemeInterface)
-          expect(writeFileSyncSpy).toHaveBeenCalledWith(
-            join(options.distDir, 'theme.d.ts'),
-            _options.getThemeInterface,
-            {
-              encoding: 'utf-8',
-            },
-          )
-        else
-          expect(writeFileSyncSpy).toHaveBeenCalledTimes(options.watch ? 1 : 0)
-      } else expect(readFileSpy).not.toHaveBeenCalled()
       if (options.watch)
         expect(writeFileSyncSpy).toHaveBeenCalledWith(
           join(options.cssDir, 'devup-ui.css'),
@@ -193,7 +200,7 @@ describe('devupUIWebpackPlugin', () => {
         )
       else
         expect(writeFileSyncSpy).toHaveBeenCalledTimes(
-          _options.getThemeInterface && _options.readFile !== undefined ? 1 : 0,
+          _options.getThemeInterface ? 1 : 0,
         )
     })
   })

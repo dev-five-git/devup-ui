@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { loadDevupConfig } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getCss,
@@ -34,28 +35,23 @@ async function writeDataFiles(
   options: Omit<DevupUIPluginOptions, 'extractCss' | 'debug' | 'include'>,
 ) {
   try {
-    const content = existsSync(options.devupFile)
-      ? await readFile(options.devupFile, 'utf-8')
-      : undefined
+    const config = await loadDevupConfig(options.devupFile)
+    const theme = config.theme ?? {}
 
-    if (content) {
-      registerTheme(JSON.parse(content)?.['theme'] ?? {})
-      const interfaceCode = getThemeInterface(
-        options.package,
-        'CustomColors',
-        'DevupThemeTypography',
-        'DevupTheme',
+    registerTheme(theme)
+    const interfaceCode = getThemeInterface(
+      options.package,
+      'CustomColors',
+      'DevupThemeTypography',
+      'DevupTheme',
+    )
+
+    if (interfaceCode) {
+      await writeFile(
+        join(options.distDir, 'theme.d.ts'),
+        interfaceCode,
+        'utf-8',
       )
-
-      if (interfaceCode) {
-        await writeFile(
-          join(options.distDir, 'theme.d.ts'),
-          interfaceCode,
-          'utf-8',
-        )
-      }
-    } else {
-      registerTheme({})
     }
   } catch (error) {
     console.error(error)

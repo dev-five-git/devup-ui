@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { loadDevupConfig } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getThemeInterface,
@@ -20,13 +21,8 @@ const singleCss = true
 async function writeDataFiles() {
   let theme = {}
   try {
-    const content = existsSync(devupFile)
-      ? await readFile(devupFile, 'utf-8')
-      : undefined
-
-    if (content) {
-      theme = JSON.parse(content)?.['theme'] ?? {}
-    }
+    const config = await loadDevupConfig(devupFile)
+    theme = config.theme ?? {}
   } catch {
     // Error reading devup.json, use empty theme
   }
