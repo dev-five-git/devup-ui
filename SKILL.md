@@ -1,397 +1,167 @@
 ---
 name: devup-ui
-description: A zero-runtime CSS-in-JS preprocessor framework for React. Use this skill when working with Devup UI components, styling, theming, or build configuration. This skill covers component usage (Box, Flex, Grid, Text, Button, etc.), styling APIs (css, styled, globalCss, keyframes), theme configuration, and build plugin setup for Vite, Next.js, Webpack, and Rsbuild.
+description: |
+  Zero-runtime CSS-in-JS preprocessor for React. Transforms JSX styles to static CSS at build time.
+
+  TRIGGER WHEN:
+  - Writing/modifying Devup UI components (Box, Flex, Grid, Text, Button, etc.)
+  - Using styling APIs: css(), styled(), globalCss(), keyframes()
+  - Configuring devup.json theme (colors, typography)
+  - Setting up build plugins (Vite, Next.js, Webpack, Rsbuild, Bun)
+  - Debugging "Cannot run on the runtime" errors
+  - Working with responsive arrays or pseudo-selectors (_hover, _dark, etc.)
 ---
 
 # Devup UI
 
-Devup UI is a zero-runtime CSS-in-JS preprocessor that transforms styles at build time using Rust and WebAssembly. All styling is processed during compilation, resulting in zero runtime overhead, zero FOUC, and dynamic theme support via CSS variables.
+Build-time CSS extraction. No runtime JS for styling.
 
-## Project Structure
+## Critical: Components Are Compile-Time Only
 
-```
-devup-ui/
-├── packages/
-│   ├── react/           # Core React library (@devup-ui/react)
-│   ├── components/      # Pre-built UI components (@devup-ui/components)
-│   ├── vite-plugin/     # Vite build plugin
-│   ├── next-plugin/     # Next.js integration
-│   ├── webpack-plugin/  # Webpack build plugin
-│   ├── rsbuild-plugin/  # Rsbuild integration
-│   ├── reset-css/       # CSS reset utility
-│   └── eslint-plugin/   # Custom ESLint rules
-├── libs/                # Rust libraries (core processing)
-│   ├── extractor/       # JSX/TSX AST parser and CSS extraction
-│   ├── sheet/           # CSS sheet generation
-│   └── css/             # CSS utilities
-├── bindings/
-│   └── devup-ui-wasm/   # WebAssembly bindings
-├── apps/                # Example applications
-└── benchmark/           # Performance benchmarks
-```
-
-## Core Concepts
-
-### Build-Time Transformation
-
-Components are transformed at build time. Class names are generated using a compact base-37 encoding (a-z, 0-9, \_) for minimal CSS size:
+All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Cannot run on the runtime')`. They are **placeholders** that build plugins transform to `<div className="...">`.
 
 ```tsx
-// Developer writes:
-const example = <Box _hover={{ bg: 'blue' }} bg="red" p={4} />
+// BEFORE BUILD (what you write):
+<Box bg="red" p={4} _hover={{ bg: "blue" }} />
 
-// Transformed to:
-const generated = <div className="a b c" />
-
-// Generated CSS:
-// .a { background-color: red; }
-// .b { padding: 1rem; }
-// .c:hover { background-color: blue; }
+// AFTER BUILD (what runs in browser):
+<div className="a b c" />  // + CSS: .a{background:red} .b{padding:16px} .c:hover{background:blue}
 ```
 
-Class name sequence: `a`, `b`, ... `z`, `_`, `aa`, `ab`, ... `az`, `a0`, ... `a9`, `a_`, `ba`, ...
+## Style Prop Syntax
 
-Dynamic values become CSS variables:
+### Shorthands (ALWAYS use these)
+
+| Short | Full | Short | Full |
+|-------|------|-------|------|
+| `bg` | background | `m`, `mt`, `mr`, `mb`, `ml`, `mx`, `my` | margin-* |
+| `p`, `pt`, `pr`, `pb`, `pl`, `px`, `py` | padding-* | `w`, `h` | width, height |
+| `minW`, `maxW`, `minH`, `maxH` | min/max width/height | `gap` | gap |
+
+### Spacing Scale (× 4 = px)
 
 ```tsx
-// Developer writes:
-const example = <Box bg={colorVariable} />
-
-// Transformed to:
-const generated = <div className="a" style={{ '--a': colorVariable }} />
-
-// Generated CSS:
-// .a { background-color: var(--a); }
+<Box p={1} />    // padding: 4px
+<Box p={4} />    // padding: 16px
+<Box p="4" />    // padding: 16px (unitless string also × 4)
+<Box p="20px" /> // padding: 20px (with unit = exact value)
 ```
 
-## Components
+### Responsive Arrays (5 breakpoints)
 
-All components are from `@devup-ui/react`:
+```tsx
+// [mobile, mid, tablet, mid, PC] - 5 levels
+// Use indices 0, 2, 4 most frequently. Use null to skip.
 
-- `Box` - Base layout component with style props
-- `Flex` - Flexbox container
-- `Grid` - CSS Grid container
-- `VStack` / `HStack` - Vertical/horizontal stacking
-- `Center` - Center content
-- `Text` - Typography component
-- `Button` - Interactive button
-- `Input` - Form input
-- `Image` - Image component
+<Box bg={["red", null, "blue", null, "yellow"]} />  // mobile=red, tablet=blue, PC=yellow
+<Box p={[2, null, 4, null, 6]} />                   // mobile=8px, tablet=16px, PC=24px
+<Box w={["100%", null, "50%"]} />                   // mobile=100%, tablet+=50%
+```
 
-### Style Props
-
-Components accept style props directly:
+### Pseudo-Selectors (underscore prefix)
 
 ```tsx
 <Box
-  _dark={{ bg: 'gray' }} // Theme variant
-  _hover={{ bg: 'blue' }} // Pseudo-selector
-  bg="red"
-  color="white"
-  m={[2, 4]} // Responsive: mobile=2, desktop=4
-  p={4}
+  _hover={{ bg: "blue" }}
+  _focus={{ outline: "2px solid blue" }}
+  _active={{ bg: "darkblue" }}
+  _dark={{ bg: "gray.800" }}   // theme variant
+  _before={{ content: '""' }}
+  _firstChild={{ mt: 0 }}
 />
+```
+
+### Dynamic Values = CSS Variables
+
+```tsx
+// Static value -> class
+<Box bg="red" />  // className="a" + .a{background:red}
+
+// Dynamic value -> CSS variable
+<Box bg={props.color} />  // className="a" style={{"--a":props.color}} + .a{background:var(--a)}
+
+// Conditional -> preserved
+<Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
 ```
 
 ## Styling APIs
 
-### css()
-
-Create reusable style objects:
-
 ```tsx
-import { css } from '@devup-ui/react'
+import { css, styled, globalCss, keyframes } from "@devup-ui/react";
 
-const styles = css({
-  bg: 'red',
-  p: 4,
-  _hover: { bg: 'blue' },
-})
+// Reusable style object
+const cardStyles = css({ bg: "white", p: 4, borderRadius: "8px" });
+<Box {...cardStyles} />
 
-const example = <Box {...styles} />
+// Styled component (familiar styled-components/Emotion API)
+const Card = styled("div", { bg: "white", p: 4, _hover: { shadow: "lg" } });
+
+// Global styles
+globalCss({ body: { margin: 0 }, "*": { boxSizing: "border-box" } });
+
+// Keyframes
+const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rotate(360deg)" } });
+<Box animation={`${spin} 1s linear infinite`} />
 ```
 
-### styled()
-
-Create styled components (compatible with styled-components and Emotion patterns):
-
-```tsx
-import { styled } from '@devup-ui/react'
-
-// Familiar syntax for styled-components and Emotion users
-const Card = styled('div', {
-  bg: 'white',
-  p: 4, // 4 * 4 = 16px
-  borderRadius: '8px',
-  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-  _hover: {
-    boxShadow: '0 10px 15px rgba(0, 0, 0, 0.1)',
-  },
-})
-
-const Button = styled('button', {
-  bg: 'blue',
-  color: 'white',
-  px: 4, // 4 * 4 = 16px
-  py: 2, // 2 * 4 = 8px
-  borderRadius: '4px',
-  cursor: 'pointer',
-  _hover: { bg: 'darkblue' },
-  _active: { bg: 'navy' },
-})
-```
-
-### globalCss()
-
-Define global styles:
-
-```tsx
-import { globalCss } from '@devup-ui/react'
-
-globalCss({
-  body: { margin: 0 },
-  '*': { boxSizing: 'border-box' },
-})
-```
-
-### keyframes()
-
-Define CSS animations:
-
-```tsx
-import { keyframes } from '@devup-ui/react'
-
-const spin = keyframes({
-  from: { transform: 'rotate(0deg)' },
-  to: { transform: 'rotate(360deg)' },
-})
-
-const example = <Box animation={`${spin} 1s linear infinite`} />
-```
-
-## Theme Configuration
-
-Create `devup.json` in project root:
+## Theme (devup.json)
 
 ```json
 {
   "theme": {
     "colors": {
-      "default": {
-        "primary": "#0070f3",
-        "text": "#000"
-      },
-      "dark": {
-        "primary": "#3291ff",
-        "text": "#fff"
-      }
+      "default": { "primary": "#0070f3", "text": "#000" },
+      "dark": { "primary": "#3291ff", "text": "#fff" }
     },
     "typography": {
-      "bold": {
-        "fontFamily": "Pretendard",
-        "fontSize": "14px",
-        "fontWeight": 800,
-        "lineHeight": 1.3,
-        "letterSpacing": "-0.03em"
-      },
-      "h1": [
-        {
-          "fontFamily": "Pretendard",
-          "fontSize": "38px",
-          "fontWeight": 800,
-          "lineHeight": 1.3
-        },
-        null,
-        null,
-        null,
-        {
-          "fontFamily": "Pretendard",
-          "fontSize": "52px",
-          "fontWeight": 800,
-          "lineHeight": 1.3
-        }
-      ]
+      "heading": { "fontFamily": "Pretendard", "fontSize": "24px", "fontWeight": 700 }
     }
   }
 }
 ```
 
-### Theme API
+Use with `$` prefix: `<Box color="$primary" typography="$heading" />`
 
+Theme API:
 ```tsx
-import {
-  getTheme,
-  initTheme,
-  setTheme,
-  ThemeScript,
-  useTheme,
-} from '@devup-ui/react'
-
-// Get current theme (inside component)
-function MyComponent() {
-  const theme = useTheme()
-  return null
-}
-
-// Set theme
-setTheme('dark')
-
-// Initialize theme (SSR)
-initTheme()
-
-// Get theme value
-const currentTheme = getTheme()
-
-// Hydration script (add to HTML head)
-const themeScript = <ThemeScript />
+import { useTheme, setTheme, getTheme, initTheme, ThemeScript } from "@devup-ui/react";
+setTheme("dark");        // switch theme
+const theme = useTheme(); // hook for current theme
+<ThemeScript />          // SSR hydration (add to <head>)
 ```
 
-## Build Plugin Configuration
-
-### Vite
+## Build Plugin Setup
 
 ```ts
 // vite.config.ts
-import DevupUI from '@devup-ui/vite-plugin'
-import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import DevupUI from "@devup-ui/vite-plugin";
+export default defineConfig({ plugins: [react(), DevupUI()] });
 
-export default defineConfig({
-  plugins: [
-    react(),
-    DevupUI({
-      package: '@devup-ui/react', // Target package
-      cssDir: 'df/devup-ui', // CSS output directory
-      devupFile: 'devup.json', // Theme config file
-      extractCss: true, // Enable CSS extraction
-      singleCss: false, // Single vs per-file CSS
-      debug: false, // Debug mode
-      include: [], // Additional packages to process
-    }),
-  ],
-})
+// next.config.ts
+import { DevupUI } from "@devup-ui/next-plugin";
+export default DevupUI({
+  // Next.js config here
+});
+
+// rsbuild.config.ts
+import DevupUI from "@devup-ui/rsbuild-plugin";
+export default defineConfig({ plugins: [DevupUI()] });
 ```
 
-### Next.js
-
-```js
-// next.config.js
-const withDevupUI = require('@devup-ui/next-plugin')
-
-module.exports = withDevupUI({
-  // Next.js config
-})
-```
-
-### Webpack
-
-```js
-// webpack.config.js
-const DevupUIPlugin = require('@devup-ui/webpack-plugin')
-
-module.exports = {
-  plugins: [new DevupUIPlugin()],
-}
-```
-
-### Rsbuild
+Options:
+- `singleCss: true` - single CSS file (recommended for Turbopack)
+- `include: ["@devup/hello"]` - process external libraries that use @devup-ui internally
 
 ```ts
-// rsbuild.config.ts
-import DevupUI from '@devup-ui/rsbuild-plugin'
-import { defineConfig } from '@rsbuild/core'
-
-export default defineConfig({
-  plugins: [DevupUI()],
-})
+// When using external library that uses @devup-ui (e.g. @devup/hello)
+DevupUI({ include: ["@devup/hello"] })  // required to extract and merge their styles
 ```
 
-## Development Commands
+## Anti-Patterns (NEVER do)
 
-```bash
-# Install dependencies
-bun install
-
-# Build all packages
-bun run build
-
-# Run development servers
-bun run dev
-
-# Run tests
-bun run test
-
-# Run linting
-bun run lint
-
-# Run benchmarks
-bun run benchmark
-```
-
-## Guidelines
-
-- All Devup UI components throw errors at runtime - they must be transformed by the build plugin
-- Use responsive arrays for breakpoint-based styles: `p={[2, 4, 6]}`
-- Use underscore prefix for pseudo-selectors: `_hover`, `_focus`, `_active`, `_dark`
-- Theme values are accessed via CSS variables at runtime for zero-cost theme switching
-- Generated CSS is output to `df/devup-ui/` directory by default
-- TypeScript theme types are generated at `df/theme.d.ts`
-
-## Examples
-
-### Basic Component Usage
-
-```tsx
-import { Box, Button, Flex, Text } from '@devup-ui/react'
-
-function Card() {
-  return (
-    <Box bg="white" borderRadius="lg" boxShadow="md" p={4}>
-      <Text fontSize="lg" fontWeight="bold">
-        Title
-      </Text>
-      <Text color="gray.600">Description</Text>
-      <Flex gap={2} mt={4}>
-        <Button bg="primary" color="white">
-          Action
-        </Button>
-      </Flex>
-    </Box>
-  )
-}
-```
-
-### Theme-Aware Component
-
-```tsx
-import { Box } from '@devup-ui/react'
-
-function ThemeCard() {
-  return (
-    <Box
-      _dark={{ bg: '$background', color: '$text' }}
-      bg="$background"
-      color="$text"
-      p={4}
-    >
-      This adapts to the current theme
-    </Box>
-  )
-}
-```
-
-### Dynamic Styling
-
-```tsx
-import { Box } from '@devup-ui/react'
-
-function DynamicBox({ isActive, color }) {
-  return (
-    <Box
-      bg={isActive ? 'blue' : 'gray'}
-      color={color} // Dynamic value becomes CSS variable
-      p={4}
-    />
-  )
-}
-```
+| Wrong | Right | Why |
+|-------|-------|-----|
+| `<Box style={{ color: "red" }}>` | `<Box color="red">` | style prop bypasses extraction |
+| `css({ bg: variable })` | `<Box bg={variable}>` | css()/globalCss() only accept static values |
+| No build plugin configured | Configure plugin first | Components throw at runtime without transformation |
+| `as any` on style props | Fix types properly | Type errors indicate real issues |
