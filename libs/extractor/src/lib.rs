@@ -8,6 +8,7 @@ mod gen_style;
 mod prop_modify_utils;
 mod util_type;
 mod utils;
+mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -111,6 +112,40 @@ pub fn extract(
         });
     }
 
+    // Handle vanilla-extract style files (.css.ts, .css.js)
+    let (processed_code, is_vanilla_extract) = if vanilla_extract::is_vanilla_extract_file(filename)
+    {
+        match vanilla_extract::execute_vanilla_extract(code, &option.package) {
+            Ok(collected) => {
+                let generated =
+                    vanilla_extract::collected_styles_to_code(&collected, &option.package);
+                (generated, true)
+            }
+            Err(_) => {
+                // Fall back to treating as regular file if execution fails
+                (code.to_string(), false)
+            }
+        }
+    } else {
+        (code.to_string(), false)
+    };
+
+    // For vanilla-extract files, if no styles were collected, return early
+    if is_vanilla_extract && processed_code.is_empty() {
+        return Ok(ExtractOutput {
+            styles: HashSet::new(),
+            code: code.to_string(),
+            map: None,
+            css_file: None,
+        });
+    }
+
+    let code_to_parse = if is_vanilla_extract {
+        &processed_code
+    } else {
+        code
+    };
+
     let source_type = SourceType::from_path(filename)?;
     let css_file = if option.single_css {
         format!("{}/devup-ui.css", option.css_dir)
@@ -131,7 +166,7 @@ pub fn extract(
         mut program, // AST
         panicked,    // Parser encountered an error it couldn't recover from
         ..
-    } = Parser::new(&allocator, code, source_type).parse();
+    } = Parser::new(&allocator, code_to_parse, source_type).parse();
     if panicked {
         return Err("Parser panicked".into());
     }
@@ -9020,9 +9055,8 @@ const margin = 5;
         ));
     }
 
-    /*
     // ============================================================================
-    // VANILLA-EXTRACT API TESTS (commented out until style/globalStyle support)
+    // VANILLA-EXTRACT API TESTS
     // ============================================================================
 
     /// Test vanilla-extract style files (.css.ts, .css.js)
@@ -9036,45 +9070,7 @@ const margin = 5;
             extract(
                 "styles.css.ts",
                 r#"import { style } from '@devup-ui/react'
-export const container = style({ background: "red", padding: 16 })
-"#,
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
-            )
-            .unwrap()
-        ));
-
-        reset_class_map();
-        // .css.ts file with style function using camelCase CSS properties
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "button.css.ts",
-                r#"import { style } from '@devup-ui/react'
-export const button = style({ backgroundColor: "blue", color: "white", padding: 8 })
-"#,
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
-            )
-            .unwrap()
-        ));
-
-        reset_class_map();
-        // .css.ts file with multiple style exports
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "theme.css.ts",
-                r#"import { style } from '@devup-ui/react'
-export const primaryButton = style({ backgroundColor: "blue", color: "white" })
-export const secondaryButton = style({ backgroundColor: "gray", color: "black" })
-export const card = style({ padding: 16, borderRadius: "8px" })
+export const container: string = style({ background: "red", padding: 16 })
 "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
@@ -9129,14 +9125,16 @@ export const link = style({ color: "blue", textDecoration: "underline" })
 
     #[test]
     #[serial]
-    fn test_vanilla_extract_with_responsive_and_pseudo() {
+    fn test_vanilla_extract_with_variable() {
         reset_class_map();
-        // .css.ts file with responsive values (devup-ui extension)
+        // Variables should be evaluated at execution time
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "responsive.css.ts",
+                "vars.css.ts",
                 r#"import { style } from '@devup-ui/react'
-export const responsiveBox = style({ padding: [8, 16, 32], display: ["block", "flex"] })
+const primaryColor = "blue";
+const spacing = 16;
+export const button = style({ background: primaryColor, padding: spacing })
 "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
@@ -9147,14 +9145,86 @@ export const responsiveBox = style({ padding: [8, 16, 32], display: ["block", "f
             )
             .unwrap()
         ));
+    }
 
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_computed() {
         reset_class_map();
-        // .css.ts file with selectors (vanilla-extract style)
+        // Computed values should be evaluated
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "computed.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const base = 8;
+export const box = style({ padding: base * 2, margin: base / 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_spread() {
+        reset_class_map();
+        // Spread operator should work
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "spread.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const baseStyle = { padding: 8, margin: 4 };
+export const extended = style({ ...baseStyle, background: "red" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_pseudo_selector() {
+        reset_class_map();
+        // devup-ui extension: _hover pseudo selector
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "hover.css.ts",
                 r#"import { style } from '@devup-ui/react'
 export const hoverButton = style({ background: "gray", _hover: { background: "blue" } })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_responsive_array() {
+        reset_class_map();
+        // devup-ui extension: responsive arrays
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "responsive.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const responsiveBox = style({ padding: [8, 16, 32] })
 "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
@@ -9687,7 +9757,6 @@ export const grid = style({
             .unwrap()
         ));
     }
-    */
     // END VANILLA-EXTRACT API TESTS
 
     #[rstest]

@@ -1,0 +1,57 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"layers.css.ts\",\nr#\"import { layer, style, globalStyle } from '@devup-ui/react'\nexport const reset = layer('reset')\nexport const base = layer('base')\nexport const components = layer('components')\nglobalStyle('*', {\n  '@layer': reset,\n  margin: 0,\n  padding: 0\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "@layer",
+                value: "reset",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "*",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "*",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "*",
+                        "layers.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const base = \"base\";\nexport const components = \"components\";\nexport const reset = \"reset\";\n",
+}
