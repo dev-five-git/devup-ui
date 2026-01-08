@@ -97,14 +97,27 @@ fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
         return s.to_std_string_escaped();
     }
 
-    // Fallback: simple conversion
-    match value {
-        JsValue::String(s) => format!("\"{}\"", s.to_std_string_escaped()),
-        JsValue::Integer(n) => n.to_string(),
-        JsValue::Rational(n) => n.to_string(),
-        JsValue::Boolean(b) => b.to_string(),
-        JsValue::Null => "null".to_string(),
-        JsValue::Undefined => "undefined".to_string(),
+    // Fallback: simple conversion using boa_engine 0.21 API
+    match value.get_type() {
+        boa_engine::value::Type::String => {
+            format!(
+                "\"{}\"",
+                value
+                    .to_string(context)
+                    .unwrap_or_default()
+                    .to_std_string_escaped()
+            )
+        }
+        boa_engine::value::Type::Boolean => value.to_boolean().to_string(),
+        boa_engine::value::Type::Null => "null".to_string(),
+        boa_engine::value::Type::Undefined => "undefined".to_string(),
+        boa_engine::value::Type::Number => {
+            if let Ok(n) = value.to_number(context) {
+                n.to_string()
+            } else {
+                "NaN".to_string()
+            }
+        }
         _ => "{}".to_string(),
     }
 }
