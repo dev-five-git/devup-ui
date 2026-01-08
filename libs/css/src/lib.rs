@@ -40,7 +40,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
-            StyleSelector::Media { selector: s, .. } => {
+            StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
                     s.replace("&", &format!(".{class_name}"))
                 } else {
@@ -85,7 +85,12 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
         StyleSelector::Global(value, file) => {
             StyleSelector::Global(format!("{}({})", value, params), file)
         }
-        StyleSelector::Media { query, selector } => StyleSelector::Media {
+        StyleSelector::At {
+            kind,
+            query,
+            selector,
+        } => StyleSelector::At {
+            kind,
             query: query.to_string(),
             selector: selector.map(|s| format!("{}({})", s, params)),
         },
@@ -317,6 +322,7 @@ mod tests {
     use crate::{
         class_map::{get_class_map, reset_class_map, set_class_map},
         debug::set_debug,
+        style_selector::AtRuleKind,
     };
 
     use super::*;
@@ -721,7 +727,8 @@ mod tests {
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&StyleSelector::Media {
+                Some(&StyleSelector::At {
+                    kind: AtRuleKind::Media,
                     query: "print".to_string(),
                     selector: None
                 })
@@ -732,7 +739,8 @@ mod tests {
         assert_eq!(
             merge_selector(
                 "cls",
-                Some(&StyleSelector::Media {
+                Some(&StyleSelector::At {
+                    kind: AtRuleKind::Media,
                     query: "print".to_string(),
                     selector: Some("&:hover".to_string())
                 })
@@ -796,13 +804,15 @@ mod tests {
         );
         assert_eq!(
             add_selector_params(
-                StyleSelector::Media {
+                StyleSelector::At {
+                    kind: AtRuleKind::Media,
                     query: "print".to_string(),
                     selector: Some("&:is".to_string())
                 },
                 "test"
             ),
-            StyleSelector::Media {
+            StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "print".to_string(),
                 selector: Some("&:is(test)".to_string())
             }

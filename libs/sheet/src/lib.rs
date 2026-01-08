@@ -1,7 +1,10 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{merge_selector, style_selector::StyleSelector};
+use css::{
+    merge_selector,
+    style_selector::{AtRuleKind, StyleSelector},
+};
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
@@ -434,23 +437,18 @@ impl StyleSheet {
                 .iter()
                 .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
             global_props.sort();
-            let (mut medias, mut sorted_props): (Vec<_>, Vec<_>) =
-                rest.into_iter().partition(|prop| {
-                    matches!(
-                        prop.selector,
-                        Some(StyleSelector::Media {
-                            query: _,
-                            selector: _
-                        })
-                    )
-                });
+            let (mut at_rules, mut sorted_props): (Vec<_>, Vec<_>) = rest
+                .into_iter()
+                .partition(|prop| matches!(prop.selector, Some(StyleSelector::At { .. })));
             sorted_props.sort();
-            medias.sort();
-            let medias = {
-                let mut map = BTreeMap::new();
-                for prop in medias {
-                    if let Some(StyleSelector::Media { query, .. }) = &prop.selector {
-                        map.entry(query).or_insert_with(Vec::new).push(prop);
+            at_rules.sort();
+            let at_rules = {
+                let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
+                for prop in at_rules {
+                    if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
+                        map.entry((*kind, query))
+                            .or_insert_with(Vec::new)
+                            .push(prop);
                     }
                 }
                 map
@@ -513,21 +511,34 @@ impl StyleSheet {
                     .as_str(),
                 );
             }
-            for (media, props) in medias {
+            for ((kind, query), props) in at_rules {
                 let inner_css = props
                     .into_iter()
                     .map(ExtractStyle::extract)
                     .collect::<String>();
                 current_css.push_str(
                     if let Some(break_point) = break_point {
-                        format!("@media(min-width:{break_point}px)and {media}{{{inner_css}}}")
+                        match kind {
+                            AtRuleKind::Media => {
+                                // Combine @media queries with 'and'
+                                format!(
+                                    "@media(min-width:{break_point}px)and {query}{{{inner_css}}}"
+                                )
+                            }
+                            AtRuleKind::Supports => {
+                                // Nest @supports inside @media for breakpoint
+                                format!(
+                                    "@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}"
+                                )
+                            }
+                        }
                     } else {
                         format!(
-                            "@media{}{{{}}}",
-                            if media.starts_with("(") {
-                                media.clone()
+                            "@{kind}{}{{{}}}",
+                            if query.starts_with("(") {
+                                query.clone()
                             } else {
-                                format!(" {media}")
+                                format!(" {query}")
                             },
                             inner_css.as_str()
                         )
@@ -1311,7 +1322,8 @@ mod tests {
             "margin-top",
             0,
             "40px",
-            Some(&StyleSelector::Media {
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
             }),
@@ -1323,9 +1335,30 @@ mod tests {
             "margin-bottom",
             0,
             "40px",
-            Some(&StyleSelector::Media {
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
+            }),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_selector_with_supports() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "display",
+            0,
+            "grid",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display: grid)".to_string(),
+                selector: None,
             }),
             None,
             None,

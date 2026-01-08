@@ -10,9 +10,28 @@ use crate::{
     utils::to_camel_case,
 };
 
+#[derive(
+    Debug, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Eq, Serialize, Deserialize, Default,
+)]
+pub enum AtRuleKind {
+    #[default]
+    Media,
+    Supports,
+}
+
+impl Display for AtRuleKind {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            AtRuleKind::Media => write!(f, "media"),
+            AtRuleKind::Supports => write!(f, "supports"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
-    Media {
+    At {
+        kind: AtRuleKind,
         query: String,
         selector: Option<String>,
     },
@@ -30,7 +49,12 @@ fn optimize_selector_string(selector: &str) -> String {
 }
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
-        StyleSelector::Media { query, selector } => StyleSelector::Media {
+        StyleSelector::At {
+            kind,
+            query,
+            selector,
+        } => StyleSelector::At {
+            kind,
             query: query.to_string(),
             selector: selector
                 .as_ref()
@@ -54,15 +78,21 @@ impl Ord for StyleSelector {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (
-                StyleSelector::Media {
+                StyleSelector::At {
+                    kind: ka,
                     query: a,
                     selector: aa,
                 },
-                StyleSelector::Media {
+                StyleSelector::At {
+                    kind: kb,
                     query: b,
                     selector: bb,
                 },
             ) => {
+                let k = (*ka as u8).cmp(&(*kb as u8));
+                if k != Ordering::Equal {
+                    return k;
+                }
                 let c = a.cmp(b);
                 if c == Ordering::Equal { aa.cmp(bb) } else { c }
             }
@@ -74,20 +104,8 @@ impl Ord for StyleSelector {
                     order_cmp
                 }
             }
-            (
-                StyleSelector::Media {
-                    selector: _,
-                    query: _,
-                },
-                StyleSelector::Selector(_),
-            ) => Ordering::Greater,
-            (
-                StyleSelector::Selector(_),
-                StyleSelector::Media {
-                    selector: _,
-                    query: _,
-                },
-            ) => Ordering::Less,
+            (StyleSelector::At { .. }, StyleSelector::Selector(_)) => Ordering::Greater,
+            (StyleSelector::Selector(_), StyleSelector::At { .. }) => Ordering::Less,
             (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
                 if a == b {
                     return Ordering::Equal;
@@ -144,7 +162,8 @@ impl From<&str> for StyleSelector {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
         } else if value == "print" {
-            StyleSelector::Media {
+            StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "print".to_string(),
                 selector: None,
             }
@@ -201,11 +220,16 @@ impl Display for StyleSelector {
             "{}",
             match self {
                 StyleSelector::Selector(value) => value.to_string(),
-                StyleSelector::Media { query, selector } => {
+                StyleSelector::At {
+                    kind,
+                    query,
+                    selector,
+                } => {
+                    let space = if query.starts_with('(') { "" } else { " " };
                     if let Some(selector) = selector {
-                        format!("@{query} {selector}")
+                        format!("@{kind}{space}{query} {selector}")
                     } else {
-                        format!("@{query}")
+                        format!("@{kind}{space}{query}")
                     }
                 }
                 StyleSelector::Global(value, _) => value.to_string(),
@@ -255,11 +279,19 @@ mod tests {
 
     #[rstest]
     #[case(StyleSelector::Selector("&:hover".to_string()), "&:hover")]
-    #[case(StyleSelector::Media {
+    #[case(StyleSelector::At {
+            kind: AtRuleKind::Media,
             query: "screen and (max-width: 600px)".to_string(),
             selector: None,
         },
-        "@screen and (max-width: 600px)"
+        "@media screen and (max-width: 600px)"
+    )]
+    #[case(StyleSelector::At {
+            kind: AtRuleKind::Supports,
+            query: "(display: grid)".to_string(),
+            selector: None,
+        },
+        "@supports(display: grid)"
     )]
     #[case(StyleSelector::Global(":root[data-theme=dark]".to_string(), "file.rs".to_string()), ":root[data-theme=dark]")]
     fn test_style_selector_display(#[case] selector: StyleSelector, #[case] expected: &str) {
@@ -269,7 +301,8 @@ mod tests {
 
     #[rstest]
     #[case(
-        StyleSelector::Media {
+        StyleSelector::At {
+            kind: AtRuleKind::Media,
             query: "screen".to_string(),
             selector: None,
         },
@@ -282,12 +315,27 @@ mod tests {
         std::cmp::Ordering::Less
     )]
     #[case(
-        StyleSelector::Media {
+        StyleSelector::At {
+            kind: AtRuleKind::Media,
             query: "a".to_string(),
             selector: None,
         },
-        StyleSelector::Media {
+        StyleSelector::At {
+            kind: AtRuleKind::Media,
             query: "b".to_string(),
+            selector: None,
+        },
+        std::cmp::Ordering::Less
+    )]
+    #[case(
+        StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(min-width: 768px)".to_string(),
+            selector: None,
+        },
+        StyleSelector::At {
+            kind: AtRuleKind::Supports,
+            query: "(display: grid)".to_string(),
             selector: None,
         },
         std::cmp::Ordering::Less
@@ -304,7 +352,8 @@ mod tests {
     )]
     #[case(
         StyleSelector::Selector("&:hover".to_string()),
-        StyleSelector::Media {
+        StyleSelector::At {
+            kind: AtRuleKind::Media,
             query: "screen".to_string(),
             selector: None,
         },
