@@ -531,6 +531,12 @@ impl StyleSheet {
                                     "@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}"
                                 )
                             }
+                            AtRuleKind::Container => {
+                                // Nest @container inside @media for breakpoint
+                                format!(
+                                    "@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}"
+                                )
+                            }
                         }
                     } else {
                         format!(
@@ -1358,6 +1364,26 @@ mod tests {
             Some(&StyleSelector::At {
                 kind: AtRuleKind::Supports,
                 query: "(display: grid)".to_string(),
+                selector: None,
+            }),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_selector_with_container() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "padding",
+            0,
+            "10px",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width: 768px)".to_string(),
                 selector: None,
             }),
             None,

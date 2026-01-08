@@ -17,6 +17,7 @@ pub enum AtRuleKind {
     #[default]
     Media,
     Supports,
+    Container,
 }
 
 impl Display for AtRuleKind {
@@ -24,6 +25,7 @@ impl Display for AtRuleKind {
         match self {
             AtRuleKind::Media => write!(f, "media"),
             AtRuleKind::Supports => write!(f, "supports"),
+            AtRuleKind::Container => write!(f, "container"),
         }
     }
 }
@@ -292,6 +294,20 @@ mod tests {
             selector: None,
         },
         "@supports(display: grid)"
+    )]
+    #[case(StyleSelector::At {
+            kind: AtRuleKind::Container,
+            query: "(min-width: 768px)".to_string(),
+            selector: None,
+        },
+        "@container(min-width: 768px)"
+    )]
+    #[case(StyleSelector::At {
+            kind: AtRuleKind::Container,
+            query: "sidebar (min-width: 400px)".to_string(),
+            selector: None,
+        },
+        "@container sidebar (min-width: 400px)"
     )]
     #[case(StyleSelector::Global(":root[data-theme=dark]".to_string(), "file.rs".to_string()), ":root[data-theme=dark]")]
     fn test_style_selector_display(#[case] selector: StyleSelector, #[case] expected: &str) {

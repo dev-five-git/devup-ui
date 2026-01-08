@@ -246,8 +246,8 @@ pub fn css_to_style(
     let mut styles = vec![];
     let mut input = css;
 
-    // Split by at-rules (@media, @supports) to handle multiple at-rules in a single input
-    for at_rule in ["@media", "@supports"] {
+    // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input
+    for at_rule in ["@media", "@supports", "@container"] {
         if input.contains(at_rule) {
             let at_inputs = input
                 .split(at_rule)
@@ -349,6 +349,13 @@ pub fn css_to_style(
                     Some(StyleSelector::At {
                         kind: AtRuleKind::Supports,
                         query: sel.replace(" ", "").replace("and(", "and (")["@supports".len()..]
+                            .to_string(),
+                        selector: None,
+                    })
+                } else if sel.starts_with("@container") {
+                    Some(StyleSelector::At {
+                        kind: AtRuleKind::Container,
+                        query: sel.replace(" ", "").replace("and(", "and (")["@container".len()..]
                             .to_string(),
                         selector: None,
                     })
@@ -816,6 +823,31 @@ mod tests {
             ("display", "block", Some(StyleSelector::At {
                 kind: AtRuleKind::Supports,
                 query: "not(display:grid)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    // @container test cases
+    #[case(
+        "`@container (min-width: 768px) {
+            padding: 10px;
+        }`",
+        vec![
+            ("padding", "10px", Some(StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@container sidebar (min-width: 400px) {
+            display: flex;
+        }`",
+        vec![
+            ("display", "flex", Some(StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "sidebar(min-width:400px)".to_string(),
                 selector: None,
             })),
         ]
