@@ -239,6 +239,48 @@ pub fn extract_style_from_expression<'a>(
             };
         }
 
+        // Handle at-rules: @media, @supports, @container (or _media, _supports, _container)
+        let at_rule_name = name
+            .strip_prefix("@")
+            .or_else(|| name.strip_prefix("_"))
+            .filter(|n| matches!(*n, "media" | "supports" | "container"));
+
+        if let Some(at_rule) = at_rule_name
+            && let Expression::ObjectExpression(obj) = expression
+        {
+            let mut props = vec![];
+            for p in obj.properties.iter_mut() {
+                if let ObjectPropertyKind::ObjectProperty(o) = p
+                    && let Some(query) = get_string_by_property_key(&o.key)
+                {
+                    let at_selector = StyleSelector::At {
+                        kind: match at_rule {
+                            "media" => css::style_selector::AtRuleKind::Media,
+                            "supports" => css::style_selector::AtRuleKind::Supports,
+                            "container" => css::style_selector::AtRuleKind::Container,
+                            _ => unreachable!(),
+                        },
+                        query: query.to_string(),
+                        selector: selector.as_ref().map(|s| s.to_string()),
+                    };
+                    props.extend(
+                        extract_style_from_expression(
+                            ast_builder,
+                            None,
+                            &mut o.value,
+                            level,
+                            &Some(at_selector),
+                        )
+                        .styles,
+                    );
+                }
+            }
+            return ExtractResult {
+                styles: props,
+                ..ExtractResult::default()
+            };
+        }
+
         if let Some(new_selector) = name.strip_prefix("_") {
             return extract_style_from_expression(
                 ast_builder,

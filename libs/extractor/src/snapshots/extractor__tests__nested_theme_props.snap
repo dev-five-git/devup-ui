@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box _themeDark={{\n      selectors: {\n        \"&:hover\": {\n          color: \"red\",\n        }\n      },\n      _active: {\n        color: \"blue\",\n        _placeholder: {\n          color: \"green\",\n        },\n      },\n    }} />\n            \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Box} from '@devup-ui/core'\n    <Box _themeDark={{\n      selectors: {\n        \"&:hover\": {\n          color: \"red\",\n        }\n      },\n      _active: {\n        color: \"blue\",\n        _placeholder: {\n          color: \"green\",\n        },\n      },\n    }} />\n            \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {

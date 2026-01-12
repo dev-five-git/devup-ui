@@ -1,7 +1,10 @@
 pub mod theme;
 
 use crate::theme::Theme;
-use css::{merge_selector, style_selector::StyleSelector};
+use css::{
+    merge_selector,
+    style_selector::{AtRuleKind, StyleSelector},
+};
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
@@ -434,23 +437,18 @@ impl StyleSheet {
                 .iter()
                 .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
             global_props.sort();
-            let (mut medias, mut sorted_props): (Vec<_>, Vec<_>) =
-                rest.into_iter().partition(|prop| {
-                    matches!(
-                        prop.selector,
-                        Some(StyleSelector::Media {
-                            query: _,
-                            selector: _
-                        })
-                    )
-                });
+            let (mut at_rules, mut sorted_props): (Vec<_>, Vec<_>) = rest
+                .into_iter()
+                .partition(|prop| matches!(prop.selector, Some(StyleSelector::At { .. })));
             sorted_props.sort();
-            medias.sort();
-            let medias = {
-                let mut map = BTreeMap::new();
-                for prop in medias {
-                    if let Some(StyleSelector::Media { query, .. }) = &prop.selector {
-                        map.entry(query).or_insert_with(Vec::new).push(prop);
+            at_rules.sort();
+            let at_rules = {
+                let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
+                for prop in at_rules {
+                    if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
+                        map.entry((*kind, query))
+                            .or_insert_with(Vec::new)
+                            .push(prop);
                     }
                 }
                 map
@@ -513,21 +511,40 @@ impl StyleSheet {
                     .as_str(),
                 );
             }
-            for (media, props) in medias {
+            for ((kind, query), props) in at_rules {
                 let inner_css = props
                     .into_iter()
                     .map(ExtractStyle::extract)
                     .collect::<String>();
                 current_css.push_str(
                     if let Some(break_point) = break_point {
-                        format!("@media(min-width:{break_point}px)and {media}{{{inner_css}}}")
+                        match kind {
+                            AtRuleKind::Media => {
+                                // Combine @media queries with 'and'
+                                format!(
+                                    "@media(min-width:{break_point}px)and {query}{{{inner_css}}}"
+                                )
+                            }
+                            AtRuleKind::Supports => {
+                                // Nest @supports inside @media for breakpoint
+                                format!(
+                                    "@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}"
+                                )
+                            }
+                            AtRuleKind::Container => {
+                                // Nest @container inside @media for breakpoint
+                                format!(
+                                    "@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}"
+                                )
+                            }
+                        }
                     } else {
                         format!(
-                            "@media{}{{{}}}",
-                            if media.starts_with("(") {
-                                media.clone()
+                            "@{kind}{}{{{}}}",
+                            if query.starts_with("(") {
+                                query.clone()
                             } else {
-                                format!(" {media}")
+                                format!(" {query}")
                             },
                             inner_css.as_str()
                         )
@@ -1304,6 +1321,54 @@ mod tests {
     }
 
     #[test]
+    fn test_screen_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background",
+            0,
+            "blue",
+            Some(&"screen".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_speech_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "display",
+            0,
+            "none",
+            Some(&"speech".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_all_media_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "font-family",
+            0,
+            "sans-serif",
+            Some(&"all".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
     fn test_selector_with_query() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(
@@ -1311,7 +1376,8 @@ mod tests {
             "margin-top",
             0,
             "40px",
-            Some(&StyleSelector::Media {
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
             }),
@@ -1323,9 +1389,50 @@ mod tests {
             "margin-bottom",
             0,
             "40px",
-            Some(&StyleSelector::Media {
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width: 1024px)".to_string(),
                 selector: Some("&:hover".to_string()),
+            }),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_selector_with_supports() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "display",
+            0,
+            "grid",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display: grid)".to_string(),
+                selector: None,
+            }),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_selector_with_container() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "padding",
+            0,
+            "10px",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width: 768px)".to_string(),
+                selector: None,
             }),
             None,
             None,
@@ -1817,5 +1924,104 @@ mod tests {
         let output = extract("index.tsx", "import {Box,globalCss,keyframes,Flex} from '@devup-ui/core';<Flex/>;keyframes({from:{opacity:0},to:{opacity:1}});<Box w={1} h={variable} />;globalCss`div{color:red}`;globalCss({div:{display:flex},imports:['https://test.com/a.css'],fontFaces:[{fontFamily:'Roboto',src:'url(/fonts/Roboto-Regular.ttf)'}]})", ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }).unwrap();
         sheet.update_styles(&output.styles, "index.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_update_styles_with_typography() {
+        use extractor::extract_style::extract_style_value::ExtractStyleValue;
+
+        let mut sheet = StyleSheet::default();
+        let mut styles = HashSet::new();
+        styles.insert(ExtractStyleValue::Typography("$heading".to_string()));
+        let (collected, updated) = sheet.update_styles(&styles, "index.tsx", true);
+        // Typography doesn't collect or update
+        assert!(!collected);
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_global_props_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add global style at level 1 (with breakpoint)
+        sheet.add_property(
+            "a",
+            "color",
+            1, // level 1 means it should be wrapped in @media
+            "red",
+            Some(&StyleSelector::Global(
+                "body".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("body"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_at_rules_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add @supports with breakpoint (level 1)
+        sheet.add_property(
+            "a",
+            "display",
+            1,
+            "grid",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display: grid)".to_string(),
+                selector: None,
+            }),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("@supports"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_container_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add @container with breakpoint (level 1)
+        sheet.add_property(
+            "a",
+            "width",
+            1,
+            "100%",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width: 400px)".to_string(),
+                selector: None,
+            }),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("@container"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_theme_layer_in_css() {
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("default", color_theme);
+        sheet.set_theme(theme);
+
+        // Add some regular styles to trigger layer output
+        sheet.add_property("a", "color", 0, "blue", None, Some(0), None);
+
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer"));
+        assert!(css.contains("@layer t{"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
     }
 }

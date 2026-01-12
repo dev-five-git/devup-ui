@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\nglobalCss({\n  \"div\": {\n    bg: \"red\"\n  }\n})\n\"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { globalCss } from \"@devup-ui/core\";\nglobalCss({\n  \"div\": {\n    bg: \"red\"\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {

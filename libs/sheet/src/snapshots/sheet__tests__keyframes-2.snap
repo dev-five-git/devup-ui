@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: now
+expression: "now.split(\"*/\").nth(1).unwrap()"
 ---
 "@keyframes fadeIn{from{opacity:0}to{opacity:1}}"
