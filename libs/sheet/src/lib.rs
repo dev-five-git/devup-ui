@@ -1925,4 +1925,103 @@ mod tests {
         sheet.update_styles(&output.styles, "index.tsx", true);
         assert_debug_snapshot!(sheet.create_css(None, true).split("*/").nth(1).unwrap());
     }
+
+    #[test]
+    fn test_update_styles_with_typography() {
+        use extractor::extract_style::extract_style_value::ExtractStyleValue;
+
+        let mut sheet = StyleSheet::default();
+        let mut styles = HashSet::new();
+        styles.insert(ExtractStyleValue::Typography("$heading".to_string()));
+        let (collected, updated) = sheet.update_styles(&styles, "index.tsx", true);
+        // Typography doesn't collect or update
+        assert!(!collected);
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_global_props_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add global style at level 1 (with breakpoint)
+        sheet.add_property(
+            "a",
+            "color",
+            1, // level 1 means it should be wrapped in @media
+            "red",
+            Some(&StyleSelector::Global(
+                "body".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("body"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_at_rules_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add @supports with breakpoint (level 1)
+        sheet.add_property(
+            "a",
+            "display",
+            1,
+            "grid",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display: grid)".to_string(),
+                selector: None,
+            }),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("@supports"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_container_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add @container with breakpoint (level 1)
+        sheet.add_property(
+            "a",
+            "width",
+            1,
+            "100%",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width: 400px)".to_string(),
+                selector: None,
+            }),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("@container"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_theme_layer_in_css() {
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("default", color_theme);
+        sheet.set_theme(theme);
+
+        // Add some regular styles to trigger layer output
+        sheet.add_property("a", "color", 0, "blue", None, Some(0), None);
+
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@layer"));
+        assert!(css.contains("@layer t{"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
 }
