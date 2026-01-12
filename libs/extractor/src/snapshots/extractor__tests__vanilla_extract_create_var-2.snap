@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--var0,red)",
+                value: "var(--var-0,red)",
                 level: 0,
                 selector: None,
                 style_order: None,

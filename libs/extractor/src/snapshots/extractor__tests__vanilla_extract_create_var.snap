@@ -6,8 +6,8 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "color",
-                value: "var(--var0)",
+                property: "--var-0",
+                value: "blue",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -15,8 +15,8 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "var(--var-0)",
-                value: "blue",
+                property: "color",
+                value: "var(--var-0)",
                 level: 0,
                 selector: None,
                 style_order: None,

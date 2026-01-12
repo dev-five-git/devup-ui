@@ -529,6 +529,9 @@ fn register_vanilla_extract_apis(
     };
 
     // createVar() function
+    // Returns CSS custom property name like "--var-0", not wrapped in var()
+    // When used as a key in vars: {[colorVar]: 'blue'}, it becomes the property name
+    // When used as a value, the extraction logic will wrap it in var()
     let collector_var = collector.clone();
     let create_var_fn = unsafe {
         NativeFunction::from_closure(move |_this, _args, _ctx| {
@@ -539,7 +542,8 @@ fn register_vanilla_extract_apis(
                 .styles
                 .vars
                 .insert(id.clone(), (var_name.clone(), false));
-            Ok(JsValue::from(js_string!(format!("var({})", var_name))))
+            // Return just the CSS custom property name, without var() wrapper
+            Ok(JsValue::from(js_string!(var_name)))
         })
     };
 
@@ -591,12 +595,9 @@ fn register_vanilla_extract_apis(
                 .to_string(ctx)?
                 .to_std_string_escaped();
 
-            // Extract var name from var(--x) format
-            let var_name = var_value
-                .trim_start_matches("var(")
-                .trim_end_matches(')')
-                .to_string();
-            let result = format!("var({}, {})", var_name, fallback);
+            // var_value is now just "--var-0" (CSS custom property name)
+            // Return var(--var-0, fallback)
+            let result = format!("var({}, {})", var_value, fallback);
             Ok(JsValue::from(js_string!(result)))
         })
     };

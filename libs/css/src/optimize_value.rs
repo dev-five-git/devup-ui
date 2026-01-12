@@ -8,8 +8,20 @@ use crate::{
 
 pub fn optimize_value(value: &str) -> String {
     let mut ret = value.trim().to_string();
+
+    // Wrap CSS custom property names in var() when used as values
+    // e.g., "--var-0" becomes "var(--var-0)"
+    if ret.starts_with("--") && !ret.contains(' ') && !ret.contains(',') {
+        ret = format!("var({})", ret);
+    }
+
     ret = INNER_TRIM_RE.replace_all(&ret, "(${1})").to_string();
-    ret = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}").to_string();
+
+    // Skip RM_MINUS_ZERO_RE for values containing CSS custom property references
+    // to preserve names like --var-0 (the -0 should not be converted to 0)
+    if !ret.contains("--") {
+        ret = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}").to_string();
+    }
     ret = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}").to_string();
 
     if ret.contains(",") {
@@ -250,6 +262,17 @@ mod tests {
     #[case("blue", "blue")]
     #[case("transparent", "transparent")]
     fn test_optimize_color(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(optimize_value(input), expected);
+    }
+
+    #[rstest]
+    #[case("--var-0", "var(--var-0)")]
+    #[case("--my-custom-prop", "var(--my-custom-prop)")]
+    #[case("--primary-color", "var(--primary-color)")]
+    #[case("var(--var-0)", "var(--var-0)")] // Already wrapped, don't double wrap
+    #[case("--a --b", "--a --b")] // Contains space, don't wrap
+    #[case("--a, --b", "--a,--b")] // Contains comma, don't wrap (spaces after commas are removed)
+    fn test_css_custom_property_wrapping(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }
 }
