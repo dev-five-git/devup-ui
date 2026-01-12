@@ -3,6 +3,25 @@ source: libs/extractor/src/lib.rs
 expression: "ToBTreeSet::from(extract(\"vars.css.ts\",\nr#\"import { createVar, style } from '@devup-ui/react'\nexport const colorVar = createVar()\nexport const box = style({\n  vars: {\n    [colorVar]: 'blue'\n  },\n  color: colorVar\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
-    styles: {},
-    code: "import { createVar, style } from \"@devup-ui/react\";\nexport const colorVar = createVar();\nexport const box = style({\n\tvars: { [colorVar]: \"blue\" },\n\tcolor: colorVar\n});\n",
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--var0)",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "var(--var-0)",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\nexport const colorVar = \"--var-0\";\n",
 }

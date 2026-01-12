@@ -8,6 +8,7 @@ mod gen_style;
 mod prop_modify_utils;
 mod util_type;
 mod utils;
+mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -111,6 +112,40 @@ pub fn extract(
         });
     }
 
+    // Handle vanilla-extract style files (.css.ts, .css.js)
+    let (processed_code, is_vanilla_extract) = if vanilla_extract::is_vanilla_extract_file(filename)
+    {
+        match vanilla_extract::execute_vanilla_extract(code, &option.package) {
+            Ok(collected) => {
+                let generated =
+                    vanilla_extract::collected_styles_to_code(&collected, &option.package);
+                (generated, true)
+            }
+            Err(_) => {
+                // Fall back to treating as regular file if execution fails
+                (code.to_string(), false)
+            }
+        }
+    } else {
+        (code.to_string(), false)
+    };
+
+    // For vanilla-extract files, if no styles were collected, return early
+    if is_vanilla_extract && processed_code.is_empty() {
+        return Ok(ExtractOutput {
+            styles: HashSet::new(),
+            code: code.to_string(),
+            map: None,
+            css_file: None,
+        });
+    }
+
+    let code_to_parse = if is_vanilla_extract {
+        &processed_code
+    } else {
+        code
+    };
+
     let source_type = SourceType::from_path(filename)?;
     let css_file = if option.single_css {
         format!("{}/devup-ui.css", option.css_dir)
@@ -131,7 +166,7 @@ pub fn extract(
         mut program, // AST
         panicked,    // Parser encountered an error it couldn't recover from
         ..
-    } = Parser::new(&allocator, code, source_type).parse();
+    } = Parser::new(&allocator, code_to_parse, source_type).parse();
     if panicked {
         return Err("Parser panicked".into());
     }

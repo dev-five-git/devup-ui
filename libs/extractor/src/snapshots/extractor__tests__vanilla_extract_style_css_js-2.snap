@@ -3,6 +3,25 @@ source: libs/extractor/src/lib.rs
 expression: "ToBTreeSet::from(extract(\"components.css.js\",\nr#\"import { style } from '@devup-ui/react'\nexport const link = style({ color: \"blue\", textDecoration: \"underline\" })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
-    styles: {},
-    code: "import { style } from \"@devup-ui/react\";\nexport const link = style({\n\tcolor: \"blue\",\n\ttextDecoration: \"underline\"\n});\n",
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "text-decoration",
+                value: "underline",
+                level: 0,
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const link = \"a b\";\n",
 }

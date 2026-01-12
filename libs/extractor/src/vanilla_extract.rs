@@ -3,6 +3,8 @@
 //! This module uses boa_engine to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
+#![allow(dead_code)] // Public API fields/functions for future expansion
+
 use boa_engine::{
     Context, JsArgs, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
     property::Attribute,

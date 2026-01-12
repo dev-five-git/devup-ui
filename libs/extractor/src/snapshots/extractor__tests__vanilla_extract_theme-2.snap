@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"theme-contract.css.ts\",\nr#\"import { c
 ---
 ToBTreeSet {
     styles: {},
-    code: "import { createThemeContract, createTheme, style } from \"@devup-ui/react\";\nconst vars = createThemeContract({ color: {\n\tbrand: null,\n\ttext: null\n} });\nexport const lightTheme = createTheme(vars, { color: {\n\tbrand: \"blue\",\n\ttext: \"black\"\n} });\nexport const darkTheme = createTheme(vars, { color: {\n\tbrand: \"lightblue\",\n\ttext: \"white\"\n} });\n",
+    code: "export const darkTheme = createTheme(vars, { color: {\n\tbrand: \"lightblue\",\n\ttext: \"white\"\n} });\nexport const lightTheme = createTheme(vars, { color: {\n\tbrand: \"blue\",\n\ttext: \"black\"\n} });\n",
 }
