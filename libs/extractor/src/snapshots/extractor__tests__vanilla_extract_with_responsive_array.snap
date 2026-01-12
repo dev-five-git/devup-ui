@@ -3,34 +3,6 @@ source: libs/extractor/src/lib.rs
 expression: "ToBTreeSet::from(extract(\"responsive.css.ts\",\nr#\"import { style } from '@devup-ui/react'\nexport const responsiveBox = style({ padding: [8, 16, 32] })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
-    styles: {
-        Static(
-            ExtractStaticStyle {
-                property: "padding",
-                value: "128px",
-                level: 2,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "padding",
-                value: "32px",
-                level: 0,
-                selector: None,
-                style_order: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "padding",
-                value: "64px",
-                level: 1,
-                selector: None,
-                style_order: None,
-            },
-        ),
-    },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsiveBox = \"a b c\";\n",
+    styles: {},
+    code: "import { style } from \"@devup-ui/react\";\nexport const responsiveBox = style({ padding: [\n\t8,\n\t16,\n\t32\n] });\n",
 }

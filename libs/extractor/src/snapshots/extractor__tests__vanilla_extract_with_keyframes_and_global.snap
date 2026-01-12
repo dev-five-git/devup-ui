@@ -4,15 +4,6 @@ expression: "ToBTreeSet::from(extract(\"animations.css.ts\",\nr#\"import { keyfr
 ---
 ToBTreeSet {
     styles: {
-        Static(
-            ExtractStaticStyle {
-                property: "animation",
-                value: "fadeIn 1s ease-in",
-                level: 0,
-                selector: None,
-                style_order: None,
-            },
-        ),
         Keyframes(
             ExtractKeyframes {
                 keyframes: {
@@ -38,5 +29,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const animated = \"a\";\nexport const fadeIn = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { style } from \"@devup-ui/react\";\nexport const fadeIn = \"a\";\nexport const animated = style({ animation: \"fadeIn 1s ease-in\" });\n",
 }

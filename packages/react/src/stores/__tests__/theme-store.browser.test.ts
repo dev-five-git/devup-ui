@@ -1,3 +1,6 @@
+// Import from bun-test-env-dom to enable DOM environment
+import 'bun-test-env-dom'
+
 import {
   afterAll,
   afterEach,

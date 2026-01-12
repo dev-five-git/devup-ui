@@ -4,5 +4,5 @@ expression: "ToBTreeSet::from(extract(\"global-theme.css.ts\",\nr#\"import { cre
 ---
 ToBTreeSet {
     styles: {},
-    code: "export const vars = createGlobalTheme(\":root\", {\n\tcolor: {\n\t\tbrand: \"blue\",\n\t\ttext: \"black\",\n\t\tbackground: \"white\"\n\t},\n\tfont: { body: \"system-ui, sans-serif\" }\n});\n",
+    code: "import { createGlobalTheme } from \"@devup-ui/react\";\nexport const vars = createGlobalTheme(\":root\", {\n\tcolor: {\n\t\tbrand: \"blue\",\n\t\ttext: \"black\",\n\t\tbackground: \"white\"\n\t},\n\tfont: { body: \"system-ui, sans-serif\" }\n});\n",
 }

@@ -4,7 +4,7 @@ use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
 use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
     rm_css_comment::rm_css_comment,
-    style_selector::StyleSelector,
+    style_selector::{AtRuleKind, StyleSelector},
 };
 use oxc_allocator::Allocator;
 use oxc_span::SPAN;
@@ -246,23 +246,26 @@ pub fn css_to_style(
     let mut styles = vec![];
     let mut input = css;
 
-    if input.contains("@media") {
-        let media_inputs = input
-            .split("@media")
-            .flat_map(|s| {
-                let s = s.trim();
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(format!("@media{s}"))
+    // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input
+    for at_rule in ["@media", "@supports", "@container"] {
+        if input.contains(at_rule) {
+            let at_inputs = input
+                .split(at_rule)
+                .flat_map(|s| {
+                    let s = s.trim();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(format!("{at_rule}{s}"))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if at_inputs.len() > 1 {
+                for at_input in at_inputs {
+                    styles.extend(css_to_style(&at_input, level, selector));
                 }
-            })
-            .collect::<Vec<_>>();
-        if media_inputs.len() > 1 {
-            for media_input in media_inputs {
-                styles.extend(css_to_style(&media_input, level, selector));
+                return styles;
             }
-            return styles;
         }
     }
 
@@ -322,9 +325,10 @@ pub fn css_to_style(
                 end = rest.find('}').unwrap_or(rest.len());
             }
             let block = &rest[..end];
-            let sel = &if let Some(StyleSelector::Media { query, .. }) = selector {
+            let sel = &if let Some(StyleSelector::At { kind, query, .. }) = selector {
                 let local_sel = selector_part.trim().to_string();
-                Some(StyleSelector::Media {
+                Some(StyleSelector::At {
+                    kind: *kind,
                     query: query.clone(),
                     selector: if local_sel == "&" {
                         None
@@ -335,8 +339,23 @@ pub fn css_to_style(
             } else {
                 let sel = selector_part.trim().to_string();
                 if sel.starts_with("@media") {
-                    Some(StyleSelector::Media {
+                    Some(StyleSelector::At {
+                        kind: AtRuleKind::Media,
                         query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
+                            .to_string(),
+                        selector: None,
+                    })
+                } else if sel.starts_with("@supports") {
+                    Some(StyleSelector::At {
+                        kind: AtRuleKind::Supports,
+                        query: sel.replace(" ", "").replace("and(", "and (")["@supports".len()..]
+                            .to_string(),
+                        selector: None,
+                    })
+                } else if sel.starts_with("@container") {
+                    Some(StyleSelector::At {
+                        kind: AtRuleKind::Container,
+                        query: sel.replace(" ", "").replace("and(", "and (")["@container".len()..]
                             .to_string(),
                         selector: None,
                     })
@@ -543,11 +562,13 @@ mod tests {
             color: #fff;
         }`",
         vec![
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
@@ -564,19 +585,23 @@ mod tests {
             color: #fff;
         }`",
         vec![
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
@@ -594,19 +619,23 @@ mod tests {
             }
         }`",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
@@ -624,19 +653,23 @@ mod tests {
             }
         }`",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
@@ -664,35 +697,43 @@ mod tests {
             }
         }`",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
@@ -710,19 +751,23 @@ mod tests {
             color: #000;
         }`",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
@@ -736,6 +781,76 @@ mod tests {
         @media (max-width: 768px) and (min-width: 480px) {
         }`",
         vec![]
+    )]
+    // @supports test cases
+    #[case(
+        "`@supports (display: grid) {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }`",
+        vec![
+            ("display", "grid", Some(StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display:grid)".to_string(),
+                selector: None,
+            })),
+            ("grid-template-columns", "1fr 1fr", Some(StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display:grid)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@supports (display: flex) {
+            &:hover {
+                display: flex;
+            }
+        }`",
+        vec![
+            ("display", "flex", Some(StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "(display:flex)".to_string(),
+                selector: Some("&:hover".to_string()),
+            })),
+        ]
+    )]
+    #[case(
+        "`@supports not (display: grid) {
+            display: block;
+        }`",
+        vec![
+            ("display", "block", Some(StyleSelector::At {
+                kind: AtRuleKind::Supports,
+                query: "not(display:grid)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    // @container test cases
+    #[case(
+        "`@container (min-width: 768px) {
+            padding: 10px;
+        }`",
+        vec![
+            ("padding", "10px", Some(StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "(min-width:768px)".to_string(),
+                selector: None,
+            })),
+        ]
+    )]
+    #[case(
+        "`@container sidebar (min-width: 400px) {
+            display: flex;
+        }`",
+        vec![
+            ("display", "flex", Some(StyleSelector::At {
+                kind: AtRuleKind::Container,
+                query: "sidebar(min-width:400px)".to_string(),
+                selector: None,
+            })),
+        ]
     )]
     #[case(
         "`ul { font-family: 'Roboto Hello',       sans-serif; }`",
@@ -939,11 +1054,13 @@ mod tests {
             color: #fff;
         }",
         vec![
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
@@ -960,19 +1077,23 @@ mod tests {
             color: #fff;
         }",
         vec![
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
@@ -990,19 +1111,23 @@ mod tests {
             }
         }",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
             })),
@@ -1020,19 +1145,23 @@ mod tests {
             }
         }",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
@@ -1060,35 +1189,43 @@ mod tests {
             }
         }",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: Some("&:hover".to_string()),
             })),
@@ -1106,19 +1243,23 @@ mod tests {
             color: #000;
         }",
         vec![
-            ("border", "1px solid #FFF", Some(StyleSelector::Media {
+            ("border", "1px solid #FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("color", "#FFF", Some(StyleSelector::Media {
+            ("color", "#FFF", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
                 selector: None,
             })),
-            ("border", "1px solid #000", Some(StyleSelector::Media {
+            ("border", "1px solid #000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),
-            ("color", "#000", Some(StyleSelector::Media {
+            ("color", "#000", Some(StyleSelector::At {
+                kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
                 selector: None,
             })),

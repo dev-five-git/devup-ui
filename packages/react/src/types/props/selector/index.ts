@@ -64,10 +64,27 @@ export type Selectors = Partial<
   >
 >
 
+export type AtRuleRecord = Partial<
+  Record<string & {}, SelectorProps<DevupProps>>
+>
+
 export interface DevupSelectorProps
   extends SimpleSelectorProps, AdvancedSelectorProps {
   // media query
   _print?: SelectorProps<DevupProps>
+  _screen?: SelectorProps<DevupProps>
+  _speech?: SelectorProps<DevupProps>
+  _all?: SelectorProps<DevupProps>
+
+  // at-rules (underscore prefix)
+  _container?: AtRuleRecord
+  _media?: AtRuleRecord
+  _supports?: AtRuleRecord
+
+  // at-rules (@ prefix)
+  '@container'?: AtRuleRecord
+  '@media'?: AtRuleRecord
+  '@supports'?: AtRuleRecord
 
   selectors?: Selectors
 

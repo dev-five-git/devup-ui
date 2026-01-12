@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: "css.split(\"*/\").nth(1).unwrap()"
+---
+"@layer b,t;@layer t{:root{--primary:#000}}@layer b{.a{color:blue}}"

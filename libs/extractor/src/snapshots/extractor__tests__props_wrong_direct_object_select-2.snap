@@ -1,6 +1,6 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={{a:1, b:0.5}[\"wrong\"]} />\n        \"#,\nExtractOption\n{ package: \"@devup-ui/core\".to_string(), css_file: None }).unwrap())"
+expression: "ToBTreeSet::from(extract(\"test.jsx\",\nr#\"import {Flex} from '@devup-ui/core'\n        <Flex opacity={{a:1, b:0.5}[\"wrong\"]} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {

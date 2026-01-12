@@ -25,7 +25,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPattern, CallExpression, Expression, ImportDeclaration, ImportOrExportKind,
-    JSXAttributeValue, JSXChild, JSXElement, Program, Statement, VariableDeclarator, WithClause,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, Program, Statement,
+    VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -590,6 +591,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 tag_name = tag.unwrap_or(tag_name);
                             }
                         }
+                    }
+                } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
+                    // Extract styles from spread attributes (e.g., {...{"@media": {...}}})
+                    let ExtractResult { styles, .. } = extract_style_from_expression(
+                        &self.ast,
+                        None,
+                        &mut spread.argument,
+                        0,
+                        &None,
+                    );
+                    if !styles.is_empty() {
+                        props_styles.extend(styles.into_iter().rev());
+                    } else {
+                        attrs.insert(i, attr);
                     }
                 } else {
                     attrs.insert(i, attr);

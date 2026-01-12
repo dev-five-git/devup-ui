@@ -8,7 +8,6 @@ mod gen_style;
 mod prop_modify_utils;
 mod util_type;
 mod utils;
-mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -112,40 +111,6 @@ pub fn extract(
         });
     }
 
-    // Handle vanilla-extract style files (.css.ts, .css.js)
-    let (processed_code, is_vanilla_extract) = if vanilla_extract::is_vanilla_extract_file(filename)
-    {
-        match vanilla_extract::execute_vanilla_extract(code, &option.package) {
-            Ok(collected) => {
-                let generated =
-                    vanilla_extract::collected_styles_to_code(&collected, &option.package);
-                (generated, true)
-            }
-            Err(_) => {
-                // Fall back to treating as regular file if execution fails
-                (code.to_string(), false)
-            }
-        }
-    } else {
-        (code.to_string(), false)
-    };
-
-    // For vanilla-extract files, if no styles were collected, return early
-    if is_vanilla_extract && processed_code.is_empty() {
-        return Ok(ExtractOutput {
-            styles: HashSet::new(),
-            code: code.to_string(),
-            map: None,
-            css_file: None,
-        });
-    }
-
-    let code_to_parse = if is_vanilla_extract {
-        &processed_code
-    } else {
-        code
-    };
-
     let source_type = SourceType::from_path(filename)?;
     let css_file = if option.single_css {
         format!("{}/devup-ui.css", option.css_dir)
@@ -166,7 +131,7 @@ pub fn extract(
         mut program, // AST
         panicked,    // Parser encountered an error it couldn't recover from
         ..
-    } = Parser::new(&allocator, code_to_parse, source_type).parse();
+    } = Parser::new(&allocator, code, source_type).parse();
     if panicked {
         return Err("Parser panicked".into());
     }
@@ -9055,6 +9020,345 @@ const margin = 5;
         ));
     }
 
+    #[test]
+    #[serial]
+    fn test_media_query_selectors() {
+        // Test _print media query selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _print={{ bg: "white", color: "black" }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _screen media query selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _screen={{ bg: "blue" }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _speech media query selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _speech={{ display: "none" }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _all media query selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _all={{ fontFamily: "sans-serif" }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test multiple media query selectors combined
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box 
+    bg="red"
+    _print={{ bg: "white" }}
+    _screen={{ bg: "blue" }}
+/>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_at_rules_underscore_prefix() {
+        // Test _container at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _container={{ "(min-width: 400px)": { bg: "red" } }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _media at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _media={{ "(min-width: 768px)": { bg: "blue" } }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _supports at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _supports={{ "(display: grid)": { display: "grid" } }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test _container with named container
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box _container={{ "sidebar (min-width: 400px)": { p: 4 } }} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_at_rules_at_prefix() {
+        // Test @container at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box {...{"@container": { "(min-width: 400px)": { bg: "red" } }}} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test @media at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box {...{"@media": { "(min-width: 768px)": { bg: "blue" } }}} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test @supports at-rule
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box {...{"@supports": { "(display: flex)": { display: "flex" } }}} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_at_rules() {
+        // Test globalCss with @media nested inside selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    body: {
+        "@media": {
+            "(min-width: 768px)": { bg: "white" }
+        }
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test globalCss with @supports nested inside selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    ".grid-container": {
+        "@supports": {
+            "(display: grid)": { display: "grid" }
+        }
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test globalCss with @container nested inside selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    ".card": {
+        "@container": {
+            "(min-width: 400px)": { p: 4 }
+        }
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test globalCss with multiple at-rules nested inside selectors
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    body: {
+        bg: "gray",
+        "@media": {
+            "(min-width: 768px)": { bg: "white" },
+            "(prefers-color-scheme: dark)": { bg: "black" }
+        }
+    },
+    ".container": {
+        "@supports": {
+            "(display: grid)": { display: "grid" }
+        }
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
     // ============================================================================
     // VANILLA-EXTRACT API TESTS
     // ============================================================================
@@ -9822,6 +10126,12 @@ export const grid = style({
         "@devup-ui/react",
         true
     )] // .jsx
+    #[case(
+        "test.unknown",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        false
+    )] // unsupported file extension
     #[case(
         "styles.css.ts",
         "import { css } from '@devup-ui/react';",
