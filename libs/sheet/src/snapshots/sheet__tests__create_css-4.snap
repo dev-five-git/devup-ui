@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: sheet.create_css()
+expression: "sheet.create_css(None, false).split(\"*/\").nth(1).unwrap()"
 ---
 ".test:hover{background:red}.test:active{background:blue}"

@@ -1321,6 +1321,54 @@ mod tests {
     }
 
     #[test]
+    fn test_screen_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background",
+            0,
+            "blue",
+            Some(&"screen".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_speech_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "display",
+            0,
+            "none",
+            Some(&"speech".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_all_media_selector() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "font-family",
+            0,
+            "sans-serif",
+            Some(&"all".into()),
+            None,
+            None,
+        );
+
+        assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    #[test]
     fn test_selector_with_query() {
         let mut sheet = StyleSheet::default();
         sheet.add_property(

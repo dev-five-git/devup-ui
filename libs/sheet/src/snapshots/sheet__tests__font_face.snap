@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: css
+expression: "css.split(\"*/\").nth(1).unwrap()"
 ---
 "@font-face{font-family:Roboto;font-weight:400;src:url('/fonts/Roboto-Regular.ttf')}"

@@ -163,10 +163,10 @@ impl From<&str> for StyleSelector {
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
-        } else if value == "print" {
+        } else if matches!(value.as_str(), "print" | "screen" | "speech" | "all") {
             StyleSelector::At {
                 kind: AtRuleKind::Media,
-                query: "print".to_string(),
+                query: value.to_string(),
                 selector: None,
             }
         } else {
