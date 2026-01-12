@@ -521,33 +521,19 @@ impl StyleSheet {
                         match kind {
                             AtRuleKind::Media => {
                                 // Combine @media queries with 'and'
-                                format!(
-                                    "@media(min-width:{break_point}px)and {query}{{{inner_css}}}"
-                                )
+                                format!("@media(min-width:{break_point}px)and {query}{{{inner_css}}}")
                             }
                             AtRuleKind::Supports => {
                                 // Nest @supports inside @media for breakpoint
-                                format!(
-                                    "@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}"
-                                )
+                                format!("@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}")
                             }
                             AtRuleKind::Container => {
                                 // Nest @container inside @media for breakpoint
-                                format!(
-                                    "@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}"
-                                )
+                                format!("@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}")
                             }
                         }
                     } else {
-                        format!(
-                            "@{kind}{}{{{}}}",
-                            if query.starts_with("(") {
-                                query.clone()
-                            } else {
-                                format!(" {query}")
-                            },
-                            inner_css.as_str()
-                        )
+                        format!("@{kind}{}{{{}}}", if query.starts_with("(") { query.clone() } else { format!(" {query}") }, inner_css.as_str())
                     }
                     .as_str(),
                 );

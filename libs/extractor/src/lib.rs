@@ -9422,6 +9422,12 @@ globalCss({
         "@devup-ui/react",
         true
     )] // .jsx
+    #[case(
+        "test.unknown",
+        "import { Box } from '@devup-ui/react';",
+        "@devup-ui/react",
+        false
+    )] // unsupported file extension
     fn test_has_devup_ui(
         #[case] filename: &str,
         #[case] code: &str,

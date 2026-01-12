@@ -353,6 +353,26 @@ mod tests {
     #[case("with-dash", "with-dash")]
     #[case("with_underscore", "with_underscore")]
     #[case("CamelCase123", "CamelCase123")]
+    // Additional cases for full coverage of special characters
+    #[case("<", "_lt_")]
+    #[case("*", "_st_")]
+    #[case(",", "_cm_")]
+    #[case("'", "_sq_")]
+    #[case("/", "_sl_")]
+    #[case("\\", "_bs_")]
+    #[case("%", "_pc_")]
+    #[case("^", "_cr_")]
+    #[case("$", "_dl_")]
+    #[case("|", "_pp_")]
+    #[case("@", "_at_")]
+    #[case("!", "_ex_")]
+    #[case("?", "_qm_")]
+    #[case(";", "_sc_")]
+    #[case("{", "_lc_")]
+    #[case("}", "_rc_")]
+    // Unicode character (non-ASCII)
+    #[case("한글", "_ud55c__uae00_")]
+    #[case("emoji😀", "emoji_u1f600_")]
     fn test_encode_selector(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(encode_selector(input), expected);
     }
