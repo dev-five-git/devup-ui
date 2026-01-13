@@ -54,6 +54,22 @@ pub struct GlobalThemeEntry {
     pub exported: bool,
 }
 
+/// Entry for createTheme() - CSS variables scoped to a generated class
+#[derive(Debug, Clone, Default)]
+pub struct ThemeEntry {
+    /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand", "blue")]
+    pub css_vars: Vec<(String, String)>,
+    /// Whether this is exported
+    pub exported: bool,
+    /// For single-arg createTheme: the vars object JSON with var() references
+    /// Used to generate the second element of the returned array
+    pub vars_object_json: Option<String>,
+    /// For single-arg createTheme: the name of the vars variable from [themeClass, vars]
+    pub vars_name: Option<String>,
+    /// The unique generated class name (file_prefix + variable_name)
+    pub class_name: String,
+}
+
 /// Collected style definitions from vanilla-extract API calls
 #[derive(Debug, Default)]
 pub struct CollectedStyles {
@@ -75,6 +91,10 @@ pub struct CollectedStyles {
     pub layers: HashMap<String, (String, bool)>,
     /// createGlobalTheme() calls: variable_name -> GlobalThemeEntry
     pub global_themes: HashMap<String, GlobalThemeEntry>,
+    /// createTheme() calls: variable_name -> ThemeEntry
+    pub themes: HashMap<String, ThemeEntry>,
+    /// Theme vars from array destructuring: vars_name -> (vars_object_json, exported)
+    pub theme_vars: HashMap<String, (String, bool)>,
     /// Non-style constant exports: variable_name -> value (as code string)
     pub constant_exports: HashMap<String, String>,
 }
@@ -142,6 +162,95 @@ fn parse_font_face_json(json: &str) -> Vec<(String, String)> {
             (k.clone(), val)
         })
         .collect()
+}
+
+/// Recursively transform theme contract object to CSS var() references
+/// Returns a new JS object with null leaves replaced by var(--path)
+fn transform_contract_to_vars(value: &JsValue, ctx: &mut Context, path: &[String]) -> JsValue {
+    if let Some(obj) = value.as_object() {
+        // Check if it's an array
+        if obj.is_array() {
+            return value.clone();
+        }
+
+        // It's an object - recursively transform each property
+        let new_obj = boa_engine::object::ObjectInitializer::new(ctx).build();
+
+        if let Ok(keys) = obj.own_property_keys(ctx) {
+            for key in keys {
+                let key_string = match &key {
+                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
+                    boa_engine::property::PropertyKey::Symbol(_) => continue,
+                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
+                };
+
+                if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
+                    let mut new_path = path.to_vec();
+                    new_path.push(key_string.clone());
+
+                    let transformed = transform_contract_to_vars(&prop_value, ctx, &new_path);
+
+                    let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
+                }
+            }
+        }
+
+        JsValue::from(new_obj)
+    } else {
+        // Leaf value (should be null) - create CSS variable reference
+        let var_name = format!("--{}", path.join("-"));
+        JsValue::from(js_string!(format!("var({})", var_name)))
+    }
+}
+
+/// Extract CSS variable assignments by matching contract vars with values
+fn extract_theme_vars(
+    contract: &JsValue,
+    values: &JsValue,
+    ctx: &mut Context,
+    css_vars: &mut Vec<(String, String)>,
+    path: &[String],
+) {
+    if let (Some(contract_obj), Some(values_obj)) = (contract.as_object(), values.as_object()) {
+        // Both are objects - recurse into properties
+        if let Ok(keys) = contract_obj.own_property_keys(ctx) {
+            for key in keys {
+                let key_string = match &key {
+                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
+                    boa_engine::property::PropertyKey::Symbol(_) => continue,
+                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
+                };
+
+                if let (Ok(contract_prop), Ok(value_prop)) = (
+                    contract_obj.get(js_string!(key_string.as_str()), ctx),
+                    values_obj.get(js_string!(key_string.as_str()), ctx),
+                ) {
+                    let mut new_path = path.to_vec();
+                    new_path.push(key_string);
+
+                    extract_theme_vars(&contract_prop, &value_prop, ctx, css_vars, &new_path);
+                }
+            }
+        }
+    } else if let Some(contract_str) = contract.as_string() {
+        // Contract leaf is a var(--name) string
+        let contract_str = contract_str.to_std_string_escaped();
+        if contract_str.starts_with("var(") && contract_str.ends_with(')') {
+            // Extract var name from var(--name)
+            let var_name = &contract_str[4..contract_str.len() - 1];
+
+            // Get the value
+            let value_str = if let Some(s) = values.as_string() {
+                s.to_std_string_escaped()
+            } else if let Ok(s) = values.to_string(ctx) {
+                s.to_std_string_escaped()
+            } else {
+                String::new()
+            };
+
+            css_vars.push((var_name.to_string(), value_str));
+        }
+    }
 }
 
 /// Recursively transform theme object to CSS var() references
@@ -285,7 +394,7 @@ pub fn execute_vanilla_extract(
 
     // Map placeholder IDs back to original variable names
     let mut result = std::mem::take(&mut collector.borrow_mut().styles);
-    remap_style_names(&mut result, &var_names, &mut context);
+    remap_style_names(&mut result, &var_names, &mut context, file_num);
 
     Ok(result)
 }
@@ -297,6 +406,8 @@ enum VarInfo {
     StyleApi { exported: bool },
     /// A regular constant export with its original code
     Constant(String),
+    /// The vars object from createTheme array destructuring [themeClass, vars]
+    ThemeVars,
 }
 
 /// Extract all variable names and their info from the original code
@@ -316,19 +427,44 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
                     &export.declaration
                 {
                     for decl in &var_decl.declarations {
-                        if let Some(name) = decl.id.get_identifier_name()
-                            && let Some(init) = &decl.init
-                        {
-                            if is_style_api_call(init) {
-                                vars.push((name.to_string(), VarInfo::StyleApi { exported: true }));
-                            } else {
-                                // Extract the original init expression using span
-                                let span = init.span();
-                                let init_code = &code[span.start as usize..span.end as usize];
-                                vars.push((
-                                    name.to_string(),
-                                    VarInfo::Constant(init_code.to_string()),
-                                ));
+                        if let Some(init) = &decl.init {
+                            // Check for array destructuring: const [themeClass, vars] = createTheme(...)
+                            if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id
+                            {
+                                if is_style_api_call(init) {
+                                    // First element is the theme class
+                                    if let Some(Some(first)) = array_pat.elements.first()
+                                        && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
+                                            first
+                                    {
+                                        vars.push((
+                                            id.name.to_string(),
+                                            VarInfo::StyleApi { exported: true },
+                                        ));
+                                    }
+                                    // Second element is the vars object - mark as ThemeVars
+                                    if let Some(Some(second)) = array_pat.elements.get(1)
+                                        && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
+                                            second
+                                    {
+                                        vars.push((id.name.to_string(), VarInfo::ThemeVars));
+                                    }
+                                }
+                            } else if let Some(name) = decl.id.get_identifier_name() {
+                                if is_style_api_call(init) {
+                                    vars.push((
+                                        name.to_string(),
+                                        VarInfo::StyleApi { exported: true },
+                                    ));
+                                } else {
+                                    // Extract the original init expression using span
+                                    let span = init.span();
+                                    let init_code = &code[span.start as usize..span.end as usize];
+                                    vars.push((
+                                        name.to_string(),
+                                        VarInfo::Constant(init_code.to_string()),
+                                    ));
+                                }
                             }
                         }
                     }
@@ -337,11 +473,31 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
             // Non-exported variable declarations
             oxc_ast::ast::Statement::VariableDeclaration(var_decl) => {
                 for decl in &var_decl.declarations {
-                    if let Some(name) = decl.id.get_identifier_name()
-                        && let Some(init) = &decl.init
-                        && is_style_api_call(init)
-                    {
-                        vars.push((name.to_string(), VarInfo::StyleApi { exported: false }));
+                    if let Some(init) = &decl.init {
+                        // Check for array destructuring
+                        if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id {
+                            if is_style_api_call(init) {
+                                if let Some(Some(first)) = array_pat.elements.first()
+                                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
+                                        first
+                                {
+                                    vars.push((
+                                        id.name.to_string(),
+                                        VarInfo::StyleApi { exported: false },
+                                    ));
+                                }
+                                if let Some(Some(second)) = array_pat.elements.get(1)
+                                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
+                                        second
+                                {
+                                    vars.push((id.name.to_string(), VarInfo::ThemeVars));
+                                }
+                            }
+                        } else if let Some(name) = decl.id.get_identifier_name()
+                            && is_style_api_call(init)
+                        {
+                            vars.push((name.to_string(), VarInfo::StyleApi { exported: false }));
+                        }
                     }
                     // We don't need to track non-exported non-style constants
                 }
@@ -369,6 +525,7 @@ fn is_style_api_call(expr: &oxc_ast::ast::Expression) -> bool {
                 | "createContainer"
                 | "layer"
                 | "createGlobalTheme"
+                | "createTheme"
         );
     }
     false
@@ -379,7 +536,11 @@ fn remap_style_names(
     collected: &mut CollectedStyles,
     vars: &[(String, VarInfo)],
     _context: &mut Context,
+    file_num: usize,
 ) {
+    // Generate a file-based prefix for unique class names
+    // e.g., file_num 0 -> "f0"
+    let file_prefix = format!("f{}", file_num);
     // Build mapping from placeholder ID to original name
     // The order of style() calls matches the order of variable declarations
     let mut placeholder_to_name: HashMap<String, String> = HashMap::new();
@@ -392,9 +553,12 @@ fn remap_style_names(
     let mut new_layers = HashMap::new();
     let mut new_font_faces = HashMap::new();
     let mut new_global_themes = HashMap::new();
+    let mut new_themes = HashMap::new();
     let mut style_idx = 0;
     let mut font_idx = 0;
     let mut global_theme_idx = 0;
+    // Track the last processed theme's vars_object_json for ThemeVars handling
+    let mut last_theme_vars_json: Option<String> = None;
 
     // First pass: collect old entries preserving all fields
     let old_styles: HashMap<String, StyleEntry> = collected.styles.drain().collect();
@@ -421,6 +585,8 @@ fn remap_style_names(
     // global_themes: placeholder_id -> GlobalThemeEntry (without exported flag for remapping)
     let old_global_themes: HashMap<String, GlobalThemeEntry> =
         collected.global_themes.drain().collect();
+    // themes: placeholder_id -> ThemeEntry (without exported flag for remapping)
+    let old_themes: HashMap<String, ThemeEntry> = collected.themes.drain().collect();
 
     for (name, info) in vars {
         match info {
@@ -486,6 +652,51 @@ fn remap_style_names(
                 } else if let Some(value) = old_layers.get(&placeholder) {
                     new_layers.insert(name.clone(), (value.clone(), *exported));
                     style_idx += 1;
+                } else if let Some(entry) = old_themes.get(&placeholder) {
+                    // Track this theme name for the next ThemeVars entry
+                    if entry.vars_object_json.is_some() {
+                        last_theme_vars_json = Some(name.clone());
+                    }
+
+                    // Generate unique class name: file_prefix + variable_name
+                    let class_name = format!("{}_{}", file_prefix, name);
+
+                    // Add CSS variables to global_styles with class selector
+                    if !entry.css_vars.is_empty() {
+                        let vars_json = format!(
+                            "{{ {} }}",
+                            entry
+                                .css_vars
+                                .iter()
+                                .map(|(var_name, value)| format!("\"{}\": \"{}\"", var_name, value))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+                        collected
+                            .global_styles
+                            .push((format!(".{}", class_name), vars_json));
+                    }
+
+                    new_themes.insert(
+                        name.clone(),
+                        ThemeEntry {
+                            css_vars: entry.css_vars.clone(),
+                            exported: *exported,
+                            vars_object_json: entry.vars_object_json.clone(),
+                            vars_name: None, // Will be set by ThemeVars if present
+                            class_name,
+                        },
+                    );
+                    style_idx += 1;
+                }
+            }
+            VarInfo::ThemeVars => {
+                // This is the vars object from [themeClass, vars] = createTheme(...)
+                // Set vars_name on the theme we just processed
+                if let Some(theme_name) = last_theme_vars_json.take()
+                    && let Some(theme_entry) = new_themes.get_mut(&theme_name)
+                {
+                    theme_entry.vars_name = Some(name.clone());
                 }
             }
             VarInfo::Constant(code) => {
@@ -563,6 +774,7 @@ fn remap_style_names(
     collected.layers = new_layers;
     collected.font_faces = new_font_faces;
     collected.global_themes = new_global_themes;
+    collected.themes = new_themes;
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
@@ -830,16 +1042,86 @@ fn register_vanilla_extract_apis(
         })
     };
 
-    // createTheme() function
-    let create_theme_fn = unsafe {
-        NativeFunction::from_closure(move |_this, _args, _ctx| {
-            Ok(JsValue::from(js_string!("__theme__")))
+    // createThemeContract() function - transforms null leaves to var(--path) references
+    let create_theme_contract_fn = unsafe {
+        NativeFunction::from_closure(move |_this, args, ctx| {
+            let contract_obj = args.get_or_undefined(0);
+            let transformed = transform_contract_to_vars(contract_obj, ctx, &[]);
+            Ok(transformed)
         })
     };
 
-    // createThemeContract() function
-    let create_theme_contract_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, _ctx| Ok(args.get_or_undefined(0).clone()))
+    // createTheme() function - creates a class with CSS variable assignments
+    // Single arg: createTheme({ color: { brand: 'blue' } }) -> returns [themeClass, vars]
+    // Two args: createTheme(contract, values) -> returns themeClass
+    let collector_theme = collector.clone();
+    let create_theme_fn = unsafe {
+        NativeFunction::from_closure(move |_this, args, ctx| {
+            let first_arg = args.get_or_undefined(0);
+            let second_arg = args.get_or_undefined(1);
+
+            // Check if it's single-arg (values only) or two-arg (contract, values)
+            let is_single_arg = second_arg.is_undefined();
+
+            let id = next_style_id(&collector_theme);
+
+            if is_single_arg {
+                // Single arg: createTheme({ color: { brand: 'blue' } })
+                // Returns [themeClass, vars] where vars has var() references
+                let mut css_vars = Vec::new();
+                let mut var_counter = 0usize;
+
+                // Transform values to var() references and collect CSS variables
+                let vars_obj = transform_theme_to_vars(
+                    first_arg,
+                    ctx,
+                    &id,
+                    &mut css_vars,
+                    &mut var_counter,
+                    &[],
+                );
+
+                let vars_object_json = js_value_to_json(&vars_obj, ctx);
+
+                // Store the theme entry with vars object
+                collector_theme.borrow_mut().styles.themes.insert(
+                    id.clone(),
+                    ThemeEntry {
+                        css_vars,
+                        exported: false,
+                        vars_object_json: Some(vars_object_json),
+                        vars_name: None,           // Will be set during remapping
+                        class_name: String::new(), // Will be set during remapping
+                    },
+                );
+
+                // Return [themeId, varsObject] as an array
+                let result_array = boa_engine::object::builtins::JsArray::new(ctx);
+                let _ = result_array.push(JsValue::from(js_string!(id.clone())), ctx);
+                let _ = result_array.push(vars_obj, ctx);
+
+                Ok(JsValue::from(result_array))
+            } else {
+                // Two args: createTheme(contract, values)
+                // Returns just the themeClass
+                let mut css_vars = Vec::new();
+                extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &[]);
+
+                // Store the theme entry
+                collector_theme.borrow_mut().styles.themes.insert(
+                    id.clone(),
+                    ThemeEntry {
+                        css_vars,
+                        exported: false,
+                        vars_object_json: None,
+                        vars_name: None,
+                        class_name: String::new(), // Will be set during remapping
+                    },
+                );
+
+                Ok(JsValue::from(js_string!(id)))
+            }
+        })
     };
 
     // layer() function
@@ -1014,7 +1296,10 @@ pub fn collected_styles_to_code_with_classes(
 
     // Generate import statement
     let mut imports = Vec::new();
-    if !collected.styles.is_empty() || !collected.style_variants.is_empty() {
+    if !collected.styles.is_empty()
+        || !collected.style_variants.is_empty()
+        || !collected.themes.is_empty()
+    {
         imports.push("css");
     }
     if !collected.global_styles.is_empty()
@@ -1083,6 +1368,32 @@ pub fn collected_styles_to_code_with_classes(
             }
             let merged_json = format!("{{{}}}", merged_parts.join(","));
             code_parts.push(format!("{}const {} = css({})", prefix, name, merged_json));
+        }
+    }
+
+    // Generate createTheme exports (class name and optionally vars object)
+    // Note: CSS variables are added to global_styles during remapping
+    let mut themes: Vec<_> = collected.themes.iter().collect();
+    themes.sort_by_key(|(name, _)| *name);
+    for (name, entry) in themes {
+        let prefix = if entry.exported { "export " } else { "" };
+        if let Some(vars_name) = &entry.vars_name {
+            if let Some(vars_json) = &entry.vars_object_json {
+                code_parts.push(format!(
+                    "{}const [{}, {}] = [\"{}\", {}]",
+                    prefix, name, vars_name, entry.class_name, vars_json
+                ));
+            } else {
+                code_parts.push(format!(
+                    "{}const {} = \"{}\"",
+                    prefix, name, entry.class_name
+                ));
+            }
+        } else {
+            code_parts.push(format!(
+                "{}const {} = \"{}\"",
+                prefix, name, entry.class_name
+            ));
         }
     }
 
@@ -1260,7 +1571,10 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
 
     // Generate import statement
     let mut imports = Vec::new();
-    if !collected.styles.is_empty() || !collected.style_variants.is_empty() {
+    if !collected.styles.is_empty()
+        || !collected.style_variants.is_empty()
+        || !collected.themes.is_empty()
+    {
         imports.push("css");
     }
     if !collected.global_styles.is_empty()
@@ -1328,6 +1642,33 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
 
             let merged_json = format!("{{{}}}", merged_parts.join(","));
             code_parts.push(format!("{}const {} = css({})", prefix, name, merged_json));
+        }
+    }
+
+    // Generate createTheme exports (class name and optionally vars object)
+    // Note: CSS variables are added to global_styles during remapping
+    let mut themes: Vec<_> = collected.themes.iter().collect();
+    themes.sort_by_key(|(name, _)| *name);
+    for (name, entry) in themes {
+        let prefix = if entry.exported { "export " } else { "" };
+        // If this theme has a vars_name, output as array destructuring
+        if let Some(vars_name) = &entry.vars_name {
+            if let Some(vars_json) = &entry.vars_object_json {
+                code_parts.push(format!(
+                    "{}const [{}, {}] = [\"{}\", {}]",
+                    prefix, name, vars_name, entry.class_name, vars_json
+                ));
+            } else {
+                code_parts.push(format!(
+                    "{}const {} = \"{}\"",
+                    prefix, name, entry.class_name
+                ));
+            }
+        } else {
+            code_parts.push(format!(
+                "{}const {} = \"{}\"",
+                prefix, name, entry.class_name
+            ));
         }
     }
 
@@ -1513,6 +1854,8 @@ impl Clone for CollectedStyles {
             containers: self.containers.clone(),
             layers: self.layers.clone(),
             global_themes: self.global_themes.clone(),
+            themes: self.themes.clone(),
+            theme_vars: self.theme_vars.clone(),
             constant_exports: self.constant_exports.clone(),
         }
     }
@@ -1748,6 +2091,55 @@ export const extended = style({ ...baseStyle, background: "red" })"#;
             entry.json.contains("red"),
             "Expected 'red' in JSON: {}",
             entry.json
+        );
+    }
+
+    #[test]
+    fn test_execute_vanilla_extract_create_theme_contract() {
+        // Test createThemeContract + createTheme
+        let code = r#"import { createThemeContract, createTheme } from '@devup-ui/react'
+const vars = createThemeContract({
+  color: {
+    brand: null,
+    text: null
+  }
+})
+export const lightTheme = createTheme(vars, {
+  color: {
+    brand: 'blue',
+    text: 'black'
+  }
+})"#;
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
+
+        // Check that themes were collected
+        assert!(
+            !result.themes.is_empty(),
+            "Expected themes to be collected, got empty. Themes: {:?}",
+            result.themes
+        );
+        assert!(
+            result.themes.contains_key("lightTheme"),
+            "Expected lightTheme in themes: {:?}",
+            result.themes.keys().collect::<Vec<_>>()
+        );
+
+        // Check CSS vars
+        let theme_entry = &result.themes["lightTheme"];
+        assert!(
+            !theme_entry.css_vars.is_empty(),
+            "Expected CSS vars in theme: {:?}",
+            theme_entry
+        );
+
+        // Check that CSS vars are correct
+        let css_vars: Vec<_> = theme_entry.css_vars.iter().collect();
+        assert!(
+            css_vars
+                .iter()
+                .any(|(name, val)| name == "--color-brand" && val == "blue"),
+            "Expected --color-brand: blue in {:?}",
+            css_vars
         );
     }
 }
