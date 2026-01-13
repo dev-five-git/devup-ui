@@ -1,0 +1,36 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"theme-simple.css.ts\",\nr#\"import { createThemeContract, createTheme, style } from '@devup-ui/react'\nconst contract = createThemeContract({\n  colors: { primary: null }\n})\nexport const lightTheme = createTheme(contract, {\n  colors: { primary: 'blue' }\n})\nexport const box = style({ padding: 8 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--colors-primary",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_lightTheme",
+                        "theme-simple.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\nexport const lightTheme = \"f0_lightTheme\";\n;\n",
+}

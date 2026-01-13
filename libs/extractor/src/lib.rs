@@ -11409,4 +11409,146 @@ export const box = style({ padding: 8 })
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_global_css_with_layer_in_selector() {
+        // Test globalCss with @layer inside selector object (covers lines 103, 115 in extract_global_style_from_expression.rs)
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".button": {
+        "@layer": "components",
+        padding: "8px",
+        background: "blue"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test with multiple selectors having @layer
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".card": {
+        "@layer": "layout",
+        display: "flex"
+    },
+    ".text": {
+        "@layer": "typography",
+        fontSize: "16px"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_container_at_rule_with_selector() {
+        // Test @container at-rule within selector context (covers line 134)
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  padding: 8,
+  "@container": {
+    "(min-width: 300px)": {
+      padding: 16
+    }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selector_refs_triggers_with_classes() {
+        // Test that triggers collected_styles_to_code_with_classes path (selector references)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "refs.css.ts",
+                r#"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'
+export const colorVar = createVar()
+export const myContainer = createContainer()
+export const myLayer = layer('ui')
+export const myFont = fontFace({ src: 'local(Arial)' })
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+export const parent = style({ display: 'flex' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { color: 'red' }
+  }
+})
+globalStyle('body', { margin: 0 })
+"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_without_vars_json() {
+        // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-simple.css.ts",
+                r#"import { createThemeContract, createTheme, style } from '@devup-ui/react'
+const contract = createThemeContract({
+  colors: { primary: null }
+})
+export const lightTheme = createTheme(contract, {
+  colors: { primary: 'blue' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
 }

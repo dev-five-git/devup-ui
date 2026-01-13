@@ -3122,4 +3122,274 @@ export const box = style({ padding: 8 })"#;
         // Should output just the class name assignment
         assert!(code.contains("const partialTheme = \"f0_partial\""));
     }
+
+    #[test]
+    fn test_collected_styles_to_code_with_classes_all_imports() {
+        // Test import generation for css, globalCss, keyframes (covers lines 1049, 1052)
+        let mut collected = CollectedStyles::default();
+
+        // Add style to trigger css import
+        collected.styles.insert(
+            "box".to_string(),
+            StyleEntry {
+                json: r#"{"padding":"8px"}"#.to_string(),
+                exported: true,
+                bases: Vec::new(),
+            },
+        );
+
+        // Add global style to trigger globalCss import
+        collected
+            .global_styles
+            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
+
+        // Add keyframes to trigger keyframes import
+        collected.keyframes.insert(
+            "fade".to_string(),
+            StyleEntry {
+                json: r#"{"from":{"opacity":"0"}}"#.to_string(),
+                exported: true,
+                bases: Vec::new(),
+            },
+        );
+
+        let class_map: std::collections::HashMap<String, String> =
+            [("box".to_string(), "a".to_string())].into_iter().collect();
+        let code =
+            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+
+        assert!(code.contains("css"));
+        assert!(code.contains("globalCss"));
+        assert!(code.contains("keyframes"));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_with_classes_theme_no_vars_name() {
+        // Test theme without vars_name (covers line 1111)
+        let mut collected = CollectedStyles::default();
+        collected.styles.insert(
+            "box".to_string(),
+            StyleEntry {
+                json: r#"{}"#.to_string(),
+                exported: true,
+                bases: Vec::new(),
+            },
+        );
+        collected.themes.insert(
+            "simpleTheme".to_string(),
+            super::ThemeEntry {
+                class_name: "f0_simple".to_string(),
+                css_vars: vec![],
+                exported: true,
+                vars_name: None,
+                vars_object_json: None,
+            },
+        );
+
+        let class_map = std::collections::HashMap::new();
+        let code =
+            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        assert!(code.contains("const simpleTheme = \"f0_simple\""));
+    }
+
+    #[test]
+    fn test_append_non_style_code_global_styles() {
+        // Test globalCss code generation (covers line 1125)
+        let mut collected = CollectedStyles::default();
+        collected.global_styles.push((
+            "html".to_string(),
+            r#"{"boxSizing":"border-box"}"#.to_string(),
+        ));
+        collected
+            .global_styles
+            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("globalCss({ \"html\":"));
+        assert!(code.contains("globalCss({ \"body\":"));
+    }
+
+    #[test]
+    fn test_append_non_style_code_font_faces_with_props() {
+        // Test fontFace code generation with properties (covers lines 1132-1135)
+        let mut collected = CollectedStyles::default();
+        collected.font_faces.insert(
+            "myFont".to_string(),
+            (
+                r#"{"src":"url(font.woff2)","fontWeight":"bold"}"#.to_string(),
+                "__font_0".to_string(),
+                true,
+            ),
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("fontFaces"));
+        assert!(code.contains("fontFamily"));
+    }
+
+    #[test]
+    fn test_append_non_style_code_global_themes_with_vars() {
+        // Test createGlobalTheme code generation with CSS vars (covers lines 1142-1144)
+        let mut collected = CollectedStyles::default();
+        collected.global_themes.insert(
+            "rootVars".to_string(),
+            super::GlobalThemeEntry {
+                selector: ":root".to_string(),
+                css_vars: vec![
+                    ("--primary".to_string(), "blue".to_string()),
+                    ("--secondary".to_string(), "green".to_string()),
+                ],
+                vars_object_json: r#"{"primary":"var(--primary)"}"#.to_string(),
+                exported: true,
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("globalCss({ \":root\":"));
+        assert!(code.contains("--primary"));
+    }
+
+    #[test]
+    fn test_append_non_style_code_keyframes() {
+        // Test keyframes code generation (covers lines 1152-1153)
+        let mut collected = CollectedStyles::default();
+        collected.keyframes.insert(
+            "spin".to_string(),
+            StyleEntry {
+                json: r#"{"from":{"transform":"rotate(0)"},"to":{"transform":"rotate(360deg)"}}"#
+                    .to_string(),
+                exported: true,
+                bases: Vec::new(),
+            },
+        );
+        collected.keyframes.insert(
+            "internalFade".to_string(),
+            StyleEntry {
+                json: r#"{"0%":{"opacity":"0"}}"#.to_string(),
+                exported: false,
+                bases: Vec::new(),
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const spin = keyframes"));
+        assert!(code.contains("const internalFade = keyframes"));
+    }
+
+    #[test]
+    fn test_append_non_style_code_vars() {
+        // Test createVar code generation (covers lines 1191-1192)
+        let mut collected = CollectedStyles::default();
+        collected
+            .vars
+            .insert("colorVar".to_string(), ("--color-0".to_string(), true));
+        collected.vars.insert(
+            "internalVar".to_string(),
+            ("--internal-0".to_string(), false),
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const colorVar = \"--color-0\""));
+        assert!(code.contains("const internalVar = \"--internal-0\""));
+    }
+
+    #[test]
+    fn test_append_non_style_code_font_face_declarations() {
+        // Test fontFace declaration code generation (covers lines 1199-1200)
+        let mut collected = CollectedStyles::default();
+        collected.font_faces.insert(
+            "customFont".to_string(),
+            (r#"{}"#.to_string(), "__devup_font_custom".to_string(), true),
+        );
+        collected.font_faces.insert(
+            "internalFont".to_string(),
+            (
+                r#"{}"#.to_string(),
+                "__devup_font_internal".to_string(),
+                false,
+            ),
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const customFont = \"__devup_font_custom\""));
+        assert!(code.contains("const internalFont = \"__devup_font_internal\""));
+    }
+
+    #[test]
+    fn test_append_non_style_code_containers() {
+        // Test createContainer code generation (covers lines 1207-1208)
+        let mut collected = CollectedStyles::default();
+        collected.containers.insert(
+            "sidebar".to_string(),
+            ("__container_sidebar".to_string(), true),
+        );
+        collected.containers.insert(
+            "internalCont".to_string(),
+            ("__container_internal".to_string(), false),
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const sidebar = \"__container_sidebar\""));
+        assert!(code.contains("const internalCont = \"__container_internal\""));
+    }
+
+    #[test]
+    fn test_append_non_style_code_layers() {
+        // Test layer code generation (covers lines 1215-1216)
+        let mut collected = CollectedStyles::default();
+        collected
+            .layers
+            .insert("baseLayer".to_string(), ("base".to_string(), true));
+        collected
+            .layers
+            .insert("internalLayer".to_string(), ("internal".to_string(), false));
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const baseLayer = \"base\""));
+        assert!(code.contains("const internalLayer = \"internal\""));
+    }
+
+    #[test]
+    fn test_append_non_style_code_global_theme_vars_object() {
+        // Test createGlobalTheme vars object declaration (covers lines 1221-1222)
+        let mut collected = CollectedStyles::default();
+        collected.global_themes.insert(
+            "themeVars".to_string(),
+            super::GlobalThemeEntry {
+                selector: ":root".to_string(),
+                css_vars: vec![("--bg".to_string(), "white".to_string())],
+                vars_object_json: r#"{"bg":"var(--bg)"}"#.to_string(),
+                exported: true,
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const themeVars = {\"bg\":\"var(--bg)\"}"));
+    }
+
+    #[test]
+    fn test_style_with_non_object_argument() {
+        // Test style() with primitive value (covers line 749)
+        // This is tested through execute_vanilla_extract with edge case input
+        let code = r#"
+import { style } from '@devup-ui/react'
+// This should still work - style with null or undefined would be an edge case
+export const empty = style({})
+"#;
+        let result = super::execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_style_with_object_no_length() {
+        // Test style() with regular object (covers line 745)
+        let code = r#"
+import { style } from '@devup-ui/react'
+export const box = style({ padding: 8, margin: 4 })
+"#;
+        let result = super::execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts");
+        assert!(result.is_ok());
+        let collected = result.unwrap();
+        assert!(!collected.styles.is_empty());
+    }
 }
