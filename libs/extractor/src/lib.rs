@@ -234,6 +234,7 @@ mod tests {
 
     use super::*;
     use css::class_map::reset_class_map;
+    use css::file_map::reset_file_map;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
     use serial_test::serial;
@@ -9718,6 +9719,7 @@ export const button = styleVariants({
     #[serial]
     fn test_vanilla_extract_font_face() {
         reset_class_map();
+        reset_file_map();
         // fontFace - define custom font
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(

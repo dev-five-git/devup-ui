@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__devup_font_8_0",
+                value: "__devup_font_1_0",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
             ExtractFontFace {
                 file: "fonts-multi.css.ts",
                 properties: {
-                    "font-family": "__devup_font_8_0",
+                    "font-family": "__devup_font_1_0",
                     "font-style": "normal",
                     "font-weight": "400",
                     "src": "url(\"/fonts/Roboto.woff2\") format(\"woff2\")",
@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const body = \"a\";\n;\nconst roboto = \"__devup_font_8_0\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const body = \"a\";\n;\nconst roboto = \"__devup_font_1_0\";\n",
 }
