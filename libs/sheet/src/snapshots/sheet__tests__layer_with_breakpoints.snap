@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: "css.split(\"*/\").nth(1).unwrap()"
+---
+"@layer b;@layer b{@media(min-width:480px){@layer components{.a{display:flex}}}}"

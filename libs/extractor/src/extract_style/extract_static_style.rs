@@ -153,5 +153,25 @@ mod tests {
         assert_eq!(style.level(), 0);
         assert_eq!(style.selector(), None);
         assert_eq!(style.style_order(), None);
+        assert_eq!(style.layer(), None);
+    }
+
+    #[test]
+    fn test_extract_static_style_with_layer() {
+        let style =
+            ExtractStaticStyle::new_with_layer("margin", "0", 0, None, Some("reset".to_string()));
+        assert_eq!(style.property(), "margin");
+        assert_eq!(style.value(), "0");
+        assert_eq!(style.level(), 0);
+        assert_eq!(style.selector(), None);
+        assert_eq!(style.layer(), Some("reset"));
+    }
+
+    #[test]
+    fn test_extract_static_style_with_layer_none() {
+        let style = ExtractStaticStyle::new_with_layer("color", "red", 0, None, None);
+        assert_eq!(style.property(), "color");
+        assert_eq!(style.value(), "red");
+        assert_eq!(style.layer(), None);
     }
 }

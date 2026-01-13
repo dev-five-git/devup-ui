@@ -2029,24 +2029,54 @@ mod tests {
     }
 
     #[test]
-    fn test_global_props_with_breakpoints() {
+    fn test_global_styles_with_custom_layer() {
         let mut sheet = StyleSheet::default();
-        // Add global style at level 1 (with breakpoint)
-        sheet.add_property(
-            "a",
-            "color",
-            1, // level 1 means it should be wrapped in @media
-            "red",
+        // Add global style with layer
+        sheet.add_property_with_layer(
+            "*",
+            "margin",
+            0,
+            "0",
             Some(&StyleSelector::Global(
-                "body".to_string(),
-                "test.tsx".to_string(),
+                "*".to_string(),
+                "reset.css.ts".to_string(),
             )),
             Some(0),
             None,
+            Some("reset"),
+        );
+        sheet.add_property_with_layer(
+            "*",
+            "padding",
+            0,
+            "0",
+            Some(&StyleSelector::Global(
+                "*".to_string(),
+                "reset.css.ts".to_string(),
+            )),
+            Some(0),
+            None,
+            Some("reset"),
+        );
+        // Add another layer
+        sheet.add_property_with_layer(
+            "body",
+            "font-family",
+            0,
+            "sans-serif",
+            Some(&StyleSelector::Global(
+                "body".to_string(),
+                "base.css.ts".to_string(),
+            )),
+            Some(0),
+            None,
+            Some("base"),
         );
         let css = sheet.create_css(None, false);
-        assert!(css.contains("@media"));
-        assert!(css.contains("body"));
+        // Layers are sorted alphabetically
+        assert!(css.contains("@layer base,reset"));
+        assert!(css.contains("@layer reset{*{margin:0;padding:0}}"));
+        assert!(css.contains("@layer base{body{font-family:sans-serif}}"));
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
     }
 
@@ -2111,6 +2141,29 @@ mod tests {
         let css = sheet.create_css(None, false);
         assert!(css.contains("@layer"));
         assert!(css.contains("@layer t{"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    fn test_layer_with_breakpoints() {
+        let mut sheet = StyleSheet::default();
+        // Add @layer with breakpoint (level 1)
+        sheet.add_property(
+            "a",
+            "display",
+            1,
+            "flex",
+            Some(&StyleSelector::At {
+                kind: AtRuleKind::Layer,
+                query: "components".to_string(),
+                selector: None,
+            }),
+            Some(0),
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("@media"));
+        assert!(css.contains("@layer components"));
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
     }
 }

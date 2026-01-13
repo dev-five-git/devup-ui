@@ -2142,4 +2142,34 @@ export const lightTheme = createTheme(vars, {
             css_vars
         );
     }
+
+    #[test]
+    fn test_parse_font_face_json_edge_cases() {
+        // Test invalid JSON
+        let result = super::parse_font_face_json("not valid json");
+        assert!(result.is_empty());
+
+        // Test non-object JSON
+        let result = super::parse_font_face_json("\"just a string\"");
+        assert!(result.is_empty());
+
+        // Test array JSON
+        let result = super::parse_font_face_json("[1, 2, 3]");
+        assert!(result.is_empty());
+
+        // Test with boolean value
+        let result = super::parse_font_face_json(r#"{"fontDisplay": true}"#);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], ("fontDisplay".to_string(), "true".to_string()));
+
+        // Test with number value
+        let result = super::parse_font_face_json(r#"{"fontWeight": 400}"#);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], ("fontWeight".to_string(), "400".to_string()));
+
+        // Test with null value (other case)
+        let result = super::parse_font_face_json(r#"{"fontStyle": null}"#);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], ("fontStyle".to_string(), "null".to_string()));
+    }
 }
