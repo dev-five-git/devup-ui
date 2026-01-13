@@ -370,6 +370,7 @@ mod tests {
     #[serial]
     fn extract_just_tsx() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -385,6 +386,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -403,6 +405,7 @@ mod tests {
     #[serial]
     fn ignore_special_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -415,6 +418,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -436,6 +440,7 @@ mod tests {
     #[serial]
     fn convert_tag() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -453,6 +458,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -470,6 +476,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -487,6 +494,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -504,6 +512,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -521,6 +530,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -538,6 +548,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -555,6 +566,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -572,6 +584,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -589,6 +602,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -606,6 +620,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -623,6 +638,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -640,6 +656,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -657,6 +674,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -674,6 +692,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -686,6 +705,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -698,6 +718,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -715,6 +736,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -732,6 +754,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -749,6 +772,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         // maintain object expression
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -767,6 +791,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         // maintain object expression
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -788,6 +813,7 @@ mod tests {
     #[serial]
     fn extract_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -804,6 +830,7 @@ mod tests {
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -820,6 +847,7 @@ mod tests {
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -837,6 +865,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -854,6 +883,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -871,6 +901,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -892,6 +923,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_namespace_import() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -915,6 +947,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_var_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -939,6 +972,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_default_import() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -962,6 +996,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -979,6 +1014,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -996,6 +1032,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1013,6 +1050,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1029,6 +1067,7 @@ mod tests {
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1046,6 +1085,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1069,6 +1109,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1086,6 +1127,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1107,6 +1149,7 @@ mod tests {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1146,6 +1189,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_class_name_from_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1166,6 +1210,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1202,6 +1247,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1219,6 +1265,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1236,6 +1283,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1253,6 +1301,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1274,6 +1323,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_style_props_with_type() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1291,6 +1341,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1308,6 +1359,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1329,6 +1381,7 @@ import clsx from 'clsx'
     #[serial]
     fn remove_semicolon() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1346,6 +1399,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1363,6 +1417,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1380,6 +1435,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1397,6 +1453,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1418,6 +1475,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1439,6 +1497,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_compound_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1460,6 +1519,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_wrong_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1477,6 +1537,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1498,6 +1559,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_variable_style_props_with_style() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1515,6 +1577,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1536,6 +1599,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1553,6 +1617,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1570,6 +1635,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1587,6 +1653,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1604,6 +1671,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1621,6 +1689,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1638,6 +1707,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1655,6 +1725,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1672,6 +1743,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1689,6 +1761,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1706,6 +1779,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1727,6 +1801,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_same_value_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1744,6 +1819,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1761,6 +1837,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1778,6 +1855,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1795,6 +1873,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1812,6 +1891,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1833,6 +1913,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_same_dynamic_value_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1850,6 +1931,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1871,6 +1953,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1888,6 +1971,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1905,6 +1989,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1922,6 +2007,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1939,6 +2025,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1956,6 +2043,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1973,6 +2061,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1990,6 +2079,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2011,6 +2101,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_logical_case() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2028,6 +2119,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2045,6 +2137,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2062,6 +2155,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2083,6 +2177,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_logical_case() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2100,6 +2195,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2117,6 +2213,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2134,6 +2231,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2154,6 +2252,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_conditional_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2171,6 +2270,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2192,6 +2292,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2211,6 +2312,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2247,6 +2349,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2268,6 +2371,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2289,6 +2393,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2310,6 +2415,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2331,6 +2437,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2352,6 +2459,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2371,6 +2479,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2397,6 +2506,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2418,6 +2528,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2439,6 +2550,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2464,6 +2576,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2485,6 +2598,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2506,6 +2620,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2534,6 +2649,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2566,6 +2682,7 @@ import clsx from 'clsx'
     #[serial]
     fn optimize_func() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2583,6 +2700,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2600,6 +2718,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2617,6 +2736,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2634,6 +2754,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2651,6 +2772,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2668,6 +2790,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2689,6 +2812,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector_with_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2708,6 +2832,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2732,6 +2857,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_nested_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2753,6 +2879,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2776,6 +2903,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2802,6 +2930,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2827,6 +2956,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2851,6 +2981,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2881,6 +3012,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2906,6 +3038,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2933,6 +3066,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2960,6 +3094,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2987,6 +3122,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3018,6 +3154,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_conditional_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3037,6 +3174,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3056,6 +3194,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3073,6 +3212,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3097,6 +3237,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector_with_responsive() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3116,6 +3257,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3137,6 +3279,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3164,6 +3307,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_class_name_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3183,6 +3327,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3202,6 +3347,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3222,6 +3368,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3241,6 +3388,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3263,6 +3411,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3280,6 +3429,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3297,6 +3447,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3314,6 +3465,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3336,6 +3488,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3364,6 +3517,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3381,6 +3535,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3398,6 +3553,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3416,6 +3572,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3433,6 +3590,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3450,6 +3608,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3471,6 +3630,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_with_media_query() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3494,6 +3654,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3520,6 +3681,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3545,6 +3707,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_with_theme() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3562,6 +3725,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3579,6 +3743,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3600,6 +3765,7 @@ import clsx from 'clsx'
     #[serial]
     fn apply_typography() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3617,6 +3783,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3634,6 +3801,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3654,6 +3822,7 @@ import clsx from 'clsx'
     #[serial]
     fn apply_var_typography() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3671,6 +3840,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3688,6 +3858,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3705,6 +3876,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3731,6 +3903,7 @@ import clsx from 'clsx'
     #[serial]
     fn raise_error() {
         reset_class_map();
+        reset_file_map();
         assert!(
             extract(
                 "test.wrong",
@@ -3748,6 +3921,7 @@ import clsx from 'clsx'
         );
 
         reset_class_map();
+        reset_file_map();
         assert_eq!(
             extract(
                 "test.tsx",
@@ -3769,6 +3943,7 @@ import clsx from 'clsx'
     #[serial]
     fn import_wrong_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3785,6 +3960,7 @@ import clsx from 'clsx'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3806,6 +3982,7 @@ useTheme();
     #[serial]
     fn support_transpile_mjs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
@@ -3842,6 +4019,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3878,6 +4056,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3896,6 +4075,7 @@ e(o, { className: "a", bg: "red" })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3914,6 +4094,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" } })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3933,6 +4114,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         // conditional as
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3945,6 +4127,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3958,6 +4141,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3975,24 +4159,31 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
     }
 
@@ -4000,6 +4191,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn maintain_value() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4016,6 +4208,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn with_prefix() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4037,6 +4230,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn optimize_aspect_ratio() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4054,6 +4248,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4071,6 +4266,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4092,6 +4288,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn ternary_operator_in_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4109,6 +4306,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4126,6 +4324,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4147,6 +4346,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn test_rest_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4164,6 +4364,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4204,6 +4405,7 @@ export default function Card({
     #[serial]
     fn props_wrong_direct_array_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4221,6 +4423,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4238,6 +4441,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4255,6 +4459,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4272,6 +4477,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -4292,6 +4498,7 @@ export default function Card({
     #[serial]
     fn negative_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4309,6 +4516,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4326,6 +4534,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4343,6 +4552,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4360,6 +4570,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4377,6 +4588,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4394,6 +4606,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4415,6 +4628,7 @@ export default function Card({
     #[serial]
     fn props_wrong_direct_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4432,6 +4646,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4449,6 +4664,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4466,6 +4682,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4487,6 +4704,7 @@ export default function Card({
     #[serial]
     fn extract_conditional_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -4508,6 +4726,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4529,6 +4748,7 @@ export default function Card({
     #[serial]
     fn props_direct_array_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4546,6 +4766,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4563,6 +4784,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4580,6 +4802,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4597,6 +4820,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4617,6 +4841,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4634,6 +4859,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4655,6 +4881,7 @@ export default function Card({
     #[serial]
     fn props_multi_expression() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4696,6 +4923,7 @@ export default function Card({
     #[serial]
     fn props_direct_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4713,6 +4941,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4730,6 +4959,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4747,6 +4977,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4768,6 +4999,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4784,6 +5016,7 @@ export default function Card({
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4805,6 +5038,7 @@ export default function Card({
     #[serial]
     fn props_direct_object_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4822,6 +5056,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4842,6 +5077,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_object_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4863,6 +5099,7 @@ export default function Card({
     #[serial]
     fn props_direct_array_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4880,6 +5117,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4900,6 +5138,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_array_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4917,6 +5156,7 @@ export default function Card({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4938,6 +5178,7 @@ export default function Card({
     #[serial]
     fn props_direct_hybrid_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4959,6 +5200,7 @@ export default function Card({
     #[serial]
     fn props_direct_wrong() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4979,6 +5221,7 @@ export default function Card({
     #[serial]
     fn test_component_in_func() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5005,6 +5248,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn backtick_prop() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5022,6 +5266,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5043,6 +5288,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn group_selector_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5064,6 +5310,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn test_duplicate_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5085,6 +5332,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn avoid_same_name_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5108,6 +5356,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn css_props_destructuring_assignment() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5128,6 +5377,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5152,6 +5402,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn theme_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5173,6 +5424,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn nested_theme_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5206,6 +5458,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn template_literal_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5223,6 +5476,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5240,6 +5494,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5257,6 +5512,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5274,6 +5530,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5291,6 +5548,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5316,6 +5574,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn theme_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5332,6 +5591,7 @@ import {Button} from '@devup/ui'
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5349,6 +5609,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5377,6 +5638,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn custom_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5398,6 +5660,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5419,6 +5682,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5444,6 +5708,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn style_order() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5465,6 +5730,7 @@ import {Button} from '@devup/ui'
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
@@ -5502,6 +5768,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5519,6 +5786,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5536,6 +5804,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5553,6 +5822,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5577,6 +5847,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5602,6 +5873,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5623,6 +5895,7 @@ export {
     #[serial]
     fn style_order2() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5647,6 +5920,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5671,6 +5945,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5699,6 +5974,7 @@ export {
     #[serial]
     fn style_variables() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5718,6 +5994,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5737,6 +6014,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5757,6 +6035,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5776,6 +6055,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5795,6 +6075,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5814,6 +6095,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5833,6 +6115,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5852,6 +6135,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5874,6 +6158,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5891,6 +6176,7 @@ export {
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5912,6 +6198,7 @@ export {
     #[serial]
     fn wrong_style_variables() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5933,6 +6220,7 @@ export {
     #[serial]
     fn style_variables_mjs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -5955,6 +6243,7 @@ e(o, { styleVars: { c: "yellow" } })
     #[serial]
     fn extract_global_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5976,6 +6265,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5997,6 +6287,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6018,6 +6309,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6039,6 +6331,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6060,6 +6353,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6081,6 +6375,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6102,6 +6397,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6119,6 +6415,7 @@ globalCss(...{})
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6137,6 +6434,7 @@ globalCss(...{div: {bg: "red"}})
 
         // recursive spread
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6158,6 +6456,7 @@ globalCss(...{div: {bg: "red"}, ...{span: {bg: "blue"}}})
     #[serial]
     fn extract_wrong_global_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6179,6 +6478,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6196,6 +6496,7 @@ globalCss()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6217,6 +6518,7 @@ globalCss(1)
     #[serial]
     fn extract_global_css_with_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6243,40 +6545,7 @@ globalCss({
         ));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import { globalCss } from "@devup-ui/core";
-globalCss({
-  "div": {
-    bg: "red",
-    color: "blue",
-    _hover: {
-      bg: "blue",
-      color: "red"
-    }
-  },
-  "span": {
-    bg: "red",
-    color: "blue",
-    _hover: {
-      bg: "blue",
-      color: "red"
-    }
-  }
-})
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
-            )
-            .unwrap()
-        ));
-
-        reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6311,6 +6580,42 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  "div": {
+    bg: "red",
+    color: "blue",
+    _hover: {
+      bg: "blue",
+      color: "red"
+    }
+  },
+  "span": {
+    bg: "red",
+    color: "blue",
+    _hover: {
+      bg: "blue",
+      color: "red"
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6357,6 +6662,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_template_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6378,6 +6684,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6397,6 +6704,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6416,6 +6724,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6436,6 +6745,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6458,6 +6768,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6475,6 +6786,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6492,6 +6804,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6510,6 +6823,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6531,6 +6845,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_imports() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6550,6 +6865,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6569,6 +6885,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6592,6 +6909,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_font_faces() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6622,6 +6940,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6647,6 +6966,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6671,6 +6991,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6694,6 +7015,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6719,6 +7041,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6744,6 +7067,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6784,6 +7108,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6803,6 +7128,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6822,6 +7148,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6845,6 +7172,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_wrong_imports() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6864,6 +7192,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6887,6 +7216,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_empty() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6906,6 +7236,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6926,6 +7257,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6945,6 +7277,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6965,6 +7298,7 @@ globalCss({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6982,6 +7316,7 @@ globalCss({})
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7003,6 +7338,7 @@ globalCss()
     #[serial]
     fn extract_keyframs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7023,6 +7359,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7044,6 +7381,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7065,6 +7403,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7086,6 +7425,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7107,6 +7447,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7128,6 +7469,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7149,6 +7491,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7170,6 +7513,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7207,6 +7551,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7231,6 +7576,7 @@ keyframes(...{
     #[serial]
     fn extract_wrong_keyframs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7256,6 +7602,7 @@ keyframes({
     #[serial]
     fn extract_keyframs_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7297,6 +7644,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7348,6 +7696,7 @@ keyframes({
     #[serial]
     fn extract_just_tsx_in_multiple_files() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7415,6 +7764,7 @@ keyframes({
     #[serial]
     fn import_main_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7436,6 +7786,7 @@ keyframes({
     #[serial]
     fn optimize_multi_css_value() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7457,6 +7808,7 @@ keyframes({
     #[serial]
     fn extract_enum_style_property() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7475,6 +7827,7 @@ keyframes({
 
         // wrong case
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7492,6 +7845,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7509,6 +7863,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7526,6 +7881,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7543,6 +7899,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7564,6 +7921,7 @@ keyframes({
     #[serial]
     fn extract_advenced_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7584,6 +7942,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7605,6 +7964,7 @@ keyframes({
 
         // empty
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7624,6 +7984,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7646,6 +8007,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7668,6 +8030,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7690,6 +8053,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7715,6 +8079,7 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7742,6 +8107,8 @@ keyframes({
     fn test_styled() {
         // Test 1: styled.div`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7763,6 +8130,8 @@ keyframes({
 
         // Test 2: styled("div")`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7784,6 +8153,8 @@ keyframes({
 
         // Test 3: styled("div")({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7802,6 +8173,8 @@ keyframes({
 
         // Test 4: styled.div({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7820,6 +8193,8 @@ keyframes({
 
         // Test 5: styled(Component)({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7837,6 +8212,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7857,6 +8234,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7874,6 +8253,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7894,6 +8275,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7911,6 +8294,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7931,6 +8316,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7953,6 +8340,8 @@ keyframes({
     fn test_styled_with_variable() {
         // Test 1: styled.div({ bg: "$text" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7971,6 +8360,8 @@ keyframes({
 
         // Test 2: styled("div")({ color: "$primary" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7989,6 +8380,8 @@ keyframes({
 
         // Test 3: styled.div`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8010,6 +8403,8 @@ keyframes({
 
         // Test 4: styled(Component)({ bg: "$text" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8028,6 +8423,8 @@ keyframes({
 
         // Test 5: styled("div")`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8053,6 +8450,8 @@ keyframes({
     fn test_styled_with_variable_like_emotion() {
         // Test 1: styled.div`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8075,6 +8474,8 @@ keyframes({
 
         // Test 2: styled("div")`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8097,6 +8498,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8116,6 +8519,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8135,6 +8540,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8156,6 +8563,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8173,6 +8582,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8195,6 +8606,8 @@ keyframes({
     fn test_styled_with_variable_like_emotion_props() {
         // Test 3: styled.div`css with ${props => props.bg}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8216,6 +8629,8 @@ keyframes({
 
         // Test 4: styled(Component)`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8238,6 +8653,8 @@ keyframes({
 
         // Test 5: styled.div`css with multiple ${variables}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8262,6 +8679,8 @@ keyframes({
 
         // Test 6: styled.div`css with ${expression}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8287,6 +8706,8 @@ keyframes({
     #[serial]
     fn test_wrong_styled_with_variable_like_emotion_props() {
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8307,6 +8728,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8327,6 +8750,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8344,6 +8769,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8361,6 +8788,8 @@ keyframes({
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8382,6 +8811,7 @@ keyframes({
     #[serial]
     fn test_mask_properties_with_korean() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8412,6 +8842,7 @@ keyframes({
     fn test_dot_notation_theme_variables() {
         // Test that dot notation theme variables (e.g., $primary.100) are correctly extracted
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8430,6 +8861,7 @@ keyframes({
 
         // Test multiple dot notation variables
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8448,6 +8880,7 @@ keyframes({
 
         // Test deep nested dot notation
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8466,6 +8899,7 @@ keyframes({
 
         // Test dot notation in border shorthand
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8487,6 +8921,7 @@ keyframes({
     #[serial]
     fn test_styled_with_spread() {
         reset_class_map();
+        reset_file_map();
         // Test styled with spread element
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8510,6 +8945,7 @@ const StyledDiv = styled.div({ ...baseStyles })
     #[serial]
     fn test_css_function_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test css() with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8532,6 +8968,7 @@ const className = css()
     #[serial]
     fn test_css_function_empty_object() {
         reset_class_map();
+        reset_file_map();
         // Test css() with empty object
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8554,6 +8991,7 @@ const className = css({})
     #[serial]
     fn test_keyframes_function() {
         reset_class_map();
+        reset_file_map();
         // Test keyframes() function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8579,6 +9017,7 @@ const spin = keyframes({
     #[serial]
     fn test_global_css_function() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss() function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8603,6 +9042,7 @@ globalCss({
     #[serial]
     fn test_conditional_styles() {
         reset_class_map();
+        reset_file_map();
         // Test conditional styles with both branches having different properties
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8628,6 +9068,7 @@ const Component = () => {
     #[serial]
     fn test_css_variable_reassignment() {
         reset_class_map();
+        reset_file_map();
         // Test css import reassignment
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8651,6 +9092,7 @@ const className = myCss({ bg: "red" })
     #[serial]
     fn test_global_css_with_imports() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with @import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8675,6 +9117,7 @@ globalCss({
     #[serial]
     fn test_global_css_with_font_faces() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with fontFaces
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8705,6 +9148,7 @@ globalCss({
     #[serial]
     fn test_global_css_with_pseudo_selector() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with pseudo selector (prefixed with _)
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8729,6 +9173,7 @@ globalCss({
     #[serial]
     fn test_responsive_array_styles() {
         reset_class_map();
+        reset_file_map();
         // Test responsive array with multiple breakpoints
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8751,6 +9196,7 @@ globalCss({
     #[serial]
     fn test_member_expression_style() {
         reset_class_map();
+        reset_file_map();
         // Test dynamic member expression for styles (obj[key])
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8775,6 +9221,7 @@ const key = "primary";
     #[serial]
     fn test_dynamic_class_name_merge() {
         reset_class_map();
+        reset_file_map();
         // Test dynamic className merging with existing className
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8799,6 +9246,7 @@ const Component = ({ className }) => {
     #[serial]
     fn test_typography_style() {
         reset_class_map();
+        reset_file_map();
         // Test typography prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8821,6 +9269,7 @@ const Component = ({ className }) => {
     #[serial]
     fn test_css_with_template_literal() {
         reset_class_map();
+        reset_file_map();
         // Test css function with template literal containing expressions
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8844,6 +9293,7 @@ const className = css({ fontSize: `${size}px` })
     #[serial]
     fn test_conditional_with_both_branches() {
         reset_class_map();
+        reset_file_map();
         // Test conditional where both branches have styles
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8867,6 +9317,7 @@ const isActive = true;
     #[serial]
     fn test_spread_props() {
         reset_class_map();
+        reset_file_map();
         // Test spread props on component
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8891,6 +9342,7 @@ const Component = (props) => {
     #[serial]
     fn test_nested_conditional() {
         reset_class_map();
+        reset_file_map();
         // Test nested conditional expressions
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8915,6 +9367,7 @@ const b = false;
     #[serial]
     fn test_style_prop_merge() {
         reset_class_map();
+        reset_file_map();
         // Test style prop merging with dynamic styles
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8938,6 +9391,7 @@ const color = "red";
     #[serial]
     fn test_keyframes_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test keyframes with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8960,6 +9414,7 @@ const spin = keyframes()
     #[serial]
     fn test_global_css_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8982,6 +9437,7 @@ globalCss()
     #[serial]
     fn test_default_import_usage() {
         reset_class_map();
+        reset_file_map();
         // Test using default import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9004,6 +9460,7 @@ globalCss()
     #[serial]
     fn test_namespace_import_usage() {
         reset_class_map();
+        reset_file_map();
         // Test using namespace import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9026,6 +9483,7 @@ globalCss()
     #[serial]
     fn test_namespace_import_css() {
         reset_class_map();
+        reset_file_map();
         // Test using namespace import with css function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9048,6 +9506,7 @@ const className = DevUI.css({ bg: "red" })
     #[serial]
     fn test_enum_style_prop() {
         reset_class_map();
+        reset_file_map();
         // Test enum-like style mapping
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9072,6 +9531,7 @@ const colors = { primary: "blue", secondary: "red" };
     #[serial]
     fn test_style_vars_prop() {
         reset_class_map();
+        reset_file_map();
         // Test styleVars prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9095,6 +9555,7 @@ const dynamicColor = "blue";
     #[serial]
     fn test_props_prop() {
         reset_class_map();
+        reset_file_map();
         // Test props prop forwarding
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9118,6 +9579,7 @@ const extraProps = { onClick: () => {} };
     #[serial]
     fn test_style_order_prop() {
         reset_class_map();
+        reset_file_map();
         // Test styleOrder prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9140,6 +9602,7 @@ const extraProps = { onClick: () => {} };
     #[serial]
     fn test_multiple_dynamic_values() {
         reset_class_map();
+        reset_file_map();
         // Test multiple dynamic values
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9166,6 +9629,7 @@ const margin = 5;
     fn test_media_query_selectors() {
         // Test _print media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9184,6 +9648,7 @@ const margin = 5;
 
         // Test _screen media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9202,6 +9667,7 @@ const margin = 5;
 
         // Test _speech media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9220,6 +9686,7 @@ const margin = 5;
 
         // Test _all media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9238,6 +9705,7 @@ const margin = 5;
 
         // Test multiple media query selectors combined
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9264,6 +9732,7 @@ const margin = 5;
     fn test_at_rules_underscore_prefix() {
         // Test _container at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9282,6 +9751,7 @@ const margin = 5;
 
         // Test _media at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9300,6 +9770,7 @@ const margin = 5;
 
         // Test _supports at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9318,6 +9789,7 @@ const margin = 5;
 
         // Test _container with named container
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9340,6 +9812,7 @@ const margin = 5;
     fn test_at_rules_at_prefix() {
         // Test @container at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9358,6 +9831,7 @@ const margin = 5;
 
         // Test @media at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9376,6 +9850,7 @@ const margin = 5;
 
         // Test @supports at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9398,6 +9873,7 @@ const margin = 5;
     fn test_global_css_at_rules() {
         // Test globalCss with @media nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9422,6 +9898,7 @@ globalCss({
 
         // Test globalCss with @supports nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9446,6 +9923,7 @@ globalCss({
 
         // Test globalCss with @container nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9470,6 +9948,7 @@ globalCss({
 
         // Test globalCss with multiple at-rules nested inside selectors
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9505,6 +9984,7 @@ globalCss({
     fn test_global_css_with_layer() {
         // Test globalCss with @layer property
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9529,6 +10009,7 @@ globalCss({
 
         // Test globalCss with @layer for multiple selectors
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9565,6 +10046,7 @@ globalCss({
     #[serial]
     fn test_vanilla_extract_style_css_ts() {
         reset_class_map();
+        reset_file_map();
         // .css.ts file with style function (vanilla-extract API)
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9587,6 +10069,7 @@ export const container: string = style({ background: "red", padding: 16 })
     #[serial]
     fn test_vanilla_extract_style_css_js() {
         reset_class_map();
+        reset_file_map();
         // .css.js file with style function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9605,6 +10088,7 @@ export const wrapper = style({ backgroundColor: "white", margin: 8 })
         ));
 
         reset_class_map();
+        reset_file_map();
         // .css.js file with style function for link
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9627,6 +10111,7 @@ export const link = style({ color: "blue", textDecoration: "underline" })
     #[serial]
     fn test_vanilla_extract_with_variable() {
         reset_class_map();
+        reset_file_map();
         // Variables should be evaluated at execution time
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9651,6 +10136,7 @@ export const button = style({ background: primaryColor, padding: spacing })
     #[serial]
     fn test_vanilla_extract_with_computed() {
         reset_class_map();
+        reset_file_map();
         // Computed values should be evaluated
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9674,6 +10160,7 @@ export const box = style({ padding: base * 2, margin: base / 2 })
     #[serial]
     fn test_vanilla_extract_with_spread() {
         reset_class_map();
+        reset_file_map();
         // Spread operator should work
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9697,6 +10184,7 @@ export const extended = style({ ...baseStyle, background: "red" })
     #[serial]
     fn test_vanilla_extract_with_pseudo_selector() {
         reset_class_map();
+        reset_file_map();
         // devup-ui extension: _hover pseudo selector
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9719,6 +10207,7 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
     #[serial]
     fn test_vanilla_extract_with_responsive_array() {
         reset_class_map();
+        reset_file_map();
         // devup-ui extension: responsive arrays
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9741,6 +10230,7 @@ export const responsiveBox = style({ padding: [8, 16, 32] })
     #[serial]
     fn test_vanilla_extract_with_keyframes_and_global() {
         reset_class_map();
+        reset_file_map();
         // .css.ts file with keyframes (vanilla-extract API)
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9760,6 +10250,7 @@ export const animated = style({ animation: "fadeIn 1s ease-in" })
         ));
 
         reset_class_map();
+        reset_file_map();
         // .css.ts file with globalStyle (vanilla-extract API)
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9782,6 +10273,7 @@ globalStyle("body", { margin: 0, padding: 0 })
     #[serial]
     fn test_vanilla_extract_create_var() {
         reset_class_map();
+        reset_file_map();
         // createVar - CSS variable creation
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9806,6 +10298,7 @@ export const box = style({
         ));
 
         reset_class_map();
+        reset_file_map();
         // fallbackVar - CSS variable with fallback
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9831,6 +10324,7 @@ export const box = style({
     #[serial]
     fn test_vanilla_extract_style_variants() {
         reset_class_map();
+        reset_file_map();
         // styleVariants - create multiple style variants
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9853,6 +10347,7 @@ export const background = styleVariants({
         ));
 
         reset_class_map();
+        reset_file_map();
         // styleVariants with base style composition
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9880,6 +10375,7 @@ export const button = styleVariants({
     fn test_vanilla_extract_font_face() {
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         // fontFace - define custom font
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9903,6 +10399,7 @@ export const text = style({
         ));
 
         reset_class_map();
+        reset_file_map();
         // fontFace with multiple sources
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9932,6 +10429,7 @@ export const body = style({
     #[serial]
     fn test_vanilla_extract_theme() {
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         // createTheme - define theme with variables
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -9965,6 +10463,7 @@ export const box = style({
         ));
 
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         // createThemeContract - type-safe theme contract
         assert_debug_snapshot!(ToBTreeSet::from(
@@ -10006,6 +10505,7 @@ export const darkTheme = createTheme(vars, {
     fn test_vanilla_extract_layer() {
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         // layer - CSS cascade layers
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10035,6 +10535,7 @@ globalStyle('*', {
     #[serial]
     fn test_vanilla_extract_container() {
         reset_class_map();
+        reset_file_map();
         // createContainer - container queries
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10068,6 +10569,7 @@ export const responsive = style({
     #[serial]
     fn test_vanilla_extract_global_theme() {
         reset_class_map();
+        reset_file_map();
         // createGlobalTheme - global theme variables on :root
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10099,6 +10601,7 @@ export const vars = createGlobalTheme(':root', {
     #[serial]
     fn test_vanilla_extract_composition() {
         reset_class_map();
+        reset_file_map();
         // style composition - array of styles
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10132,6 +10635,7 @@ export const button = style([base, interactive, {
     #[serial]
     fn test_vanilla_extract_selectors() {
         reset_class_map();
+        reset_file_map();
         // complex selectors
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10167,6 +10671,7 @@ export const button = style({
         ));
 
         reset_class_map();
+        reset_file_map();
         // parent and sibling selectors
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10201,6 +10706,7 @@ export const child = style({
     #[serial]
     fn test_vanilla_extract_media_queries() {
         reset_class_map();
+        reset_file_map();
         // @media queries
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10237,6 +10743,7 @@ export const responsive = style({
     #[serial]
     fn test_vanilla_extract_supports() {
         reset_class_map();
+        reset_file_map();
         // @supports queries
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10374,6 +10881,7 @@ export const grid = style({
     fn test_container_at_rule_in_css() {
         // Test @container at-rule (covers line 134 in extract_style_from_expression.rs)
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10398,6 +10906,7 @@ export const grid = style({
 
         // Test with @container prefix
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10427,6 +10936,7 @@ export const grid = style({
         // Test vanilla-extract file with invalid JS (covers line 107 fallback)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         // This should fall back to regular extraction when JS execution fails
         let result = extract(
             "invalid.css.ts",
@@ -10451,6 +10961,7 @@ export const broken = style((() => { throw new Error("fail"); })())
         // Test vanilla-extract file that produces empty styles (covers line 116)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         // File with no style() calls
         let result = extract(
             "empty.css.ts",
@@ -10473,6 +10984,7 @@ const unused = 1;
     fn test_vanilla_extract_constant_exports() {
         // Test vanilla-extract file with constant exports (covers lines 576-577)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10498,6 +11010,7 @@ export const box = style({ padding: SPACING })
     fn test_vanilla_extract_theme_with_vars() {
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 406-430)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10531,6 +11044,7 @@ export const [lightTheme, vars] = createTheme({
         // Test non-exported createTheme (covers theme branches without export)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "internal-theme.css.ts",
@@ -10562,6 +11076,7 @@ export const themed = style({
         // Test style with empty composition array
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "empty-comp.css.ts",
@@ -10585,6 +11100,7 @@ export const withEmpty = style([{}])
     fn test_vanilla_extract_style_variants_with_base() {
         // Test styleVariants with base composition (covers lines 1165-1177)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10617,6 +11133,7 @@ export const sizes = styleVariants({
         // Test layer() and createContainer() together (covers lines 1207-1216)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "layer-container.css.ts",
@@ -10645,6 +11162,7 @@ export const containerStyle = style({
     fn test_vanilla_extract_all_imports() {
         // Test file that uses css, globalCss, and keyframes together (covers lines 1049, 1052)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10681,6 +11199,7 @@ export const box = style({
         // Test createTheme two-arg form (covers lines 1108, 1111)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-two-arg.css.ts",
@@ -10715,6 +11234,7 @@ export const darkTheme = createTheme(contract, {
         // Test fontFace used in style (covers fontFace placeholder replacement)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "font-usage.css.ts",
@@ -10744,6 +11264,7 @@ export const text = style({
         // Test createVar exports (covers lines 1191-1192)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "vars-only.css.ts",
@@ -10772,6 +11293,7 @@ export const box = style({
         // Test createGlobalTheme with empty vars (covers line 1142 branch)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "global-theme-empty.css.ts",
@@ -10796,6 +11318,7 @@ export const box = style({ padding: 8 })
         // Test non-exported styles mixed with exported (covers export flag branches)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "mixed-exports.css.ts",
@@ -10818,6 +11341,7 @@ export const publicStyle = style({ margin: 8 })
     fn test_vanilla_extract_selector_references() {
         // Test styles referencing each other in selectors (covers find_selector_references)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -10868,6 +11392,8 @@ export const sibling = style({
     fn test_global_css_fontfaces_object_syntax() {
         // Test globalCss fontFaces with object syntax (covers lines 103, 115 in extract_global_style_from_expression.rs)
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10895,6 +11421,8 @@ globalCss({
 
         // Test with multiple font properties to exercise disassemble_property
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10930,6 +11458,8 @@ globalCss({
     fn test_conditional_expression_with_selector() {
         // Test ConditionalExpression when name.is_none() and selector.is_some() (covers line 134)
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10950,6 +11480,8 @@ globalCss({
 
         // Test nested conditional within selector
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -10977,6 +11509,7 @@ globalCss({
         // Test non-.css.ts file (covers line 154 - is_vanilla_extract = false path)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         let result = extract(
             "regular.tsx",
             r#"import { Box } from '@devup-ui/react'
@@ -10999,6 +11532,7 @@ globalCss({
     fn test_vanilla_extract_execution_fallback() {
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         // Syntax error in JS execution will trigger fallback
         let result = extract(
@@ -11023,6 +11557,7 @@ const x = style({ padding: [[[}}} // invalid syntax
         // Test style() with object that has no length property (covers line 745)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "no-length.css.ts",
@@ -11045,6 +11580,7 @@ export const box = style({ padding: 8, margin: 4 })
     fn test_vanilla_extract_keyframes_export() {
         // Test exported keyframes (covers lines 1052, 1152-1153)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11077,6 +11613,7 @@ export const spinner = style({ animation: spin })
         // Test createTheme with vars_name but no vars_object_json (covers line 1301)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-vars-name.css.ts",
@@ -11101,6 +11638,7 @@ export const myTheme = createTheme({
     fn test_vanilla_extract_style_variants_mixed() {
         // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11129,6 +11667,7 @@ export const buttons = styleVariants({
     fn test_vanilla_extract_global_theme_with_vars() {
         // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11163,6 +11702,7 @@ export const box = style({ padding: 8 })
         // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "fontface-minimal.css.ts",
@@ -11186,6 +11726,7 @@ export const text = style({ fontFamily: minimalFont })
     fn test_vanilla_extract_imports_combination() {
         // Test file with multiple import types (covers lines 1049, 1052 import generation)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11212,6 +11753,7 @@ export const animated = style({ animation: fadeIn })
     fn test_vanilla_extract_theme_export_variations() {
         // Test createTheme with different export patterns (covers lines 1103-1111)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11245,6 +11787,7 @@ export const box = style({ padding: 8 })
         // Test style with multiple style objects in composition array (covers lines 728-729)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "multi-comp.css.ts",
@@ -11268,6 +11811,7 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
     fn test_vanilla_extract_selector_class_replacement() {
         // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11297,6 +11841,7 @@ export const child = style({
         // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
         // Covers multiple import generation paths and code generation
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11328,6 +11873,7 @@ export const box = style({ fontFamily: myFont })
         // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-array.css.ts",
@@ -11354,6 +11900,7 @@ export const themed = style({ color: themeVars.colors.primary })
     fn test_vanilla_extract_font_face_placeholder() {
         // Test fontFace placeholder remapping (covers lines 503-505)
         reset_class_map();
+        reset_file_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -11387,6 +11934,7 @@ export const heading = style({ fontFamily: secondFont })
         // Test createGlobalTheme placeholder remapping (covers global theme paths)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "globaltheme-remap.css.ts",
@@ -11415,6 +11963,8 @@ export const box = style({ padding: 8 })
     fn test_global_css_with_layer_in_selector() {
         // Test globalCss with @layer inside selector object (covers lines 103, 115 in extract_global_style_from_expression.rs)
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -11439,6 +11989,8 @@ globalCss({
 
         // Test with multiple selectors having @layer
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -11470,6 +12022,8 @@ globalCss({
     fn test_css_container_at_rule_with_selector() {
         // Test @container at-rule within selector context (covers line 134)
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -11500,6 +12054,7 @@ globalCss({
         // Test that triggers collected_styles_to_code_with_classes path (selector references)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "refs.css.ts",
@@ -11529,6 +12084,7 @@ globalStyle('body', { margin: 0 })
         // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
         reset_class_map();
         reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-simple.css.ts",
@@ -11540,6 +12096,103 @@ export const lightTheme = createTheme(contract, {
   colors: { primary: 'blue' }
 })
 export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_layer_property_extraction() {
+        // Test globalCss with @layer property to trigger lines 103, 115 in extract_global_style_from_expression.rs
+        // The @layer property should be extracted and then filtered out, with layer set on remaining styles
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".reset-box": {
+        "@layer": "reset",
+        margin: 0,
+        padding: 0,
+        boxSizing: "border-box"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_selector_refs_with_global_theme() {
+        // Test that triggers append_non_style_code with global themes (covers lines 1142-1144, 1221-1222)
+        // Need selector references + createGlobalTheme
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-refs.css.ts",
+                r#"import { style, createGlobalTheme } from '@devup-ui/react'
+export const vars = createGlobalTheme(':root', {
+  colors: { primary: 'blue', secondary: 'green' }
+})
+export const parent = style({ background: 'white' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { color: 'red' }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_at_container_selector() {
+        // Test @container with selector context (covers line 134 in extract_style_from_expression.rs)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "container.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const card = style({
+  containerType: 'inline-size',
+  '@container': {
+    '(min-width: 400px)': {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr'
+    }
+  }
+})
 "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
