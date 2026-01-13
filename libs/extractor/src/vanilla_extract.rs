@@ -41,6 +41,19 @@ pub struct StyleEntry {
     pub bases: Vec<String>,
 }
 
+/// Entry for createGlobalTheme() - CSS variables scoped to a selector
+#[derive(Debug, Clone, Default)]
+pub struct GlobalThemeEntry {
+    /// CSS selector (e.g., ":root")
+    pub selector: String,
+    /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand-0-0", "blue")]
+    pub css_vars: Vec<(String, String)>,
+    /// Serialized JS object with var() references
+    pub vars_object_json: String,
+    /// Whether this is exported
+    pub exported: bool,
+}
+
 /// Collected style definitions from vanilla-extract API calls
 #[derive(Debug, Default)]
 pub struct CollectedStyles {
@@ -60,6 +73,8 @@ pub struct CollectedStyles {
     pub containers: HashMap<String, (String, bool)>,
     /// layer() calls: variable_name -> (layer name string, exported)
     pub layers: HashMap<String, (String, bool)>,
+    /// createGlobalTheme() calls: variable_name -> GlobalThemeEntry
+    pub global_themes: HashMap<String, GlobalThemeEntry>,
     /// Non-style constant exports: variable_name -> value (as code string)
     pub constant_exports: HashMap<String, String>,
 }
@@ -75,6 +90,7 @@ struct StyleCollectorInner {
     styles: CollectedStyles,
     style_counter: usize,
     font_counter: usize,
+    global_theme_counter: usize,
 }
 
 type StyleCollector = Rc<RefCell<StyleCollectorInner>>;
@@ -90,6 +106,13 @@ fn next_font_id(collector: &StyleCollector) -> String {
     let mut inner = collector.borrow_mut();
     let id = format!("__font_{}__", inner.font_counter);
     inner.font_counter += 1;
+    id
+}
+
+fn next_global_theme_id(collector: &StyleCollector) -> String {
+    let mut inner = collector.borrow_mut();
+    let id = format!("__global_theme_{}__", inner.global_theme_counter);
+    inner.global_theme_counter += 1;
     id
 }
 
@@ -119,6 +142,80 @@ fn parse_font_face_json(json: &str) -> Vec<(String, String)> {
             (k.clone(), val)
         })
         .collect()
+}
+
+/// Recursively transform theme object to CSS var() references
+/// Returns a new JS object with the same structure but leaf values replaced with var(--path)
+fn transform_theme_to_vars(
+    value: &JsValue,
+    ctx: &mut Context,
+    placeholder_id: &str,
+    css_vars: &mut Vec<(String, String)>,
+    var_counter: &mut usize,
+    path: &[String],
+) -> JsValue {
+    if let Some(obj) = value.as_object() {
+        // Check if it's an array (shouldn't happen in theme objects, but handle it)
+        if obj.is_array() {
+            return value.clone();
+        }
+
+        // It's an object - recursively transform each property
+        let new_obj = boa_engine::object::ObjectInitializer::new(ctx).build();
+
+        // Get own property keys
+        if let Ok(keys) = obj.own_property_keys(ctx) {
+            for key in keys {
+                // Convert PropertyKey to string
+                let key_string = match &key {
+                    boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
+                    boa_engine::property::PropertyKey::Symbol(_) => continue,
+                    boa_engine::property::PropertyKey::Index(i) => i.get().to_string(),
+                };
+
+                if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
+                    let mut new_path = path.to_vec();
+                    new_path.push(key_string.clone());
+
+                    let transformed = transform_theme_to_vars(
+                        &prop_value,
+                        ctx,
+                        placeholder_id,
+                        css_vars,
+                        var_counter,
+                        &new_path,
+                    );
+
+                    let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
+                }
+            }
+        }
+
+        JsValue::from(new_obj)
+    } else {
+        // Leaf value - create CSS variable
+        let var_name = format!(
+            "--{}-{}-{}",
+            path.join("-"),
+            placeholder_id.trim_matches('_').replace("__", "-"),
+            var_counter
+        );
+        *var_counter += 1;
+
+        // Get the actual value as string
+        let value_str = if let Some(s) = value.as_string() {
+            s.to_std_string_escaped()
+        } else if let Ok(s) = value.to_string(ctx) {
+            s.to_std_string_escaped()
+        } else {
+            String::new()
+        };
+
+        css_vars.push((var_name.clone(), value_str));
+
+        // Return var(--name)
+        JsValue::from(js_string!(format!("var({})", var_name)))
+    }
 }
 
 /// Convert JsValue to JSON string using JSON.stringify
@@ -271,6 +368,7 @@ fn is_style_api_call(expr: &oxc_ast::ast::Expression) -> bool {
                 | "createVar"
                 | "createContainer"
                 | "layer"
+                | "createGlobalTheme"
         );
     }
     false
@@ -293,8 +391,10 @@ fn remap_style_names(
     let mut new_containers = HashMap::new();
     let mut new_layers = HashMap::new();
     let mut new_font_faces = HashMap::new();
+    let mut new_global_themes = HashMap::new();
     let mut style_idx = 0;
     let mut font_idx = 0;
+    let mut global_theme_idx = 0;
 
     // First pass: collect old entries preserving all fields
     let old_styles: HashMap<String, StyleEntry> = collected.styles.drain().collect();
@@ -318,6 +418,9 @@ fn remap_style_names(
         .drain()
         .map(|(k, v)| (k, (v.0, v.1)))
         .collect();
+    // global_themes: placeholder_id -> GlobalThemeEntry (without exported flag for remapping)
+    let old_global_themes: HashMap<String, GlobalThemeEntry> =
+        collected.global_themes.drain().collect();
 
     for (name, info) in vars {
         match info {
@@ -329,6 +432,22 @@ fn remap_style_names(
                     new_font_faces
                         .insert(name.clone(), (json.clone(), font_family.clone(), *exported));
                     font_idx += 1;
+                    continue;
+                }
+
+                // Check if this is a createGlobalTheme (uses __global_theme_N__ placeholder)
+                let global_theme_placeholder = format!("__global_theme_{}__", global_theme_idx);
+                if let Some(entry) = old_global_themes.get(&global_theme_placeholder) {
+                    new_global_themes.insert(
+                        name.clone(),
+                        GlobalThemeEntry {
+                            selector: entry.selector.clone(),
+                            css_vars: entry.css_vars.clone(),
+                            vars_object_json: entry.vars_object_json.clone(),
+                            exported: *exported,
+                        },
+                    );
+                    global_theme_idx += 1;
                     continue;
                 }
 
@@ -433,6 +552,7 @@ fn remap_style_names(
     collected.containers = new_containers;
     collected.layers = new_layers;
     collected.font_faces = new_font_faces;
+    collected.global_themes = new_global_themes;
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
@@ -749,10 +869,48 @@ fn register_vanilla_extract_apis(
     };
 
     // createGlobalTheme() function
+    let collector_global_theme = collector.clone();
     let create_global_theme_fn = unsafe {
-        NativeFunction::from_closure(move |_this, args, _ctx| {
+        NativeFunction::from_closure(move |_this, args, ctx| {
+            let placeholder_id = next_global_theme_id(&collector_global_theme);
+            let selector = args
+                .get_or_undefined(0)
+                .to_string(ctx)
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_else(|_| ":root".to_string());
             let theme_obj = args.get_or_undefined(1);
-            Ok(theme_obj.clone())
+
+            // Collect CSS variables and build new object with var() references
+            let mut css_vars = Vec::new();
+            let mut var_counter = 0usize;
+            let result_obj = transform_theme_to_vars(
+                theme_obj,
+                ctx,
+                &placeholder_id,
+                &mut css_vars,
+                &mut var_counter,
+                &[],
+            );
+
+            // Serialize the result object to JSON for code generation
+            let vars_object_json = js_value_to_json(&result_obj, ctx);
+
+            // Store the collected CSS variables and vars object
+            collector_global_theme
+                .borrow_mut()
+                .styles
+                .global_themes
+                .insert(
+                    placeholder_id,
+                    GlobalThemeEntry {
+                        selector,
+                        css_vars,
+                        vars_object_json,
+                        exported: false,
+                    },
+                );
+
+            Ok(result_obj)
         })
     };
 
@@ -794,7 +952,10 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
     if !collected.styles.is_empty() || !collected.style_variants.is_empty() {
         imports.push("css");
     }
-    if !collected.global_styles.is_empty() || !collected.font_faces.is_empty() {
+    if !collected.global_styles.is_empty()
+        || !collected.font_faces.is_empty()
+        || !collected.global_themes.is_empty()
+    {
         imports.push("globalCss");
     }
     if !collected.keyframes.is_empty() {
@@ -891,6 +1052,25 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
             )
         };
         code_parts.push(code);
+    }
+
+    // Generate createGlobalTheme CSS variables via globalCss (sorted for deterministic output)
+    let mut global_themes_sorted: Vec<_> = collected.global_themes.iter().collect();
+    global_themes_sorted.sort_by_key(|(name, _)| *name);
+    for (_name, entry) in &global_themes_sorted {
+        if !entry.css_vars.is_empty() {
+            // Build CSS variables object for the selector
+            let vars_str = entry
+                .css_vars
+                .iter()
+                .map(|(var_name, value)| format!("\"{}\": \"{}\"", var_name, value))
+                .collect::<Vec<_>>()
+                .join(", ");
+            code_parts.push(format!(
+                "globalCss({{ \"{}\": {{ {} }} }})",
+                entry.selector, vars_str
+            ));
+        }
     }
 
     // Generate keyframes declarations (sorted for deterministic output)
@@ -991,6 +1171,15 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
         code_parts.push(format!("{}const {} = \"{}\"", prefix, name, value));
     }
 
+    // Generate createGlobalTheme vars object declarations (sorted for deterministic output)
+    for (name, entry) in &global_themes_sorted {
+        let prefix = if entry.exported { "export " } else { "" };
+        code_parts.push(format!(
+            "{}const {} = {}",
+            prefix, name, entry.vars_object_json
+        ));
+    }
+
     // Generate constant exports (sorted for deterministic output)
     let mut constants: Vec<_> = collected.constant_exports.iter().collect();
     constants.sort_by_key(|(name, _)| *name);
@@ -1012,6 +1201,7 @@ impl Clone for CollectedStyles {
             style_variants: self.style_variants.clone(),
             containers: self.containers.clone(),
             layers: self.layers.clone(),
+            global_themes: self.global_themes.clone(),
             constant_exports: self.constant_exports.clone(),
         }
     }
