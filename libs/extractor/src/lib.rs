@@ -115,7 +115,7 @@ pub fn extract(
     // Handle vanilla-extract style files (.css.ts, .css.js)
     let (processed_code, is_vanilla_extract) = if vanilla_extract::is_vanilla_extract_file(filename)
     {
-        match vanilla_extract::execute_vanilla_extract(code, &option.package) {
+        match vanilla_extract::execute_vanilla_extract(code, &option.package, filename) {
             Ok(collected) => {
                 let generated =
                     vanilla_extract::collected_styles_to_code(&collected, &option.package);

@@ -9,6 +9,7 @@ use boa_engine::{
     Context, JsArgs, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
     property::Attribute,
 };
+use css::file_map::get_file_num_by_filename;
 use oxc_allocator::Allocator;
 use oxc_codegen::Codegen;
 use oxc_parser::Parser;
@@ -51,8 +52,8 @@ pub struct CollectedStyles {
     pub keyframes: HashMap<String, StyleEntry>,
     /// createVar() calls: variable_name -> (CSS variable string, exported)
     pub vars: HashMap<String, (String, bool)>,
-    /// fontFace() calls: font face object JSON
-    pub font_faces: Vec<String>,
+    /// fontFace() calls: placeholder_id -> (font_face JSON, font-family name, exported)
+    pub font_faces: HashMap<String, (String, String, bool)>,
     /// styleVariants() calls: variable_name -> (variants, exported)
     pub style_variants: HashMap<String, (HashMap<String, StyleVariant>, bool)>,
     /// createContainer() calls: variable_name -> (container name string, exported)
@@ -73,6 +74,7 @@ pub fn is_vanilla_extract_file(filename: &str) -> bool {
 struct StyleCollectorInner {
     styles: CollectedStyles,
     style_counter: usize,
+    font_counter: usize,
 }
 
 type StyleCollector = Rc<RefCell<StyleCollectorInner>>;
@@ -82,6 +84,41 @@ fn next_style_id(collector: &StyleCollector) -> String {
     let id = format!("__style_{}__", inner.style_counter);
     inner.style_counter += 1;
     id
+}
+
+fn next_font_id(collector: &StyleCollector) -> String {
+    let mut inner = collector.borrow_mut();
+    let id = format!("__font_{}__", inner.font_counter);
+    inner.font_counter += 1;
+    id
+}
+
+/// Parse font-face JSON and return list of (key, value) pairs
+/// Input: {"src":"local(...)","fontWeight":400}
+/// Output: vec![("src", "\"local(...)\""), ("fontWeight", "400")]
+fn parse_font_face_json(json: &str) -> Vec<(String, String)> {
+    // Use serde_json to parse properly
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+
+    let Some(obj) = value.as_object() else {
+        return Vec::new();
+    };
+
+    obj.iter()
+        .map(|(k, v)| {
+            let val = match v {
+                serde_json::Value::String(s) => {
+                    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+                }
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => v.to_string(),
+            };
+            (k.clone(), val)
+        })
+        .collect()
 }
 
 /// Convert JsValue to JSON string using JSON.stringify
@@ -125,13 +162,18 @@ fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
 }
 
 /// Execute vanilla-extract style file and collect styles
-pub fn execute_vanilla_extract(code: &str, package: &str) -> Result<CollectedStyles, String> {
+pub fn execute_vanilla_extract(
+    code: &str,
+    package: &str,
+    filename: &str,
+) -> Result<CollectedStyles, String> {
     let collector: StyleCollector = Rc::new(RefCell::new(StyleCollectorInner::default()));
+    let file_num = get_file_num_by_filename(filename);
 
     let mut context = Context::default();
 
     // Create the mock module object
-    register_vanilla_extract_apis(&mut context, collector.clone(), package)?;
+    register_vanilla_extract_apis(&mut context, collector.clone(), package, file_num)?;
 
     // Preprocess code: convert TypeScript to JavaScript using Oxc Transformer
     let js_code = preprocess_typescript(code, package);
@@ -243,13 +285,16 @@ fn remap_style_names(
     // Build mapping from placeholder ID to original name
     // The order of style() calls matches the order of variable declarations
     let mut placeholder_to_name: HashMap<String, String> = HashMap::new();
+    let mut font_placeholder_to_name: HashMap<String, String> = HashMap::new();
     let mut new_styles = HashMap::new();
     let mut new_keyframes = HashMap::new();
     let mut new_style_variants = HashMap::new();
     let mut new_vars = HashMap::new();
     let mut new_containers = HashMap::new();
     let mut new_layers = HashMap::new();
+    let mut new_font_faces = HashMap::new();
     let mut style_idx = 0;
+    let mut font_idx = 0;
 
     // First pass: collect old entries preserving all fields
     let old_styles: HashMap<String, StyleEntry> = collected.styles.drain().collect();
@@ -267,10 +312,26 @@ fn remap_style_names(
         .collect();
     let old_layers: HashMap<String, String> =
         collected.layers.drain().map(|(k, v)| (k, v.0)).collect();
+    // font_faces: placeholder_id -> (json, font_family, exported)
+    let old_font_faces: HashMap<String, (String, String)> = collected
+        .font_faces
+        .drain()
+        .map(|(k, v)| (k, (v.0, v.1)))
+        .collect();
 
     for (name, info) in vars {
         match info {
             VarInfo::StyleApi { exported } => {
+                // First check if this is a fontFace (uses __font_N__ placeholder)
+                let font_placeholder = format!("__font_{}__", font_idx);
+                if let Some((json, font_family)) = old_font_faces.get(&font_placeholder) {
+                    font_placeholder_to_name.insert(font_placeholder.clone(), name.clone());
+                    new_font_faces
+                        .insert(name.clone(), (json.clone(), font_family.clone(), *exported));
+                    font_idx += 1;
+                    continue;
+                }
+
                 let placeholder = format!("__style_{}__", style_idx);
                 placeholder_to_name.insert(placeholder.clone(), name.clone());
 
@@ -341,12 +402,37 @@ fn remap_style_names(
             .collect();
     }
 
+    // Replace font placeholders in style JSONs with actual font-family names
+    // Build a mapping from placeholder to font-family name
+    let font_family_map: HashMap<String, String> = new_font_faces
+        .iter()
+        .map(|(name, (_, font_family, _))| {
+            // Find the placeholder that maps to this name
+            let placeholder = font_placeholder_to_name
+                .iter()
+                .find(|(_, n)| *n == name)
+                .map(|(p, _)| p.clone())
+                .unwrap_or_default();
+            (placeholder, font_family.clone())
+        })
+        .collect();
+
+    // Replace __font_N__ placeholders in style JSON with font-family names
+    for entry in new_styles.values_mut() {
+        for (placeholder, font_family) in &font_family_map {
+            if entry.json.contains(placeholder) {
+                entry.json = entry.json.replace(placeholder, font_family);
+            }
+        }
+    }
+
     collected.styles = new_styles;
     collected.keyframes = new_keyframes;
     collected.style_variants = new_style_variants;
     collected.vars = new_vars;
     collected.containers = new_containers;
     collected.layers = new_layers;
+    collected.font_faces = new_font_faces;
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
@@ -415,6 +501,7 @@ fn register_vanilla_extract_apis(
     context: &mut Context,
     collector: StyleCollector,
     _package: &str,
+    file_num: usize,
 ) -> Result<(), String> {
     // style() function
     let collector_style = collector.clone();
@@ -548,18 +635,29 @@ fn register_vanilla_extract_apis(
     };
 
     // fontFace() function
+    // Returns a placeholder ID that will be replaced with generated font-family name
     let collector_font = collector.clone();
     let font_face_fn = unsafe {
         NativeFunction::from_closure(move |_this, args, ctx| {
             let font_obj = args.get_or_undefined(0);
             let json = js_value_to_json(font_obj, ctx);
+            let id = next_font_id(&collector_font);
 
-            collector_font.borrow_mut().styles.font_faces.push(json);
-
-            let id = format!(
-                "__font_{}__",
-                collector_font.borrow().styles.font_faces.len()
+            // Generate a unique font-family name for this font
+            // Include file_num to ensure uniqueness across different files
+            let font_family = format!(
+                "__devup_font_{}_{}",
+                file_num,
+                collector_font.borrow().font_counter - 1
             );
+
+            collector_font
+                .borrow_mut()
+                .styles
+                .font_faces
+                .insert(id.clone(), (json, font_family.clone(), false));
+
+            // Return the placeholder ID - will be replaced in code generation
             Ok(JsValue::from(js_string!(id)))
         })
     };
@@ -696,7 +794,7 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
     if !collected.styles.is_empty() || !collected.style_variants.is_empty() {
         imports.push("css");
     }
-    if !collected.global_styles.is_empty() {
+    if !collected.global_styles.is_empty() || !collected.font_faces.is_empty() {
         imports.push("globalCss");
     }
     if !collected.keyframes.is_empty() {
@@ -764,6 +862,35 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
     // Generate globalCss calls
     for (selector, json) in &collected.global_styles {
         code_parts.push(format!("globalCss({{ \"{}\": {} }})", selector, json));
+    }
+
+    // Generate @font-face rules via globalCss fontFaces (sorted for deterministic output)
+    // NOTE: fontFaces are generated in globalCss format here.
+    // The extractor will then parse and extract them as FontFace styles.
+    let mut font_faces_sorted: Vec<_> = collected.font_faces.iter().collect();
+    font_faces_sorted.sort_by_key(|(name, _)| *name);
+    for (_name, (json, font_family, _exported)) in font_faces_sorted {
+        // Parse JSON and build JS object literal - clean single-line format
+        let props = parse_font_face_json(json);
+        let props_str = props
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // Generate clean single-line globalCss call
+        let code = if props_str.is_empty() {
+            format!(
+                "globalCss({{ fontFaces: [{{ fontFamily: \"{}\" }}] }})",
+                font_family
+            )
+        } else {
+            format!(
+                "globalCss({{ fontFaces: [{{ fontFamily: \"{}\", {} }}] }})",
+                font_family, props_str
+            )
+        };
+        code_parts.push(code);
     }
 
     // Generate keyframes declarations (sorted for deterministic output)
@@ -837,6 +964,15 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
     for (name, (value, exported)) in vars {
         let prefix = if *exported { "export " } else { "" };
         code_parts.push(format!("{}const {} = \"{}\"", prefix, name, value));
+    }
+
+    // Generate fontFace declarations (sorted for deterministic output)
+    // fontFace returns the font-family name that can be used in style({ fontFamily: ... })
+    let mut font_faces: Vec<_> = collected.font_faces.iter().collect();
+    font_faces.sort_by_key(|(name, _)| *name);
+    for (name, (_, font_family, exported)) in font_faces {
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!("{}const {} = \"{}\"", prefix, name, font_family));
     }
 
     // Generate createContainer declarations (sorted for deterministic output)
@@ -998,7 +1134,7 @@ export const container = style({ background: "red" })"#;
     fn test_execute_vanilla_extract_style() {
         let code = r#"import { style } from '@devup-ui/react'
 export const container = style({ background: "red", padding: 16 })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert!(!result.styles.is_empty());
     }
 
@@ -1006,7 +1142,7 @@ export const container = style({ background: "red", padding: 16 })"#;
     fn test_execute_vanilla_extract_global_style() {
         let code = r#"import { globalStyle } from '@devup-ui/react'
 globalStyle("body", { margin: 0, padding: 0 })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert_eq!(result.global_styles.len(), 1);
         assert_eq!(result.global_styles[0].0, "body");
     }
@@ -1035,7 +1171,7 @@ globalStyle("body", { margin: 0, padding: 0 })"#;
 const primaryColor = "blue";
 const spacing = 16;
 export const button = style({ background: primaryColor, padding: spacing })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert!(result.styles.contains_key("button"));
         let entry = &result.styles["button"];
         // The variable values should be resolved
@@ -1057,7 +1193,7 @@ export const button = style({ background: primaryColor, padding: spacing })"#;
         let code = r#"import { style } from '@devup-ui/react'
 const base = 8;
 export const box = style({ padding: base * 2, margin: base / 2 })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert!(result.styles.contains_key("box"));
         let entry = &result.styles["box"];
         assert!(
@@ -1078,7 +1214,7 @@ export const box = style({ padding: base * 2, margin: base / 2 })"#;
         let code = r#"import { style } from '@devup-ui/react'
 const isDark = true;
 export const theme = style({ background: isDark ? "black" : "white" })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert!(result.styles.contains_key("theme"));
         let entry = &result.styles["theme"];
         assert!(
@@ -1094,7 +1230,7 @@ export const theme = style({ background: isDark ? "black" : "white" })"#;
         let code = r#"import { style } from '@devup-ui/react'
 const baseStyle = { padding: 8, margin: 4 };
 export const extended = style({ ...baseStyle, background: "red" })"#;
-        let result = execute_vanilla_extract(code, "@devup-ui/react").unwrap();
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
         assert!(result.styles.contains_key("extended"));
         let entry = &result.styles["extended"];
         assert!(
