@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"font-usage.css.ts\",\nr#\"import { fontFace, style } from '@devup-ui/react'\nexport const myFont = fontFace({\n  src: 'local(\"Comic Sans MS\")',\n  fontWeight: 400\n})\nexport const text = style({\n  fontFamily: myFont\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "font-family",
+                value: "__devup_font_0_0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "font-usage.css.ts",
+                properties: {
+                    "font-family": "__devup_font_0_0",
+                    "font-weight": "400",
+                    "src": "local(\"Comic Sans MS\")",
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const text = \"a\";\n;\nexport const myFont = \"__devup_font_0_0\";\n",
+}

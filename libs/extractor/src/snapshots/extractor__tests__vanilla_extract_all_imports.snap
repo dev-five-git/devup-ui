@@ -1,0 +1,79 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"all-imports.css.ts\",\nr#\"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'\nexport const [theme, vars] = createTheme({\n  color: { primary: 'blue' }\n})\nexport const fadeIn = keyframes({\n  from: { opacity: 0 },\n  to: { opacity: 1 }\n})\nglobalStyle('body', {\n  margin: 0\n})\nexport const box = style({\n  animation: 'fadeIn 1s'\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--color-primary-style_0-0",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_theme",
+                        "all-imports.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "fadeIn 1s",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "all-imports.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\nexport const [theme, vars] = [\"f0_theme\", { \"color\": { \"primary\": \"var(--color-primary-style_0-0)\" } }];\n;\n;\nexport const fadeIn = \"b\";\n",
+}
