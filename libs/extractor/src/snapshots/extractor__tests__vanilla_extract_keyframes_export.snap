@@ -1,0 +1,71 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"keyframes-export.css.ts\",\nr#\"import { keyframes, style } from '@devup-ui/react'\nexport const spin = keyframes({\n  from: { transform: 'rotate(0deg)' },\n  to: { transform: 'rotate(360deg)' }\n})\nconst internal = keyframes({\n  '0%': { opacity: 0 },\n  '100%': { opacity: 1 }\n})\nexport const spinner = style({ animation: spin })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "animation",
+                value: "spin",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "0%": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "100%": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "transform",
+                            value: "rotate(0)",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "transform",
+                            value: "rotate(360deg)",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const spinner = \"a\";\nconst internal = \"b\";\nexport const spin = \"c\";\n",
+}

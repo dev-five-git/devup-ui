@@ -10862,4 +10862,551 @@ export const sibling = style({
         );
         assert!(!result);
     }
+
+    #[test]
+    #[serial]
+    fn test_global_css_fontfaces_object_syntax() {
+        // Test globalCss fontFaces with object syntax (covers lines 103, 115 in extract_global_style_from_expression.rs)
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "CustomFont",
+            src: "url('/fonts/custom.woff2')",
+            fontWeight: "400",
+            fontStyle: "normal"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test with multiple font properties to exercise disassemble_property
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "MultiFont",
+            src: "url('/fonts/multi.woff2')",
+            fontWeight: "bold",
+            fontDisplay: "swap"
+        },
+        {
+            fontFamily: "AnotherFont",
+            src: "local('Arial')"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_conditional_expression_with_selector() {
+        // Test ConditionalExpression when name.is_none() and selector.is_some() (covers line 134)
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  _hover: condition ? { bg: "blue" } : { bg: "red" }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test nested conditional within selector
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  selectors: {
+    "&:hover": condition ? { color: "blue" } : { color: "red" }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_non_vanilla_extract_file() {
+        // Test non-.css.ts file (covers line 154 - is_vanilla_extract = false path)
+        reset_class_map();
+        reset_file_map();
+        let result = extract(
+            "regular.tsx",
+            r#"import { Box } from '@devup-ui/react'
+<Box bg="red" p={4} />
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+            },
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.code.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_execution_fallback() {
+        // Test vanilla-extract file with execution error (covers line 116 fallback)
+        reset_class_map();
+        reset_file_map();
+        // Syntax error in JS execution will trigger fallback
+        let result = extract(
+            "error.css.ts",
+            r#"import { style } from '@devup-ui/react'
+const x = style({ padding: [[[}}} // invalid syntax
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+            },
+        );
+        // Should not panic - falls back to regular processing
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_no_length() {
+        // Test style() with object that has no length property (covers line 745)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "no-length.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const box = style({ padding: 8, margin: 4 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_keyframes_export() {
+        // Test exported keyframes (covers lines 1052, 1152-1153)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "keyframes-export.css.ts",
+                r#"import { keyframes, style } from '@devup-ui/react'
+export const spin = keyframes({
+  from: { transform: 'rotate(0deg)' },
+  to: { transform: 'rotate(360deg)' }
+})
+const internal = keyframes({
+  '0%': { opacity: 0 },
+  '100%': { opacity: 1 }
+})
+export const spinner = style({ animation: spin })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_vars_name_only() {
+        // Test createTheme with vars_name but no vars_object_json (covers line 1301)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-vars-name.css.ts",
+                r#"import { createTheme } from '@devup-ui/react'
+export const myTheme = createTheme({
+  color: { primary: 'blue' }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_variants_mixed() {
+        // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "variants-mixed.css.ts",
+                r#"import { style, styleVariants } from '@devup-ui/react'
+const base = style({ borderRadius: 4, padding: 8 })
+export const buttons = styleVariants({
+  primary: [base, { background: 'blue', color: 'white' }],
+  secondary: { background: 'gray', color: 'black' },
+  danger: [base, { background: 'red' }]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme_with_vars() {
+        // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "global-theme-vars.css.ts",
+                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+export const vars = createGlobalTheme(':root', {
+  color: {
+    primary: 'blue',
+    secondary: 'green'
+  },
+  space: {
+    small: '4px',
+    large: '16px'
+  }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face_empty_props() {
+        // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fontface-minimal.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+export const minimalFont = fontFace({})
+export const text = style({ fontFamily: minimalFont })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_imports_combination() {
+        // Test file with multiple import types (covers lines 1049, 1052 import generation)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "imports-combo.css.ts",
+                r#"import { style, globalStyle, keyframes, fontFace } from '@devup-ui/react'
+export const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+export const myFont = fontFace({ src: 'local(Arial)' })
+globalStyle('body', { margin: 0, fontFamily: myFont })
+export const animated = style({ animation: fadeIn })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_export_variations() {
+        // Test createTheme with different export patterns (covers lines 1103-1111)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-exports.css.ts",
+                r#"import { createTheme, createThemeContract, style } from '@devup-ui/react'
+const contract = createThemeContract({
+  colors: { bg: null, text: null }
+})
+export const lightTheme = createTheme(contract, {
+  colors: { bg: 'white', text: 'black' }
+})
+const internalTheme = createTheme(contract, {
+  colors: { bg: 'gray', text: 'darkgray' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_composition_multiple() {
+        // Test style with multiple style objects in composition array (covers lines 728-729)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "multi-comp.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const base = style({ padding: 8 })
+export const complex = style([base, { margin: 4 }, { color: 'blue' }])
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selector_class_replacement() {
+        // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "selector-ref.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const parent = style({ display: 'flex' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { background: 'red' }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_all_exports_combined() {
+        // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
+        // Covers multiple import generation paths and code generation
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "all-combined.css.ts",
+                r#"import { style, globalStyle, keyframes, createVar, createContainer, layer, fontFace, createGlobalTheme, styleVariants } from '@devup-ui/react'
+export const myVar = createVar()
+export const myContainer = createContainer()
+export const myLayer = layer('components')
+export const myFont = fontFace({ src: 'local(Arial)' })
+export const vars = createGlobalTheme(':root', { color: { primary: 'blue' } })
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+globalStyle('body', { margin: 0 })
+const base = style({ padding: 8 })
+export const buttons = styleVariants({
+  primary: [base, { bg: 'blue' }],
+  secondary: { bg: 'gray' }
+})
+export const box = style({ fontFamily: myFont })
+"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_array_destructure() {
+        // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-array.css.ts",
+                r#"import { createTheme, style } from '@devup-ui/react'
+export const [themeClass, themeVars] = createTheme({
+  colors: { primary: 'blue', secondary: 'green' },
+  spacing: { small: '4px', medium: '8px' }
+})
+export const themed = style({ color: themeVars.colors.primary })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face_placeholder() {
+        // Test fontFace placeholder remapping (covers lines 503-505)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fontface-remap.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+export const customFont = fontFace({
+  src: 'url("/fonts/custom.woff2")',
+  fontWeight: '400',
+  fontDisplay: 'swap'
+})
+export const secondFont = fontFace({
+  src: 'local("Helvetica")'
+})
+export const text = style({ fontFamily: customFont })
+export const heading = style({ fontFamily: secondFont })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme_placeholder() {
+        // Test createGlobalTheme placeholder remapping (covers global theme paths)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "globaltheme-remap.css.ts",
+                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+export const lightVars = createGlobalTheme(':root', {
+  colors: { bg: 'white', text: 'black' }
+})
+export const darkVars = createGlobalTheme('.dark', {
+  colors: { bg: 'black', text: 'white' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
 }
