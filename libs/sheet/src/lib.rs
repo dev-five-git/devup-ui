@@ -30,6 +30,9 @@ pub struct StyleSheetProperty {
     pub value: String,
     #[serde(rename = "s")]
     pub selector: Option<StyleSelector>,
+    /// CSS layer name (from vanilla-extract layer())
+    #[serde(rename = "l", skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize)]
@@ -170,6 +173,30 @@ impl StyleSheet {
         style_order: Option<u8>,
         filename: Option<&str>,
     ) -> bool {
+        self.add_property_with_layer(
+            class_name,
+            property,
+            level,
+            value,
+            selector,
+            style_order,
+            filename,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_property_with_layer(
+        &mut self,
+        class_name: &str,
+        property: &str,
+        level: u8,
+        value: &str,
+        selector: Option<&StyleSelector>,
+        style_order: Option<u8>,
+        filename: Option<&str>,
+        layer: Option<&str>,
+    ) -> bool {
         // register global css file for cache
         if let Some(StyleSelector::Global(_, file)) = selector {
             self.global_css_files.insert(file.clone());
@@ -187,6 +214,7 @@ impl StyleSheet {
                 property: property.to_string(),
                 value: value.to_string(),
                 selector: selector.cloned(),
+                layer: layer.map(|s| s.to_string()),
             })
     }
 
@@ -294,7 +322,7 @@ impl StyleSheet {
                 ExtractStyleValue::Static(st) => {
                     if let Some(StyleProperty::ClassName(cls)) =
                         style.extract(if !single_css { Some(filename) } else { None })
-                        && self.add_property(
+                        && self.add_property_with_layer(
                             &cls,
                             st.property(),
                             st.level(),
@@ -302,6 +330,7 @@ impl StyleSheet {
                             st.selector(),
                             st.style_order(),
                             if !single_css { Some(filename) } else { None },
+                            st.layer(),
                         )
                     {
                         collected = true;
@@ -431,6 +460,14 @@ impl StyleSheet {
         }
     }
     fn create_style(&self, map: &BTreeMap<u8, HashSet<StyleSheetProperty>>) -> String {
+        self.create_style_with_layers(map, &mut BTreeMap::new())
+    }
+
+    fn create_style_with_layers(
+        &self,
+        map: &BTreeMap<u8, HashSet<StyleSheetProperty>>,
+        layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
+    ) -> String {
         let mut current_css = String::new();
         for (level, props) in map.iter() {
             let (mut global_props, rest): (Vec<_>, Vec<_>) = props
@@ -469,32 +506,53 @@ impl StyleSheet {
             };
 
             if !global_props.is_empty() {
-                let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
-                for prop in global_props {
-                    if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                        selector_map.entry(selector.clone()).or_default().push(prop);
+                // Separate layered and non-layered global props
+                let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
+                    .into_iter()
+                    .partition(|prop| prop.layer.is_some());
+
+                // Collect layered props for later processing
+                for prop in layered_props {
+                    if let Some(layer) = &prop.layer
+                        && let Some(StyleSelector::Global(selector, _)) = &prop.selector
+                    {
+                        layered_styles.entry(layer.clone()).or_default().push((
+                            selector.clone(),
+                            prop.property.clone(),
+                            prop.value.clone(),
+                        ));
                     }
                 }
-                let mut inner_css = String::new();
-                for (selector, props) in selector_map {
-                    inner_css.push_str(&format!(
-                        "{}{{{}}}",
-                        selector,
-                        props
-                            .into_iter()
-                            .map(|prop| format!("{}:{}", prop.property, prop.value))
-                            .collect::<Vec<String>>()
-                            .join(";")
-                    ));
-                }
-                current_css.push_str(
-                    if let Some(break_point) = break_point {
-                        format!("@media(min-width:{break_point}px){{{inner_css}}}")
-                    } else {
-                        inner_css
+
+                // Process non-layered global props as before
+                if !non_layered_props.is_empty() {
+                    let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
+                    for prop in non_layered_props {
+                        if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
+                            selector_map.entry(selector.clone()).or_default().push(prop);
+                        }
                     }
-                    .as_str(),
-                );
+                    let mut inner_css = String::new();
+                    for (selector, props) in selector_map {
+                        inner_css.push_str(&format!(
+                            "{}{{{}}}",
+                            selector,
+                            props
+                                .into_iter()
+                                .map(|prop| format!("{}:{}", prop.property, prop.value))
+                                .collect::<Vec<String>>()
+                                .join(";")
+                        ));
+                    }
+                    current_css.push_str(
+                        if let Some(break_point) = break_point {
+                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
+                        } else {
+                            inner_css
+                        }
+                        .as_str(),
+                    );
+                }
             }
 
             if !sorted_props.is_empty() {
@@ -530,6 +588,10 @@ impl StyleSheet {
                             AtRuleKind::Container => {
                                 // Nest @container inside @media for breakpoint
                                 format!("@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}")
+                            }
+                            AtRuleKind::Layer => {
+                                // Nest @layer inside @media for breakpoint
+                                format!("@media(min-width:{break_point}px){{@layer {query}{{{inner_css}}}}}")
                             }
                         }
                     } else {
@@ -629,9 +691,46 @@ impl StyleSheet {
                     css.push_str(&_css.extract());
                 }
             }
-            let base_css = self.create_style(&base_styles);
+
+            // Collect layered styles while creating base CSS
+            let mut layered_styles: BTreeMap<String, Vec<(String, String, String)>> =
+                BTreeMap::new();
+            let base_css = self.create_style_with_layers(&base_styles, &mut layered_styles);
             if !base_css.is_empty() {
                 css.push_str(format!("@layer b{{{base_css}}}",).as_str());
+            }
+
+            // Generate @layer declarations and wrapped styles for custom layers
+            if !layered_styles.is_empty() {
+                // Add layer declarations
+                let layer_names: Vec<_> = layered_styles.keys().cloned().collect();
+                css.push_str(&format!("@layer {};", layer_names.join(",")));
+
+                // Generate styles wrapped in @layer blocks
+                for (layer_name, styles) in layered_styles {
+                    // Group by selector
+                    let mut selector_map: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+                    for (selector, property, value) in styles {
+                        selector_map
+                            .entry(selector)
+                            .or_default()
+                            .push((property, value));
+                    }
+
+                    let mut layer_css = String::new();
+                    for (selector, props) in selector_map {
+                        layer_css.push_str(&format!(
+                            "{}{{{}}}",
+                            selector,
+                            props
+                                .into_iter()
+                                .map(|(p, v)| format!("{p}:{v}"))
+                                .collect::<Vec<_>>()
+                                .join(";")
+                        ));
+                    }
+                    css.push_str(&format!("@layer {layer_name}{{{layer_css}}}"));
+                }
             }
         } else {
             // avoid inline import issue (vite plugin)
@@ -1818,6 +1917,7 @@ mod tests {
             property: String::from("opacity"),
             value: String::from("0"),
             selector: None,
+            layer: None,
         });
         keyframes.insert(
             String::from("from"),
@@ -1830,6 +1930,7 @@ mod tests {
             property: String::from("opacity"),
             value: String::from("1"),
             selector: None,
+            layer: None,
         });
         keyframes.insert(
             String::from("to"),
@@ -1847,6 +1948,7 @@ mod tests {
             property: String::from("opacity"),
             value: String::from("0"),
             selector: None,
+            layer: None,
         });
         keyframes.insert(
             String::from("from"),
@@ -1859,6 +1961,7 @@ mod tests {
             property: String::from("opacity"),
             value: String::from("1"),
             selector: None,
+            layer: None,
         });
         keyframes.insert(
             String::from("to"),

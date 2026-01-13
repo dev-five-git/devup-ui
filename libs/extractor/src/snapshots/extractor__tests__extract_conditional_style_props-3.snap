@@ -11,6 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: None,
                 style_order: None,
+                layer: None,
             },
         ),
         Dynamic(

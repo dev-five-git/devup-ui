@@ -11,6 +11,7 @@ ToBTreeSet {
                 level: 0,
                 selector: None,
                 style_order: None,
+                layer: None,
             },
         ),
         Keyframes(
@@ -23,6 +24,7 @@ ToBTreeSet {
                             level: 0,
                             selector: None,
                             style_order: None,
+                            layer: None,
                         },
                     ],
                     "to": [
@@ -32,6 +34,7 @@ ToBTreeSet {
                             level: 0,
                             selector: None,
                             style_order: None,
+                            layer: None,
                         },
                     ],
                 },

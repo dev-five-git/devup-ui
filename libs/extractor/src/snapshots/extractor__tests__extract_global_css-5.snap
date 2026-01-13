@@ -18,6 +18,7 @@ ToBTreeSet {
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
     },

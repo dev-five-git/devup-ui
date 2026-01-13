@@ -9877,6 +9877,7 @@ export const body = style({
     #[serial]
     fn test_vanilla_extract_theme() {
         reset_class_map();
+        reset_file_map();
         // createTheme - define theme with variables
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9909,6 +9910,7 @@ export const box = style({
         ));
 
         reset_class_map();
+        reset_file_map();
         // createThemeContract - type-safe theme contract
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9948,6 +9950,7 @@ export const darkTheme = createTheme(vars, {
     #[serial]
     fn test_vanilla_extract_layer() {
         reset_class_map();
+        reset_file_map();
         // layer - CSS cascade layers
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(

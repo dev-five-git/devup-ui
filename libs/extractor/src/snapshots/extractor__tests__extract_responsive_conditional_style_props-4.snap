@@ -11,6 +11,7 @@ ToBTreeSet {
                 level: 3,
                 selector: None,
                 style_order: None,
+                layer: None,
             },
         ),
         Static(
@@ -20,6 +21,7 @@ ToBTreeSet {
                 level: 3,
                 selector: None,
                 style_order: None,
+                layer: None,
             },
         ),
         Dynamic(

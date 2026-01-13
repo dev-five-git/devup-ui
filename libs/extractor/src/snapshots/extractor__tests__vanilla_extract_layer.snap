@@ -6,22 +6,6 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "@layer",
-                value: "reset",
-                level: 0,
-                selector: Some(
-                    Global(
-                        "*",
-                        "layers.css.ts",
-                    ),
-                ),
-                style_order: Some(
-                    0,
-                ),
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
                 property: "margin",
                 value: "0",
                 level: 0,
@@ -33,6 +17,9 @@ ToBTreeSet {
                 ),
                 style_order: Some(
                     0,
+                ),
+                layer: Some(
+                    "reset",
                 ),
             },
         ),
@@ -49,6 +36,9 @@ ToBTreeSet {
                 ),
                 style_order: Some(
                     0,
+                ),
+                layer: Some(
+                    "reset",
                 ),
             },
         ),

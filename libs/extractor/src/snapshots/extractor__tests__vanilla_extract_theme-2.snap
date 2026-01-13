@@ -11,13 +11,14 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f14_lightTheme",
+                        ".f0_lightTheme",
                         "theme-contract.css.ts",
                     ),
                 ),
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -27,13 +28,14 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f14_darkTheme",
+                        ".f0_darkTheme",
                         "theme-contract.css.ts",
                     ),
                 ),
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -43,13 +45,14 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f14_lightTheme",
+                        ".f0_lightTheme",
                         "theme-contract.css.ts",
                     ),
                 ),
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -59,15 +62,16 @@ ToBTreeSet {
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f14_darkTheme",
+                        ".f0_darkTheme",
                         "theme-contract.css.ts",
                     ),
                 ),
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const darkTheme = \"f14_darkTheme\";\nexport const lightTheme = \"f14_lightTheme\";\n;\n;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const darkTheme = \"f0_darkTheme\";\nexport const lightTheme = \"f0_lightTheme\";\n;\n;\n",
 }

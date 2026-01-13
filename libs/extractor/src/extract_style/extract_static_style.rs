@@ -24,6 +24,8 @@ pub struct ExtractStaticStyle {
     pub selector: Option<StyleSelector>,
     /// None is inf, 0 is first, 1 is second, etc
     pub style_order: Option<u8>,
+    /// CSS layer name (from vanilla-extract layer())
+    pub layer: Option<String>,
 }
 
 impl ExtractStaticStyle {
@@ -52,7 +54,21 @@ impl ExtractStaticStyle {
             level,
             selector: selector.map(optimize_selector),
             style_order: None,
+            layer: None,
         }
+    }
+
+    /// create a new ExtractStaticStyle with layer
+    pub fn new_with_layer(
+        property: &str,
+        value: &str,
+        level: u8,
+        selector: Option<StyleSelector>,
+        layer: Option<String>,
+    ) -> Self {
+        let mut style = Self::new(property, value, level, selector);
+        style.layer = layer;
+        style
     }
 
     pub fn new_basic(
@@ -71,7 +87,13 @@ impl ExtractStaticStyle {
             level,
             selector,
             style_order: Some(0),
+            layer: None,
         }
+    }
+
+    /// Get the layer name
+    pub fn layer(&self) -> Option<&str> {
+        self.layer.as_deref()
     }
 
     pub fn property(&self) -> &str {

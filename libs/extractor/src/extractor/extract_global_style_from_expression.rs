@@ -147,23 +147,53 @@ pub fn extract_global_style_from_expression<'a>(
                                 }
                             }
                         } else {
-                            styles.extend(
-                                extract_style_from_expression(
-                                    ast_builder,
-                                    None,
-                                    &mut o.value,
-                                    0,
-                                    &Some(StyleSelector::Global(
-                                        if let Some(name) = name.strip_prefix("_") {
-                                            StyleSelector::from(name).to_string().replace("&", "*")
-                                        } else {
-                                            name.to_string()
-                                        },
-                                        file.to_string(),
-                                    )),
-                                )
-                                .styles,
+                            // Handle @layer property in globalStyle
+                            // Extract the layer name if present in the style object
+                            let mut layer_name: Option<String> = None;
+                            if let Expression::ObjectExpression(style_obj) = &o.value {
+                                for style_prop in style_obj.properties.iter() {
+                                    if let ObjectPropertyKind::ObjectProperty(sp) = style_prop
+                                        && let Some(prop_name) = get_string_by_property_key(&sp.key)
+                                        && prop_name == "@layer"
+                                    {
+                                        layer_name = get_string_by_literal_expression(&sp.value);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            let extracted = extract_style_from_expression(
+                                ast_builder,
+                                None,
+                                &mut o.value,
+                                0,
+                                &Some(StyleSelector::Global(
+                                    if let Some(name) = name.strip_prefix("_") {
+                                        StyleSelector::from(name).to_string().replace("&", "*")
+                                    } else {
+                                        name.to_string()
+                                    },
+                                    file.to_string(),
+                                )),
                             );
+
+                            // Filter out @layer property from styles and set layer on remaining styles
+                            for mut style in extracted.styles {
+                                if let ExtractStyleProp::Static(ExtractStyleValue::Static(
+                                    ref mut st,
+                                )) = style
+                                {
+                                    // Skip @layer property - it's not a CSS property
+                                    if st.property() == "@layer" {
+                                        continue;
+                                    }
+                                    // Set layer on other styles
+                                    if let Some(ref layer) = layer_name {
+                                        st.layer = Some(layer.clone());
+                                    }
+                                }
+                                styles.push(style);
+                            }
                         }
                     }
                 }

@@ -18,6 +18,7 @@ pub enum AtRuleKind {
     Media,
     Supports,
     Container,
+    Layer,
 }
 
 impl Display for AtRuleKind {
@@ -26,6 +27,7 @@ impl Display for AtRuleKind {
             AtRuleKind::Media => write!(f, "media"),
             AtRuleKind::Supports => write!(f, "supports"),
             AtRuleKind::Container => write!(f, "container"),
+            AtRuleKind::Layer => write!(f, "layer"),
         }
     }
 }
