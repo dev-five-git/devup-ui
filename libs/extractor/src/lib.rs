@@ -117,9 +117,37 @@ pub fn extract(
     {
         match vanilla_extract::execute_vanilla_extract(code, &option.package, filename) {
             Ok(collected) => {
-                let generated =
-                    vanilla_extract::collected_styles_to_code(&collected, &option.package);
-                (generated, true)
+                // Check if any styles are referenced in selectors
+                let referenced = vanilla_extract::find_selector_references(&collected);
+
+                if referenced.is_empty() {
+                    // No selector references, use simple code generation
+                    let generated =
+                        vanilla_extract::collected_styles_to_code(&collected, &option.package);
+                    (generated, true)
+                } else {
+                    // Two-pass extraction: first extract referenced styles to get their class names
+                    let partial_code = vanilla_extract::collected_styles_to_code_partial(
+                        &collected,
+                        &option.package,
+                        &referenced,
+                    );
+
+                    // Build class map by extracting the partial code
+                    let class_map = if !partial_code.is_empty() {
+                        extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
+                    // Generate full code with class names substituted into selectors
+                    let generated = vanilla_extract::collected_styles_to_code_with_classes(
+                        &collected,
+                        &option.package,
+                        &class_map,
+                    );
+                    (generated, true)
+                }
             }
             Err(_) => {
                 // Fall back to treating as regular file if execution fails
@@ -195,6 +223,83 @@ pub fn extract(
         map: result.map.map(|m| m.to_json_string()),
         css_file: Some(css_file),
     })
+}
+
+/// Extract class names from generated code for specific style names
+/// Used for two-pass vanilla-extract processing to resolve selector references
+fn extract_class_map_from_code(
+    filename: &str,
+    partial_code: &str,
+    option: &ExtractOption,
+    style_names: &HashSet<String>,
+) -> Result<std::collections::HashMap<String, String>, Box<dyn Error>> {
+    let source_type = SourceType::from_path(filename)?;
+    let css_file = if option.single_css {
+        format!("{}/devup-ui.css", option.css_dir)
+    } else {
+        format!(
+            "{}/devup-ui-{}.css",
+            option.css_dir,
+            get_file_num_by_filename(filename)
+        )
+    };
+    let css_files = vec![css_file];
+    let allocator = Allocator::default();
+
+    let ParserReturn {
+        mut program,
+        panicked,
+        ..
+    } = Parser::new(&allocator, partial_code, source_type).parse();
+    if panicked {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let mut visitor = DevupVisitor::new(
+        &allocator,
+        filename,
+        &option.package,
+        css_files,
+        if !option.single_css {
+            Some(filename.to_string())
+        } else {
+            None
+        },
+    );
+    visitor.visit_program(&mut program);
+
+    let result = Codegen::new().build(&program);
+
+    // Parse the output code to extract class name assignments
+    // Format: const styleName = "className" or const styleName = "className1 className2"
+    let mut class_map = std::collections::HashMap::new();
+    for line in result.code.lines() {
+        let line = line.trim();
+        if line.starts_with("const ") || line.starts_with("export const ") {
+            // Parse: [export] const name = "value"
+            let after_const = if line.starts_with("export ") {
+                line.strip_prefix("export const ").unwrap_or(line)
+            } else {
+                line.strip_prefix("const ").unwrap_or(line)
+            };
+
+            if let Some((name, rest)) = after_const.split_once(" = ") {
+                // Extract value from "value" or "value";
+                let value = rest
+                    .trim_start_matches('"')
+                    .trim_end_matches(';')
+                    .trim_end_matches('"');
+
+                if style_names.contains(name) {
+                    // For multi-class values like "a b", take the first class
+                    let first_class = value.split_whitespace().next().unwrap_or(value);
+                    class_map.insert(name.to_string(), first_class.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(class_map)
 }
 
 /// Check if the code has an import from the specified package

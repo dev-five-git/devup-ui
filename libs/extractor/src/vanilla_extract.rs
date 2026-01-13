@@ -545,6 +545,16 @@ fn remap_style_names(
         }
     }
 
+    // Replace __style_N__ placeholders in style JSON with variable names
+    // This is needed for selectors that reference other styles like `${parent}:hover &`
+    for entry in new_styles.values_mut() {
+        for (placeholder, var_name) in &placeholder_to_name {
+            if entry.json.contains(placeholder) {
+                entry.json = entry.json.replace(placeholder, var_name);
+            }
+        }
+    }
+
     collected.styles = new_styles;
     collected.keyframes = new_keyframes;
     collected.style_variants = new_style_variants;
@@ -941,6 +951,307 @@ fn register_vanilla_extract_apis(
         .map_err(|e| format!("Failed to register __vanilla_extract__: {}", e))?;
 
     Ok(())
+}
+
+/// Find all style names that are referenced in selectors of other styles
+/// Returns a set of style names that need to be extracted first
+pub fn find_selector_references(collected: &CollectedStyles) -> std::collections::HashSet<String> {
+    let mut referenced = std::collections::HashSet::new();
+    let style_names: std::collections::HashSet<&str> =
+        collected.styles.keys().map(|s| s.as_str()).collect();
+
+    for entry in collected.styles.values() {
+        // Check if this style's JSON contains references to other style names
+        for style_name in &style_names {
+            // Look for patterns like "stylename:" or "stylename " in selectors
+            // The JSON has selectors like {"selectors":{"parent:hover &":{...}}}
+            if entry.json.contains(&format!("\"{}:", style_name))
+                || entry.json.contains(&format!("\"{} ", style_name))
+            {
+                referenced.insert(style_name.to_string());
+            }
+        }
+    }
+
+    referenced
+}
+
+/// Generate code only for specific styles (used for first-pass extraction)
+pub fn collected_styles_to_code_partial(
+    collected: &CollectedStyles,
+    package: &str,
+    style_names: &std::collections::HashSet<String>,
+) -> String {
+    let mut code_parts = Vec::new();
+
+    if !style_names.is_empty() {
+        code_parts.push(format!("import {{ css }} from '{}'", package));
+    }
+
+    // Generate only the specified styles
+    let mut styles: Vec<_> = collected
+        .styles
+        .iter()
+        .filter(|(name, _)| style_names.contains(*name))
+        .collect();
+    styles.sort_by_key(|(name, _)| *name);
+
+    for (name, entry) in styles {
+        // Generate as non-exported for first pass
+        code_parts.push(format!("const {} = css({})", name, entry.json));
+    }
+
+    code_parts.join("\n")
+}
+
+/// Convert collected styles to code with selector references replaced by class names
+pub fn collected_styles_to_code_with_classes(
+    collected: &CollectedStyles,
+    package: &str,
+    class_map: &HashMap<String, String>,
+) -> String {
+    let mut code_parts = Vec::new();
+
+    // Generate import statement
+    let mut imports = Vec::new();
+    if !collected.styles.is_empty() || !collected.style_variants.is_empty() {
+        imports.push("css");
+    }
+    if !collected.global_styles.is_empty()
+        || !collected.font_faces.is_empty()
+        || !collected.global_themes.is_empty()
+    {
+        imports.push("globalCss");
+    }
+    if !collected.keyframes.is_empty() {
+        imports.push("keyframes");
+    }
+
+    if !imports.is_empty() {
+        code_parts.push(format!(
+            "import {{ {} }} from '{}'",
+            imports.join(", "),
+            package
+        ));
+    }
+
+    // Generate style declarations with selector references replaced
+    let style_json_map: HashMap<&str, &str> = collected
+        .styles
+        .iter()
+        .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
+        .collect();
+
+    let mut styles: Vec<_> = collected.styles.iter().collect();
+    styles.sort_by_key(|(name, _)| *name);
+
+    for (name, entry) in styles {
+        let prefix = if entry.exported { "export " } else { "" };
+
+        // Replace style name references with class names in JSON
+        let mut json = entry.json.clone();
+        for (style_name, class_name) in class_map {
+            // Replace patterns like "stylename:" with "classname:"
+            json = json.replace(&format!("\"{}:", style_name), &format!("\"{}:", class_name));
+            json = json.replace(&format!("\"{} ", style_name), &format!("\"{} ", class_name));
+        }
+
+        if entry.bases.is_empty() {
+            code_parts.push(format!("{}const {} = css({})", prefix, name, json));
+        } else {
+            // Composition: merge all base styles
+            let mut merged_parts = Vec::new();
+            for base_name in &entry.bases {
+                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
+                    let inner = base_json
+                        .trim()
+                        .trim_start_matches('{')
+                        .trim_end_matches('}')
+                        .trim();
+                    if !inner.is_empty() {
+                        merged_parts.push(inner.to_string());
+                    }
+                }
+            }
+            let own_inner = json
+                .trim()
+                .trim_start_matches('{')
+                .trim_end_matches('}')
+                .trim();
+            if !own_inner.is_empty() {
+                merged_parts.push(own_inner.to_string());
+            }
+            let merged_json = format!("{{{}}}", merged_parts.join(","));
+            code_parts.push(format!("{}const {} = css({})", prefix, name, merged_json));
+        }
+    }
+
+    // Add remaining code generation (globalCss, keyframes, etc.) - call original function's logic
+    append_non_style_code(collected, package, &mut code_parts);
+
+    code_parts.join("\n")
+}
+
+/// Append non-style code parts (globalCss, keyframes, fontFaces, etc.)
+fn append_non_style_code(
+    collected: &CollectedStyles,
+    _package: &str,
+    code_parts: &mut Vec<String>,
+) {
+    // Generate globalCss calls
+    for (selector, json) in &collected.global_styles {
+        code_parts.push(format!("globalCss({{ \"{}\": {} }})", selector, json));
+    }
+
+    // Generate @font-face rules
+    let mut font_faces_sorted: Vec<_> = collected.font_faces.iter().collect();
+    font_faces_sorted.sort_by_key(|(name, _)| *name);
+    for (_name, (json, font_family, _exported)) in font_faces_sorted {
+        let props = parse_font_face_json(json);
+        let props_str = props
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let code = if props_str.is_empty() {
+            format!(
+                "globalCss({{ fontFaces: [{{ fontFamily: \"{}\" }}] }})",
+                font_family
+            )
+        } else {
+            format!(
+                "globalCss({{ fontFaces: [{{ fontFamily: \"{}\", {} }}] }})",
+                font_family, props_str
+            )
+        };
+        code_parts.push(code);
+    }
+
+    // Generate createGlobalTheme CSS variables
+    let mut global_themes_sorted: Vec<_> = collected.global_themes.iter().collect();
+    global_themes_sorted.sort_by_key(|(name, _)| *name);
+    for (_name, entry) in &global_themes_sorted {
+        if !entry.css_vars.is_empty() {
+            let vars_str = entry
+                .css_vars
+                .iter()
+                .map(|(var_name, value)| format!("\"{}\": \"{}\"", var_name, value))
+                .collect::<Vec<_>>()
+                .join(", ");
+            code_parts.push(format!(
+                "globalCss({{ \"{}\": {{ {} }} }})",
+                entry.selector, vars_str
+            ));
+        }
+    }
+
+    // Generate keyframes
+    let mut keyframes: Vec<_> = collected.keyframes.iter().collect();
+    keyframes.sort_by_key(|(name, _)| *name);
+    for (name, entry) in keyframes {
+        let prefix = if entry.exported { "export " } else { "" };
+        code_parts.push(format!(
+            "{}const {} = keyframes({})",
+            prefix, name, entry.json
+        ));
+    }
+
+    // Generate styleVariants
+    let style_json_map: HashMap<&str, &str> = collected
+        .styles
+        .iter()
+        .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
+        .collect();
+    let mut variants: Vec<_> = collected.style_variants.iter().collect();
+    variants.sort_by_key(|(name, _)| *name);
+    for (name, (variant_map, exported)) in variants {
+        let mut variant_entries: Vec<_> = variant_map.iter().collect();
+        variant_entries.sort_by_key(|(k, _)| *k);
+        let mut object_parts = Vec::new();
+        for (variant_key, variant) in variant_entries {
+            let value = if let Some(base_name) = &variant.base {
+                let mut merged_parts = Vec::new();
+                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
+                    let inner = base_json
+                        .trim()
+                        .trim_start_matches('{')
+                        .trim_end_matches('}')
+                        .trim();
+                    if !inner.is_empty() {
+                        merged_parts.push(inner.to_string());
+                    }
+                }
+                let own_inner = variant
+                    .styles_json
+                    .trim()
+                    .trim_start_matches('{')
+                    .trim_end_matches('}')
+                    .trim();
+                if !own_inner.is_empty() {
+                    merged_parts.push(own_inner.to_string());
+                }
+                format!("css({{{}}})", merged_parts.join(","))
+            } else {
+                format!("css({})", variant.styles_json)
+            };
+            object_parts.push(format!("  {}: {}", variant_key, value));
+        }
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!(
+            "{}const {} = {{\n{}\n}}",
+            prefix,
+            name,
+            object_parts.join(",\n")
+        ));
+    }
+
+    // Generate createVar declarations
+    let mut vars: Vec<_> = collected.vars.iter().collect();
+    vars.sort_by_key(|(name, _)| *name);
+    for (name, (value, exported)) in vars {
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!("{}const {} = \"{}\"", prefix, name, value));
+    }
+
+    // Generate fontFace declarations
+    let mut font_faces: Vec<_> = collected.font_faces.iter().collect();
+    font_faces.sort_by_key(|(name, _)| *name);
+    for (name, (_, font_family, exported)) in font_faces {
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!("{}const {} = \"{}\"", prefix, name, font_family));
+    }
+
+    // Generate createContainer declarations
+    let mut containers: Vec<_> = collected.containers.iter().collect();
+    containers.sort_by_key(|(name, _)| *name);
+    for (name, (value, exported)) in containers {
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!("{}const {} = \"{}\"", prefix, name, value));
+    }
+
+    // Generate layer declarations
+    let mut layers: Vec<_> = collected.layers.iter().collect();
+    layers.sort_by_key(|(name, _)| *name);
+    for (name, (value, exported)) in layers {
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!("{}const {} = \"{}\"", prefix, name, value));
+    }
+
+    // Generate createGlobalTheme vars object declarations
+    for (name, entry) in &global_themes_sorted {
+        let prefix = if entry.exported { "export " } else { "" };
+        code_parts.push(format!(
+            "{}const {} = {}",
+            prefix, name, entry.vars_object_json
+        ));
+    }
+
+    // Generate constant exports
+    let mut constants: Vec<_> = collected.constant_exports.iter().collect();
+    constants.sort_by_key(|(name, _)| *name);
+    for (name, value) in constants {
+        code_parts.push(format!("export const {} = {}", name, value));
+    }
 }
 
 /// Convert collected styles to code that can be processed by existing extract logic
