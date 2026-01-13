@@ -9500,6 +9500,61 @@ globalCss({
         ));
     }
 
+    #[test]
+    #[serial]
+    fn test_global_css_with_layer() {
+        // Test globalCss with @layer property
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    "*": {
+        "@layer": "reset",
+        margin: 0,
+        padding: 0
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test globalCss with @layer for multiple selectors
+        reset_class_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    "*": {
+        "@layer": "reset",
+        boxSizing: "border-box"
+    },
+    body: {
+        "@layer": "base",
+        fontFamily: "sans-serif"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false
+                }
+            )
+            .unwrap()
+        ));
+    }
+
     // ============================================================================
     // VANILLA-EXTRACT API TESTS
     // ============================================================================

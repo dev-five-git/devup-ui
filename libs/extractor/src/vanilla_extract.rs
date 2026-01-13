@@ -2172,4 +2172,138 @@ export const lightTheme = createTheme(vars, {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], ("fontStyle".to_string(), "null".to_string()));
     }
+
+    #[test]
+    fn test_collected_styles_to_code_with_classes_composition() {
+        let mut collected = CollectedStyles::default();
+        // Add base style
+        collected.styles.insert(
+            "base".to_string(),
+            StyleEntry {
+                json: r#"{"padding":"8px"}"#.to_string(),
+                exported: false,
+                bases: Vec::new(),
+            },
+        );
+        // Add composed style with bases
+        collected.styles.insert(
+            "composed".to_string(),
+            StyleEntry {
+                json: r#"{"color":"red"}"#.to_string(),
+                exported: true,
+                bases: vec!["base".to_string()],
+            },
+        );
+
+        let class_map: std::collections::HashMap<String, String> = [
+            ("base".to_string(), "a".to_string()),
+            ("composed".to_string(), "b".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let code =
+            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        assert!(code.contains("import { css } from '@devup-ui/react'"));
+        // The composed style should have both base and own styles merged
+        assert!(code.contains("padding"));
+        assert!(code.contains("color"));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_with_theme_vars() {
+        let mut collected = CollectedStyles::default();
+        // Theme with vars_name and vars_object_json
+        collected.themes.insert(
+            "themeClass".to_string(),
+            super::ThemeEntry {
+                class_name: "f0_theme".to_string(),
+                css_vars: vec![("--color-primary".to_string(), "blue".to_string())],
+                exported: true,
+                vars_name: Some("vars".to_string()),
+                vars_object_json: Some(
+                    r#"{"color":{"primary":"var(--color-primary)"}}"#.to_string(),
+                ),
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const [themeClass, vars] = [\"f0_theme\""));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_with_theme_no_vars() {
+        let mut collected = CollectedStyles::default();
+        // Theme without vars (two-arg createTheme)
+        collected.themes.insert(
+            "darkTheme".to_string(),
+            super::ThemeEntry {
+                class_name: "f1_darkTheme".to_string(),
+                css_vars: vec![("--color-primary".to_string(), "white".to_string())],
+                exported: true,
+                vars_name: None,
+                vars_object_json: None,
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("export const darkTheme = \"f1_darkTheme\""));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_with_keyframes() {
+        let mut collected = CollectedStyles::default();
+        collected.keyframes.insert(
+            "fadeIn".to_string(),
+            StyleEntry {
+                json: r#"{"from":{"opacity":"0"},"to":{"opacity":"1"}}"#.to_string(),
+                exported: true,
+                bases: Vec::new(),
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("import { keyframes } from '@devup-ui/react'"));
+        assert!(code.contains("export const fadeIn = keyframes"));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_with_global_styles() {
+        let mut collected = CollectedStyles::default();
+        collected
+            .global_styles
+            .push(("body".to_string(), r#"{"margin":"0"}"#.to_string()));
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("import { globalCss } from '@devup-ui/react'"));
+        assert!(code.contains("globalCss({ \"body\":"));
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_composition() {
+        let mut collected = CollectedStyles::default();
+        // Add base style
+        collected.styles.insert(
+            "baseStyle".to_string(),
+            StyleEntry {
+                json: r#"{"padding":"16px","margin":"8px"}"#.to_string(),
+                exported: false,
+                bases: Vec::new(),
+            },
+        );
+        // Add composed style
+        collected.styles.insert(
+            "buttonStyle".to_string(),
+            StyleEntry {
+                json: r#"{"background":"blue"}"#.to_string(),
+                exported: true,
+                bases: vec!["baseStyle".to_string()],
+            },
+        );
+
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        // Both base and own styles should be present in the composed style
+        assert!(code.contains("padding"));
+        assert!(code.contains("background"));
+    }
 }
