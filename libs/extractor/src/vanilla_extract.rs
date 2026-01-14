@@ -240,13 +240,16 @@ fn extract_theme_vars(
             let var_name = &contract_str[4..contract_str.len() - 1];
 
             // Get the value
-            let value_str = if let Some(s) = values.as_string() {
-                s.to_std_string_escaped()
-            } else if let Ok(s) = values.to_string(ctx) {
-                s.to_std_string_escaped()
-            } else {
-                String::new()
-            };
+            let value_str = values
+                .as_string()
+                .map(|s| s.to_std_string_escaped())
+                .or_else(|| {
+                    values
+                        .to_string(ctx)
+                        .ok()
+                        .map(|s| s.to_std_string_escaped())
+                })
+                .unwrap_or_default();
 
             css_vars.push((var_name.to_string(), value_str));
         }
@@ -312,13 +315,11 @@ fn transform_theme_to_vars(
         *var_counter += 1;
 
         // Get the actual value as string
-        let value_str = if let Some(s) = value.as_string() {
-            s.to_std_string_escaped()
-        } else if let Ok(s) = value.to_string(ctx) {
-            s.to_std_string_escaped()
-        } else {
-            String::new()
-        };
+        let value_str = value
+            .as_string()
+            .map(|s| s.to_std_string_escaped())
+            .or_else(|| value.to_string(ctx).ok().map(|s| s.to_std_string_escaped()))
+            .unwrap_or_default();
 
         css_vars.push((var_name.clone(), value_str));
 
@@ -344,9 +345,7 @@ fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
 
     // Fallback: simple conversion using boa_engine 0.21 API
     match value.variant() {
-        boa_engine::value::JsVariant::String(str) => {
-            format!("\"{}\"", str.to_std_string_escaped())
-        }
+        boa_engine::value::JsVariant::String(str) => format!("\"{}\"", str.to_std_string_escaped()),
         boa_engine::value::JsVariant::Null => "null".to_string(),
         boa_engine::value::JsVariant::Undefined => "undefined".to_string(),
         _ => "{}".to_string(),
@@ -840,51 +839,46 @@ fn register_vanilla_extract_apis(
             let id = next_style_id(&collector_style);
 
             // Check if argument is an array (composition syntax)
-            let (json, bases) = if let Some(obj) = style_obj.as_object() {
-                if let Ok(length_val) = obj.get(js_string!("length"), ctx)
-                    && let Some(len) = length_val.as_number()
-                {
-                    // It's an array - handle composition
-                    let len = len as u32;
-                    let mut base_classes = Vec::new();
-                    let mut merged_styles = String::from("{");
-                    let mut first_style = true;
+            let (json, bases) = if let Some(obj) = style_obj.as_object()
+                && let Ok(length_val) = obj.get(js_string!("length"), ctx)
+                && let Some(len) = length_val.as_number()
+            {
+                // It's an array - handle composition
+                let len = len as u32;
+                let mut base_classes = Vec::new();
+                let mut merged_styles = String::from("{");
+                let mut first_style = true;
 
-                    for i in 0..len {
-                        if let Ok(elem) = obj.get(i, ctx) {
-                            if let Some(base_str) = elem.as_string() {
-                                // It's a base class reference (string)
-                                base_classes.push(base_str.to_std_string_escaped());
-                            } else if elem.is_object() {
-                                // It's a style object - merge it
-                                let elem_json = js_value_to_json(&elem, ctx);
-                                // Strip outer braces and merge
-                                let inner = elem_json
-                                    .trim()
-                                    .trim_start_matches('{')
-                                    .trim_end_matches('}')
-                                    .trim();
-                                if !inner.is_empty() {
-                                    if !first_style {
-                                        merged_styles.push(',');
-                                    }
-                                    merged_styles.push_str(inner);
-                                    first_style = false;
+                for i in 0..len {
+                    if let Ok(elem) = obj.get(i, ctx) {
+                        if let Some(base_str) = elem.as_string() {
+                            // It's a base class reference (string)
+                            base_classes.push(base_str.to_std_string_escaped());
+                        } else if elem.is_object() {
+                            // It's a style object - merge it
+                            let elem_json = js_value_to_json(&elem, ctx);
+                            // Strip outer braces and merge
+                            let inner = elem_json
+                                .trim()
+                                .trim_start_matches('{')
+                                .trim_end_matches('}')
+                                .trim();
+                            if !inner.is_empty() {
+                                if !first_style {
+                                    merged_styles.push(',');
                                 }
+                                merged_styles.push_str(inner);
+                                first_style = false;
                             }
                         }
                     }
-                    merged_styles.push('}');
-                    (merged_styles, base_classes)
-                } else {
-                    // No length property, just a style object
-                    (js_value_to_json(style_obj, ctx), Vec::new())
                 }
+                merged_styles.push('}');
+                (merged_styles, base_classes)
             } else {
-                // Not an object at all
+                // No length property, just a style object
                 (js_value_to_json(style_obj, ctx), Vec::new())
             };
-
             collector_style.borrow_mut().styles.styles.insert(
                 id.clone(),
                 StyleEntry {

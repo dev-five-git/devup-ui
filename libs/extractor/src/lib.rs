@@ -12203,4 +12203,27 @@ export const card = style({
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_extract_class_map_from_code_parser_panic() {
+        // Test extract_class_map_from_code with invalid code that causes parser panic (covers line 153-154)
+        let mut style_names = HashSet::new();
+        style_names.insert("test".to_string());
+
+        let result = extract_class_map_from_code(
+            "test.tsx",
+            "const {{ invalid syntax {{{{",
+            &ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+            },
+            &style_names,
+        )
+        .unwrap();
+
+        assert!(result.is_empty());
+    }
 }
