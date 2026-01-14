@@ -12899,6 +12899,37 @@ const Button = myStyled.button({ bg: 'green', p: 2 })
 
     #[test]
     #[serial]
+    fn test_import_alias_custom_named_export() {
+        // Test @emotion/styled default export → custom named export (emotionStyled, not styled)
+        // This tests when user configures alias to map to a non-standard named export
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import emotionStyled from '@emotion/styled'
+const Button = emotionStyled.button({ bg: 'purple', p: 3 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_import_alias_multiple_aliases() {
         // Test with multiple aliases configured
         reset_class_map();
