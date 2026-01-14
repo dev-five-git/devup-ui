@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { loadDevupConfig } from '@devup-ui/plugin-utils'
+import {
+  type ImportAliases,
+  loadDevupConfig,
+  mergeImportAliases,
+} from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getCss,
@@ -24,6 +28,12 @@ export interface DevupUIPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  /**
+   * Import aliases for redirecting imports from other CSS-in-JS libraries
+   * Merged with defaults: @emotion/styled, styled-components, @vanilla-extract/css
+   * Set to `false` to disable specific aliases
+   */
+  importAliases?: ImportAliases
 }
 
 function getFileNumByFilename(filename: string) {
@@ -77,11 +87,13 @@ export function DevupUI({
   include = [],
   singleCss = false,
   prefix,
+  importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
   if (prefix) {
     setPrefix(prefix)
   }
+  const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
   return {
     name: 'devup-ui',
@@ -202,7 +214,16 @@ export function DevupUI({
         cssFile,
         updatedBaseStyle,
         // import main css in code
-      } = codeExtract(fileName, code, libPackage, rel, singleCss, true, false)
+      } = codeExtract(
+        fileName,
+        code,
+        libPackage,
+        rel,
+        singleCss,
+        true,
+        false,
+        importAliases,
+      )
       const promises: Promise<void>[] = []
 
       if (updatedBaseStyle) {

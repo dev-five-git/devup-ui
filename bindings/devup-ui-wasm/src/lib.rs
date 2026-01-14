@@ -1,10 +1,10 @@
 use css::class_map::{get_class_map, set_class_map};
 use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, extract, has_devup_ui};
+use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use once_cell::sync::Lazy;
 use sheet::StyleSheet;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
@@ -213,6 +213,7 @@ pub fn export_file_map() -> Result<String, JsValue> {
 }
 
 /// Internal function to extract code (testable without JsValue)
+#[allow(clippy::too_many_arguments)]
 pub fn code_extract_internal(
     filename: &str,
     code: &str,
@@ -221,6 +222,7 @@ pub fn code_extract_internal(
     single_css: bool,
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
+    import_aliases: HashMap<String, ImportAlias>,
 ) -> Result<Output, String> {
     match extract(
         filename,
@@ -230,6 +232,7 @@ pub fn code_extract_internal(
             css_dir,
             single_css,
             import_main_css: import_main_css_in_code,
+            import_aliases,
         },
     ) {
         Ok(output) => Ok(Output::new(
@@ -246,6 +249,7 @@ pub fn code_extract_internal(
 }
 
 #[wasm_bindgen(js_name = "codeExtract")]
+#[allow(clippy::too_many_arguments)]
 pub fn code_extract(
     filename: &str,
     code: &str,
@@ -254,7 +258,25 @@ pub fn code_extract(
     single_css: bool,
     import_main_css_in_code: bool,
     import_main_css_in_css: bool,
+    import_aliases: JsValue,
 ) -> Result<Output, JsValue> {
+    // Deserialize import_aliases from JsValue
+    // Format: { "package": "namedExport" } or { "package": null } for named exports
+    let aliases: HashMap<String, Option<String>> =
+        serde_wasm_bindgen::from_value(import_aliases).unwrap_or_default();
+
+    // Convert to ImportAlias enum
+    let import_aliases: HashMap<String, ImportAlias> = aliases
+        .into_iter()
+        .map(|(k, v)| {
+            let alias = match v {
+                Some(name) => ImportAlias::DefaultToNamed(name),
+                None => ImportAlias::NamedToNamed,
+            };
+            (k, alias)
+        })
+        .collect();
+
     code_extract_internal(
         filename,
         code,
@@ -263,6 +285,7 @@ pub fn code_extract(
         single_css,
         import_main_css_in_code,
         import_main_css_in_css,
+        import_aliases,
     )
     .map_err(|e| JsValue::from_str(&e))
 }
@@ -675,6 +698,7 @@ mod tests {
                 css_dir: "@devup-ui/core".to_string(),
                 single_css: false,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
         )
         .unwrap();
@@ -762,6 +786,7 @@ mod tests {
                 css_dir: "@devup-ui/core".to_string(),
                 single_css: true,
                 import_main_css: true,
+                import_aliases: HashMap::new(),
             },
         )
         .unwrap();
@@ -903,6 +928,7 @@ mod tests {
             false,
             false,
             false,
+            HashMap::new(),
         );
 
         assert!(result.is_ok());
@@ -926,6 +952,7 @@ mod tests {
             false,
             false,
             false,
+            HashMap::new(),
         );
 
         assert!(result.is_err());

@@ -18,6 +18,7 @@ export interface DevupUILoaderOptions {
   fileMapFile: string
   watch: boolean
   singleCss: boolean
+  importAliases?: Record<string, string | null>
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -30,6 +31,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       classMapFile,
       fileMapFile,
       singleCss,
+      importAliases = {},
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
@@ -54,6 +56,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         singleCss,
         false,
         true,
+        importAliases,
       )
       const sourceMap = map ? JSON.parse(map) : null
       const promises: Promise<void>[] = []

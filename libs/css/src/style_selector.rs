@@ -18,6 +18,7 @@ pub enum AtRuleKind {
     Media,
     Supports,
     Container,
+    Layer,
 }
 
 impl Display for AtRuleKind {
@@ -26,6 +27,19 @@ impl Display for AtRuleKind {
             AtRuleKind::Media => write!(f, "media"),
             AtRuleKind::Supports => write!(f, "supports"),
             AtRuleKind::Container => write!(f, "container"),
+            AtRuleKind::Layer => write!(f, "layer"),
+        }
+    }
+}
+
+impl From<&str> for AtRuleKind {
+    fn from(value: &str) -> Self {
+        match value {
+            "media" => AtRuleKind::Media,
+            "supports" => AtRuleKind::Supports,
+            "container" => AtRuleKind::Container,
+            "layer" => AtRuleKind::Layer,
+            _ => unreachable!(),
         }
     }
 }
@@ -310,6 +324,13 @@ mod tests {
         "@container sidebar (min-width: 400px)"
     )]
     #[case(StyleSelector::Global(":root[data-theme=dark]".to_string(), "file.rs".to_string()), ":root[data-theme=dark]")]
+    #[case(StyleSelector::At {
+            kind: AtRuleKind::Layer,
+            query: "reset".to_string(),
+            selector: None,
+        },
+        "@layer reset"
+    )]
     fn test_style_selector_display(#[case] selector: StyleSelector, #[case] expected: &str) {
         let output = format!("{selector}");
         assert_eq!(output, expected);
@@ -448,5 +469,29 @@ mod tests {
     #[case(":root[data-theme=dark] &:not-exist", 99)]
     fn test_get_selector_order(#[case] selector: &str, #[case] expected: u8) {
         assert_eq!(get_selector_order(selector), expected);
+    }
+
+    #[rstest]
+    #[case(AtRuleKind::Media, "media")]
+    #[case(AtRuleKind::Supports, "supports")]
+    #[case(AtRuleKind::Container, "container")]
+    #[case(AtRuleKind::Layer, "layer")]
+    fn test_at_rule_kind_display(#[case] kind: AtRuleKind, #[case] expected: &str) {
+        assert_eq!(format!("{kind}"), expected);
+    }
+
+    #[rstest]
+    #[case("media", AtRuleKind::Media)]
+    #[case("supports", AtRuleKind::Supports)]
+    #[case("container", AtRuleKind::Container)]
+    #[case("layer", AtRuleKind::Layer)]
+    fn test_at_rule_kind_from_str(#[case] input: &str, #[case] expected: AtRuleKind) {
+        assert_eq!(AtRuleKind::from(input), expected);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_at_rule_kind_from_str_unknown() {
+        let _ = AtRuleKind::from("unknown");
     }
 }

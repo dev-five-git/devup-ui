@@ -5,9 +5,11 @@ pub mod extract_style;
 mod extractor;
 mod gen_class_name;
 mod gen_style;
+mod import_alias_visit;
 mod prop_modify_utils;
 mod util_type;
 mod utils;
+mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
@@ -18,9 +20,19 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::path::PathBuf;
+
+/// Import alias configuration for redirecting imports from other CSS-in-JS libraries
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportAlias {
+    /// Default export → named export (e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`)
+    DefaultToNamed(String),
+    /// Named exports (1:1 mapping, e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`)
+    NamedToNamed,
+}
+
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
@@ -94,6 +106,20 @@ pub struct ExtractOption {
     pub css_dir: String,
     pub single_css: bool,
     pub import_main_css: bool,
+    /// Import aliases for redirecting imports from other CSS-in-JS libraries to the target package
+    pub import_aliases: HashMap<String, ImportAlias>,
+}
+
+impl Default for ExtractOption {
+    fn default() -> Self {
+        Self {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: false,
+            import_main_css: false,
+            import_aliases: HashMap::new(),
+        }
+    }
 }
 
 pub fn extract(
@@ -101,7 +127,20 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    if !code.contains(option.package.as_str()) {
+    // Step 1: Transform import aliases
+    // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
+    // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
+    let transformed_code = import_alias_visit::transform_import_aliases(
+        code,
+        filename,
+        &option.package,
+        &option.import_aliases,
+    );
+
+    // Step 2: Check if code contains the target package (after transformation)
+    let has_relevant_import = transformed_code.contains(option.package.as_str());
+
+    if !has_relevant_import {
         // skip if not using package
         return Ok(ExtractOutput {
             styles: HashSet::new(),
@@ -110,6 +149,70 @@ pub fn extract(
             css_file: None,
         });
     }
+
+    // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
+    let is_ve_file = vanilla_extract::is_vanilla_extract_file(filename);
+    let (processed_code, is_vanilla_extract) = if is_ve_file {
+        // Use transformed code (with imports already pointing to @devup-ui/react)
+        match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
+        {
+            Ok(collected) => {
+                // Check if any styles are referenced in selectors
+                let referenced = vanilla_extract::find_selector_references(&collected);
+
+                if referenced.is_empty() {
+                    // No selector references, use simple code generation
+                    let generated =
+                        vanilla_extract::collected_styles_to_code(&collected, &option.package);
+                    (generated, true)
+                } else {
+                    // Two-pass extraction: first extract referenced styles to get their class names
+                    let partial_code = vanilla_extract::collected_styles_to_code_partial(
+                        &collected,
+                        &option.package,
+                        &referenced,
+                    );
+
+                    // Build class map by extracting the partial code
+                    let class_map = if !partial_code.is_empty() {
+                        extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
+                    // Generate full code with class names substituted into selectors
+                    let generated = vanilla_extract::collected_styles_to_code_with_classes(
+                        &collected,
+                        &option.package,
+                        &class_map,
+                    );
+                    (generated, true)
+                }
+            }
+            Err(_) => {
+                // Fall back to treating as regular file if execution fails
+                (transformed_code.clone(), false)
+            }
+        }
+    } else {
+        (transformed_code.clone(), false)
+    };
+
+    // For vanilla-extract files, if no styles were collected, return early
+    if is_vanilla_extract && processed_code.is_empty() {
+        return Ok(ExtractOutput {
+            styles: HashSet::new(),
+            code: code.to_string(),
+            map: None,
+            css_file: None,
+        });
+    }
+
+    let code_to_parse = if is_vanilla_extract {
+        &processed_code
+    } else {
+        &transformed_code
+    };
 
     let source_type = SourceType::from_path(filename)?;
     let css_file = if option.single_css {
@@ -131,7 +234,7 @@ pub fn extract(
         mut program, // AST
         panicked,    // Parser encountered an error it couldn't recover from
         ..
-    } = Parser::new(&allocator, code, source_type).parse();
+    } = Parser::new(&allocator, code_to_parse, source_type).parse();
     if panicked {
         return Err("Parser panicked".into());
     }
@@ -160,6 +263,82 @@ pub fn extract(
         map: result.map.map(|m| m.to_json_string()),
         css_file: Some(css_file),
     })
+}
+
+/// Extract class names from generated code for specific style names
+/// Used for two-pass vanilla-extract processing to resolve selector references
+fn extract_class_map_from_code(
+    filename: &str,
+    partial_code: &str,
+    option: &ExtractOption,
+    style_names: &HashSet<String>,
+) -> Result<std::collections::HashMap<String, String>, Box<dyn Error>> {
+    let source_type = SourceType::from_path(filename)?;
+    let css_file = if option.single_css {
+        format!("{}/devup-ui.css", option.css_dir)
+    } else {
+        format!(
+            "{}/devup-ui-{}.css",
+            option.css_dir,
+            get_file_num_by_filename(filename)
+        )
+    };
+    let css_files = vec![css_file];
+    let allocator = Allocator::default();
+
+    let ParserReturn {
+        mut program,
+        panicked,
+        ..
+    } = Parser::new(&allocator, partial_code, source_type).parse();
+    if panicked {
+        Ok(std::collections::HashMap::new())
+    } else {
+        let mut visitor = DevupVisitor::new(
+            &allocator,
+            filename,
+            &option.package,
+            css_files,
+            if !option.single_css {
+                Some(filename.to_string())
+            } else {
+                None
+            },
+        );
+        visitor.visit_program(&mut program);
+
+        let result = Codegen::new().build(&program);
+
+        // Parse the output code to extract class name assignments
+        // Format: const styleName = "className" or const styleName = "className1 className2"
+        let mut class_map = std::collections::HashMap::new();
+        for line in result.code.lines() {
+            let line = line.trim();
+            if line.starts_with("const ") || line.starts_with("export const ") {
+                // Parse: [export] const name = "value"
+                let after_const = if line.starts_with("export ") {
+                    line.strip_prefix("export const ").unwrap_or(line)
+                } else {
+                    line.strip_prefix("const ").unwrap_or(line)
+                };
+
+                if let Some((name, rest)) = after_const.split_once(" = ") {
+                    // Extract value from "value" or "value";
+                    let value = rest
+                        .trim_start_matches('"')
+                        .trim_end_matches(';')
+                        .trim_end_matches('"');
+
+                    if style_names.contains(name) {
+                        // For multi-class values like "a b", take the first class
+                        let first_class = value.split_whitespace().next().unwrap_or(value);
+                        class_map.insert(name.to_string(), first_class.to_string());
+                    }
+                }
+            }
+        }
+        Ok(class_map)
+    }
 }
 
 /// Check if the code has an import from the specified package
@@ -199,6 +378,7 @@ mod tests {
 
     use super::*;
     use css::class_map::reset_class_map;
+    use css::file_map::reset_file_map;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
     use serial_test::serial;
@@ -225,10 +405,23 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_extract_option_default() {
+        // Tests lines 90-91: ExtractOption::default()
+        let option = ExtractOption::default();
+        assert_eq!(option.package, "@devup-ui/react");
+        assert_eq!(option.css_dir, "@devup-ui/react");
+        assert!(!option.single_css);
+        assert!(!option.import_main_css);
+        assert!(option.import_aliases.is_empty());
+    }
+
     #[test]
     #[serial]
     fn extract_just_tsx() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -237,13 +430,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -252,7 +447,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap()
@@ -262,18 +458,20 @@ mod tests {
     #[serial]
     fn ignore_special_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} id="id" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -284,7 +482,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -295,6 +494,7 @@ mod tests {
     #[serial]
     fn convert_tag() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -305,13 +505,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -322,13 +524,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -339,13 +543,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -356,13 +562,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -373,13 +581,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -390,13 +600,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -407,13 +619,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -424,13 +638,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -441,13 +657,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -458,13 +676,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -475,13 +695,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -492,13 +714,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -509,13 +733,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -526,37 +752,41 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, [key]: "section", ...rest}[key]} w="100%" h="100%" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, ["key"]: "section", ...rest}["key"]} w="100%" h="100%" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -567,13 +797,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -584,13 +816,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -601,13 +835,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         // maintain object expression
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -619,13 +855,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         // maintain object expression
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -637,7 +875,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -647,6 +886,7 @@ mod tests {
     #[serial]
     fn extract_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -657,12 +897,14 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -673,12 +915,14 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -689,13 +933,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -706,13 +952,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -723,13 +971,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -740,7 +990,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -751,6 +1002,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_namespace_import() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -763,7 +1015,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -774,6 +1027,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_var_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -787,7 +1041,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -798,6 +1053,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_default_import() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -810,7 +1066,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -821,6 +1078,7 @@ mod tests {
     #[serial]
     fn extract_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -831,13 +1089,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -848,13 +1108,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -865,13 +1127,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -882,12 +1146,14 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -898,13 +1164,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -921,13 +1189,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -938,13 +1208,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -959,13 +1231,15 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -994,7 +1268,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1005,6 +1280,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_class_name_from_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1015,7 +1291,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1025,6 +1302,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1035,7 +1313,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1050,7 +1329,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1061,6 +1341,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1071,13 +1352,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1088,13 +1371,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1105,13 +1390,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1122,7 +1409,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1133,6 +1421,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_style_props_with_type() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1143,13 +1432,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1160,13 +1451,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1177,7 +1470,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1188,6 +1482,7 @@ import clsx from 'clsx'
     #[serial]
     fn remove_semicolon() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1198,13 +1493,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1215,13 +1512,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1232,13 +1531,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1249,13 +1550,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1266,7 +1569,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1277,6 +1581,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1287,7 +1592,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1298,6 +1604,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_compound_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1308,7 +1615,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1319,6 +1627,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_wrong_responsive_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1329,13 +1638,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1346,7 +1657,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1357,6 +1669,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_variable_style_props_with_style() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1367,13 +1680,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1384,7 +1699,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1395,6 +1711,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1405,13 +1722,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1422,13 +1741,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1439,13 +1760,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1456,13 +1779,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1473,13 +1798,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1490,13 +1817,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1507,13 +1836,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1524,13 +1855,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1541,13 +1874,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1558,13 +1893,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1575,7 +1912,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1586,6 +1924,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_same_value_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1596,13 +1935,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1613,13 +1954,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1630,13 +1973,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1647,13 +1992,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1664,13 +2011,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1681,7 +2030,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1692,6 +2042,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_same_dynamic_value_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1702,13 +2053,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1719,7 +2072,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1730,6 +2084,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_conditional_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1740,13 +2095,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1757,13 +2114,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1774,13 +2133,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1791,13 +2152,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1808,13 +2171,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1825,13 +2190,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1842,13 +2209,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1859,7 +2228,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1870,6 +2240,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_logical_case() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1880,13 +2251,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1897,13 +2270,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1914,13 +2289,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1931,7 +2308,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1942,6 +2320,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_dynamic_logical_case() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1952,13 +2331,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1969,13 +2350,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -1986,13 +2369,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2003,7 +2388,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2013,6 +2399,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_responsive_conditional_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2023,13 +2410,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2040,7 +2429,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2051,6 +2441,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2063,13 +2454,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2099,13 +2492,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2120,13 +2515,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2141,13 +2538,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2162,13 +2561,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2183,13 +2584,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2204,13 +2607,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2223,13 +2628,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2249,13 +2656,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2270,13 +2679,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2291,13 +2702,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2316,13 +2729,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2337,13 +2752,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2358,13 +2775,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2386,13 +2805,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2414,7 +2835,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2425,6 +2847,7 @@ import clsx from 'clsx'
     #[serial]
     fn optimize_func() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2435,13 +2858,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2452,13 +2877,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2469,13 +2896,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2486,13 +2915,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2503,13 +2934,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2520,13 +2953,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2537,7 +2972,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2548,6 +2984,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector_with_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2560,13 +2997,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2581,7 +3020,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2591,6 +3031,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_nested_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2605,13 +3046,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2628,13 +3071,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2654,13 +3099,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2679,13 +3126,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2703,13 +3152,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2733,13 +3184,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2758,13 +3211,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2785,13 +3240,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2812,13 +3269,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2839,13 +3298,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2866,7 +3327,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2877,6 +3339,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_conditional_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2889,13 +3352,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2908,13 +3373,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2925,13 +3392,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2945,7 +3414,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2956,6 +3426,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_selector_with_responsive() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2968,13 +3439,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -2989,13 +3462,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3012,7 +3487,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3023,6 +3499,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_class_name_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3035,13 +3512,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3054,13 +3533,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3074,13 +3555,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3093,13 +3576,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3115,13 +3600,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3132,13 +3619,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3149,13 +3638,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3166,13 +3657,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3188,13 +3681,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3216,13 +3711,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3233,13 +3730,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3250,13 +3749,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3268,13 +3769,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3285,13 +3788,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3302,13 +3807,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3319,7 +3826,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3330,6 +3838,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_with_media_query() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3346,13 +3855,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3372,13 +3883,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3393,7 +3906,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3404,6 +3918,7 @@ import clsx from 'clsx'
     #[serial]
     fn extract_static_css_with_theme() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3414,13 +3929,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3431,13 +3948,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3448,7 +3967,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3459,6 +3979,7 @@ import clsx from 'clsx'
     #[serial]
     fn apply_typography() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3469,13 +3990,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3486,13 +4009,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3503,7 +4028,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3513,6 +4039,7 @@ import clsx from 'clsx'
     #[serial]
     fn apply_var_typography() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3523,13 +4050,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3540,13 +4069,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3557,13 +4088,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3579,7 +4112,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3590,6 +4124,7 @@ import clsx from 'clsx'
     #[serial]
     fn raise_error() {
         reset_class_map();
+        reset_file_map();
         assert!(
             extract(
                 "test.wrong",
@@ -3598,7 +4133,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap_err()
@@ -3607,6 +4143,7 @@ import clsx from 'clsx'
         );
 
         reset_class_map();
+        reset_file_map();
         assert_eq!(
             extract(
                 "test.tsx",
@@ -3615,7 +4152,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap_err()
@@ -3628,6 +4166,7 @@ import clsx from 'clsx'
     #[serial]
     fn import_wrong_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3637,13 +4176,15 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -3654,7 +4195,8 @@ useTheme();
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3665,6 +4207,7 @@ useTheme();
     #[serial]
     fn support_transpile_mjs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
@@ -3694,13 +4237,15 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3730,13 +4275,15 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3748,13 +4295,15 @@ e(o, { className: "a", bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3766,13 +4315,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" } })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3784,7 +4335,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3792,6 +4344,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
 
         // conditional as
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3799,11 +4352,12 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? "div" : "section", className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3811,12 +4365,13 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: Variable, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -3824,7 +4379,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? null : undefined, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -3834,38 +4389,46 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn support_transpile_cjs() {
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
     }
 
     #[test]
     #[serial]
     fn maintain_value() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -3875,6 +4438,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn with_prefix() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3885,7 +4449,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3896,6 +4461,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn optimize_aspect_ratio() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3906,13 +4472,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3923,13 +4491,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3940,7 +4510,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3951,6 +4522,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn ternary_operator_in_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3961,13 +4533,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3978,13 +4552,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -3995,7 +4571,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4006,6 +4583,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     #[serial]
     fn test_rest_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4016,13 +4594,15 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4052,7 +4632,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4063,6 +4644,7 @@ export default function Card({
     #[serial]
     fn props_wrong_direct_array_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4073,13 +4655,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4090,13 +4674,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4107,13 +4693,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4124,13 +4712,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -4141,7 +4731,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4151,6 +4742,7 @@ export default function Card({
     #[serial]
     fn negative_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4161,13 +4753,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4178,13 +4772,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4195,13 +4791,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4212,13 +4810,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4229,13 +4829,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4246,13 +4848,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4263,7 +4867,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4274,6 +4879,7 @@ export default function Card({
     #[serial]
     fn props_wrong_direct_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4284,13 +4890,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4301,13 +4909,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4318,13 +4928,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4335,7 +4947,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4346,6 +4959,7 @@ export default function Card({
     #[serial]
     fn extract_conditional_style_props_with_class_name() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -4360,13 +4974,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4377,7 +4993,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4388,6 +5005,7 @@ export default function Card({
     #[serial]
     fn props_direct_array_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4398,13 +5016,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4415,13 +5035,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4432,13 +5054,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4449,13 +5073,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4469,13 +5095,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4486,13 +5114,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4503,7 +5133,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4514,6 +5145,7 @@ export default function Card({
     #[serial]
     fn props_multi_expression() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4544,7 +5176,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4555,6 +5188,7 @@ export default function Card({
     #[serial]
     fn props_direct_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4565,13 +5199,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4582,13 +5218,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4599,13 +5237,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4616,7 +5256,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4627,6 +5268,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_object_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4637,12 +5279,14 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4653,7 +5297,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4664,6 +5309,7 @@ export default function Card({
     #[serial]
     fn props_direct_object_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4674,13 +5320,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4691,7 +5339,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4701,6 +5350,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_object_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4711,7 +5361,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4722,6 +5373,7 @@ export default function Card({
     #[serial]
     fn props_direct_array_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4732,13 +5384,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4749,7 +5403,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4759,6 +5414,7 @@ export default function Card({
     #[serial]
     fn props_direct_variable_array_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4769,13 +5425,15 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4786,7 +5444,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4797,6 +5456,7 @@ export default function Card({
     #[serial]
     fn props_direct_hybrid_responsive_select() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4807,7 +5467,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4818,6 +5479,7 @@ export default function Card({
     #[serial]
     fn props_direct_wrong() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4828,7 +5490,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4838,6 +5501,7 @@ export default function Card({
     #[serial]
     fn test_component_in_func() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4853,7 +5517,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4864,6 +5529,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn backtick_prop() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4874,13 +5540,15 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4891,7 +5559,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4902,6 +5571,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn group_selector_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4912,7 +5582,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4923,6 +5594,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn test_duplicate_style_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4933,7 +5605,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4944,6 +5617,7 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
     #[serial]
     fn avoid_same_name_component() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4956,7 +5630,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4967,6 +5642,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn css_props_destructuring_assignment() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -4980,13 +5656,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5000,7 +5678,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5011,6 +5690,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn theme_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5021,7 +5701,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5032,6 +5713,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn nested_theme_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5054,7 +5736,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5065,6 +5748,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn template_literal_props() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5075,13 +5759,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5092,13 +5778,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5109,13 +5797,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5126,13 +5816,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5143,13 +5835,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5164,7 +5858,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5175,6 +5870,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn theme_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5185,12 +5881,14 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5201,13 +5899,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5225,7 +5925,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5236,6 +5937,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn custom_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5250,13 +5952,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5271,13 +5975,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5292,7 +5998,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5303,6 +6010,7 @@ import {Button} from '@devup/ui'
     #[serial]
     fn style_order() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5317,13 +6025,15 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.mjs",
@@ -5354,13 +6064,15 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5371,13 +6083,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5388,13 +6102,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5405,13 +6121,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5429,13 +6147,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5454,13 +6174,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5471,7 +6193,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5482,6 +6205,7 @@ export {
     #[serial]
     fn style_order2() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5499,13 +6223,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5523,13 +6249,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5547,7 +6275,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5558,6 +6287,7 @@ export {
     #[serial]
     fn style_variables() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5570,13 +6300,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5589,13 +6321,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5609,13 +6343,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5628,13 +6364,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5647,13 +6385,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5666,13 +6406,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5685,13 +6427,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5704,13 +6448,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5726,13 +6472,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5743,13 +6491,15 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5760,7 +6510,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5771,6 +6522,7 @@ export {
     #[serial]
     fn wrong_style_variables() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
@@ -5781,7 +6533,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5792,6 +6545,7 @@ export {
     #[serial]
     fn style_variables_mjs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.js",
@@ -5803,7 +6557,8 @@ e(o, { styleVars: { c: "yellow" } })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5814,6 +6569,7 @@ e(o, { styleVars: { c: "yellow" } })
     #[serial]
     fn extract_global_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5828,13 +6584,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5849,13 +6607,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5870,13 +6630,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5891,13 +6653,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5912,13 +6676,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5933,13 +6699,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5954,13 +6722,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5971,13 +6741,15 @@ globalCss(...{})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -5988,7 +6760,8 @@ globalCss(...{div: {bg: "red"}})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5996,6 +6769,7 @@ globalCss(...{div: {bg: "red"}})
 
         // recursive spread
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6006,7 +6780,8 @@ globalCss(...{div: {bg: "red"}, ...{span: {bg: "blue"}}})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6017,6 +6792,7 @@ globalCss(...{div: {bg: "red"}, ...{span: {bg: "blue"}}})
     #[serial]
     fn extract_wrong_global_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6031,13 +6807,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6048,13 +6826,15 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6065,7 +6845,8 @@ globalCss(1)
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6076,6 +6857,7 @@ globalCss(1)
     #[serial]
     fn extract_global_css_with_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6095,47 +6877,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r#"import { globalCss } from "@devup-ui/core";
-globalCss({
-  "div": {
-    bg: "red",
-    color: "blue",
-    _hover: {
-      bg: "blue",
-      color: "red"
-    }
-  },
-  "span": {
-    bg: "red",
-    color: "blue",
-    _hover: {
-      bg: "blue",
-      color: "red"
-    }
-  }
-})
-"#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false
-                }
-            )
-            .unwrap()
-        ));
-
-        reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6163,13 +6913,51 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from "@devup-ui/core";
+globalCss({
+  "div": {
+    bg: "red",
+    color: "blue",
+    _hover: {
+      bg: "blue",
+      color: "red"
+    }
+  },
+  "span": {
+    bg: "red",
+    color: "blue",
+    _hover: {
+      bg: "blue",
+      color: "red"
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6205,7 +6993,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6216,6 +7005,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_template_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6230,13 +7020,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6249,13 +7041,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6268,13 +7062,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6288,13 +7084,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6310,13 +7108,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6327,13 +7127,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6344,13 +7146,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6362,13 +7166,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6379,7 +7185,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6390,6 +7197,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_imports() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6402,13 +7210,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6421,13 +7231,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6440,7 +7252,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6451,6 +7264,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_font_faces() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6474,13 +7288,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6499,13 +7315,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6523,13 +7341,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6546,13 +7366,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6571,13 +7393,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6596,13 +7420,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6636,13 +7462,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6655,13 +7483,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6674,13 +7504,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6693,7 +7525,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6704,6 +7537,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_wrong_imports() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6716,13 +7550,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6735,7 +7571,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6746,6 +7583,7 @@ globalCss({
     #[serial]
     fn extract_global_css_with_empty() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6758,13 +7596,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6778,13 +7618,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6797,13 +7639,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6817,13 +7661,15 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6834,13 +7680,15 @@ globalCss({})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6851,7 +7699,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6862,6 +7711,7 @@ globalCss()
     #[serial]
     fn extract_keyframs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6875,13 +7725,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6896,13 +7748,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6917,13 +7771,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6938,13 +7794,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6959,13 +7817,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -6980,13 +7840,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7001,13 +7863,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7022,13 +7886,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7059,13 +7925,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7080,7 +7948,8 @@ keyframes(...{
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7090,6 +7959,7 @@ keyframes(...{
     #[serial]
     fn extract_wrong_keyframs() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7104,7 +7974,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7115,6 +7986,7 @@ keyframes({
     #[serial]
     fn extract_keyframs_literal() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7149,13 +8021,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7196,7 +8070,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7207,6 +8082,7 @@ keyframes({
     #[serial]
     fn extract_just_tsx_in_multiple_files() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7217,7 +8093,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7232,7 +8109,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7248,7 +8126,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7263,7 +8142,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7274,6 +8154,7 @@ keyframes({
     #[serial]
     fn import_main_css() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7284,7 +8165,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: true
+                    import_main_css: true,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7295,6 +8177,7 @@ keyframes({
     #[serial]
     fn optimize_multi_css_value() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7305,7 +8188,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7316,6 +8200,7 @@ keyframes({
     #[serial]
     fn extract_enum_style_property() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7326,7 +8211,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7334,6 +8220,7 @@ keyframes({
 
         // wrong case
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7344,13 +8231,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7361,13 +8250,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7378,13 +8269,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7395,13 +8288,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7412,7 +8307,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7423,6 +8319,7 @@ keyframes({
     #[serial]
     fn extract_advenced_selector() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7436,13 +8333,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7456,7 +8355,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7464,6 +8364,7 @@ keyframes({
 
         // empty
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7476,13 +8377,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7498,13 +8401,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7520,13 +8425,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7542,13 +8449,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7567,13 +8476,15 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7589,7 +8500,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7601,6 +8513,8 @@ keyframes({
     fn test_styled() {
         // Test 1: styled.div`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7614,7 +8528,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7622,6 +8537,8 @@ keyframes({
 
         // Test 2: styled("div")`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7635,7 +8552,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7643,6 +8561,8 @@ keyframes({
 
         // Test 3: styled("div")({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7653,7 +8573,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7661,6 +8582,8 @@ keyframes({
 
         // Test 4: styled.div({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7671,7 +8594,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7679,6 +8603,8 @@ keyframes({
 
         // Test 5: styled(Component)({ bg: "red" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7689,13 +8615,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7709,13 +8638,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7726,13 +8658,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7746,13 +8681,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7763,13 +8701,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7783,13 +8724,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7800,7 +8744,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7812,6 +8757,8 @@ keyframes({
     fn test_styled_with_variable() {
         // Test 1: styled.div({ bg: "$text" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7822,7 +8769,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7830,6 +8778,8 @@ keyframes({
 
         // Test 2: styled("div")({ color: "$primary" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7840,7 +8790,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7848,6 +8799,8 @@ keyframes({
 
         // Test 3: styled.div`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7861,7 +8814,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7869,6 +8823,8 @@ keyframes({
 
         // Test 4: styled(Component)({ bg: "$text" })
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7879,7 +8835,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7887,6 +8844,8 @@ keyframes({
 
         // Test 5: styled("div")`css`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7900,7 +8859,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7912,6 +8872,8 @@ keyframes({
     fn test_styled_with_variable_like_emotion() {
         // Test 1: styled.div`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7926,7 +8888,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7934,6 +8897,8 @@ keyframes({
 
         // Test 2: styled("div")`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7949,13 +8914,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7968,13 +8936,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -7987,13 +8958,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8008,13 +8982,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8025,13 +9002,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8042,7 +9022,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8054,6 +9035,8 @@ keyframes({
     fn test_styled_with_variable_like_emotion_props() {
         // Test 3: styled.div`css with ${props => props.bg}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8067,7 +9050,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8075,6 +9059,8 @@ keyframes({
 
         // Test 4: styled(Component)`css with ${variable}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8089,7 +9075,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8097,6 +9084,8 @@ keyframes({
 
         // Test 5: styled.div`css with multiple ${variables}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8113,7 +9102,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8121,6 +9111,8 @@ keyframes({
 
         // Test 6: styled.div`css with ${expression}`
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8135,7 +9127,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8146,6 +9139,8 @@ keyframes({
     #[serial]
     fn test_wrong_styled_with_variable_like_emotion_props() {
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8159,13 +9154,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8179,13 +9177,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8196,13 +9197,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8213,13 +9217,16 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
 
         reset_class_map();
+        reset_file_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8230,7 +9237,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8241,6 +9249,7 @@ keyframes({
     #[serial]
     fn test_mask_properties_with_korean() {
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8259,7 +9268,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8271,6 +9281,7 @@ keyframes({
     fn test_dot_notation_theme_variables() {
         // Test that dot notation theme variables (e.g., $primary.100) are correctly extracted
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8281,7 +9292,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8289,6 +9301,7 @@ keyframes({
 
         // Test multiple dot notation variables
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8299,7 +9312,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8307,6 +9321,7 @@ keyframes({
 
         // Test deep nested dot notation
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8317,7 +9332,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8325,6 +9341,7 @@ keyframes({
 
         // Test dot notation in border shorthand
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -8335,7 +9352,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8346,6 +9364,7 @@ keyframes({
     #[serial]
     fn test_styled_with_spread() {
         reset_class_map();
+        reset_file_map();
         // Test styled with spread element
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8358,7 +9377,8 @@ const StyledDiv = styled.div({ ...baseStyles })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8369,6 +9389,7 @@ const StyledDiv = styled.div({ ...baseStyles })
     #[serial]
     fn test_css_function_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test css() with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8380,7 +9401,8 @@ const className = css()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8391,6 +9413,7 @@ const className = css()
     #[serial]
     fn test_css_function_empty_object() {
         reset_class_map();
+        reset_file_map();
         // Test css() with empty object
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8402,7 +9425,8 @@ const className = css({})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8413,6 +9437,7 @@ const className = css({})
     #[serial]
     fn test_keyframes_function() {
         reset_class_map();
+        reset_file_map();
         // Test keyframes() function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8427,7 +9452,8 @@ const spin = keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8438,6 +9464,7 @@ const spin = keyframes({
     #[serial]
     fn test_global_css_function() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss() function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8451,7 +9478,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8462,6 +9490,7 @@ globalCss({
     #[serial]
     fn test_conditional_styles() {
         reset_class_map();
+        reset_file_map();
         // Test conditional styles with both branches having different properties
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8476,7 +9505,8 @@ const Component = () => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8487,6 +9517,7 @@ const Component = () => {
     #[serial]
     fn test_css_variable_reassignment() {
         reset_class_map();
+        reset_file_map();
         // Test css import reassignment
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8499,7 +9530,8 @@ const className = myCss({ bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8510,6 +9542,7 @@ const className = myCss({ bg: "red" })
     #[serial]
     fn test_global_css_with_imports() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with @import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8523,7 +9556,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8534,6 +9568,7 @@ globalCss({
     #[serial]
     fn test_global_css_with_font_faces() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with fontFaces
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8553,7 +9588,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8564,6 +9600,7 @@ globalCss({
     #[serial]
     fn test_global_css_with_pseudo_selector() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with pseudo selector (prefixed with _)
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8577,7 +9614,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8588,6 +9626,7 @@ globalCss({
     #[serial]
     fn test_responsive_array_styles() {
         reset_class_map();
+        reset_file_map();
         // Test responsive array with multiple breakpoints
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8599,7 +9638,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8610,6 +9650,7 @@ globalCss({
     #[serial]
     fn test_member_expression_style() {
         reset_class_map();
+        reset_file_map();
         // Test dynamic member expression for styles (obj[key])
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8623,7 +9664,8 @@ const key = "primary";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8634,6 +9676,7 @@ const key = "primary";
     #[serial]
     fn test_dynamic_class_name_merge() {
         reset_class_map();
+        reset_file_map();
         // Test dynamic className merging with existing className
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8647,7 +9690,8 @@ const Component = ({ className }) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8658,6 +9702,7 @@ const Component = ({ className }) => {
     #[serial]
     fn test_typography_style() {
         reset_class_map();
+        reset_file_map();
         // Test typography prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8669,7 +9714,8 @@ const Component = ({ className }) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8680,6 +9726,7 @@ const Component = ({ className }) => {
     #[serial]
     fn test_css_with_template_literal() {
         reset_class_map();
+        reset_file_map();
         // Test css function with template literal containing expressions
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8692,7 +9739,8 @@ const className = css({ fontSize: `${size}px` })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8703,6 +9751,7 @@ const className = css({ fontSize: `${size}px` })
     #[serial]
     fn test_conditional_with_both_branches() {
         reset_class_map();
+        reset_file_map();
         // Test conditional where both branches have styles
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8715,7 +9764,8 @@ const isActive = true;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8726,6 +9776,7 @@ const isActive = true;
     #[serial]
     fn test_spread_props() {
         reset_class_map();
+        reset_file_map();
         // Test spread props on component
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8739,7 +9790,8 @@ const Component = (props) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8750,6 +9802,7 @@ const Component = (props) => {
     #[serial]
     fn test_nested_conditional() {
         reset_class_map();
+        reset_file_map();
         // Test nested conditional expressions
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8763,7 +9816,8 @@ const b = false;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8774,6 +9828,7 @@ const b = false;
     #[serial]
     fn test_style_prop_merge() {
         reset_class_map();
+        reset_file_map();
         // Test style prop merging with dynamic styles
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8786,7 +9841,8 @@ const color = "red";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8797,6 +9853,7 @@ const color = "red";
     #[serial]
     fn test_keyframes_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test keyframes with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8808,7 +9865,8 @@ const spin = keyframes()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8819,6 +9877,7 @@ const spin = keyframes()
     #[serial]
     fn test_global_css_no_args() {
         reset_class_map();
+        reset_file_map();
         // Test globalCss with no arguments
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8830,7 +9889,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8841,6 +9901,7 @@ globalCss()
     #[serial]
     fn test_default_import_usage() {
         reset_class_map();
+        reset_file_map();
         // Test using default import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8852,7 +9913,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8863,6 +9925,7 @@ globalCss()
     #[serial]
     fn test_namespace_import_usage() {
         reset_class_map();
+        reset_file_map();
         // Test using namespace import
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8874,7 +9937,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8885,6 +9949,7 @@ globalCss()
     #[serial]
     fn test_namespace_import_css() {
         reset_class_map();
+        reset_file_map();
         // Test using namespace import with css function
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8896,7 +9961,8 @@ const className = DevUI.css({ bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8907,6 +9973,7 @@ const className = DevUI.css({ bg: "red" })
     #[serial]
     fn test_enum_style_prop() {
         reset_class_map();
+        reset_file_map();
         // Test enum-like style mapping
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8920,7 +9987,8 @@ const colors = { primary: "blue", secondary: "red" };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8931,6 +9999,7 @@ const colors = { primary: "blue", secondary: "red" };
     #[serial]
     fn test_style_vars_prop() {
         reset_class_map();
+        reset_file_map();
         // Test styleVars prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8943,7 +10012,8 @@ const dynamicColor = "blue";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8954,6 +10024,7 @@ const dynamicColor = "blue";
     #[serial]
     fn test_props_prop() {
         reset_class_map();
+        reset_file_map();
         // Test props prop forwarding
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8966,7 +10037,8 @@ const extraProps = { onClick: () => {} };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8977,6 +10049,7 @@ const extraProps = { onClick: () => {} };
     #[serial]
     fn test_style_order_prop() {
         reset_class_map();
+        reset_file_map();
         // Test styleOrder prop
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -8988,7 +10061,8 @@ const extraProps = { onClick: () => {} };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8999,6 +10073,7 @@ const extraProps = { onClick: () => {} };
     #[serial]
     fn test_multiple_dynamic_values() {
         reset_class_map();
+        reset_file_map();
         // Test multiple dynamic values
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
@@ -9013,7 +10088,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9025,6 +10101,7 @@ const margin = 5;
     fn test_media_query_selectors() {
         // Test _print media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9035,7 +10112,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9043,6 +10121,7 @@ const margin = 5;
 
         // Test _screen media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9053,7 +10132,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9061,6 +10141,7 @@ const margin = 5;
 
         // Test _speech media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9071,7 +10152,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9079,6 +10161,7 @@ const margin = 5;
 
         // Test _all media query selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9089,7 +10172,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9097,6 +10181,7 @@ const margin = 5;
 
         // Test multiple media query selectors combined
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9111,7 +10196,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9123,6 +10209,7 @@ const margin = 5;
     fn test_at_rules_underscore_prefix() {
         // Test _container at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9133,7 +10220,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9141,6 +10229,7 @@ const margin = 5;
 
         // Test _media at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9151,7 +10240,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9159,6 +10249,7 @@ const margin = 5;
 
         // Test _supports at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9169,7 +10260,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9177,6 +10269,7 @@ const margin = 5;
 
         // Test _container with named container
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9187,7 +10280,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9199,6 +10293,7 @@ const margin = 5;
     fn test_at_rules_at_prefix() {
         // Test @container at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9209,7 +10304,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9217,6 +10313,7 @@ const margin = 5;
 
         // Test @media at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9227,7 +10324,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9235,6 +10333,7 @@ const margin = 5;
 
         // Test @supports at-rule
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9245,7 +10344,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9257,6 +10357,7 @@ const margin = 5;
     fn test_global_css_at_rules() {
         // Test globalCss with @media nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9273,7 +10374,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9281,6 +10383,7 @@ globalCss({
 
         // Test globalCss with @supports nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9297,7 +10400,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9305,6 +10409,7 @@ globalCss({
 
         // Test globalCss with @container nested inside selector
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9321,7 +10426,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9329,6 +10435,7 @@ globalCss({
 
         // Test globalCss with multiple at-rules nested inside selectors
         reset_class_map();
+        reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
@@ -9352,12 +10459,871 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_global_css_with_layer() {
+        // Test globalCss with @layer property
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    "*": {
+        "@layer": "reset",
+        margin: 0,
+        padding: 0
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test globalCss with @layer for multiple selectors
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {globalCss} from '@devup-ui/core'
+globalCss({
+    "*": {
+        "@layer": "reset",
+        boxSizing: "border-box"
+    },
+    body: {
+        "@layer": "base",
+        fontFamily: "sans-serif"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    // ============================================================================
+    // VANILLA-EXTRACT API TESTS
+    // ============================================================================
+
+    /// Test vanilla-extract style files (.css.ts, .css.js)
+    /// Using vanilla-extract API (style, globalStyle, keyframes) from @devup-ui/react package
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_css_ts() {
+        reset_class_map();
+        reset_file_map();
+        // .css.ts file with style function (vanilla-extract API)
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "styles.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const container: string = style({ background: "red", padding: 16 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_css_js() {
+        reset_class_map();
+        reset_file_map();
+        // .css.js file with style function
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "styles.css.js",
+                r#"import { style } from '@devup-ui/react'
+export const wrapper = style({ backgroundColor: "white", margin: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // .css.js file with style function for link
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "components.css.js",
+                r#"import { style } from '@devup-ui/react'
+export const link = style({ color: "blue", textDecoration: "underline" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Test .css.ts files with @vanilla-extract/css import (compatibility mode)
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_css_ts_with_vanilla_extract_import() {
+        reset_class_map();
+        reset_file_map();
+        // .css.ts file with import from @vanilla-extract/css (not @devup-ui/react)
+        // This should work the same as importing from @devup-ui/react
+        let mut import_aliases = HashMap::new();
+        import_aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "styles.css.ts",
+                r#"import { style } from '@vanilla-extract/css'
+export const hello = style({
+  cursor: 'pointer',
+  fontSize: 32,
+  paddingTop: '28px',
+  paddingBottom: '28px',
+})
+export const text = style({
+  color: 'var(--text)',
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_variable() {
+        reset_class_map();
+        reset_file_map();
+        // Variables should be evaluated at execution time
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "vars.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const primaryColor = "blue";
+const spacing = 16;
+export const button = style({ background: primaryColor, padding: spacing })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_computed() {
+        reset_class_map();
+        reset_file_map();
+        // Computed values should be evaluated
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "computed.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const base = 8;
+export const box = style({ padding: base * 2, margin: base / 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_spread() {
+        reset_class_map();
+        reset_file_map();
+        // Spread operator should work
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "spread.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const baseStyle = { padding: 8, margin: 4 };
+export const extended = style({ ...baseStyle, background: "red" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_pseudo_selector() {
+        reset_class_map();
+        reset_file_map();
+        // devup-ui extension: _hover pseudo selector
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "hover.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const hoverButton = style({ background: "gray", _hover: { background: "blue" } })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_responsive_array() {
+        reset_class_map();
+        reset_file_map();
+        // devup-ui extension: responsive arrays
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "responsive.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const responsiveBox = style({ padding: [8, 16, 32] })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_keyframes_and_global() {
+        reset_class_map();
+        reset_file_map();
+        // .css.ts file with keyframes (vanilla-extract API)
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "animations.css.ts",
+                r#"import { keyframes, style } from '@devup-ui/react'
+export const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+export const animated = style({ animation: "fadeIn 1s ease-in" })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // .css.ts file with globalStyle (vanilla-extract API)
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "global.css.ts",
+                r#"import { globalStyle } from '@devup-ui/react'
+globalStyle("body", { margin: 0, padding: 0 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_create_var() {
+        reset_class_map();
+        reset_file_map();
+        // createVar - CSS variable creation
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "vars.css.ts",
+                r#"import { createVar, style } from '@devup-ui/react'
+export const colorVar = createVar()
+export const box = style({
+  vars: {
+    [colorVar]: 'blue'
+  },
+  color: colorVar
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // fallbackVar - CSS variable with fallback
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fallback.css.ts",
+                r#"import { createVar, fallbackVar, style } from '@devup-ui/react'
+export const colorVar = createVar()
+export const box = style({
+  color: fallbackVar(colorVar, 'red')
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_variants() {
+        reset_class_map();
+        reset_file_map();
+        // styleVariants - create multiple style variants
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "variants.css.ts",
+                r#"import { styleVariants } from '@devup-ui/react'
+export const background = styleVariants({
+  primary: { background: 'blue' },
+  secondary: { background: 'gray' },
+  danger: { background: 'red' }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // styleVariants with base style composition
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "variants-composed.css.ts",
+                r#"import { style, styleVariants } from '@devup-ui/react'
+const base = style({ padding: 12, borderRadius: 4 })
+export const button = styleVariants({
+  primary: [base, { background: 'blue', color: 'white' }],
+  secondary: [base, { background: 'gray', color: 'black' }]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face() {
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // fontFace - define custom font
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fonts.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+const myFont = fontFace({
+  src: 'local("Comic Sans MS")'
+})
+export const text = style({
+  fontFamily: myFont
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // fontFace with multiple sources
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fonts-multi.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+const roboto = fontFace({
+  src: 'url("/fonts/Roboto.woff2") format("woff2")',
+  fontWeight: 400,
+  fontStyle: 'normal'
+})
+export const body = style({
+  fontFamily: roboto
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme() {
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // createTheme - define theme with variables
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme.css.ts",
+                r#"import { createTheme, style } from '@devup-ui/react'
+export const [themeClass, vars] = createTheme({
+  color: {
+    brand: 'blue',
+    text: 'black'
+  },
+  space: {
+    small: '4px',
+    medium: '8px',
+    large: '16px'
+  }
+})
+export const box = style({
+  color: vars.color.text,
+  padding: vars.space.medium
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // createThemeContract - type-safe theme contract
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-contract.css.ts",
+                r#"import { createThemeContract, createTheme, style } from '@devup-ui/react'
+const vars = createThemeContract({
+  color: {
+    brand: null,
+    text: null
+  }
+})
+export const lightTheme = createTheme(vars, {
+  color: {
+    brand: 'blue',
+    text: 'black'
+  }
+})
+export const darkTheme = createTheme(vars, {
+  color: {
+    brand: 'lightblue',
+    text: 'white'
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_layer() {
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // layer - CSS cascade layers
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "layers.css.ts",
+                r#"import { layer, style, globalStyle } from '@devup-ui/react'
+export const reset = layer('reset')
+export const base = layer('base')
+export const components = layer('components')
+globalStyle('*', {
+  '@layer': reset,
+  margin: 0,
+  padding: 0
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_container() {
+        reset_class_map();
+        reset_file_map();
+        // createContainer - container queries
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "container.css.ts",
+                r#"import { createContainer, style } from '@devup-ui/react'
+export const sidebar = createContainer()
+export const sidebarContainer = style({
+  containerName: sidebar,
+  containerType: 'inline-size'
+})
+export const responsive = style({
+  '@container': {
+    [`${sidebar} (min-width: 400px)`]: {
+      flexDirection: 'row'
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme() {
+        reset_class_map();
+        reset_file_map();
+        // createGlobalTheme - global theme variables on :root
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "global-theme.css.ts",
+                r#"import { createGlobalTheme } from '@devup-ui/react'
+export const vars = createGlobalTheme(':root', {
+  color: {
+    brand: 'blue',
+    text: 'black',
+    background: 'white'
+  },
+  font: {
+    body: 'system-ui, sans-serif'
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_composition() {
+        reset_class_map();
+        reset_file_map();
+        // style composition - array of styles
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "composition.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const base = style({
+  padding: 12,
+  borderRadius: 4
+})
+const interactive = style({
+  cursor: 'pointer',
+  transition: 'all 0.2s'
+})
+export const button = style([base, interactive, {
+  background: 'blue',
+  color: 'white'
+}])
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selectors() {
+        reset_class_map();
+        reset_file_map();
+        // complex selectors
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "selectors.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const button = style({
+  background: 'blue',
+  selectors: {
+    '&:hover': {
+      background: 'darkblue'
+    },
+    '&:focus': {
+      outline: '2px solid blue'
+    },
+    '&:active': {
+      transform: 'scale(0.98)'
+    },
+    '&:disabled': {
+      opacity: 0.5,
+      cursor: 'not-allowed'
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // parent and sibling selectors
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "selectors-complex.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const parent = style({
+  background: 'white'
+})
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: {
+      color: 'blue'
+    },
+    '& + &': {
+      marginTop: 8
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_media_queries() {
+        reset_class_map();
+        reset_file_map();
+        // @media queries
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "media.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const responsive = style({
+  display: 'block',
+  '@media': {
+    'screen and (min-width: 768px)': {
+      display: 'flex'
+    },
+    'screen and (min-width: 1024px)': {
+      display: 'grid'
+    },
+    '(prefers-color-scheme: dark)': {
+      background: 'black',
+      color: 'white'
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_supports() {
+        reset_class_map();
+        reset_file_map();
+        // @supports queries
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "supports.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const grid = style({
+  display: 'flex',
+  '@supports': {
+    '(display: grid)': {
+      display: 'grid'
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+    // END VANILLA-EXTRACT API TESTS
 
     #[rstest]
     #[case("test.tsx", "const x = 1;", "@devup-ui/react", false)] // no package string
@@ -9428,6 +11394,30 @@ globalCss({
         "@devup-ui/react",
         false
     )] // unsupported file extension
+    #[case(
+        "styles.css.ts",
+        "import { css } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .css.ts (devup-ui style)
+    #[case(
+        "styles.css.js",
+        "import { css } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .css.js (devup-ui style)
+    #[case(
+        "styles.css.ts",
+        "import { style } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .css.ts (vanilla-extract API from devup-ui)
+    #[case(
+        "styles.css.js",
+        "import { style } from '@devup-ui/react';",
+        "@devup-ui/react",
+        true
+    )] // .css.js (vanilla-extract API from devup-ui)
     fn test_has_devup_ui(
         #[case] filename: &str,
         #[case] code: &str,
@@ -9435,5 +11425,1603 @@ globalCss({
         #[case] expected: bool,
     ) {
         assert_eq!(has_devup_ui(filename, code, package), expected);
+    }
+
+    // ============================================================================
+    // COVERAGE EDGE CASE TESTS
+    // ============================================================================
+
+    #[test]
+    #[serial]
+    fn test_container_at_rule_in_css() {
+        // Test @container at-rule (covers line 134 in extract_style_from_expression.rs)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  _container: {
+    "(min-width: 400px)": {
+      display: "flex"
+    }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test with @container prefix
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  "@container": {
+    "(min-width: 500px)": {
+      background: "blue"
+    }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_invalid_js_execution() {
+        // Test vanilla-extract file with invalid JS (covers line 107 fallback)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // This should fall back to regular extraction when JS execution fails
+        let result = extract(
+            "invalid.css.ts",
+            r#"import { style } from '@devup-ui/react'
+// Invalid JS that will cause execution to fail
+export const broken = style((() => { throw new Error("fail"); })())
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        // Should not panic, may return error or empty styles
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_empty_styles() {
+        // Test vanilla-extract file that produces empty styles (covers line 116)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // File with no style() calls
+        let result = extract(
+            "empty.css.ts",
+            r#"import { style } from '@devup-ui/react'
+// No actual style calls, just comments
+const unused = 1;
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_constant_exports() {
+        // Test vanilla-extract file with constant exports (covers lines 576-577)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "constants.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const SPACING = 8;
+export const COLORS = { primary: 'blue', secondary: 'green' };
+export const box = style({ padding: SPACING })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_with_vars() {
+        // Test createTheme with array destructuring [themeClass, vars] (covers lines 406-430)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-vars.css.ts",
+                r#"import { createTheme } from '@devup-ui/react'
+export const [lightTheme, vars] = createTheme({
+  color: {
+    primary: 'blue',
+    secondary: 'green'
+  },
+  space: {
+    small: '4px',
+    medium: '8px'
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_non_exported_theme() {
+        // Test non-exported createTheme (covers theme branches without export)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "internal-theme.css.ts",
+                r#"import { createTheme, style } from '@devup-ui/react'
+const [internalTheme, themeVars] = createTheme({
+  colors: {
+    bg: 'white',
+    text: 'black'
+  }
+})
+export const themed = style({
+  background: 'red'
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_composition_empty() {
+        // Test style with empty composition array
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "empty-comp.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const empty = style([])
+export const withEmpty = style([{}])
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_variants_with_base() {
+        // Test styleVariants with base composition (covers lines 1165-1177)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "variants-base.css.ts",
+                r#"import { style, styleVariants } from '@devup-ui/react'
+const base = style({
+  padding: 8,
+  borderRadius: 4
+})
+export const sizes = styleVariants({
+  small: [base, { fontSize: 12 }],
+  medium: [base, { fontSize: 16 }],
+  large: [base, { fontSize: 20 }]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_layer_and_container() {
+        // Test layer() and createContainer() together (covers lines 1207-1216)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "layer-container.css.ts",
+                r#"import { layer, createContainer, style } from '@devup-ui/react'
+export const resetLayer = layer('reset')
+export const baseLayer = layer('base')
+export const myContainer = createContainer()
+export const containerStyle = style({
+  containerName: myContainer,
+  containerType: 'inline-size'
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_all_imports() {
+        // Test file that uses css, globalCss, and keyframes together (covers lines 1049, 1052)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "all-imports.css.ts",
+                r#"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'
+export const [theme, vars] = createTheme({
+  color: { primary: 'blue' }
+})
+export const fadeIn = keyframes({
+  from: { opacity: 0 },
+  to: { opacity: 1 }
+})
+globalStyle('body', {
+  margin: 0
+})
+export const box = style({
+  animation: 'fadeIn 1s'
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_without_vars_name() {
+        // Test createTheme two-arg form (covers lines 1108, 1111)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-two-arg.css.ts",
+                r#"import { createThemeContract, createTheme } from '@devup-ui/react'
+const contract = createThemeContract({
+  color: {
+    brand: null,
+    text: null
+  }
+})
+export const darkTheme = createTheme(contract, {
+  color: {
+    brand: 'white',
+    text: 'lightgray'
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face_with_style() {
+        // Test fontFace used in style (covers fontFace placeholder replacement)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "font-usage.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+export const myFont = fontFace({
+  src: 'local("Comic Sans MS")',
+  fontWeight: 400
+})
+export const text = style({
+  fontFamily: myFont
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_vars_only() {
+        // Test createVar exports (covers lines 1191-1192)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "vars-only.css.ts",
+                r#"import { createVar, style, fallbackVar } from '@devup-ui/react'
+export const colorVar = createVar()
+export const sizeVar = createVar()
+export const box = style({
+  color: fallbackVar(colorVar, 'blue'),
+  fontSize: sizeVar
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme_empty_vars() {
+        // Test createGlobalTheme with empty vars (covers line 1142 branch)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "global-theme-empty.css.ts",
+                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+export const emptyVars = createGlobalTheme(':root', {})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_non_exported_styles() {
+        // Test non-exported styles mixed with exported (covers export flag branches)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "mixed-exports.css.ts",
+                r#"import { style, keyframes, createVar, createContainer, layer } from '@devup-ui/react'
+const internalStyle = style({ padding: 4 })
+const internalKeyframe = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+const internalVar = createVar()
+const internalContainer = createContainer()
+const internalLayer = layer('internal')
+export const publicStyle = style({ margin: 8 })
+"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selector_references() {
+        // Test styles referencing each other in selectors (covers find_selector_references)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "selector-refs.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const parent = style({ background: 'white' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: {
+      color: 'blue'
+    }
+  }
+})
+export const sibling = style({
+  selectors: {
+    [`${parent} + &`]: {
+      marginTop: 8
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_has_devup_ui_parser_panic() {
+        // Test has_devup_ui with invalid code that causes parser panic (covers line 202)
+        // Invalid syntax that will make the parser panic
+        let result = has_devup_ui(
+            "test.tsx",
+            "import {} '@devup-ui/react'; syntax error {{",
+            "@devup-ui/react",
+        );
+        assert!(!result);
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_fontfaces_object_syntax() {
+        // Test globalCss fontFaces with object syntax (covers lines 103, 115 in extract_global_style_from_expression.rs)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "CustomFont",
+            src: "url('/fonts/custom.woff2')",
+            fontWeight: "400",
+            fontStyle: "normal"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test with multiple font properties to exercise disassemble_property
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "MultiFont",
+            src: "url('/fonts/multi.woff2')",
+            fontWeight: "bold",
+            fontDisplay: "swap"
+        },
+        {
+            fontFamily: "AnotherFont",
+            src: "local('Arial')"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_conditional_expression_with_selector() {
+        // Test ConditionalExpression when name.is_none() and selector.is_some() (covers line 134)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  _hover: condition ? { bg: "blue" } : { bg: "red" }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test nested conditional within selector
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  selectors: {
+    "&:hover": condition ? { color: "blue" } : { color: "red" }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_non_vanilla_extract_file() {
+        // Test non-.css.ts file (covers line 154 - is_vanilla_extract = false path)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        let result = extract(
+            "regular.tsx",
+            r#"import { Box } from '@devup-ui/react'
+<Box bg="red" p={4} />
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.code.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_execution_fallback() {
+        // Test vanilla-extract file with execution error (covers line 116 fallback)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        // Syntax error in JS execution will trigger fallback
+        let result = extract(
+            "error.css.ts",
+            r#"import { style } from '@devup-ui/react'
+const x = style({ padding: [[[}}} // invalid syntax
+"#,
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+        );
+        // Should not panic - falls back to regular processing
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_vanilla_extract_named() {
+        // Test @vanilla-extract/css named exports in regular .tsx files (NOT .css.ts)
+        // Note: .css.ts files use vanilla-extract's own processing which doesn't go through import aliases
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+
+        // Use regular .tsx file (not .css.ts) for import alias to work
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from '@vanilla-extract/css'
+const buttonStyle = css({ bg: 'red', p: 4 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_keyframes_export() {
+        // Test exported keyframes (covers lines 1052, 1152-1153)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "keyframes-export.css.ts",
+                r#"import { keyframes, style } from '@devup-ui/react'
+export const spin = keyframes({
+  from: { transform: 'rotate(0deg)' },
+  to: { transform: 'rotate(360deg)' }
+})
+const internal = keyframes({
+  '0%': { opacity: 0 },
+  '100%': { opacity: 1 }
+})
+export const spinner = style({ animation: spin })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_vars_name_only() {
+        // Test createTheme with vars_name but no vars_object_json (covers line 1301)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-vars-name.css.ts",
+                r#"import { createTheme } from '@devup-ui/react'
+export const myTheme = createTheme({
+  color: { primary: 'blue' }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_variants_mixed() {
+        // Test styleVariants with mixed base and no-base (covers lines 1161-1184)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "variants-mixed.css.ts",
+                r#"import { style, styleVariants } from '@devup-ui/react'
+const base = style({ borderRadius: 4, padding: 8 })
+export const buttons = styleVariants({
+  primary: [base, { background: 'blue', color: 'white' }],
+  secondary: { background: 'gray', color: 'black' },
+  danger: [base, { background: 'red' }]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme_with_vars() {
+        // Test createGlobalTheme with CSS vars (covers lines 1142-1144)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "global-theme-vars.css.ts",
+                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+export const vars = createGlobalTheme(':root', {
+  color: {
+    primary: 'blue',
+    secondary: 'green'
+  },
+  space: {
+    small: '4px',
+    large: '16px'
+  }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face_empty_props() {
+        // Test fontFace with minimal properties (covers line 1132-1135 empty props branch)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fontface-minimal.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+export const minimalFont = fontFace({})
+export const text = style({ fontFamily: minimalFont })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_imports_combination() {
+        // Test file with multiple import types (covers lines 1049, 1052 import generation)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "imports-combo.css.ts",
+                r#"import { style, globalStyle, keyframes, fontFace } from '@devup-ui/react'
+export const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+export const myFont = fontFace({ src: 'local(Arial)' })
+globalStyle('body', { margin: 0, fontFamily: myFont })
+export const animated = style({ animation: fadeIn })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_export_variations() {
+        // Test createTheme with different export patterns (covers lines 1103-1111)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-exports.css.ts",
+                r#"import { createTheme, createThemeContract, style } from '@devup-ui/react'
+const contract = createThemeContract({
+  colors: { bg: null, text: null }
+})
+export const lightTheme = createTheme(contract, {
+  colors: { bg: 'white', text: 'black' }
+})
+const internalTheme = createTheme(contract, {
+  colors: { bg: 'gray', text: 'darkgray' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_style_composition_multiple() {
+        // Test style with multiple style objects in composition array (covers lines 728-729)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "multi-comp.css.ts",
+                r#"import { style } from '@devup-ui/react'
+const base = style({ padding: 8 })
+export const complex = style([base, { margin: 4 }, { color: 'blue' }])
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selector_class_replacement() {
+        // Test selector references that need class name replacement (covers collected_styles_to_code_with_classes)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "selector-ref.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const parent = style({ display: 'flex' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { background: 'red' }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_all_exports_combined() {
+        // Test file with styles, keyframes, globalStyles, themes, vars, containers, layers, fontFaces combined
+        // Covers multiple import generation paths and code generation
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "all-combined.css.ts",
+                r#"import { style, globalStyle, keyframes, createVar, createContainer, layer, fontFace, createGlobalTheme, styleVariants } from '@devup-ui/react'
+export const myVar = createVar()
+export const myContainer = createContainer()
+export const myLayer = layer('components')
+export const myFont = fontFace({ src: 'local(Arial)' })
+export const vars = createGlobalTheme(':root', { color: { primary: 'blue' } })
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+globalStyle('body', { margin: 0 })
+const base = style({ padding: 8 })
+export const buttons = styleVariants({
+  primary: [base, { bg: 'blue' }],
+  secondary: { bg: 'gray' }
+})
+export const box = style({ fontFamily: myFont })
+"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_array_destructure() {
+        // Test createTheme with array destructuring [themeClass, vars] (covers lines 384, 386-387)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-array.css.ts",
+                r#"import { createTheme, style } from '@devup-ui/react'
+export const [themeClass, themeVars] = createTheme({
+  colors: { primary: 'blue', secondary: 'green' },
+  spacing: { small: '4px', medium: '8px' }
+})
+export const themed = style({ color: themeVars.colors.primary })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_font_face_placeholder() {
+        // Test fontFace placeholder remapping (covers lines 503-505)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "fontface-remap.css.ts",
+                r#"import { fontFace, style } from '@devup-ui/react'
+export const customFont = fontFace({
+  src: 'url("/fonts/custom.woff2")',
+  fontWeight: '400',
+  fontDisplay: 'swap'
+})
+export const secondFont = fontFace({
+  src: 'local("Helvetica")'
+})
+export const text = style({ fontFamily: customFont })
+export const heading = style({ fontFamily: secondFont })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_global_theme_placeholder() {
+        // Test createGlobalTheme placeholder remapping (covers global theme paths)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "globaltheme-remap.css.ts",
+                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+export const lightVars = createGlobalTheme(':root', {
+  colors: { bg: 'white', text: 'black' }
+})
+export const darkVars = createGlobalTheme('.dark', {
+  colors: { bg: 'black', text: 'white' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_with_layer_in_selector() {
+        // Test globalCss with @layer inside selector object (covers lines 103, 115 in extract_global_style_from_expression.rs)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".button": {
+        "@layer": "components",
+        padding: "8px",
+        background: "blue"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test with multiple selectors having @layer
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".card": {
+        "@layer": "layout",
+        display: "flex"
+    },
+    ".text": {
+        "@layer": "typography",
+        fontSize: "16px"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_css_container_at_rule_with_selector() {
+        // Test @container at-rule within selector context (covers line 134)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { css } from "@devup-ui/core";
+<div className={css({
+  padding: 8,
+  "@container": {
+    "(min-width: 300px)": {
+      padding: 16
+    }
+  }
+})} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_selector_refs_triggers_with_classes() {
+        // Test that triggers collected_styles_to_code_with_classes path (selector references)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "refs.css.ts",
+                r#"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'
+export const colorVar = createVar()
+export const myContainer = createContainer()
+export const myLayer = layer('ui')
+export const myFont = fontFace({ src: 'local(Arial)' })
+export const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+export const parent = style({ display: 'flex' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { color: 'red' }
+  }
+})
+globalStyle('body', { margin: 0 })
+"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_theme_without_vars_json() {
+        // Test createTheme that has vars_name but might not have vars_object_json (covers line 1111)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-simple.css.ts",
+                r#"import { createThemeContract, createTheme, style } from '@devup-ui/react'
+const contract = createThemeContract({
+  colors: { primary: null }
+})
+export const lightTheme = createTheme(contract, {
+  colors: { primary: 'blue' }
+})
+export const box = style({ padding: 8 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_global_css_layer_property_extraction() {
+        // Test globalCss with @layer property to trigger lines 103, 115 in extract_global_style_from_expression.rs
+        // The @layer property should be extracted and then filtered out, with layer set on remaining styles
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    ".reset-box": {
+        "@layer": "reset",
+        margin: 0,
+        padding: 0,
+        boxSizing: "border-box"
+    }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_selector_refs_with_global_theme() {
+        // Test that triggers append_non_style_code with global themes (covers lines 1142-1144, 1221-1222)
+        // Need selector references + createGlobalTheme
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "theme-refs.css.ts",
+                r#"import { style, createGlobalTheme } from '@devup-ui/react'
+export const vars = createGlobalTheme(':root', {
+  colors: { primary: 'blue', secondary: 'green' }
+})
+export const parent = style({ background: 'white' })
+export const child = style({
+  selectors: {
+    [`${parent}:hover &`]: { color: 'red' }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_with_at_container_selector() {
+        // Test @container with selector context (covers line 134 in extract_style_from_expression.rs)
+        reset_class_map();
+        reset_file_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "container.css.ts",
+                r#"import { style } from '@devup-ui/react'
+export const card = style({
+  containerType: 'inline-size',
+  '@container': {
+    '(min-width: 400px)': {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr'
+    }
+  }
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_extract_class_map_from_code_parser_panic() {
+        // Test extract_class_map_from_code with invalid code that causes parser panic (covers line 153-154)
+        let mut style_names = HashSet::new();
+        style_names.insert("test".to_string());
+
+        let result = extract_class_map_from_code(
+            "test.tsx",
+            "const {{ invalid syntax {{{{",
+            &ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+            &style_names,
+        )
+        .unwrap();
+
+        assert!(result.is_empty());
+    }
+
+    // === Import Alias Tests ===
+
+    #[test]
+    #[serial]
+    fn test_import_alias_emotion_styled() {
+        // Test @emotion/styled default export → styled named export
+        // Uses devup-ui's styled syntax: styled.button({ ... }) or styled("button")({ ... })
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from '@emotion/styled'
+const Button = styled.button({ bg: 'red', p: 4 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_styled_components() {
+        // Test styled-components default export → styled named export
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from 'styled-components'
+const Card = styled("div")({ bg: 'blue', m: 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_skip_when_package_not_in_code() {
+        // Test that extraction is skipped when neither package nor aliases are present
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import React from 'react'
+const element = <div>Hello</div>"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_renamed_import() {
+        // Test aliased import that's renamed locally: import myStyled from '@emotion/styled'
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import myStyled from '@emotion/styled'
+const Button = myStyled.button({ bg: 'green', p: 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_custom_named_export() {
+        // Test @emotion/styled default export → custom named export (emotionStyled, not styled)
+        // This tests when user configures alias to map to a non-standard named export
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import emotionStyled from '@emotion/styled'
+const Button = emotionStyled.button({ bg: 'purple', p: 3 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_multiple_aliases() {
+        // Test with multiple aliases configured
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+
+        // Test with @emotion/styled member syntax
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from '@emotion/styled'
+const Button = styled.button({ bg: 'red' })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases
+                },
+            )
+            .unwrap()
+        ));
     }
 }

@@ -1,0 +1,45 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"container.css.ts\",\nr#\"import { createContainer, style } from '@devup-ui/react'\nexport const sidebar = createContainer()\nexport const sidebarContainer = style({\n  containerName: sidebar,\n  containerType: 'inline-size'\n})\nexport const responsive = style({\n  '@container': {\n    [`${sidebar} (min-width: 400px)`]: {\n      flexDirection: 'row'\n    }\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "container-name",
+                value: "__container_0__",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "container-type",
+                value: "inline-size",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex-direction",
+                value: "row",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Container,
+                        query: "__container_0__ (min-width: 400px)",
+                        selector: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const responsive = \"a\";\nexport const sidebarContainer = \"b c\";\nexport const sidebar = \"__container_0__\";\n",
+}

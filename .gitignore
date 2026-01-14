@@ -17,3 +17,4 @@ tarpaulin-report.json
 *storybook.log
 storybook-static
 .claude
+.sisyphus

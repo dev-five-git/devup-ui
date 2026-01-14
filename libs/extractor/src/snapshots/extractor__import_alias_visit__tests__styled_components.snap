@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import styled from 'styled-components'\"#,\n\"test.tsx\", \"@devup-ui/react\", &styled_components_alias())"
+---
+import { styled } from '@devup-ui/react';

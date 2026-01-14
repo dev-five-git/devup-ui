@@ -24,6 +24,8 @@ pub struct ExtractStaticStyle {
     pub selector: Option<StyleSelector>,
     /// None is inf, 0 is first, 1 is second, etc
     pub style_order: Option<u8>,
+    /// CSS layer name (from vanilla-extract layer())
+    pub layer: Option<String>,
 }
 
 impl ExtractStaticStyle {
@@ -52,7 +54,21 @@ impl ExtractStaticStyle {
             level,
             selector: selector.map(optimize_selector),
             style_order: None,
+            layer: None,
         }
+    }
+
+    /// create a new ExtractStaticStyle with layer
+    pub fn new_with_layer(
+        property: &str,
+        value: &str,
+        level: u8,
+        selector: Option<StyleSelector>,
+        layer: Option<String>,
+    ) -> Self {
+        let mut style = Self::new(property, value, level, selector);
+        style.layer = layer;
+        style
     }
 
     pub fn new_basic(
@@ -71,7 +87,13 @@ impl ExtractStaticStyle {
             level,
             selector,
             style_order: Some(0),
+            layer: None,
         }
+    }
+
+    /// Get the layer name
+    pub fn layer(&self) -> Option<&str> {
+        self.layer.as_deref()
     }
 
     pub fn property(&self) -> &str {
@@ -131,5 +153,25 @@ mod tests {
         assert_eq!(style.level(), 0);
         assert_eq!(style.selector(), None);
         assert_eq!(style.style_order(), None);
+        assert_eq!(style.layer(), None);
+    }
+
+    #[test]
+    fn test_extract_static_style_with_layer() {
+        let style =
+            ExtractStaticStyle::new_with_layer("margin", "0", 0, None, Some("reset".to_string()));
+        assert_eq!(style.property(), "margin");
+        assert_eq!(style.value(), "0");
+        assert_eq!(style.level(), 0);
+        assert_eq!(style.selector(), None);
+        assert_eq!(style.layer(), Some("reset"));
+    }
+
+    #[test]
+    fn test_extract_static_style_with_layer_none() {
+        let style = ExtractStaticStyle::new_with_layer("color", "red", 0, None, None);
+        assert_eq!(style.property(), "color");
+        assert_eq!(style.value(), "red");
+        assert_eq!(style.layer(), None);
     }
 }

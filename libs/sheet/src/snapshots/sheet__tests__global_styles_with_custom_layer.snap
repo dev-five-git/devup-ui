@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/lib.rs
+expression: "css.split(\"*/\").nth(1).unwrap()"
+---
+"@layer b;@layer base,reset;@layer base{body{font-family:sans-serif}}@layer reset{*{margin:0;padding:0}}"

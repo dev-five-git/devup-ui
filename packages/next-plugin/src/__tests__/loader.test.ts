@@ -260,6 +260,7 @@ describe('devupUILoader', () => {
       true,
       false,
       true,
+      {},
     )
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)

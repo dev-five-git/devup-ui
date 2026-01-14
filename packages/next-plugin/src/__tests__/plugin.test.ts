@@ -170,6 +170,21 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
+                  themeFile: 'devup.json',
+                  theme: {},
+                  defaultClassMap: {},
+                  defaultFileMap: {},
+                  defaultSheet: {
+                    css: {},
+                    font_faces: {},
+                    global_css_files: [],
+                    imports: {},
+                    keyframes: {},
+                    properties: {},
+                  },
                 },
               },
             ],
@@ -189,6 +204,11 @@ describe('DevupUINextPlugin', () => {
                     theme: {},
                     defaultClassMap: {},
                     defaultFileMap: {},
+                    importAliases: {
+                      '@emotion/styled': 'styled',
+                      '@vanilla-extract/css': null,
+                      'styled-components': 'styled',
+                    },
                     defaultSheet: {
                       css: {},
                       font_faces: {},
@@ -232,6 +252,21 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
+                  themeFile: 'devup.json',
+                  theme: {},
+                  defaultClassMap: {},
+                  defaultFileMap: {},
+                  defaultSheet: {
+                    css: {},
+                    font_faces: {},
+                    global_css_files: [],
+                    imports: {},
+                    keyframes: {},
+                    properties: {},
+                  },
                 },
               },
             ],
@@ -257,6 +292,11 @@ describe('DevupUINextPlugin', () => {
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
+                    importAliases: {
+                      '@emotion/styled': 'styled',
+                      '@vanilla-extract/css': null,
+                      'styled-components': 'styled',
+                    },
                     watch: false,
                     singleCss: false,
                     theme: {},
@@ -302,6 +342,21 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  sheetFile: join('df', 'sheet.json'),
+                  classMapFile: join('df', 'classMap.json'),
+                  fileMapFile: join('df', 'fileMap.json'),
+                  themeFile: 'devup.json',
+                  theme: 'theme',
+                  defaultClassMap: {},
+                  defaultFileMap: {},
+                  defaultSheet: {
+                    css: {},
+                    font_faces: {},
+                    global_css_files: [],
+                    imports: {},
+                    keyframes: {},
+                    properties: {},
+                  },
                 },
               },
             ],
@@ -332,6 +387,11 @@ describe('DevupUINextPlugin', () => {
                     theme: 'theme',
                     defaultClassMap: {},
                     defaultFileMap: {},
+                    importAliases: {
+                      '@emotion/styled': 'styled',
+                      '@vanilla-extract/css': null,
+                      'styled-components': 'styled',
+                    },
                     defaultSheet: {
                       css: {},
                       font_faces: {},
@@ -376,6 +436,11 @@ describe('DevupUINextPlugin', () => {
         false,
         expect.any(String),
         [],
+        {
+          '@emotion/styled': 'styled',
+          '@vanilla-extract/css': null,
+          'styled-components': 'styled',
+        },
       )
     })
     it('should create theme.d.ts file', async () => {

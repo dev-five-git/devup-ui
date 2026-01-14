@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import '@emotion/styled'\"#, \"test.tsx\",\n\"@devup-ui/react\", &emotion_alias())"
+---
+import '@devup-ui/react';

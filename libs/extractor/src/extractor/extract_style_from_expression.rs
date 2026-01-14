@@ -254,12 +254,7 @@ pub fn extract_style_from_expression<'a>(
                     && let Some(query) = get_string_by_property_key(&o.key)
                 {
                     let at_selector = StyleSelector::At {
-                        kind: match at_rule {
-                            "media" => css::style_selector::AtRuleKind::Media,
-                            "supports" => css::style_selector::AtRuleKind::Supports,
-                            "container" => css::style_selector::AtRuleKind::Container,
-                            _ => unreachable!(),
-                        },
+                        kind: at_rule.into(),
                         query: query.to_string(),
                         selector: selector.as_ref().map(|s| s.to_string()),
                     };

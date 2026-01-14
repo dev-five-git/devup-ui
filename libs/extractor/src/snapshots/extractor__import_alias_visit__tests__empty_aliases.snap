@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import styled from '@emotion/styled'\"#,\n\"test.tsx\", \"@devup-ui/react\", &HashMap::new())"
+---
+import styled from '@emotion/styled'

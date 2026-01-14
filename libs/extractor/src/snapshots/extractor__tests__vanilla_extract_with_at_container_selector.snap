@@ -1,0 +1,51 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"container.css.ts\",\nr#\"import { style } from '@devup-ui/react'\nexport const card = style({\n  containerType: 'inline-size',\n  '@container': {\n    '(min-width: 400px)': {\n      display: 'grid',\n      gridTemplateColumns: '1fr 1fr'\n    }\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "container-type",
+                value: "inline-size",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "grid",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Container,
+                        query: "(min-width: 400px)",
+                        selector: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "grid-template-columns",
+                value: "1fr 1fr",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Container,
+                        query: "(min-width: 400px)",
+                        selector: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const card = \"a b c\";\n",
+}

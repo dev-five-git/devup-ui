@@ -1,0 +1,87 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"global-theme-vars.css.ts\",\nr#\"import { createGlobalTheme, style } from '@devup-ui/react'\nexport const vars = createGlobalTheme(':root', {\n  color: {\n    primary: 'blue',\n    secondary: 'green'\n  },\n  space: {\n    small: '4px',\n    large: '16px'\n  }\n})\nexport const box = style({ padding: 8 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--color-primary-global_theme_0-0",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "global-theme-vars.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--color-secondary-global_theme_0-1",
+                value: "green",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "global-theme-vars.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--space-large-global_theme_0-3",
+                value: "16px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "global-theme-vars.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--space-small-global_theme_0-2",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "global-theme-vars.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a\";\n;\nexport const vars = {\n\t\"color\": {\n\t\t\"primary\": \"var(--color-primary-global_theme_0-0)\",\n\t\t\"secondary\": \"var(--color-secondary-global_theme_0-1)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-global_theme_0-2)\",\n\t\t\"large\": \"var(--space-large-global_theme_0-3)\"\n\t}\n};\n",
+}

@@ -136,6 +136,7 @@ describe('devupUILoader', () => {
       true,
       false,
       true,
+      {},
     )
     if (options.updatedBaseStyle) {
       expect(writeFileSpy).toHaveBeenCalledWith(
@@ -195,6 +196,7 @@ describe('devupUILoader', () => {
       true,
       false,
       true,
+      {},
     )
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
@@ -259,6 +261,7 @@ describe('devupUILoader', () => {
       true,
       false,
       true,
+      {},
     )
   })
 

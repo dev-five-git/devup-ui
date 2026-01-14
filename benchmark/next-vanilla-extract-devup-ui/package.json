@@ -1,0 +1,26 @@
+{
+  "name": "next-vanilla-extract-devup-ui-benchmark",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --experimental-debug-memory-usage --webpack",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@vanilla-extract/css": "^1.18",
+    "next": "^16.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "react-icons": "^5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "@devup-ui/next-plugin": "workspace:^"
+  }
+}

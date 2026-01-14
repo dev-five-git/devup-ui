@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import { style } from '@vanilla-extract/css'\nexport const container = style({ background: 'red' })\"#,\n\"styles.css.ts\", \"@devup-ui/react\", &vanilla_extract_alias())"
+---
+import { style } from '@devup-ui/react';
+export const container = style({ background: 'red' })

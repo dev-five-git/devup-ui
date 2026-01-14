@@ -1,0 +1,77 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"theme-contract.css.ts\",\nr#\"import { createThemeContract, createTheme, style } from '@devup-ui/react'\nconst vars = createThemeContract({\n  color: {\n    brand: null,\n    text: null\n  }\n})\nexport const lightTheme = createTheme(vars, {\n  color: {\n    brand: 'blue',\n    text: 'black'\n  }\n})\nexport const darkTheme = createTheme(vars, {\n  color: {\n    brand: 'lightblue',\n    text: 'white'\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--color-brand",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_lightTheme",
+                        "theme-contract.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--color-brand",
+                value: "lightblue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_darkTheme",
+                        "theme-contract.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--color-text",
+                value: "black",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_lightTheme",
+                        "theme-contract.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--color-text",
+                value: "white",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_darkTheme",
+                        "theme-contract.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const darkTheme = \"f0_darkTheme\";\nexport const lightTheme = \"f0_lightTheme\";\n;\n;\n",
+}

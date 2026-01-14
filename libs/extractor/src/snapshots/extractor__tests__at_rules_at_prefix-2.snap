@@ -17,6 +17,7 @@ ToBTreeSet {
                     },
                 ),
                 style_order: None,
+                layer: None,
             },
         ),
     },

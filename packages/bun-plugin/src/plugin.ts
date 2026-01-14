@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { loadDevupConfig } from '@devup-ui/plugin-utils'
+import { loadDevupConfig, mergeImportAliases } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getThemeInterface,
@@ -17,6 +17,7 @@ const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, 'devup-ui')
 const singleCss = true
+const importAliases = mergeImportAliases()
 
 async function writeDataFiles() {
   let theme = {}
@@ -83,6 +84,7 @@ async function loadSourceFile(filePath: string) {
       singleCss,
       true,
       false,
+      importAliases,
     )
     return { contents: code.code, loader }
   }

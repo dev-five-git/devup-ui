@@ -75,6 +75,16 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
+  if (existsSync('./benchmark/next-vanilla-extract-devup-ui/.next'))
+    rmSync('./benchmark/next-vanilla-extract-devup-ui/.next', {
+      recursive: true,
+      force: true,
+    })
+  if (existsSync('./benchmark/next-vanilla-extract-devup-ui/df'))
+    rmSync('./benchmark/next-vanilla-extract-devup-ui/df', {
+      recursive: true,
+      force: true,
+    })
 }
 
 function checkDirSize(path) {
@@ -124,5 +134,6 @@ result.push(benchmark('devup-ui'))
 result.push(benchmark('devup-ui-single'))
 result.push(benchmark('tailwind-turbo'))
 result.push(benchmark('devup-ui-single-turbo'))
+result.push(benchmark('vanilla-extract-devup-ui'))
 
 console.info(result.join('\n'))

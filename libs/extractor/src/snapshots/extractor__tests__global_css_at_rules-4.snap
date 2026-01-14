@@ -21,6 +21,7 @@ ToBTreeSet {
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -37,6 +38,7 @@ ToBTreeSet {
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -56,6 +58,7 @@ ToBTreeSet {
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
         Static(
@@ -75,6 +78,7 @@ ToBTreeSet {
                 style_order: Some(
                     0,
                 ),
+                layer: None,
             },
         ),
     },

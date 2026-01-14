@@ -29,6 +29,7 @@ export interface DevupUILoaderOptions {
   defaultSheet: object
   defaultClassMap: object
   defaultFileMap: object
+  importAliases?: Record<string, string | null>
 }
 let init = false
 
@@ -47,6 +48,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       defaultClassMap,
       defaultFileMap,
       defaultSheet,
+      importAliases = {},
     } = this.getOptions()
 
     const promises: Promise<void>[] = []
@@ -89,6 +91,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         singleCss,
         false,
         true,
+        importAliases,
       )
       const sourceMap = map ? JSON.parse(map) : null
       if (updatedBaseStyle && watch) {
