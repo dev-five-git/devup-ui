@@ -1,0 +1,10 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import { style } from '@vanilla-extract/css'\n\nexport const button = style({\n    background: 'blue',\n    padding: '8px',\n});\"#,\n\"test.css.ts\", \"@devup-ui/react\", &vanilla_extract_alias())"
+---
+import { style } from '@devup-ui/react';
+
+export const button = style({
+    background: 'blue',
+    padding: '8px',
+});

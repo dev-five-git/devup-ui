@@ -169,154 +169,36 @@ fn generate_transformed_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use insta::assert_snapshot;
 
-    #[test]
-    fn test_default_to_named_same_name() {
+    fn emotion_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
         aliases.insert(
             "@emotion/styled".to_string(),
             ImportAlias::DefaultToNamed("styled".to_string()),
         );
-
-        let code = r#"import styled from '@emotion/styled'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        assert!(
-            result.contains("import { styled } from '@devup-ui/react'"),
-            "Expected named import, got: {}",
-            result
-        );
+        aliases
     }
 
-    #[test]
-    fn test_default_to_named_different_name() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "@emotion/styled".to_string(),
-            ImportAlias::DefaultToNamed("styled".to_string()),
-        );
-
-        let code = r#"import styledA from '@emotion/styled'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        assert!(
-            result.contains("styled as styledA"),
-            "Expected 'styled as styledA', got: {}",
-            result
-        );
-        assert!(
-            result.contains("@devup-ui/react"),
-            "Expected '@devup-ui/react', got: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn test_named_to_named() {
+    fn vanilla_extract_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
         aliases.insert(
             "@vanilla-extract/css".to_string(),
             ImportAlias::NamedToNamed,
         );
-
-        let code = r#"import { style, globalStyle } from '@vanilla-extract/css'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        assert!(
-            result.contains("style"),
-            "Expected 'style', got: {}",
-            result
-        );
-        assert!(
-            result.contains("globalStyle"),
-            "Expected 'globalStyle', got: {}",
-            result
-        );
-        assert!(
-            result.contains("@devup-ui/react"),
-            "Expected '@devup-ui/react', got: {}",
-            result
-        );
+        aliases
     }
 
-    #[test]
-    fn test_no_matching_alias() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "@emotion/styled".to_string(),
-            ImportAlias::DefaultToNamed("styled".to_string()),
-        );
-
-        let code = r#"import { useState } from 'react'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        // Should be unchanged
-        assert!(
-            result.contains("react"),
-            "Expected 'react' import unchanged, got: {}",
-            result
-        );
-        assert!(
-            !result.contains("@devup-ui/react"),
-            "Should not contain '@devup-ui/react', got: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn test_empty_aliases() {
-        let aliases = HashMap::new();
-        let code = r#"import styled from '@emotion/styled'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        // Should return original code
-        assert_eq!(result, code);
-    }
-
-    #[test]
-    fn test_styled_components() {
+    fn styled_components_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
         aliases.insert(
             "styled-components".to_string(),
             ImportAlias::DefaultToNamed("styled".to_string()),
         );
-
-        let code = r#"import styled from 'styled-components'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        assert!(
-            result.contains("import { styled } from '@devup-ui/react'"),
-            "Expected named import, got: {}",
-            result
-        );
+        aliases
     }
 
-    #[test]
-    fn test_css_ts_file_vanilla_extract() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "@vanilla-extract/css".to_string(),
-            ImportAlias::NamedToNamed,
-        );
-
-        let code = r#"import { style } from '@vanilla-extract/css'
-export const container = style({ background: 'red' })"#;
-        let result = transform_import_aliases(code, "styles.css.ts", "@devup-ui/react", &aliases);
-
-        assert!(
-            result.contains("@devup-ui/react"),
-            "Expected '@devup-ui/react', got: {}",
-            result
-        );
-        assert!(
-            result.contains("style"),
-            "Expected 'style' import, got: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn test_multiple_imports_same_file() {
+    fn combined_aliases() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
         aliases.insert(
             "@emotion/styled".to_string(),
@@ -326,81 +208,185 @@ export const container = style({ background: 'red' })"#;
             "@vanilla-extract/css".to_string(),
             ImportAlias::NamedToNamed,
         );
+        aliases
+    }
 
-        let code = r#"import styled from '@emotion/styled'
+    #[test]
+    fn test_default_to_named_same_name() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_default_to_named_different_name() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styledA from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_named_to_named() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import { style, globalStyle } from '@vanilla-extract/css'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
+    }
+
+    #[test]
+    fn test_no_matching_alias() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import { useState } from 'react'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_empty_aliases() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &HashMap::new()
+        ));
+    }
+
+    #[test]
+    fn test_styled_components() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled from 'styled-components'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &styled_components_alias()
+        ));
+    }
+
+    #[test]
+    fn test_css_ts_file_vanilla_extract() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import { style } from '@vanilla-extract/css'
+export const container = style({ background: 'red' })"#,
+            "styles.css.ts",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
+    }
+
+    #[test]
+    fn test_multiple_imports_same_file() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled from '@emotion/styled'
 import { style } from '@vanilla-extract/css'
-import { useState } from 'react'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
-
-        // Both aliased imports should be transformed
-        assert!(
-            result.matches("@devup-ui/react").count() == 2,
-            "Expected 2 @devup-ui/react imports, got: {}",
-            result
-        );
-        // React import should be unchanged
-        assert!(
-            result.contains("react"),
-            "Expected 'react' import, got: {}",
-            result
-        );
+import { useState } from 'react'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &combined_aliases()
+        ));
     }
 
     #[test]
     fn test_preserves_code_after_import() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "@vanilla-extract/css".to_string(),
-            ImportAlias::NamedToNamed,
-        );
-
-        let code = r#"import { style } from '@vanilla-extract/css'
+        assert_snapshot!(transform_import_aliases(
+            r#"import { style } from '@vanilla-extract/css'
 
 export const button = style({
     background: 'blue',
     padding: '8px',
-});"#;
-        let result = transform_import_aliases(code, "test.css.ts", "@devup-ui/react", &aliases);
-
-        // Import should be transformed
-        assert!(
-            result.contains("@devup-ui/react"),
-            "Expected '@devup-ui/react', got: {}",
-            result
-        );
-        // Rest of the code should be preserved
-        assert!(
-            result.contains("export const button = style"),
-            "Expected style call preserved, got: {}",
-            result
-        );
-        assert!(
-            result.contains("background: 'blue'"),
-            "Expected styles preserved, got: {}",
-            result
-        );
+});"#,
+            "test.css.ts",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
     }
 
     #[test]
     fn test_named_import_with_alias() {
-        let mut aliases = HashMap::new();
-        aliases.insert(
-            "@vanilla-extract/css".to_string(),
-            ImportAlias::NamedToNamed,
-        );
+        assert_snapshot!(transform_import_aliases(
+            r#"import { style as myStyle } from '@vanilla-extract/css'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
+    }
 
-        let code = r#"import { style as myStyle } from '@vanilla-extract/css'"#;
-        let result = transform_import_aliases(code, "test.tsx", "@devup-ui/react", &aliases);
+    #[test]
+    fn test_side_effect_import_no_specifiers() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
 
-        assert!(
-            result.contains("style as myStyle"),
-            "Expected 'style as myStyle', got: {}",
-            result
-        );
-        assert!(
-            result.contains("@devup-ui/react"),
-            "Expected '@devup-ui/react', got: {}",
-            result
-        );
+    #[test]
+    fn test_alias_in_comment_not_transformed() {
+        assert_snapshot!(transform_import_aliases(
+            r#"// This uses @emotion/styled but doesn't import it
+const x = 1;"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_default_to_named_with_additional_named_imports() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled, { css, keyframes } from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_default_to_named_with_aliased_named_import() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import styled, { css as emotionCss } from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_default_to_named_namespace_import() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import * as Emotion from '@emotion/styled'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &emotion_alias()
+        ));
+    }
+
+    #[test]
+    fn test_named_to_named_with_default_specifier() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import vanillaDefault, { style } from '@vanilla-extract/css'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
+    }
+
+    #[test]
+    fn test_named_to_named_namespace_import() {
+        assert_snapshot!(transform_import_aliases(
+            r#"import * as VE from '@vanilla-extract/css'"#,
+            "test.tsx",
+            "@devup-ui/react",
+            &vanilla_extract_alias()
+        ));
     }
 }

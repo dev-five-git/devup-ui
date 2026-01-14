@@ -405,6 +405,18 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_extract_option_default() {
+        // Tests lines 90-91: ExtractOption::default()
+        let option = ExtractOption::default();
+        assert_eq!(option.package, "@devup-ui/react");
+        assert_eq!(option.css_dir, "@devup-ui/react");
+        assert!(!option.single_css);
+        assert!(!option.import_main_css);
+        assert!(option.import_aliases.is_empty());
+    }
+
     #[test]
     #[serial]
     fn extract_just_tsx() {
@@ -10620,7 +10632,7 @@ export const text = style({
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases,
+                    import_aliases
                 }
             )
             .unwrap()
@@ -12141,7 +12153,7 @@ const buttonStyle = css({ bg: 'red', p: 4 })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -12847,7 +12859,7 @@ const Button = styled.button({ bg: 'red', p: 4 })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -12877,7 +12889,7 @@ const Card = styled("div")({ bg: 'blue', m: 2 })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -12906,7 +12918,7 @@ const element = <div>Hello</div>"#,
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -12936,7 +12948,7 @@ const Button = myStyled.button({ bg: 'green', p: 2 })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -12967,7 +12979,7 @@ const Button = emotionStyled.button({ bg: 'purple', p: 3 })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
@@ -13006,7 +13018,7 @@ const Button = styled.button({ bg: 'red' })
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: aliases,
+                    import_aliases: aliases
                 },
             )
             .unwrap()
