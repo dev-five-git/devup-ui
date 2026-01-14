@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import { loadDevupConfigSync } from '@devup-ui/plugin-utils'
+import { loadDevupConfigSync, mergeImportAliases } from '@devup-ui/plugin-utils'
 import {
   exportClassMap,
   exportFileMap,
@@ -50,11 +50,14 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
+      importAliases: userImportAliases,
     } = options
 
     if (prefix) {
       setPrefix(prefix)
     }
+
+    const importAliases = mergeImportAliases(userImportAliases)
 
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
@@ -104,7 +107,14 @@ export function DevupUI(
       writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
     } else {
       // build
-      preload(excludeRegex, libPackage, singleCss, cssDir, include)
+      preload(
+        excludeRegex,
+        libPackage,
+        singleCss,
+        cssDir,
+        include,
+        importAliases,
+      )
     }
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())
@@ -146,6 +156,7 @@ export function DevupUI(
               singleCss,
               // for turbopack, load theme is required on loader
               theme,
+              importAliases: importAliases as unknown as Record<string, string>,
             },
           },
         ],

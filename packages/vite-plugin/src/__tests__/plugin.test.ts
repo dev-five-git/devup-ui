@@ -395,6 +395,11 @@ describe('devupUIVitePlugin', () => {
       false,
       true,
       false,
+      {
+        '@emotion/styled': 'styled',
+        '@vanilla-extract/css': null,
+        'styled-components': 'styled',
+      },
     )
 
     relativeSpy.mockReturnValue('df/devup-ui/devup-ui.css')
@@ -407,6 +412,11 @@ describe('devupUIVitePlugin', () => {
       false,
       true,
       false,
+      {
+        '@emotion/styled': 'styled',
+        '@vanilla-extract/css': null,
+        'styled-components': 'styled',
+      },
     )
   })
 

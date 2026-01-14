@@ -75,7 +75,7 @@ describe('preload', () => {
   it('should process files and write devup-ui.css', () => {
     globSyncSpy.mockReturnValue(['/project/src/index.tsx'])
 
-    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], {}, '/project')
 
     expect(globSyncSpy).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalled()
@@ -94,7 +94,7 @@ describe('preload', () => {
       '/project/src/types.d.ts',
     ])
 
-    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], {}, '/project')
 
     expect(codeExtractSpy).not.toHaveBeenCalled()
   })
@@ -107,7 +107,7 @@ describe('preload', () => {
       path.join(cwd, '.next/index.tsx'),
     ])
 
-    preload(/node_modules/, '@devup-ui/react', true, '/css', [], cwd)
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], {}, cwd)
 
     expect(codeExtractSpy).not.toHaveBeenCalled()
   })
@@ -115,7 +115,7 @@ describe('preload', () => {
   it('should skip files matching exclude regex', () => {
     globSyncSpy.mockReturnValue(['/project/node_modules/pkg/index.tsx'])
 
-    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], {}, '/project')
 
     expect(codeExtractSpy).not.toHaveBeenCalled()
   })
@@ -132,7 +132,7 @@ describe('preload', () => {
       [Symbol.dispose]: mock(),
     } as any)
 
-    preload(/node_modules/, '@devup-ui/react', true, '/css', [], '/project')
+    preload(/node_modules/, '@devup-ui/react', true, '/css', [], {}, '/project')
 
     expect(writeFileSyncSpy).toHaveBeenCalledWith(
       path.join('/css', 'devup-ui-1.css'),
@@ -157,6 +157,7 @@ describe('preload', () => {
       true,
       '/css',
       ['@scope/local-pkg'],
+      {},
       '/project',
     )
 
@@ -179,6 +180,7 @@ describe('preload', () => {
       true,
       '/css',
       ['@scope/local-pkg'],
+      {},
       '/project',
       true, // nested = true
     )

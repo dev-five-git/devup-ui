@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 
+import type { WasmImportAliases } from '@devup-ui/plugin-utils'
 import { codeExtract, getCss } from '@devup-ui/wasm'
 import { globSync } from 'tinyglobby'
 
@@ -14,6 +15,7 @@ export function preload(
   singleCss: boolean,
   cssDir: string,
   include: string[],
+  importAliases: WasmImportAliases,
   pwd = process.cwd(),
   nested = false,
 ) {
@@ -28,7 +30,16 @@ export function preload(
       .map((file) => dirname(file))
 
     for (const file of collected) {
-      preload(excludeRegex, libPackage, singleCss, cssDir, include, file, true)
+      preload(
+        excludeRegex,
+        libPackage,
+        singleCss,
+        cssDir,
+        include,
+        importAliases,
+        file,
+        true,
+      )
     }
     if (nested) return
   }
@@ -55,6 +66,7 @@ export function preload(
       singleCss,
       false,
       true,
+      importAliases,
     )
 
     if (cssFile) {

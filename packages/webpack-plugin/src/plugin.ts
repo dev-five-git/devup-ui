@@ -3,7 +3,12 @@ import { stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
-import { loadDevupConfigSync } from '@devup-ui/plugin-utils'
+import {
+  type ImportAliases,
+  loadDevupConfigSync,
+  mergeImportAliases,
+  type WasmImportAliases,
+} from '@devup-ui/plugin-utils'
 import {
   getCss,
   getDefaultTheme,
@@ -27,13 +32,20 @@ export interface DevupUIWebpackPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  /**
+   * Import aliases for redirecting imports from other CSS-in-JS libraries
+   * Merged with defaults: @emotion/styled, styled-components, @vanilla-extract/css
+   * Set to `false` to disable specific aliases
+   */
+  importAliases?: ImportAliases
 }
 
 export class DevupUIWebpackPlugin {
-  options: DevupUIWebpackPluginOptions
+  options: Omit<DevupUIWebpackPluginOptions, 'importAliases'>
   sheetFile: string
   classMapFile: string
   fileMapFile: string
+  private importAliases: WasmImportAliases
 
   constructor({
     package: libPackage = '@devup-ui/react',
@@ -45,7 +57,10 @@ export class DevupUIWebpackPlugin {
     include = [],
     singleCss = false,
     prefix,
+    importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
+    this.importAliases = mergeImportAliases(userImportAliases)
+
     this.options = {
       package: libPackage,
       cssDir,
@@ -182,6 +197,7 @@ export class DevupUIWebpackPlugin {
               fileMapFile: this.fileMapFile,
               watch: this.options.watch,
               singleCss: this.options.singleCss,
+              importAliases: this.importAliases,
             },
           },
         ],

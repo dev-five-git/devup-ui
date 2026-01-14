@@ -19,9 +19,19 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::error::Error;
 use std::path::PathBuf;
+
+/// Import alias configuration for redirecting imports from other CSS-in-JS libraries
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportAlias {
+    /// Default export → named export (e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`)
+    DefaultToNamed(String),
+    /// Named exports (1:1 mapping, e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`)
+    NamedToNamed,
+}
+
 #[derive(Debug)]
 pub enum ExtractStyleProp<'a> {
     Static(ExtractStyleValue),
@@ -95,6 +105,20 @@ pub struct ExtractOption {
     pub css_dir: String,
     pub single_css: bool,
     pub import_main_css: bool,
+    /// Import aliases for redirecting imports from other CSS-in-JS libraries to the target package
+    pub import_aliases: HashMap<String, ImportAlias>,
+}
+
+impl Default for ExtractOption {
+    fn default() -> Self {
+        Self {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "@devup-ui/react".to_string(),
+            single_css: false,
+            import_main_css: false,
+            import_aliases: HashMap::new(),
+        }
+    }
 }
 
 pub fn extract(
@@ -102,8 +126,15 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    if !code.contains(option.package.as_str()) {
-        // skip if not using package
+    // Check if code contains the target package or any aliased packages
+    let has_relevant_import = code.contains(option.package.as_str())
+        || option
+            .import_aliases
+            .keys()
+            .any(|alias| code.contains(alias.as_str()));
+
+    if !has_relevant_import {
+        // skip if not using package or any aliases
         return Ok(ExtractOutput {
             styles: HashSet::new(),
             code: code.to_string(),
@@ -208,6 +239,7 @@ pub fn extract(
         } else {
             None
         },
+        option.import_aliases.clone(),
     );
     visitor.visit_program(&mut program);
     let result = Codegen::new()
@@ -264,6 +296,7 @@ fn extract_class_map_from_code(
             } else {
                 None
             },
+            option.import_aliases.clone(),
         );
         visitor.visit_program(&mut program);
 
@@ -378,7 +411,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap()
@@ -394,7 +428,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap()
@@ -411,7 +446,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box padding={1} ref={ref} data-test={1} role={2} children={[]} onClick={()=>{}} aria-valuenow={24} key={2} tabIndex={1} id="id" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -428,7 +463,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -450,7 +486,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -468,7 +505,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -486,7 +524,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -504,7 +543,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -522,7 +562,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -540,7 +581,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -558,7 +600,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -576,7 +619,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -594,7 +638,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -612,7 +657,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -630,7 +676,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -648,7 +695,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -666,7 +714,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -684,7 +733,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -698,7 +748,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, [key]: "section", ...rest}[key]} w="100%" h="100%" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -711,7 +761,7 @@ mod tests {
                 r#"import {Box} from '@devup-ui/core'
         <Box as={{A: "section", B: "div", C: Variable, D, ["key"]: "section", ...rest}["key"]} w="100%" h="100%" />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -728,7 +778,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -746,7 +797,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -764,7 +816,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -783,7 +836,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -802,7 +856,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -823,7 +878,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -840,7 +896,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -857,7 +914,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -875,7 +933,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -893,7 +952,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -911,7 +971,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -935,7 +996,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -960,7 +1022,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -984,7 +1047,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1006,7 +1070,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1024,7 +1089,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1042,7 +1108,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1060,7 +1127,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1077,7 +1145,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1101,7 +1170,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1119,7 +1189,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1141,7 +1212,8 @@ mod tests {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1177,7 +1249,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1199,7 +1272,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1220,7 +1294,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1235,7 +1310,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1257,7 +1333,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1275,7 +1352,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1293,7 +1371,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1311,7 +1390,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1333,7 +1413,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1351,7 +1432,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1369,7 +1451,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1391,7 +1474,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1409,7 +1493,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1427,7 +1512,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1445,7 +1531,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1463,7 +1550,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1485,7 +1573,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1507,7 +1596,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1529,7 +1619,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1547,7 +1638,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1569,7 +1661,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1587,7 +1680,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1609,7 +1703,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1627,7 +1722,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1645,7 +1741,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1663,7 +1760,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1681,7 +1779,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1699,7 +1798,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1717,7 +1817,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1735,7 +1836,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1753,7 +1855,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1771,7 +1874,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1789,7 +1893,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1811,7 +1916,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1829,7 +1935,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1847,7 +1954,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1865,7 +1973,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1883,7 +1992,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1901,7 +2011,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1923,7 +2034,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1941,7 +2053,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1963,7 +2076,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1981,7 +2095,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -1999,7 +2114,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2017,7 +2133,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2035,7 +2152,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2053,7 +2171,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2071,7 +2190,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2089,7 +2209,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2111,7 +2232,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2129,7 +2251,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2147,7 +2270,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2165,7 +2289,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2187,7 +2312,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2205,7 +2331,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2223,7 +2350,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2241,7 +2369,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2262,7 +2391,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2280,7 +2410,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2304,7 +2435,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2341,7 +2473,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2363,7 +2496,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2385,7 +2519,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2407,7 +2542,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2429,7 +2565,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2451,7 +2588,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2471,7 +2609,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2498,7 +2637,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2520,7 +2660,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2542,7 +2683,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2568,7 +2710,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2590,7 +2733,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2612,7 +2756,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2641,7 +2786,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2670,7 +2816,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2692,7 +2839,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2710,7 +2858,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2728,7 +2877,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2746,7 +2896,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2764,7 +2915,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2782,7 +2934,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2800,7 +2953,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2824,7 +2978,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2846,7 +3001,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2871,7 +3027,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2895,7 +3052,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2922,7 +3080,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2948,7 +3107,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -2973,7 +3133,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3004,7 +3165,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3030,7 +3192,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3058,7 +3221,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3086,7 +3250,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3114,7 +3279,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3142,7 +3308,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3166,7 +3333,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3186,7 +3354,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3204,7 +3373,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3225,7 +3395,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3249,7 +3420,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3271,7 +3443,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3295,7 +3468,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3319,7 +3493,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3339,7 +3514,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3360,7 +3536,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3380,7 +3557,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3403,7 +3581,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3421,7 +3600,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3439,7 +3619,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3457,7 +3638,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3480,7 +3662,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3509,7 +3692,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3527,7 +3711,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3545,7 +3730,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3564,7 +3750,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3582,7 +3769,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3600,7 +3788,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3618,7 +3807,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3646,7 +3836,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3673,7 +3864,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3695,7 +3887,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3717,7 +3910,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3735,7 +3929,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3753,7 +3948,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3775,7 +3971,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3793,7 +3990,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3811,7 +4009,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3832,7 +4031,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3850,7 +4050,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3868,7 +4069,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3891,7 +4093,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3911,7 +4114,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap_err()
@@ -3929,7 +4133,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap_err()
@@ -3952,7 +4157,8 @@ import clsx from 'clsx'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -3970,7 +4176,8 @@ useTheme();
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4011,7 +4218,8 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4048,7 +4256,8 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4067,7 +4276,8 @@ e(o, { className: "a", bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4086,7 +4296,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" } })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4105,7 +4316,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4121,7 +4333,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? "div" : "section", className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -4134,7 +4346,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: Variable, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -4148,7 +4360,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         import { Box as o } from "@devup-ui/core";
         e(o, { as: b ? null : undefined, className: "a", bg: variable, style: { color: "blue" }, props: { animate: { duration: 1 } } })
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -4159,31 +4371,31 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
     fn support_transpile_cjs() {
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.cjs", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const {jsx:e1, jsxs:e2}=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e2("div",{children:[e1(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e1(r.Text,{typography:"header",children:"typo"}),e1(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:"header",children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),r=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(r.Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(r.Text,{typography:`header`,children:"typo"}),e.jsx(r.Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{_hover:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",color:"red",children:"hello"}),e.jsx(Text,{typography:`header`,children:"typo"}),e.jsx(Flex,{as:"section",mt:2,children:"section"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
 
         reset_class_map();
         reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }).unwrap()));
+        assert_debug_snapshot!(ToBTreeSet::from(extract("test.js", r#""use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react/jsx-runtime"),{Box,Text,Flex}=require("@devup-ui/react");function t(){return e.jsxs("div",{children:[e.jsx(Box,{["_hover"]:{bg:"blue"},bg:"$text",[variable]:"red",children:"hello"})]})}exports.Lib=t;"#, ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }).unwrap()));
     }
 
     #[test]
@@ -4197,7 +4409,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />
         "#,
-                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -4218,7 +4430,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4240,7 +4453,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4258,7 +4472,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4276,7 +4491,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4298,7 +4514,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4316,7 +4533,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4334,7 +4552,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4356,7 +4575,8 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4393,7 +4613,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4415,7 +4636,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4433,7 +4655,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4451,7 +4674,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4469,7 +4693,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4487,7 +4712,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4508,7 +4734,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4526,7 +4753,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4544,7 +4772,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4562,7 +4791,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4580,7 +4810,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4598,7 +4829,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4616,7 +4848,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4638,7 +4871,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4656,7 +4890,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4674,7 +4909,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4692,7 +4928,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4718,7 +4955,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4736,7 +4974,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4758,7 +4997,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4776,7 +5016,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4794,7 +5035,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4812,7 +5054,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4833,7 +5076,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4851,7 +5095,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4869,7 +5114,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4911,7 +5157,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4933,7 +5180,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4951,7 +5199,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4969,7 +5218,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -4987,7 +5237,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5009,7 +5260,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5026,7 +5278,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5048,7 +5301,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5066,7 +5320,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5087,7 +5342,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5109,7 +5365,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5127,7 +5384,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5148,7 +5406,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5166,7 +5425,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5188,7 +5448,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5210,7 +5471,8 @@ export default function Card({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5236,7 +5498,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5258,7 +5521,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5276,7 +5540,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5298,7 +5563,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5320,7 +5586,8 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5344,7 +5611,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5369,7 +5637,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5390,7 +5659,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5412,7 +5682,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5446,7 +5717,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5468,7 +5740,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5486,7 +5759,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5504,7 +5778,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5522,7 +5797,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5540,7 +5816,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5562,7 +5839,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5584,7 +5862,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5601,7 +5880,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5626,7 +5906,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5652,7 +5933,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5674,7 +5956,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5696,7 +5979,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5722,7 +6006,8 @@ import {Button} from '@devup/ui'
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5760,7 +6045,8 @@ export {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5778,7 +6064,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5796,7 +6083,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5814,7 +6102,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5839,7 +6128,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5865,7 +6155,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5883,7 +6174,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5912,7 +6204,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5937,7 +6230,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5962,7 +6256,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -5986,7 +6281,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6006,7 +6302,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6027,7 +6324,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6047,7 +6345,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6067,7 +6366,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6087,7 +6387,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6107,7 +6408,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6127,7 +6429,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6150,7 +6453,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6168,7 +6472,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6186,7 +6491,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6208,7 +6514,8 @@ export {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6231,7 +6538,8 @@ e(o, { styleVars: { c: "yellow" } })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6257,7 +6565,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6279,7 +6588,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6301,7 +6611,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6323,7 +6634,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6345,7 +6657,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6367,7 +6680,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6389,7 +6703,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6407,7 +6722,8 @@ globalCss(...{})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6425,7 +6741,8 @@ globalCss(...{div: {bg: "red"}})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6444,7 +6761,8 @@ globalCss(...{div: {bg: "red"}, ...{span: {bg: "blue"}}})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6470,7 +6788,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6488,7 +6807,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6506,7 +6826,8 @@ globalCss(1)
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6537,7 +6858,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6572,7 +6894,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6607,7 +6930,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6650,7 +6974,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6676,7 +7001,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6696,7 +7022,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6716,7 +7043,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6737,7 +7065,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6760,7 +7089,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6778,7 +7108,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6796,7 +7127,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6815,7 +7147,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6833,7 +7166,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6857,7 +7191,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6877,7 +7212,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6897,7 +7233,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6932,7 +7269,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6958,7 +7296,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -6983,7 +7322,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7007,7 +7347,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7033,7 +7374,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7059,7 +7401,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7100,7 +7443,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7120,7 +7464,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7140,7 +7485,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7160,7 +7506,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7184,7 +7531,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7204,7 +7552,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7228,7 +7577,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7249,7 +7599,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7269,7 +7620,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7290,7 +7642,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7308,7 +7661,8 @@ globalCss({})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7326,7 +7680,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7351,7 +7706,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7373,7 +7729,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7395,7 +7752,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7417,7 +7775,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7439,7 +7798,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7461,7 +7821,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7483,7 +7844,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7505,7 +7867,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7543,7 +7906,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7565,7 +7929,8 @@ keyframes(...{
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7590,7 +7955,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7636,7 +8002,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7684,7 +8051,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7706,7 +8074,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7721,7 +8090,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7737,7 +8107,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7752,7 +8123,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7774,7 +8146,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: true
+                    import_main_css: true,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7796,7 +8169,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7818,7 +8192,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7837,7 +8212,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7855,7 +8231,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7873,7 +8250,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7891,7 +8269,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7909,7 +8288,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7934,7 +8314,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7955,7 +8336,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7976,7 +8358,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -7999,7 +8382,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8022,7 +8406,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8045,7 +8430,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8071,7 +8457,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8094,7 +8481,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8121,7 +8509,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8144,7 +8533,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8164,7 +8554,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8184,7 +8575,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8204,7 +8596,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8226,7 +8619,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8245,7 +8639,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8267,7 +8662,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8286,7 +8682,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8308,7 +8705,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8327,7 +8725,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8351,7 +8750,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8371,7 +8771,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8394,7 +8795,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8414,7 +8816,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8437,7 +8840,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8465,7 +8869,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8490,7 +8895,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8511,7 +8917,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8532,7 +8939,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8555,7 +8963,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8574,7 +8983,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8593,7 +9003,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8620,7 +9031,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8644,7 +9056,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8670,7 +9083,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8694,7 +9108,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8720,7 +9135,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8742,7 +9158,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8761,7 +9178,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8780,7 +9198,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8799,7 +9218,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8829,7 +9249,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8852,7 +9273,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8871,7 +9293,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8890,7 +9313,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8909,7 +9333,8 @@ keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8933,7 +9358,8 @@ const StyledDiv = styled.div({ ...baseStyles })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8956,7 +9382,8 @@ const className = css()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -8979,7 +9406,8 @@ const className = css({})
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9005,7 +9433,8 @@ const spin = keyframes({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9030,7 +9459,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9056,7 +9486,8 @@ const Component = () => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9080,7 +9511,8 @@ const className = myCss({ bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9105,7 +9537,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9136,7 +9569,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9161,7 +9595,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9184,7 +9619,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9209,7 +9645,8 @@ const key = "primary";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9234,7 +9671,8 @@ const Component = ({ className }) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9257,7 +9695,8 @@ const Component = ({ className }) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9281,7 +9720,8 @@ const className = css({ fontSize: `${size}px` })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9305,7 +9745,8 @@ const isActive = true;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9330,7 +9771,8 @@ const Component = (props) => {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9355,7 +9797,8 @@ const b = false;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9379,7 +9822,8 @@ const color = "red";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9402,7 +9846,8 @@ const spin = keyframes()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9425,7 +9870,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9448,7 +9894,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9471,7 +9918,8 @@ globalCss()
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9494,7 +9942,8 @@ const className = DevUI.css({ bg: "red" })
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9519,7 +9968,8 @@ const colors = { primary: "blue", secondary: "red" };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9543,7 +9993,8 @@ const dynamicColor = "blue";
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9567,7 +10018,8 @@ const extraProps = { onClick: () => {} };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9590,7 +10042,8 @@ const extraProps = { onClick: () => {} };
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9616,7 +10069,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9639,7 +10093,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9658,7 +10113,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9677,7 +10133,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9696,7 +10153,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9719,7 +10177,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9742,7 +10201,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9761,7 +10221,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9780,7 +10241,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9799,7 +10261,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9822,7 +10285,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9841,7 +10305,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9860,7 +10325,8 @@ const margin = 5;
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9889,7 +10355,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9914,7 +10381,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9939,7 +10407,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -9971,7 +10440,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10000,7 +10470,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10028,7 +10499,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: false,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10057,7 +10529,8 @@ export const container: string = style({ background: "red", padding: 16 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10080,7 +10553,8 @@ export const wrapper = style({ backgroundColor: "white", margin: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10099,7 +10573,8 @@ export const link = style({ color: "blue", textDecoration: "underline" })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10124,7 +10599,8 @@ export const button = style({ background: primaryColor, padding: spacing })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10148,7 +10624,8 @@ export const box = style({ padding: base * 2, margin: base / 2 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10172,7 +10649,8 @@ export const extended = style({ ...baseStyle, background: "red" })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10195,7 +10673,8 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10218,7 +10697,8 @@ export const responsiveBox = style({ padding: [8, 16, 32] })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10242,7 +10722,8 @@ export const animated = style({ animation: "fadeIn 1s ease-in" })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10261,7 +10742,8 @@ globalStyle("body", { margin: 0, padding: 0 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10290,7 +10772,8 @@ export const box = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10312,7 +10795,8 @@ export const box = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10339,7 +10823,8 @@ export const background = styleVariants({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10362,7 +10847,8 @@ export const button = styleVariants({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10391,7 +10877,8 @@ export const text = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10417,7 +10904,8 @@ export const body = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10455,7 +10943,8 @@ export const box = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10492,7 +10981,8 @@ export const darkTheme = createTheme(vars, {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10523,7 +11013,8 @@ globalStyle('*', {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10557,7 +11048,8 @@ export const responsive = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10589,7 +11081,8 @@ export const vars = createGlobalTheme(':root', {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10623,7 +11116,8 @@ export const button = style([base, interactive, {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10663,7 +11157,8 @@ export const button = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10694,7 +11189,8 @@ export const child = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10731,7 +11227,8 @@ export const responsive = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10761,7 +11258,8 @@ export const grid = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10897,7 +11395,8 @@ export const grid = style({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10922,7 +11421,8 @@ export const grid = style({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -10948,6 +11448,7 @@ export const broken = style((() => { throw new Error("fail"); })())
                 css_dir: "@devup-ui/react".to_string(),
                 single_css: true,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
         );
         // Should not panic, may return error or empty styles
@@ -10973,6 +11474,7 @@ const unused = 1;
                 css_dir: "@devup-ui/react".to_string(),
                 single_css: true,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
         );
         assert!(result.is_ok());
@@ -10997,7 +11499,8 @@ export const box = style({ padding: SPACING })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11030,7 +11533,8 @@ export const [lightTheme, vars] = createTheme({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11062,7 +11566,8 @@ export const themed = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11087,7 +11592,8 @@ export const withEmpty = style([{}])
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11119,7 +11625,8 @@ export const sizes = styleVariants({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11149,7 +11656,8 @@ export const containerStyle = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11185,7 +11693,8 @@ export const box = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11220,7 +11729,8 @@ export const darkTheme = createTheme(contract, {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11250,7 +11760,8 @@ export const text = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11279,7 +11790,8 @@ export const box = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11304,7 +11816,8 @@ export const box = style({ padding: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11329,7 +11842,7 @@ const internalContainer = createContainer()
 const internalLayer = layer('internal')
 export const publicStyle = style({ margin: 8 })
 "#,
-                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -11366,7 +11879,8 @@ export const sibling = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11412,7 +11926,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11445,7 +11960,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11471,7 +11987,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11495,7 +12012,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11519,6 +12037,7 @@ globalCss({
                 css_dir: "@devup-ui/react".to_string(),
                 single_css: true,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
         );
         assert!(result.is_ok());
@@ -11544,6 +12063,7 @@ const x = style({ padding: [[[}}} // invalid syntax
                 css_dir: "@devup-ui/react".to_string(),
                 single_css: true,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
         );
         // Should not panic - falls back to regular processing
@@ -11552,23 +12072,31 @@ const x = style({ padding: [[[}}} // invalid syntax
 
     #[test]
     #[serial]
-    fn test_vanilla_extract_style_no_length() {
-        // Test style() with object that has no length property (covers line 745)
+    fn test_import_alias_vanilla_extract_named() {
+        // Test @vanilla-extract/css named exports in regular .tsx files (NOT .css.ts)
+        // Note: .css.ts files use vanilla-extract's own processing which doesn't go through import aliases
         reset_class_map();
         reset_file_map();
-        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+
+        // Use regular .tsx file (not .css.ts) for import alias to work
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
-                "no-length.css.ts",
-                r#"import { style } from '@devup-ui/react'
-export const box = style({ padding: 8, margin: 4 })
+                "test.tsx",
+                r#"import { css } from '@vanilla-extract/css'
+const buttonStyle = css({ bg: 'red', p: 4 })
 "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
-                }
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
             )
             .unwrap()
         ));
@@ -11599,7 +12127,8 @@ export const spinner = style({ animation: spin })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11625,7 +12154,8 @@ export const myTheme = createTheme({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11654,7 +12184,8 @@ export const buttons = styleVariants({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11688,7 +12219,8 @@ export const box = style({ padding: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11713,7 +12245,8 @@ export const text = style({ fontFamily: minimalFont })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11740,7 +12273,8 @@ export const animated = style({ animation: fadeIn })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11773,7 +12307,8 @@ export const box = style({ padding: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11798,7 +12333,8 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11827,7 +12363,8 @@ export const child = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11860,7 +12397,7 @@ export const buttons = styleVariants({
 })
 export const box = style({ fontFamily: myFont })
 "#,
-                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -11887,7 +12424,8 @@ export const themed = style({ color: themeVars.colors.primary })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11920,7 +12458,8 @@ export const heading = style({ fontFamily: secondFont })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11950,7 +12489,8 @@ export const box = style({ padding: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -11980,7 +12520,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12009,7 +12550,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12040,7 +12582,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12071,7 +12614,7 @@ export const child = style({
 })
 globalStyle('body', { margin: 0 })
 "#,
-                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false }
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -12100,7 +12643,8 @@ export const box = style({ padding: 8 })
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12132,7 +12676,8 @@ globalCss({
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12165,7 +12710,8 @@ export const child = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12197,7 +12743,8 @@ export const card = style({
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
-                    import_main_css: false
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
                 }
             )
             .unwrap()
@@ -12219,11 +12766,173 @@ export const card = style({
                 css_dir: "@devup-ui/react".to_string(),
                 single_css: true,
                 import_main_css: false,
+                import_aliases: HashMap::new(),
             },
             &style_names,
         )
         .unwrap();
 
         assert!(result.is_empty());
+    }
+
+    // === Import Alias Tests ===
+
+    #[test]
+    #[serial]
+    fn test_import_alias_emotion_styled() {
+        // Test @emotion/styled default export → styled named export
+        // Uses devup-ui's styled syntax: styled.button({ ... }) or styled("button")({ ... })
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from '@emotion/styled'
+const Button = styled.button({ bg: 'red', p: 4 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_styled_components() {
+        // Test styled-components default export → styled named export
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from 'styled-components'
+const Card = styled("div")({ bg: 'blue', m: 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_skip_when_package_not_in_code() {
+        // Test that extraction is skipped when neither package nor aliases are present
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import React from 'react'
+const element = <div>Hello</div>"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_renamed_import() {
+        // Test aliased import that's renamed locally: import myStyled from '@emotion/styled'
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import myStyled from '@emotion/styled'
+const Button = myStyled.button({ bg: 'green', p: 2 })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_import_alias_multiple_aliases() {
+        // Test with multiple aliases configured
+        reset_class_map();
+        reset_file_map();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "@emotion/styled".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        aliases.insert(
+            "styled-components".to_string(),
+            ImportAlias::DefaultToNamed("styled".to_string()),
+        );
+        aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+
+        // Test with @emotion/styled member syntax
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import styled from '@emotion/styled'
+const Button = styled.button({ bg: 'red' })
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
     }
 }

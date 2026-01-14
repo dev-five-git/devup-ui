@@ -1,3 +1,4 @@
+use crate::ImportAlias;
 use crate::as_visit::AsVisitor;
 use crate::component::ExportVariableKind;
 use crate::css_utils::{css_to_style_literal, keyframes_to_keyframes_style, optimize_css_block};
@@ -54,6 +55,8 @@ pub struct DevupVisitor<'a> {
     pub css_files: Vec<String>,
     pub styles: HashSet<ExtractStyleValue>,
     styled_import: Option<String>,
+    /// Import aliases for redirecting imports from other CSS-in-JS libraries
+    import_aliases: HashMap<String, ImportAlias>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -63,6 +66,7 @@ impl<'a> DevupVisitor<'a> {
         package: &str,
         css_files: Vec<String>,
         split_filename: Option<String>,
+        import_aliases: HashMap<String, ImportAlias>,
     ) -> Self {
         Self {
             ast: AstBuilder::new(allocator),
@@ -77,6 +81,7 @@ impl<'a> DevupVisitor<'a> {
             util_imports: HashMap::new(),
             split_filename,
             styled_import: None,
+            import_aliases,
         }
     }
 }
@@ -123,10 +128,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
         for i in (0..it.body.len()).rev() {
             if let Statement::ImportDeclaration(decl) = &it.body[i]
-                && decl.source.value == self.package
                 && decl.specifiers.iter().all(|s| s.is_empty())
             {
-                it.body.remove(i);
+                // Remove empty imports from main package and aliased packages
+                let source = decl.source.value.as_str();
+                if source == self.package || self.import_aliases.contains_key(source) {
+                    it.body.remove(i);
+                }
             }
         }
     }
@@ -468,71 +476,122 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         walk_variable_declarator(self, it);
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
-        if it.source.value != self.package
-            && it.source.value == "react/jsx-runtime"
-            && let Some(specifiers) = &it.specifiers
-        {
-            for specifier in specifiers {
-                if let ImportSpecifier(import) = specifier {
-                    self.jsx_imports
-                        .insert(import.local.to_string(), import.imported.to_string());
+        let source_value = it.source.value.as_str();
+
+        // Check for import aliases (e.g., @emotion/styled, styled-components, @vanilla-extract/css)
+        // Instead of modifying AST (which has lifetime issues), we just track the imports internally
+        if let Some(alias) = self.import_aliases.get(source_value).cloned() {
+            if let Some(specifiers) = &mut it.specifiers {
+                match alias {
+                    ImportAlias::DefaultToNamed(named_export) => {
+                        // Transform default import to named import
+                        // e.g., `import styled from '@emotion/styled'` → register as `styled` named import
+                        for i in (0..specifiers.len()).rev() {
+                            if let ImportDeclarationSpecifier::ImportDefaultSpecifier(
+                                default_spec,
+                            ) = &specifiers[i]
+                            {
+                                let local_name = default_spec.local.to_string();
+                                // Register as styled import (for styled-components/emotion compatibility)
+                                if named_export == "styled" {
+                                    self.styled_import = Some(local_name);
+                                }
+                                specifiers.remove(i);
+                            }
+                        }
+                    }
+                    ImportAlias::NamedToNamed => {
+                        // Named imports stay as named imports (1:1 mapping)
+                        // e.g., `import { style } from '@vanilla-extract/css'` → treat as `import { style } from '@devup-ui/react'`
+                        // Process like regular package imports
+                        for i in (0..specifiers.len()).rev() {
+                            if let ImportSpecifier(import) = &specifiers[i] {
+                                if let Ok(kind) =
+                                    ExportVariableKind::try_from(import.imported.to_string())
+                                {
+                                    self.imports.insert(import.local.to_string(), kind);
+                                    specifiers.remove(i);
+                                } else if let Ok(kind) =
+                                    UtilType::try_from(import.imported.to_string())
+                                {
+                                    self.util_imports
+                                        .insert(import.local.to_string(), Rc::new(kind));
+                                    specifiers.remove(i);
+                                } else if import.imported.to_string() == "styled" {
+                                    self.styled_import = Some(import.local.to_string());
+                                    specifiers.remove(i);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        } else if it.source.value == self.package
-            && let Some(specifiers) = &mut it.specifiers
-        {
-            for i in (0..specifiers.len()).rev() {
-                match &specifiers[i] {
-                    ImportSpecifier(import) => {
-                        if let Ok(kind) = ExportVariableKind::try_from(import.imported.to_string())
-                        {
-                            self.imports.insert(import.local.to_string(), kind);
-                            specifiers.remove(i);
-                        } else if let Ok(kind) = UtilType::try_from(import.imported.to_string()) {
-                            self.util_imports
-                                .insert(import.local.to_string(), Rc::new(kind));
-                            specifiers.remove(i);
-                        } else if import.imported.to_string() == "styled" {
-                            self.styled_import = Some(import.local.to_string());
-                            specifiers.remove(i);
-                        }
+        } else if source_value != self.package && source_value == "react/jsx-runtime" {
+            if let Some(specifiers) = &it.specifiers {
+                for specifier in specifiers {
+                    if let ImportSpecifier(import) = specifier {
+                        self.jsx_imports
+                            .insert(import.local.to_string(), import.imported.to_string());
                     }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(
-                        import_default_specifier,
-                    ) => {
-                        for kind in ExportVariableKind::iter() {
-                            self.imports.insert(
-                                format!("{}.{}", import_default_specifier.local, kind),
-                                kind,
-                            );
+                }
+            }
+        } else if source_value == self.package {
+            if let Some(specifiers) = &mut it.specifiers {
+                for i in (0..specifiers.len()).rev() {
+                    match &specifiers[i] {
+                        ImportSpecifier(import) => {
+                            if let Ok(kind) =
+                                ExportVariableKind::try_from(import.imported.to_string())
+                            {
+                                self.imports.insert(import.local.to_string(), kind);
+                                specifiers.remove(i);
+                            } else if let Ok(kind) = UtilType::try_from(import.imported.to_string())
+                            {
+                                self.util_imports
+                                    .insert(import.local.to_string(), Rc::new(kind));
+                                specifiers.remove(i);
+                            } else if import.imported.to_string() == "styled" {
+                                self.styled_import = Some(import.local.to_string());
+                                specifiers.remove(i);
+                            }
                         }
-                        self.util_imports.insert(
-                            format!("{}.{}", import_default_specifier.local, "css"),
-                            Rc::new(UtilType::Css),
-                        );
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(
+                            import_default_specifier,
+                        ) => {
+                            for kind in ExportVariableKind::iter() {
+                                self.imports.insert(
+                                    format!("{}.{}", import_default_specifier.local, kind),
+                                    kind,
+                                );
+                            }
+                            self.util_imports.insert(
+                                format!("{}.{}", import_default_specifier.local, "css"),
+                                Rc::new(UtilType::Css),
+                            );
 
-                        self.util_imports.insert(
-                            format!("{}.{}", import_default_specifier.local, "globalCss"),
-                            Rc::new(UtilType::GlobalCss),
-                        );
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(
-                        import_namespace_specifier,
-                    ) => {
-                        for kind in ExportVariableKind::iter() {
-                            self.imports.insert(
-                                format!("{}.{}", import_namespace_specifier.local, kind),
-                                kind,
+                            self.util_imports.insert(
+                                format!("{}.{}", import_default_specifier.local, "globalCss"),
+                                Rc::new(UtilType::GlobalCss),
                             );
                         }
-                        self.util_imports.insert(
-                            format!("{}.{}", import_namespace_specifier.local, "css"),
-                            Rc::new(UtilType::Css),
-                        );
-                        self.util_imports.insert(
-                            format!("{}.{}", import_namespace_specifier.local, "globalCss"),
-                            Rc::new(UtilType::GlobalCss),
-                        );
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(
+                            import_namespace_specifier,
+                        ) => {
+                            for kind in ExportVariableKind::iter() {
+                                self.imports.insert(
+                                    format!("{}.{}", import_namespace_specifier.local, kind),
+                                    kind,
+                                );
+                            }
+                            self.util_imports.insert(
+                                format!("{}.{}", import_namespace_specifier.local, "css"),
+                                Rc::new(UtilType::Css),
+                            );
+                            self.util_imports.insert(
+                                format!("{}.{}", import_namespace_specifier.local, "globalCss"),
+                                Rc::new(UtilType::GlobalCss),
+                            );
+                        }
                     }
                 }
             }
