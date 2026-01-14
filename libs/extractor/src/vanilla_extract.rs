@@ -3369,4 +3369,38 @@ export const box = style({ padding: 8, margin: 4 })
         let collected = result.unwrap();
         assert!(!collected.styles.is_empty());
     }
+
+    #[test]
+    fn test_js_value_to_json_string_fallback_path() {
+        // Test js_value_to_json string fallback when JSON.stringify is broken (covers line 303)
+        use boa_engine::{Context, JsValue, Source, js_string};
+
+        let mut context = Context::default();
+
+        // Break JSON.stringify by setting it to undefined
+        context
+            .eval(Source::from_bytes(b"JSON.stringify = undefined"))
+            .unwrap();
+
+        let string_val = JsValue::from(js_string!("test"));
+        let result = super::js_value_to_json(&string_val, &mut context);
+        assert_eq!(result, "\"test\"");
+    }
+
+    #[test]
+    fn test_js_value_to_json_null_fallback_path() {
+        // Test js_value_to_json null fallback when JSON.stringify is broken (covers line 304)
+        use boa_engine::{Context, JsValue, Source};
+
+        let mut context = Context::default();
+
+        // Break JSON.stringify by setting it to undefined
+        context
+            .eval(Source::from_bytes(b"JSON.stringify = undefined"))
+            .unwrap();
+
+        let null_val = JsValue::null();
+        let result = super::js_value_to_json(&null_val, &mut context);
+        assert_eq!(result, "null");
+    }
 }
