@@ -5,6 +5,7 @@ pub mod extract_style;
 mod extractor;
 mod gen_class_name;
 mod gen_style;
+mod import_alias_visit;
 mod prop_modify_utils;
 mod util_type;
 mod utils;
@@ -126,15 +127,21 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
-    // Check if code contains the target package or any aliased packages
-    let has_relevant_import = code.contains(option.package.as_str())
-        || option
-            .import_aliases
-            .keys()
-            .any(|alias| code.contains(alias.as_str()));
+    // Step 1: Transform import aliases
+    // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
+    // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
+    let transformed_code = import_alias_visit::transform_import_aliases(
+        code,
+        filename,
+        &option.package,
+        &option.import_aliases,
+    );
+
+    // Step 2: Check if code contains the target package (after transformation)
+    let has_relevant_import = transformed_code.contains(option.package.as_str());
 
     if !has_relevant_import {
-        // skip if not using package or any aliases
+        // skip if not using package
         return Ok(ExtractOutput {
             styles: HashSet::new(),
             code: code.to_string(),
@@ -143,10 +150,12 @@ pub fn extract(
         });
     }
 
-    // Handle vanilla-extract style files (.css.ts, .css.js)
-    let (processed_code, is_vanilla_extract) = if vanilla_extract::is_vanilla_extract_file(filename)
-    {
-        match vanilla_extract::execute_vanilla_extract(code, &option.package, filename) {
+    // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
+    let is_ve_file = vanilla_extract::is_vanilla_extract_file(filename);
+    let (processed_code, is_vanilla_extract) = if is_ve_file {
+        // Use transformed code (with imports already pointing to @devup-ui/react)
+        match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
+        {
             Ok(collected) => {
                 // Check if any styles are referenced in selectors
                 let referenced = vanilla_extract::find_selector_references(&collected);
@@ -182,11 +191,11 @@ pub fn extract(
             }
             Err(_) => {
                 // Fall back to treating as regular file if execution fails
-                (code.to_string(), false)
+                (transformed_code.clone(), false)
             }
         }
     } else {
-        (code.to_string(), false)
+        (transformed_code.clone(), false)
     };
 
     // For vanilla-extract files, if no styles were collected, return early
@@ -202,7 +211,7 @@ pub fn extract(
     let code_to_parse = if is_vanilla_extract {
         &processed_code
     } else {
-        code
+        &transformed_code
     };
 
     let source_type = SourceType::from_path(filename)?;
@@ -239,7 +248,6 @@ pub fn extract(
         } else {
             None
         },
-        option.import_aliases.clone(),
     );
     visitor.visit_program(&mut program);
     let result = Codegen::new()
@@ -296,7 +304,6 @@ fn extract_class_map_from_code(
             } else {
                 None
             },
-            option.import_aliases.clone(),
         );
         visitor.visit_program(&mut program);
 
@@ -10575,6 +10582,45 @@ export const link = style({ color: "blue", textDecoration: "underline" })
                     single_css: true,
                     import_main_css: false,
                     import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Test .css.ts files with @vanilla-extract/css import (compatibility mode)
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_css_ts_with_vanilla_extract_import() {
+        reset_class_map();
+        reset_file_map();
+        // .css.ts file with import from @vanilla-extract/css (not @devup-ui/react)
+        // This should work the same as importing from @devup-ui/react
+        let mut import_aliases = HashMap::new();
+        import_aliases.insert(
+            "@vanilla-extract/css".to_string(),
+            ImportAlias::NamedToNamed,
+        );
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "styles.css.ts",
+                r#"import { style } from '@vanilla-extract/css'
+export const hello = style({
+  cursor: 'pointer',
+  fontSize: 32,
+  paddingTop: '28px',
+  paddingBottom: '28px',
+})
+export const text = style({
+  color: 'var(--text)',
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases,
                 }
             )
             .unwrap()

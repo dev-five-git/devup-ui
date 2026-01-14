@@ -785,34 +785,36 @@ fn preprocess_typescript(code: &str, package: &str) -> String {
 
     // Replace import from package with our mock object destructuring
     // e.g., import { style } from '@devup-ui/react' -> const { style } = __vanilla_extract__;
+    // Note: Import aliases (like @vanilla-extract/css) are already transformed by import_alias_visit
     let import_patterns = [
         format!("from \"{}\"", package),
         format!("from '{}'", package),
     ];
 
-    for pattern in &import_patterns {
-        if js_code.contains(pattern) {
-            // Find and replace the import line
-            let lines: Vec<&str> = js_code.lines().collect();
-            let mut new_lines = Vec::new();
+    // Process all import patterns (multiple imports may exist)
+    let lines: Vec<&str> = js_code.lines().collect();
+    let mut new_lines = Vec::new();
 
-            for line in lines {
-                if line.contains(pattern) {
-                    // Extract imported names from: import { a, b, c } from 'package'
-                    if let Some(start) = line.find('{')
-                        && let Some(end) = line.find('}')
-                    {
-                        let imports = &line[start + 1..end];
-                        new_lines.push(format!("const {{{}}} = __vanilla_extract__;", imports));
-                        continue;
-                    }
+    for line in lines {
+        let mut matched = false;
+        for pattern in &import_patterns {
+            if line.contains(pattern) {
+                // Extract imported names from: import { a, b, c } from 'package'
+                if let Some(start) = line.find('{')
+                    && let Some(end) = line.find('}')
+                {
+                    let imports = &line[start + 1..end];
+                    new_lines.push(format!("const {{{}}} = __vanilla_extract__;", imports));
+                    matched = true;
+                    break;
                 }
-                new_lines.push(line.to_string());
             }
-            js_code = new_lines.join("\n");
-            break;
+        }
+        if !matched {
+            new_lines.push(line.to_string());
         }
     }
+    js_code = new_lines.join("\n");
 
     // Remove 'export' keyword (boa doesn't support ES modules)
     js_code = js_code.replace("export const ", "const ");
@@ -1960,6 +1962,84 @@ export const container = style({ background: "red", padding: 16 })"#;
     }
 
     #[test]
+    fn test_execute_vanilla_extract_style_multiple() {
+        // Test with multiple style exports
+        let code = r#"import { style } from '@devup-ui/react'
+export const container = style({ background: "red", padding: 16 })
+export const button = style({ color: "blue" })"#;
+        let result = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
+        assert!(
+            result.styles.len() >= 2,
+            "Expected at least 2 styles but got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_multiple() {
+        // Test the full flow: execute → collected_styles_to_code with multiple styles
+        let code = r#"import { style } from '@devup-ui/react'
+export const container = style({ background: "red", padding: 16 })"#;
+        let collected = execute_vanilla_extract(code, "@devup-ui/react", "test.css.ts").unwrap();
+        let generated = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(
+            !generated.is_empty(),
+            "Expected non-empty generated code. Collected: {:?}",
+            collected
+        );
+        assert!(
+            generated.contains("css("),
+            "Expected css() call in generated code: {}",
+            generated
+        );
+    }
+
+    #[test]
+    fn test_full_flow_multiline() {
+        // Test exactly what lib.rs extract function does (with already-transformed imports)
+        let code = r#"import { style } from '@devup-ui/react'
+export const hello = style({
+  cursor: 'pointer',
+  fontSize: 32,
+  paddingTop: '28px',
+  paddingBottom: '28px',
+})
+export const text = style({
+  color: 'var(--text)',
+})
+"#;
+        let package = "@devup-ui/react";
+        let filename = "styles.css.ts";
+
+        // This is exactly what lib.rs does
+        assert!(
+            is_vanilla_extract_file(filename),
+            "Should be vanilla-extract file"
+        );
+
+        let result = execute_vanilla_extract(code, package, filename);
+        match result {
+            Ok(collected) => {
+                assert!(
+                    !collected.styles.is_empty(),
+                    "Styles should not be empty. Collected: {:?}",
+                    collected
+                );
+                let generated = super::collected_styles_to_code(&collected, package);
+                assert!(
+                    !generated.is_empty(),
+                    "Generated code should not be empty. Generated: {}",
+                    generated
+                );
+                println!("Generated code:\n{}", generated);
+            }
+            Err(e) => {
+                panic!("execute_vanilla_extract failed: {}", e);
+            }
+        }
+    }
+
+    #[test]
     fn test_execute_vanilla_extract_global_style() {
         let code = r#"import { globalStyle } from '@devup-ui/react'
 globalStyle("body", { margin: 0, padding: 0 })"#;
@@ -2652,6 +2732,10 @@ export const box = style({ padding: 8 })"#;
         assert!(result.contains("__vanilla_extract__"));
         assert!(!result.contains("export const"));
     }
+
+    // Note: @vanilla-extract/css import transformation is now handled by import_alias_visit.rs
+    // before the code reaches vanilla_extract.rs, so preprocess_typescript only needs to
+    // handle the target package imports
 
     #[test]
     fn test_find_selector_references_no_refs() {
