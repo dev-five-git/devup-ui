@@ -183,16 +183,16 @@ pub fn extract_global_style_from_expression<'a>(
                                     ref mut st,
                                 )) = style
                                 {
-                                    // Skip @layer property - it's not a CSS property
-                                    if st.property() == "@layer" {
-                                        continue;
+                                    // Skip @layer property - it's not a CSS property, set layer on other styles
+                                    if st.property() != "@layer" {
+                                        if let Some(ref layer) = layer_name {
+                                            st.layer = Some(layer.clone());
+                                        }
+                                        styles.push(style);
                                     }
-                                    // Set layer on other styles
-                                    if let Some(ref layer) = layer_name {
-                                        st.layer = Some(layer.clone());
-                                    }
+                                } else {
+                                    styles.push(style);
                                 }
-                                styles.push(style);
                             }
                         }
                     }

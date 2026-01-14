@@ -252,54 +252,53 @@ fn extract_class_map_from_code(
         ..
     } = Parser::new(&allocator, partial_code, source_type).parse();
     if panicked {
-        return Ok(std::collections::HashMap::new());
-    }
-
-    let mut visitor = DevupVisitor::new(
-        &allocator,
-        filename,
-        &option.package,
-        css_files,
-        if !option.single_css {
-            Some(filename.to_string())
-        } else {
-            None
-        },
-    );
-    visitor.visit_program(&mut program);
-
-    let result = Codegen::new().build(&program);
-
-    // Parse the output code to extract class name assignments
-    // Format: const styleName = "className" or const styleName = "className1 className2"
-    let mut class_map = std::collections::HashMap::new();
-    for line in result.code.lines() {
-        let line = line.trim();
-        if line.starts_with("const ") || line.starts_with("export const ") {
-            // Parse: [export] const name = "value"
-            let after_const = if line.starts_with("export ") {
-                line.strip_prefix("export const ").unwrap_or(line)
+        Ok(std::collections::HashMap::new())
+    } else {
+        let mut visitor = DevupVisitor::new(
+            &allocator,
+            filename,
+            &option.package,
+            css_files,
+            if !option.single_css {
+                Some(filename.to_string())
             } else {
-                line.strip_prefix("const ").unwrap_or(line)
-            };
+                None
+            },
+        );
+        visitor.visit_program(&mut program);
 
-            if let Some((name, rest)) = after_const.split_once(" = ") {
-                // Extract value from "value" or "value";
-                let value = rest
-                    .trim_start_matches('"')
-                    .trim_end_matches(';')
-                    .trim_end_matches('"');
+        let result = Codegen::new().build(&program);
 
-                if style_names.contains(name) {
-                    // For multi-class values like "a b", take the first class
-                    let first_class = value.split_whitespace().next().unwrap_or(value);
-                    class_map.insert(name.to_string(), first_class.to_string());
+        // Parse the output code to extract class name assignments
+        // Format: const styleName = "className" or const styleName = "className1 className2"
+        let mut class_map = std::collections::HashMap::new();
+        for line in result.code.lines() {
+            let line = line.trim();
+            if line.starts_with("const ") || line.starts_with("export const ") {
+                // Parse: [export] const name = "value"
+                let after_const = if line.starts_with("export ") {
+                    line.strip_prefix("export const ").unwrap_or(line)
+                } else {
+                    line.strip_prefix("const ").unwrap_or(line)
+                };
+
+                if let Some((name, rest)) = after_const.split_once(" = ") {
+                    // Extract value from "value" or "value";
+                    let value = rest
+                        .trim_start_matches('"')
+                        .trim_end_matches(';')
+                        .trim_end_matches('"');
+
+                    if style_names.contains(name) {
+                        // For multi-class values like "a b", take the first class
+                        let first_class = value.split_whitespace().next().unwrap_or(value);
+                        class_map.insert(name.to_string(), first_class.to_string());
+                    }
                 }
             }
         }
+        Ok(class_map)
     }
-
-    Ok(class_map)
 }
 
 /// Check if the code has an import from the specified package
