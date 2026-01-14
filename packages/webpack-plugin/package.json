@@ -18,7 +18,7 @@
     "webpack"
   ],
   "type": "module",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "scripts": {
     "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.cjs --format cjs --packages external && bun build --target node src/loader.ts --production --env=disable --outfile dist/loader.mjs --format esm --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.cjs --format cjs --packages external && bun build --target node src/css-loader.ts --production --env=disable --outfile dist/css-loader.mjs --format esm --packages external"
   },

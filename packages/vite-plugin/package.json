@@ -18,7 +18,7 @@
     "vite"
   ],
   "type": "module",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
