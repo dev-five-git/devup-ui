@@ -266,9 +266,23 @@ fn get_selector_order(selector: &str) -> u8 {
         selector.to_string()
     };
 
-    *SELECTOR_ORDER_MAP
-        .get(&t)
-        .unwrap_or(if t.starts_with("&") { &0 } else { &99 })
+    // First, try to find the order in the map (for regular selectors like &:hover)
+    if let Some(order) = SELECTOR_ORDER_MAP.get(&t) {
+        return *order;
+    }
+
+    // For group selectors like "*[role=group]:hover &", the pseudo-selector is before &
+    // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
+    if selector.ends_with(" &") {
+        let before_ampersand = selector.strip_suffix(" &").unwrap_or(selector);
+        for (pseudo, order) in SELECTOR_ORDER_MAP.iter() {
+            if before_ampersand.ends_with(pseudo) {
+                return *order;
+            }
+        }
+    }
+
+    if t.starts_with("&") { 0 } else { 99 }
 }
 
 #[cfg(test)]
@@ -442,6 +456,27 @@ mod tests {
         StyleSelector::Global("div:".to_string(), "file2.rs".to_string()),
         std::cmp::Ordering::Greater
     )]
+    // Group selector ordering tests - _groupHover should come before _groupActive
+    #[case(
+        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        StyleSelector::Selector("*[role=group]:active &".to_string()),
+        std::cmp::Ordering::Less
+    )]
+    #[case(
+        StyleSelector::Selector("*[role=group]:focus-visible &".to_string()),
+        StyleSelector::Selector("*[role=group]:focus &".to_string()),
+        std::cmp::Ordering::Less
+    )]
+    #[case(
+        StyleSelector::Selector("*[role=group]:active &".to_string()),
+        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        std::cmp::Ordering::Greater
+    )]
+    #[case(
+        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        std::cmp::Ordering::Equal
+    )]
     fn test_style_selector_ord(
         #[case] a: StyleSelector,
         #[case] b: StyleSelector,
@@ -467,6 +502,14 @@ mod tests {
     #[case(":root[data-theme=dark] &:selected", 4)]
     #[case(":root[data-theme=dark] &:disabled", 5)]
     #[case(":root[data-theme=dark] &:not-exist", 99)]
+    // Group selectors - pseudo-selector is before &
+    #[case("*[role=group]:hover &", 0)]
+    #[case("*[role=group]:focus-visible &", 1)]
+    #[case("*[role=group]:focus &", 2)]
+    #[case("*[role=group]:active &", 3)]
+    #[case("*[role=group]:selected &", 4)]
+    #[case("*[role=group]:disabled &", 5)]
+    #[case("*[role=group]:not-exist &", 99)]
     fn test_get_selector_order(#[case] selector: &str, #[case] expected: u8) {
         assert_eq!(get_selector_order(selector), expected);
     }
