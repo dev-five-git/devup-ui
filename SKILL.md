@@ -36,7 +36,8 @@ All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Can
 |-------|------|-------|------|
 | `bg` | background | `m`, `mt`, `mr`, `mb`, `ml`, `mx`, `my` | margin-* |
 | `p`, `pt`, `pr`, `pb`, `pl`, `px`, `py` | padding-* | `w`, `h` | width, height |
-| `minW`, `maxW`, `minH`, `maxH` | min/max width/height | `gap` | gap |
+| `minW`, `maxW`, `minH`, `maxH` | min/max width/height | `boxSize` | width + height (same value) |
+| `gap` | gap | | |
 
 ### Spacing Scale (× 4 = px)
 
@@ -82,6 +83,22 @@ All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Can
 
 // Conditional -> preserved
 <Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
+```
+
+### Dynamic Values with Custom Components
+
+`css()` only accepts **static values** (extracted at build time). For dynamic values on custom components, use `<Box as={Component}>`:
+
+```tsx
+// WRONG - css() cannot handle dynamic values
+const MyComponent = ({ width }) => (
+  <CustomComponent className={css({ w: width })} />  // ERROR: width is dynamic!
+);
+
+// CORRECT - use Box with `as` prop for dynamic values
+const MyComponent = ({ width }) => (
+  <Box as={CustomComponent} w={width} />  // Works: generates CSS variable
+);
 ```
 
 ## Styling APIs
@@ -220,7 +237,7 @@ const sizeStyles = { lg: { h: '48px' }, md: { h: '40px' } }
 |-------|-------|-----|
 | `<Box style={{ color: "red" }}>` | `<Box color="red">` | style prop bypasses extraction |
 | `<Box {...css({...})} />` | `<Box className={css({...})} />` | css() returns string, not object |
-| `css({ bg: variable })` | `<Box bg={variable}>` | css()/globalCss() only accept static values |
+| `css({ bg: variable })` | `<Box bg={variable}>` or `<Box as={Comp} bg={variable}>` | css()/globalCss() only accept static values |
 | `$color` in external object | `var(--color)` in external object | $color only transformed in JSX props |
 | No build plugin configured | Configure plugin first | Components throw at runtime without transformation |
 | `as any` on style props | Fix types properly | Type errors indicate real issues |
