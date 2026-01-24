@@ -33,7 +33,7 @@ describe('Textarea', () => {
     const { container } = render(<Textarea error />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
-      'border-color-0-var(--error,light-dark(#D52B2E,#FF5B5E))--1',
+      'border-color-0-var(--error,light-dark(#D52B2E,#FF5B5E))-_a__lb_aria-invalid_eq__dq_true_dq__rb_-1',
     )
   })
 

@@ -54,12 +54,9 @@ export function Textarea({
           opacity: 0.5,
         }}
         _focus={{
-          borderColor: error
-            ? 'var(--error, light-dark(#D52B2E, #FF5B5E))'
-            : 'var(--primary, light-dark(#674DC7, #8163E1))',
-          boxShadow: error
-            ? '0 0 0 3px light-dark(rgba(213, 43, 46, 0.2), rgba(255, 91, 94, 0.4))'
-            : '0 0 0 3px light-dark(rgba(103, 77, 199, 0.15), rgba(129, 99, 225, 0.25))',
+          borderColor: 'var(--primary, light-dark(#674DC7, #8163E1))',
+          boxShadow:
+            '0 0 0 3px var(--focusRing, light-dark(rgba(103, 77, 199, 0.15), rgba(129, 99, 225, 0.25)))',
           outline: 'none',
         }}
         _hover={
@@ -74,11 +71,7 @@ export function Textarea({
         aria-label="textarea"
         as="textarea"
         bg="var(--background, light-dark(#FFFFFF, #2E2E2E))"
-        borderColor={
-          error
-            ? 'var(--error, light-dark(#D52B2E, #FF5B5E))'
-            : 'var(--border, light-dark(#E4E4E4, #434343))'
-        }
+        borderColor="var(--border, light-dark(#E4E4E4, #434343))"
         borderRadius="8px"
         borderStyle="solid"
         borderWidth="1px"
@@ -90,6 +83,16 @@ export function Textarea({
         minH="80px"
         p="12px"
         rows={rows}
+        selectors={{
+          '&[aria-invalid="true"]': {
+            borderColor: 'var(--error, light-dark(#D52B2E, #FF5B5E))',
+          },
+          '&[aria-invalid="true"]:focus': {
+            borderColor: 'var(--error, light-dark(#D52B2E, #FF5B5E))',
+            boxShadow:
+              '0 0 0 3px var(--focusRing, light-dark(rgba(213, 43, 46, 0.2), rgba(255, 91, 94, 0.4)))',
+          },
+        }}
         styleOrder={1}
         styleVars={{
           primary: colors?.primary,
@@ -108,11 +111,14 @@ export function Textarea({
       {error && errorMessage && (
         <Text
           aria-label="error-message"
+          bottom="-8px"
           className={classNames?.errorMessage}
           color="var(--error, light-dark(#D52B2E, #FF5B5E))"
           fontSize="12px"
-          mt="4px"
+          left="0"
+          pos="absolute"
           styleOrder={1}
+          transform="translateY(100%)"
         >
           {errorMessage}
         </Text>
