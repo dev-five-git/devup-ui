@@ -6,6 +6,7 @@ describe('export', () => {
     expect({ ...index }).toEqual({
       Button: expect.any(Function),
       Input: expect.any(Function),
+      Textarea: expect.any(Function),
       Stepper: expect.any(Function),
       Select: expect.any(Function),
       Radio: expect.any(Function),
