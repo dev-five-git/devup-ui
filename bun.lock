@@ -347,11 +347,11 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.56",
+      "version": "1.0.59",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -366,7 +366,7 @@
     },
     "packages/components": {
       "name": "@devup-ui/components",
-      "version": "0.1.39",
+      "version": "0.1.40",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
@@ -411,7 +411,7 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.67",
+      "version": "1.0.68",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -431,14 +431,14 @@
     },
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "devDependencies": {
         "typescript": "^5.9.3",
       },
     },
     "packages/react": {
       "name": "@devup-ui/react",
-      "version": "1.0.31",
+      "version": "1.0.32",
       "dependencies": {
         "csstype-extra": "latest",
         "react": "^19.2",
@@ -471,7 +471,7 @@
     },
     "packages/rsbuild-plugin": {
       "name": "@devup-ui/rsbuild-plugin",
-      "version": "1.0.49",
+      "version": "1.0.50",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -487,7 +487,7 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.54",
+      "version": "1.0.55",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -503,7 +503,7 @@
     },
     "packages/webpack-plugin": {
       "name": "@devup-ui/webpack-plugin",
-      "version": "1.0.54",
+      "version": "1.0.55",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -3086,7 +3086,7 @@
 
     "@babel/preset-env/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@devup-ui/bun-plugin/@types/bun": ["@types/bun@1.3.6", "", { "dependencies": { "bun-types": "1.3.6" } }, "sha512-uWCv6FO/8LcpREhenN1d1b6fcspAB+cefwD7uti8C8VffIv0Um08TKMn98FynpTiU38+y2dUO55T11NgDt8VAA=="],
+    "@devup-ui/bun-plugin/@types/bun": ["@types/bun@1.3.7", "", { "dependencies": { "bun-types": "1.3.7" } }, "sha512-lmNuMda+Z9b7tmhA0tohwy8ZWFSnmQm1UDWXtH5r9F7wZCfkeO3Jx7wKQ1EOiKq43yHts7ky6r8SDJQWRNupkA=="],
 
     "@emotion/babel-plugin/convert-source-map": ["convert-source-map@1.9.0", "", {}, "sha512-ASFBup0Mz1uyiIjANan1jzLQami9z1PoYSZCiiYW2FczPbenXc45FZdBZLzOT+r6+iciuEModtmCti+hjaAk0A=="],
 
@@ -3318,7 +3318,7 @@
 
     "yargs/find-up": ["find-up@4.1.0", "", { "dependencies": { "locate-path": "^5.0.0", "path-exists": "^4.0.0" } }, "sha512-PpOwAdQ/YlXQ2vj8a3h8IipDuYRi3wceVQQGYWxNINccq40Anw7BlsEXCMbt1Zt+OLA6Fq9suIpIWD0OsnISlw=="],
 
-    "@devup-ui/bun-plugin/@types/bun/bun-types": ["bun-types@1.3.6", "", { "dependencies": { "@types/node": "*" } }, "sha512-OlFwHcnNV99r//9v5IIOgQ9Uk37gZqrNMCcqEaExdkVq3Avwqok1bJFmvGMCkCE0FqzdY8VMOZpfpR3lwI+CsQ=="],
+    "@devup-ui/bun-plugin/@types/bun/bun-types": ["bun-types@1.3.7", "", { "dependencies": { "@types/node": "*" } }, "sha512-qyschsA03Qz+gou+apt6HNl6HnI+sJJLL4wLDke4iugsE6584CMupOtTY1n+2YC9nGVrEKUlTs99jjRLKgWnjQ=="],
 
     "@happy-dom/global-registrator/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
