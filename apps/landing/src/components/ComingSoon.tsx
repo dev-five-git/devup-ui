@@ -1,6 +1,6 @@
 import { Box, Text, VStack } from '@devup-ui/react'
 
-export const ComingSoon = () => {
+export function ComingSoon() {
   return (
     <Box
       bg="$cardBg"
