@@ -357,6 +357,7 @@ fn merge_string_expressions<'a>(
                     cooked: None,
                 },
                 tail,
+                false,
             )
         }),
         ast_builder.allocator,
@@ -426,6 +427,7 @@ pub fn convert_style_vars<'a>(
                                                 cooked: None,
                                             },
                                             false,
+                                            false,
                                         ),
                                         ast_builder.template_element(
                                             SPAN,
@@ -434,6 +436,7 @@ pub fn convert_style_vars<'a>(
                                                 cooked: None,
                                             },
                                             true,
+                                            false,
                                         ),
                                     ],
                                     ast_builder.allocator,

@@ -376,6 +376,7 @@ pub fn extract_style_from_expression<'a>(
                                         cooked: None,
                                     },
                                     false,
+                                    false,
                                 ),
                                 ast_builder.template_element(
                                     SPAN,
@@ -384,6 +385,7 @@ pub fn extract_style_from_expression<'a>(
                                         cooked: None,
                                     },
                                     true,
+                                    false,
                                 ),
                             ]),
                             ast_builder
@@ -424,6 +426,7 @@ pub fn extract_style_from_expression<'a>(
                                                     cooked: None,
                                                 },
                                                 false,
+                                                false,
                                             ),
                                             ast_builder.template_element(
                                                 SPAN,
@@ -432,6 +435,7 @@ pub fn extract_style_from_expression<'a>(
                                                     cooked: None,
                                                 },
                                                 true,
+                                                false,
                                             ),
                                         ]),
                                         ast_builder.vec_from_array([
@@ -599,20 +603,17 @@ pub fn extract_style_from_expression<'a>(
                         && let Expression::ArrayExpression(array) = &o.value
                     {
                         let arr = array.elements.iter();
-                        Some(
-                            arr.filter_map(|e| {
-                                if let Some(e) = e.as_expression()
-                                    && let Some(s) = get_string_by_literal_expression(e)
-                                    && !s.is_empty()
-                                {
-                                    Some(s)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<String>>()
-                            .join(","),
-                        )
+                        let arr = arr.filter_map(|e| {
+                            if let Some(e) = e.as_expression()
+                                && let Some(s) = get_string_by_literal_expression(e)
+                                && !s.is_empty()
+                            {
+                                Some(s)
+                            } else {
+                                None
+                            }
+                        });
+                        Some(arr.collect::<Vec<String>>().join(","))
                     } else {
                         None
                     }

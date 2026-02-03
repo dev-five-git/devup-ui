@@ -1,22 +1,14 @@
 'use client'
 import type { DevupTheme } from '../types/theme'
+import { createServerThemeStore } from './theme-store-server'
 
 type Theme = keyof DevupTheme | null
 type StoreChangeEvent = (newTheme: Theme) => void
 
-const initTheme = null
-
-export function createThemeStore() {
-  if (typeof window === 'undefined')
-    return {
-      get: () => initTheme,
-      set: () => {},
-      subscribe: () => () => {},
-    }
-
+function createClientThemeStore() {
   const el = document.documentElement
   const subscribers: Set<StoreChangeEvent> = new Set()
-  let theme: Theme = initTheme
+  let theme: Theme = null
   const get = () => theme
   const set = (newTheme: Theme) => {
     theme = newTheme
@@ -47,3 +39,8 @@ export function createThemeStore() {
     subscribe,
   }
 }
+
+export const createThemeStore: typeof createClientThemeStore =
+  typeof window === 'undefined'
+    ? (createServerThemeStore as unknown as typeof createClientThemeStore)
+    : createClientThemeStore

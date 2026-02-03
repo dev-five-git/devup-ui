@@ -23,6 +23,7 @@ afterAll(() => {
 })
 
 describe('themeStore', () => {
+  // Loader.registry.delete(require.resolve('../theme-store'))
   beforeEach(() => {
     document.documentElement.removeAttribute('data-theme')
   })

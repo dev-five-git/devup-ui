@@ -2398,6 +2398,204 @@ export const lightTheme = createTheme(vars, {
     }
 
     #[test]
+    fn test_transform_contract_to_vars_with_symbol_property() {
+        // Test transform_contract_to_vars with Symbol property (covers line 180)
+        use boa_engine::{
+            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
+        };
+
+        let mut context = Context::default();
+
+        // Create an object with both string and symbol properties
+        let obj = ObjectInitializer::new(&mut context).build();
+        let _ = obj.set(
+            js_string!("normalProp"),
+            JsValue::null(),
+            false,
+            &mut context,
+        );
+
+        // Add a Symbol property
+        let symbol = JsSymbol::new(Some(js_string!("testSymbol"))).unwrap();
+        let _ = obj.define_property_or_throw(
+            PropertyKey::Symbol(symbol),
+            boa_engine::property::PropertyDescriptor::builder()
+                .value(JsValue::from(js_string!("symbolValue")))
+                .writable(true)
+                .enumerable(true)
+                .configurable(true)
+                .build(),
+            &mut context,
+        );
+
+        let value = JsValue::from(obj);
+        let result = super::transform_contract_to_vars(&value, &mut context, &[]);
+
+        // Should succeed and only process normalProp (Symbol should be skipped)
+        assert!(result.as_object().is_some());
+        let result_obj = result.as_object().unwrap();
+        // normalProp should be transformed to var(--normalProp)
+        let normal_prop = result_obj
+            .get(js_string!("normalProp"), &mut context)
+            .unwrap();
+        assert!(normal_prop.as_string().is_some());
+    }
+
+    #[test]
+    fn test_transform_theme_to_vars_with_symbol_property() {
+        // Test transform_theme_to_vars with Symbol property (covers line 256)
+        use boa_engine::{
+            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
+        };
+
+        let mut context = Context::default();
+
+        // Create an object with both string and symbol properties
+        let obj = ObjectInitializer::new(&mut context).build();
+        let _ = obj.set(
+            js_string!("color"),
+            JsValue::from(js_string!("red")),
+            false,
+            &mut context,
+        );
+
+        // Add a Symbol property
+        let symbol = JsSymbol::new(Some(js_string!("hiddenSymbol"))).unwrap();
+        let _ = obj.define_property_or_throw(
+            PropertyKey::Symbol(symbol),
+            boa_engine::property::PropertyDescriptor::builder()
+                .value(JsValue::from(js_string!("hidden")))
+                .writable(true)
+                .enumerable(true)
+                .configurable(true)
+                .build(),
+            &mut context,
+        );
+
+        let value = JsValue::from(obj);
+        let mut css_vars = Vec::new();
+        let mut counter = 0usize;
+        let result = super::transform_theme_to_vars(
+            &value,
+            &mut context,
+            "__test__",
+            &mut css_vars,
+            &mut counter,
+            &[],
+        );
+
+        // Should succeed - Symbol property should be skipped
+        assert!(result.as_object().is_some());
+        // Only the string property should generate a CSS var
+        assert_eq!(css_vars.len(), 1);
+        assert!(css_vars[0].0.contains("color"));
+    }
+
+    #[test]
+    fn test_extract_theme_vars_with_symbol_property() {
+        // Test extract_theme_vars with Symbol property (covers line 211)
+        use boa_engine::{
+            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
+        };
+
+        let mut context = Context::default();
+
+        // Create contract object with symbol
+        let contract_obj = ObjectInitializer::new(&mut context).build();
+        let _ = contract_obj.set(
+            js_string!("primary"),
+            JsValue::from(js_string!("var(--primary)")),
+            false,
+            &mut context,
+        );
+        let symbol = JsSymbol::new(Some(js_string!("contractSymbol"))).unwrap();
+        let _ = contract_obj.define_property_or_throw(
+            PropertyKey::Symbol(symbol),
+            boa_engine::property::PropertyDescriptor::builder()
+                .value(JsValue::null())
+                .writable(true)
+                .enumerable(true)
+                .configurable(true)
+                .build(),
+            &mut context,
+        );
+
+        // Create values object
+        let values_obj = ObjectInitializer::new(&mut context).build();
+        let _ = values_obj.set(
+            js_string!("primary"),
+            JsValue::from(js_string!("blue")),
+            false,
+            &mut context,
+        );
+
+        let contract = JsValue::from(contract_obj);
+        let values = JsValue::from(values_obj);
+        let mut css_vars = Vec::new();
+
+        super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
+
+        // Should extract only the string property, symbol should be skipped
+        assert_eq!(css_vars.len(), 1);
+        assert_eq!(css_vars[0], ("--primary".to_string(), "blue".to_string()));
+    }
+
+    #[test]
+    fn test_parse_style_variants_with_symbol_property() {
+        // Test parse_style_variants with Symbol property (covers line 1425)
+        use boa_engine::{
+            Context, JsSymbol, JsValue, js_string, object::ObjectInitializer, property::PropertyKey,
+        };
+
+        let mut context = Context::default();
+
+        // Create variants object with both string and symbol properties
+        let variants_obj = ObjectInitializer::new(&mut context).build();
+
+        // Add a normal variant
+        let style_obj = ObjectInitializer::new(&mut context).build();
+        let _ = style_obj.set(
+            js_string!("color"),
+            JsValue::from(js_string!("red")),
+            false,
+            &mut context,
+        );
+        let _ = variants_obj.set(
+            js_string!("primary"),
+            JsValue::from(style_obj),
+            false,
+            &mut context,
+        );
+
+        // Add a Symbol property
+        let symbol = JsSymbol::new(Some(js_string!("variantSymbol"))).unwrap();
+        let hidden_style = ObjectInitializer::new(&mut context).build();
+        let _ = hidden_style.set(
+            js_string!("display"),
+            JsValue::from(js_string!("none")),
+            false,
+            &mut context,
+        );
+        let _ = variants_obj.define_property_or_throw(
+            PropertyKey::Symbol(symbol),
+            boa_engine::property::PropertyDescriptor::builder()
+                .value(JsValue::from(hidden_style))
+                .writable(true)
+                .enumerable(true)
+                .configurable(true)
+                .build(),
+            &mut context,
+        );
+
+        let value = JsValue::from(variants_obj);
+        let result = super::parse_style_variants(&value, &mut context);
+
+        // Should only contain the string-keyed variant, symbol should be skipped
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key("primary"));
+    }
+
+    #[test]
     fn test_extract_theme_vars_non_matching() {
         // Test extract_theme_vars with non-matching structure
         let mut context = boa_engine::Context::default();
