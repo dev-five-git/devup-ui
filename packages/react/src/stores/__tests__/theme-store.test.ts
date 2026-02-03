@@ -1,22 +1,11 @@
 // Import from bun-test-env-dom to enable DOM environment
 import 'bun-test-env-dom'
 
-import { beforeAll } from 'bun:test'
-import { afterAll } from 'bun:test'
 import { describe, expect, it } from 'bun:test'
 
 import { createServerThemeStore } from '../theme-store'
 
 describe('themeStore ssr', () => {
-  const originalWindow = globalThis.window
-  beforeAll(() => {
-    globalThis.window = undefined
-  })
-
-  afterAll(() => {
-    globalThis.window = originalWindow
-  })
-
   it('should filter mutations by type and target', async () => {
     // const { createThemeStore } = await import('../theme-store')
     const themeStore = createServerThemeStore()
