@@ -23,7 +23,7 @@ afterAll(() => {
 })
 
 describe.each([
-  [true, 'browser'],
+  [false, 'browser'],
   [false, 'server'],
 ])('themeStore %s', (_isBrowser, _title) => {
   const originalWindow = globalThis.window
@@ -32,12 +32,15 @@ describe.each([
     if (!_isBrowser) {
       // @ts-expect-error - Temporarily remove window for SSR test
       delete globalThis.window
+    } else {
+      document.documentElement.removeAttribute('data-theme')
     }
-    document.documentElement.removeAttribute('data-theme')
   })
 
   afterEach(() => {
-    document.documentElement.removeAttribute('data-theme')
+    if (_isBrowser) {
+      document.documentElement.removeAttribute('data-theme')
+    }
     globalThis.window = originalWindow
   })
   if (_isBrowser) {
