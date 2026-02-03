@@ -13238,13 +13238,7 @@ export const Card = () => (
   </Box>
 )
 "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));
@@ -13262,13 +13256,7 @@ export const Card = () => (
                 r#"import {Box} from '@devup-ui/core'
 <Box className="p-2 sm:p-4 md:p-6 lg:p-8 xl:p-10 2xl:p-12 hover:bg-blue-500 focus:ring-2 active:scale-95 disabled:opacity-50 dark:bg-gray-900 dark:hover:bg-gray-800" />
 "#,
-                ExtractOption {
-                    package: "@devup-ui/core".to_string(),
-                    css_dir: "@devup-ui/core".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                }
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
         ));

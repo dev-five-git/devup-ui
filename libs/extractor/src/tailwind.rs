@@ -2202,24 +2202,9 @@ fn parse_sizing_utility(class: &str) -> Option<(String, String)> {
 fn parse_typography_utility(class: &str) -> Option<(String, String)> {
     // Font family
     match class {
-        "font-sans" => {
-            return Some((
-                "font-family".to_string(),
-                "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'".to_string(),
-            ))
-        }
-        "font-serif" => {
-            return Some((
-                "font-family".to_string(),
-                "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif".to_string(),
-            ))
-        }
-        "font-mono" => {
-            return Some((
-                "font-family".to_string(),
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace".to_string(),
-            ))
-        }
+        "font-sans" => return Some(("font-family".to_string(), "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'".to_string())),
+        "font-serif" => return Some(("font-family".to_string(), "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif".to_string())),
+        "font-mono" => return Some(("font-family".to_string(), "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace".to_string())),
         _ => {}
     }
 
@@ -2853,14 +2838,8 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
     if let Some(rest) = class.strip_prefix("drop-shadow-") {
         let value = match rest {
             "sm" => "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))".to_string(),
-            "md" => {
-                "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))"
-                    .to_string()
-            }
-            "lg" => {
-                "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))"
-                    .to_string()
-            }
+            "md" => "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))".to_string(),
+            "lg" => "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))".to_string(),
             "xl" => "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))".to_string(),
             "2xl" => "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))".to_string(),
             "none" => "drop-shadow(0 0 #0000)".to_string(),
@@ -3032,32 +3011,13 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
 fn parse_transition_utility(class: &str) -> Option<(String, String)> {
     // Transition
     match class {
-        "transition-none" => {
-            return Some(("transition-property".to_string(), "none".to_string()))
-        }
+        "transition-none" => return Some(("transition-property".to_string(), "none".to_string())),
         "transition-all" => return Some(("transition-property".to_string(), "all".to_string())),
-        "transition" => {
-            return Some((
-                "transition-property".to_string(),
-                "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter".to_string(),
-            ))
-        }
-        "transition-colors" => {
-            return Some((
-                "transition-property".to_string(),
-                "color, background-color, border-color, text-decoration-color, fill, stroke"
-                    .to_string(),
-            ))
-        }
-        "transition-opacity" => {
-            return Some(("transition-property".to_string(), "opacity".to_string()))
-        }
-        "transition-shadow" => {
-            return Some(("transition-property".to_string(), "box-shadow".to_string()))
-        }
-        "transition-transform" => {
-            return Some(("transition-property".to_string(), "transform".to_string()))
-        }
+        "transition" => return Some(("transition-property".to_string(), "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter".to_string())),
+        "transition-colors" => return Some(("transition-property".to_string(), "color, background-color, border-color, text-decoration-color, fill, stroke".to_string())),
+        "transition-opacity" => return Some(("transition-property".to_string(), "opacity".to_string())),
+        "transition-shadow" => return Some(("transition-property".to_string(), "box-shadow".to_string())),
+        "transition-transform" => return Some(("transition-property".to_string(), "transform".to_string())),
         _ => {}
     }
 
@@ -3972,5 +3932,1252 @@ mod tests {
         assert!(is_likely_tailwind_class("absolute"));
         assert!(is_likely_tailwind_class("truncate"));
         assert!(is_likely_tailwind_class("sr-only"));
+    }
+
+    // ==================== WAVE 1: TailwindVariant Tests ====================
+
+    // Wave 1.1: Pseudo-class variant selectors (lines 104-131)
+    #[rstest]
+    #[case(TailwindVariant::FocusVisible, "&:focus-visible")]
+    #[case(TailwindVariant::FocusWithin, "&:focus-within")]
+    #[case(TailwindVariant::Visited, "&:visited")]
+    #[case(TailwindVariant::Enabled, "&:enabled")]
+    #[case(TailwindVariant::Checked, "&:checked")]
+    #[case(TailwindVariant::Indeterminate, "&:indeterminate")]
+    #[case(TailwindVariant::Default, "&:default")]
+    #[case(TailwindVariant::Required, "&:required")]
+    #[case(TailwindVariant::Valid, "&:valid")]
+    #[case(TailwindVariant::Invalid, "&:invalid")]
+    #[case(TailwindVariant::InRange, "&:in-range")]
+    #[case(TailwindVariant::OutOfRange, "&:out-of-range")]
+    #[case(TailwindVariant::PlaceholderShown, "&:placeholder-shown")]
+    #[case(TailwindVariant::Autofill, "&:autofill")]
+    #[case(TailwindVariant::ReadOnly, "&:read-only")]
+    #[case(TailwindVariant::FirstChild, "&:first-child")]
+    #[case(TailwindVariant::LastChild, "&:last-child")]
+    #[case(TailwindVariant::OnlyChild, "&:only-child")]
+    #[case(TailwindVariant::OddChild, "&:nth-child(odd)")]
+    #[case(TailwindVariant::EvenChild, "&:nth-child(even)")]
+    #[case(TailwindVariant::FirstOfType, "&:first-of-type")]
+    #[case(TailwindVariant::LastOfType, "&:last-of-type")]
+    #[case(TailwindVariant::OnlyOfType, "&:only-of-type")]
+    #[case(TailwindVariant::Empty, "&:empty")]
+    #[case(TailwindVariant::Target, "&:target")]
+    #[case(TailwindVariant::Open, "&[open]")]
+    fn test_variant_to_selector_pseudo_classes(
+        #[case] variant: TailwindVariant,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            variant.to_selector(),
+            StyleSelector::Selector(expected.to_string())
+        );
+    }
+
+    // Wave 1.2: Pseudo-element variant selectors (lines 133-141)
+    #[rstest]
+    #[case(TailwindVariant::Placeholder, "&::placeholder")]
+    #[case(TailwindVariant::Before, "&::before")]
+    #[case(TailwindVariant::After, "&::after")]
+    #[case(TailwindVariant::Selection, "&::selection")]
+    #[case(TailwindVariant::Marker, "&::marker")]
+    #[case(TailwindVariant::FirstLetter, "&::first-letter")]
+    #[case(TailwindVariant::FirstLine, "&::first-line")]
+    #[case(TailwindVariant::Backdrop, "&::backdrop")]
+    #[case(TailwindVariant::File, "&::file-selector-button")]
+    fn test_variant_to_selector_pseudo_elements(
+        #[case] variant: TailwindVariant,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            variant.to_selector(),
+            StyleSelector::Selector(expected.to_string())
+        );
+    }
+
+    // Wave 1.3: Group/Peer variant selectors (lines 143-151)
+    #[rstest]
+    #[case(TailwindVariant::GroupFocus, "*[role=group]:focus &")]
+    #[case(TailwindVariant::GroupActive, "*[role=group]:active &")]
+    #[case(TailwindVariant::GroupDisabled, "*[role=group]:disabled &")]
+    #[case(TailwindVariant::PeerFocus, ".peer:focus ~ &")]
+    #[case(TailwindVariant::PeerActive, ".peer:active ~ &")]
+    #[case(TailwindVariant::PeerDisabled, ".peer:disabled ~ &")]
+    #[case(TailwindVariant::PeerChecked, ".peer:checked ~ &")]
+    #[case(TailwindVariant::PeerInvalid, ".peer:invalid ~ &")]
+    fn test_variant_to_selector_group_peer(
+        #[case] variant: TailwindVariant,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            variant.to_selector(),
+            StyleSelector::Selector(expected.to_string())
+        );
+    }
+
+    // Wave 1.4: Media variant selectors (lines 153-162)
+    #[rstest]
+    #[case(TailwindVariant::Screen, "screen")]
+    #[case(TailwindVariant::Portrait, "(orientation: portrait)")]
+    #[case(TailwindVariant::Landscape, "(orientation: landscape)")]
+    #[case(TailwindVariant::MotionReduce, "(prefers-reduced-motion: reduce)")]
+    #[case(TailwindVariant::MotionSafe, "(prefers-reduced-motion: no-preference)")]
+    #[case(TailwindVariant::ContrastMore, "(prefers-contrast: more)")]
+    #[case(TailwindVariant::ContrastLess, "(prefers-contrast: less)")]
+    #[case(TailwindVariant::ForcedColors, "(forced-colors: active)")]
+    fn test_variant_to_selector_media_queries(
+        #[case] variant: TailwindVariant,
+        #[case] expected_query: &str,
+    ) {
+        if let StyleSelector::At { kind, query, .. } = variant.to_selector() {
+            assert_eq!(kind, css::style_selector::AtRuleKind::Media);
+            assert_eq!(query, expected_query);
+        } else {
+            panic!("Expected At selector for {:?}", variant);
+        }
+    }
+
+    // Wave 1.4 continued: Direction variants (lines 161-162)
+    #[rstest]
+    #[case(TailwindVariant::Rtl, "[dir=rtl] &")]
+    #[case(TailwindVariant::Ltr, "[dir=ltr] &")]
+    fn test_variant_to_selector_direction(
+        #[case] variant: TailwindVariant,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            variant.to_selector(),
+            StyleSelector::Selector(expected.to_string())
+        );
+    }
+
+    // Wave 1.4: from_prefix tests for untested variants (lines 220-230)
+    #[rstest]
+    #[case("screen", TailwindVariant::Screen)]
+    #[case("portrait", TailwindVariant::Portrait)]
+    #[case("landscape", TailwindVariant::Landscape)]
+    #[case("motion-reduce", TailwindVariant::MotionReduce)]
+    #[case("motion-safe", TailwindVariant::MotionSafe)]
+    #[case("contrast-more", TailwindVariant::ContrastMore)]
+    #[case("contrast-less", TailwindVariant::ContrastLess)]
+    #[case("forced-colors", TailwindVariant::ForcedColors)]
+    #[case("rtl", TailwindVariant::Rtl)]
+    #[case("ltr", TailwindVariant::Ltr)]
+    fn test_from_prefix_media_variants(#[case] prefix: &str, #[case] expected: TailwindVariant) {
+        assert_eq!(TailwindVariant::from_prefix(prefix), Some(expected));
+    }
+
+    // ==================== WAVE 2: Edge Cases & Arbitrary Values ====================
+
+    // Wave 2.1: combine_selectors with At-rule (lines 292-295)
+    #[test]
+    fn test_combine_selectors_at_rule_with_hover() {
+        let parsed = parse_single_class("print:hover:bg-blue-500").expect("Should parse");
+        assert_eq!(parsed.variants.len(), 2);
+        assert_eq!(parsed.variants[0], TailwindVariant::Print);
+        assert_eq!(parsed.variants[1], TailwindVariant::Hover);
+
+        let static_style = parsed.to_static_style();
+        let selector = static_style.selector().expect("Should have selector");
+        // Should combine into At rule with nested hover selector
+        if let StyleSelector::At {
+            kind,
+            query,
+            selector: nested,
+        } = selector
+        {
+            assert_eq!(*kind, css::style_selector::AtRuleKind::Media);
+            assert_eq!(query, "print");
+            assert!(nested.is_some());
+        } else {
+            panic!("Expected At selector");
+        }
+    }
+
+    // Wave 2.2: is_valid_tailwind_value edge cases (lines 816, 825, 859, 864-866)
+    #[test]
+    fn test_has_tailwind_classes_arbitrary_syntax() {
+        // Line 816: arbitrary value syntax detection
+        assert!(has_tailwind_classes("w-[100px]"));
+        assert!(has_tailwind_classes("bg-[#ff0000]"));
+        assert!(has_tailwind_classes("p-[calc(100%-20px)]"));
+    }
+
+    #[test]
+    fn test_is_valid_tailwind_value_empty() {
+        // Line 825: empty value should return false
+        assert!(!is_valid_tailwind_value(""));
+    }
+
+    #[test]
+    fn test_is_valid_tailwind_value_size_keywords() {
+        // Line 859: size keywords
+        assert!(is_valid_tailwind_value("xs"));
+        assert!(is_valid_tailwind_value("sm"));
+        assert!(is_valid_tailwind_value("md"));
+        assert!(is_valid_tailwind_value("lg"));
+        assert!(is_valid_tailwind_value("xl"));
+        assert!(is_valid_tailwind_value("2xl"));
+        assert!(is_valid_tailwind_value("3xl"));
+    }
+
+    #[test]
+    fn test_is_valid_tailwind_value_fractions() {
+        // Lines 864-866: fraction values
+        assert!(is_valid_tailwind_value("1/2"));
+        assert!(is_valid_tailwind_value("1/3"));
+        assert!(is_valid_tailwind_value("2/3"));
+        assert!(is_valid_tailwind_value("1/4"));
+        assert!(is_valid_tailwind_value("3/4"));
+    }
+
+    // Wave 2.3: parse_arbitrary_value extended tests (lines 1057-1084)
+    #[rstest]
+    #[case("border-[#ff0000]", "border-color", "#ff0000")]
+    #[case("opacity-[0.5]", "opacity", "0.5")]
+    #[case("z-[999]", "z-index", "999")]
+    #[case("font-[Arial]", "font-family", "Arial")]
+    #[case("tracking-[0.2em]", "letter-spacing", "0.2em")]
+    #[case("leading-[2]", "line-height", "2")]
+    #[case("duration-[500ms]", "transition-duration", "500ms")]
+    #[case("delay-[200ms]", "transition-delay", "200ms")]
+    #[case("aspect-[16/9]", "aspect-ratio", "16/9")]
+    #[case("columns-[3]", "columns", "3")]
+    #[case("basis-[200px]", "flex-basis", "200px")]
+    fn test_parse_arbitrary_values_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("scale-[1.5]", "transform", "scale(1.5)")]
+    #[case("rotate-[30deg]", "transform", "rotate(30deg)")]
+    #[case("translate-x-[50px]", "transform", "translateX(50px)")]
+    #[case("translate-y-[50px]", "transform", "translateY(50px)")]
+    #[case("skew-x-[10deg]", "transform", "skewX(10deg)")]
+    #[case("skew-y-[10deg]", "transform", "skewY(10deg)")]
+    fn test_parse_arbitrary_transform_values(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case(
+        "grid-cols-[200px_1fr]",
+        "grid-template-columns",
+        "repeat(200px 1fr, minmax(0, 1fr))"
+    )]
+    #[case(
+        "grid-rows-[auto_1fr]",
+        "grid-template-rows",
+        "repeat(auto 1fr, minmax(0, 1fr))"
+    )]
+    #[case("col-span-[2]", "grid-column", "span 2 / span 2")]
+    #[case("row-span-[3]", "grid-row", "span 3 / span 3")]
+    fn test_parse_arbitrary_grid_values(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("blur-[10px]", "filter", "blur(10px)")]
+    #[case("brightness-[1.2]", "filter", "brightness(1.2)")]
+    #[case("contrast-[1.5]", "filter", "contrast(1.5)")]
+    #[case("saturate-[2]", "filter", "saturate(2)")]
+    #[case("backdrop-blur-[5px]", "backdrop-filter", "blur(5px)")]
+    fn test_parse_arbitrary_filter_values(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // ==================== WAVE 3: Layout & Flex/Grid Utilities ====================
+
+    // Wave 3.1: aspect-ratio utilities (lines 1198-1204)
+    #[rstest]
+    #[case("aspect-auto", "aspect-ratio", "auto")]
+    #[case("aspect-square", "aspect-ratio", "1 / 1")]
+    #[case("aspect-video", "aspect-ratio", "16 / 9")]
+    fn test_parse_aspect_ratio_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 3.2: columns utilities (lines 1209-1226)
+    #[rstest]
+    #[case("columns-auto", "columns", "auto")]
+    #[case("columns-3xs", "columns", "16rem")]
+    #[case("columns-2xs", "columns", "18rem")]
+    #[case("columns-xs", "columns", "20rem")]
+    #[case("columns-sm", "columns", "24rem")]
+    #[case("columns-md", "columns", "28rem")]
+    #[case("columns-lg", "columns", "32rem")]
+    #[case("columns-xl", "columns", "36rem")]
+    #[case("columns-2xl", "columns", "42rem")]
+    #[case("columns-3xl", "columns", "48rem")]
+    #[case("columns-4xl", "columns", "56rem")]
+    #[case("columns-5xl", "columns", "64rem")]
+    #[case("columns-6xl", "columns", "72rem")]
+    #[case("columns-7xl", "columns", "80rem")]
+    fn test_parse_columns_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 3.3: break utilities (lines 1231-1252)
+    #[rstest]
+    #[case("break-after-auto", "break-after", "auto")]
+    #[case("break-after-avoid", "break-after", "avoid")]
+    #[case("break-after-all", "break-after", "all")]
+    #[case("break-after-avoid-page", "break-after", "avoid-page")]
+    #[case("break-after-page", "break-after", "page")]
+    #[case("break-after-left", "break-after", "left")]
+    #[case("break-after-right", "break-after", "right")]
+    #[case("break-after-column", "break-after", "column")]
+    #[case("break-before-auto", "break-before", "auto")]
+    #[case("break-before-avoid", "break-before", "avoid")]
+    #[case("break-before-all", "break-before", "all")]
+    #[case("break-before-avoid-page", "break-before", "avoid-page")]
+    #[case("break-before-page", "break-before", "page")]
+    #[case("break-before-left", "break-before", "left")]
+    #[case("break-before-right", "break-before", "right")]
+    #[case("break-before-column", "break-before", "column")]
+    #[case("break-inside-auto", "break-inside", "auto")]
+    #[case("break-inside-avoid", "break-inside", "avoid")]
+    #[case("break-inside-avoid-page", "break-inside", "avoid-page")]
+    #[case("break-inside-avoid-column", "break-inside", "avoid-column")]
+    fn test_parse_break_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 3.4: Position utilities (lines 1273-1304)
+    #[rstest]
+    #[case("top-0", "top", "0px")]
+    #[case("top-4", "top", "1rem")]
+    #[case("right-0", "right", "0px")]
+    #[case("right-4", "right", "1rem")]
+    #[case("bottom-0", "bottom", "0px")]
+    #[case("bottom-4", "bottom", "1rem")]
+    #[case("left-0", "left", "0px")]
+    #[case("left-4", "left", "1rem")]
+    #[case("inset-0", "inset", "0px")]
+    #[case("inset-4", "inset", "1rem")]
+    #[case("inset-x-0", "inset-inline", "0px")]
+    #[case("inset-x-4", "inset-inline", "1rem")]
+    #[case("inset-y-0", "inset-block", "0px")]
+    #[case("inset-y-4", "inset-block", "1rem")]
+    fn test_parse_position_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 3.5: Flex/Grid extended utilities (lines 1463-1529)
+    #[rstest]
+    #[case("basis-4", "flex-basis", "1rem")]
+    #[case("basis-8", "flex-basis", "2rem")]
+    #[case("order-1", "order", "1")]
+    #[case("order-12", "order", "12")]
+    #[case("grid-cols-1", "grid-template-columns", "repeat(1, minmax(0, 1fr))")]
+    #[case("grid-cols-12", "grid-template-columns", "repeat(12, minmax(0, 1fr))")]
+    #[case("grid-rows-1", "grid-template-rows", "repeat(1, minmax(0, 1fr))")]
+    #[case("grid-rows-6", "grid-template-rows", "repeat(6, minmax(0, 1fr))")]
+    #[case("col-start-1", "grid-column-start", "1")]
+    #[case("col-start-auto", "grid-column-start", "auto")]
+    #[case("col-end-1", "grid-column-end", "1")]
+    #[case("col-end-auto", "grid-column-end", "auto")]
+    #[case("row-start-1", "grid-row-start", "1")]
+    #[case("row-start-auto", "grid-row-start", "auto")]
+    #[case("row-end-1", "grid-row-end", "1")]
+    #[case("row-end-auto", "grid-row-end", "auto")]
+    #[case("gap-x-4", "column-gap", "1rem")]
+    #[case("gap-y-4", "row-gap", "1rem")]
+    fn test_parse_flex_grid_extended_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // ==================== WAVE 4: Spacing, Sizing & Typography ====================
+
+    // Wave 4.1: Logical spacing utilities (lines 1580-1656)
+    #[rstest]
+    #[case("ps-4", "padding-inline-start", "1rem")]
+    #[case("pe-4", "padding-inline-end", "1rem")]
+    #[case("ms-4", "margin-inline-start", "1rem")]
+    #[case("me-4", "margin-inline-end", "1rem")]
+    #[case("mr-4", "margin-right", "1rem")]
+    #[case("mb-4", "margin-bottom", "1rem")]
+    #[case("ml-4", "margin-left", "1rem")]
+    #[case("space-x-4", "column-gap", "1rem")]
+    #[case("space-y-4", "row-gap", "1rem")]
+    #[case("space-x-reverse", "--tw-space-x-reverse", "1")]
+    #[case("space-y-reverse", "--tw-space-y-reverse", "1")]
+    fn test_parse_logical_spacing_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 4.2: Sizing variants (lines 1677-1789)
+    #[rstest]
+    #[case("min-w-min", "min-width", "min-content")]
+    #[case("min-w-max", "min-width", "max-content")]
+    #[case("min-w-fit", "min-width", "fit-content")]
+    #[case("max-w-2xl", "max-width", "42rem")]
+    #[case("max-w-3xl", "max-width", "48rem")]
+    #[case("max-w-4xl", "max-width", "56rem")]
+    #[case("max-w-5xl", "max-width", "64rem")]
+    #[case("max-w-6xl", "max-width", "72rem")]
+    #[case("max-w-7xl", "max-width", "80rem")]
+    #[case("max-w-min", "max-width", "min-content")]
+    #[case("max-w-max", "max-width", "max-content")]
+    #[case("max-w-fit", "max-width", "fit-content")]
+    #[case("max-w-prose", "max-width", "65ch")]
+    #[case("max-w-screen-sm", "max-width", "640px")]
+    #[case("max-w-screen-md", "max-width", "768px")]
+    #[case("max-w-screen-lg", "max-width", "1024px")]
+    #[case("max-w-screen-xl", "max-width", "1280px")]
+    #[case("max-w-screen-2xl", "max-width", "1536px")]
+    fn test_parse_width_utilities_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("h-svh", "height", "100svh")]
+    #[case("h-lvh", "height", "100lvh")]
+    #[case("h-dvh", "height", "100dvh")]
+    #[case("min-h-svh", "min-height", "100svh")]
+    #[case("min-h-lvh", "min-height", "100lvh")]
+    #[case("min-h-dvh", "min-height", "100dvh")]
+    #[case("min-h-min", "min-height", "min-content")]
+    #[case("min-h-max", "min-height", "max-content")]
+    #[case("min-h-fit", "min-height", "fit-content")]
+    #[case("max-h-svh", "max-height", "100svh")]
+    #[case("max-h-lvh", "max-height", "100lvh")]
+    #[case("max-h-dvh", "max-height", "100dvh")]
+    #[case("max-h-min", "max-height", "min-content")]
+    #[case("max-h-max", "max-height", "max-content")]
+    #[case("max-h-fit", "max-height", "fit-content")]
+    fn test_parse_height_utilities_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 4.3: Typography extended (lines 1829-1940)
+    #[rstest]
+    #[case("text-start", "text-align", "start")]
+    #[case("text-end", "text-align", "end")]
+    #[case("hyphens-none", "hyphens", "none")]
+    #[case("hyphens-manual", "hyphens", "manual")]
+    #[case("hyphens-auto", "hyphens", "auto")]
+    #[case("tracking-tighter", "letter-spacing", "-0.05em")]
+    #[case("tracking-tight", "letter-spacing", "-0.025em")]
+    #[case("tracking-normal", "letter-spacing", "0em")]
+    #[case("tracking-wide", "letter-spacing", "0.025em")]
+    #[case("tracking-wider", "letter-spacing", "0.05em")]
+    #[case("tracking-widest", "letter-spacing", "0.1em")]
+    fn test_parse_typography_extended_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("leading-none", "line-height", "1")]
+    #[case("leading-tight", "line-height", "1.25")]
+    #[case("leading-snug", "line-height", "1.375")]
+    #[case("leading-normal", "line-height", "1.5")]
+    #[case("leading-relaxed", "line-height", "1.625")]
+    #[case("leading-loose", "line-height", "2")]
+    #[case("leading-3", "line-height", ".75rem")]
+    #[case("leading-4", "line-height", "1rem")]
+    #[case("leading-5", "line-height", "1.25rem")]
+    #[case("leading-6", "line-height", "1.5rem")]
+    #[case("leading-7", "line-height", "1.75rem")]
+    #[case("leading-8", "line-height", "2rem")]
+    #[case("leading-9", "line-height", "2.25rem")]
+    #[case("leading-10", "line-height", "2.5rem")]
+    fn test_parse_leading_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 4.4: List styles & alignment (lines 1947-1965)
+    #[rstest]
+    #[case("list-inside", "list-style-position", "inside")]
+    #[case("list-outside", "list-style-position", "outside")]
+    #[case("list-none", "list-style-type", "none")]
+    #[case("list-disc", "list-style-type", "disc")]
+    #[case("list-decimal", "list-style-type", "decimal")]
+    #[case("align-baseline", "vertical-align", "baseline")]
+    #[case("align-top", "vertical-align", "top")]
+    #[case("align-middle", "vertical-align", "middle")]
+    #[case("align-bottom", "vertical-align", "bottom")]
+    #[case("content-none", "content", "none")]
+    fn test_parse_list_align_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // ==================== WAVE 5: Backgrounds, Borders, Effects, etc. ====================
+
+    // Wave 5.1: Background utilities (lines 1981-2051)
+    #[rstest]
+    #[case("bg-fixed", "background-attachment", "fixed")]
+    #[case("bg-local", "background-attachment", "local")]
+    #[case("bg-scroll", "background-attachment", "scroll")]
+    #[case("bg-clip-border", "background-clip", "border-box")]
+    #[case("bg-clip-padding", "background-clip", "padding-box")]
+    #[case("bg-clip-content", "background-clip", "content-box")]
+    #[case("bg-clip-text", "background-clip", "text")]
+    #[case("bg-origin-border", "background-origin", "border-box")]
+    #[case("bg-origin-padding", "background-origin", "padding-box")]
+    #[case("bg-origin-content", "background-origin", "content-box")]
+    fn test_parse_background_attachment_clip_origin(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("bg-bottom", "background-position", "bottom")]
+    #[case("bg-center", "background-position", "center")]
+    #[case("bg-left", "background-position", "left")]
+    #[case("bg-left-bottom", "background-position", "left bottom")]
+    #[case("bg-left-top", "background-position", "left top")]
+    #[case("bg-right", "background-position", "right")]
+    #[case("bg-right-bottom", "background-position", "right bottom")]
+    #[case("bg-right-top", "background-position", "right top")]
+    #[case("bg-top", "background-position", "top")]
+    fn test_parse_background_position(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("bg-repeat", "background-repeat", "repeat")]
+    #[case("bg-no-repeat", "background-repeat", "no-repeat")]
+    #[case("bg-repeat-x", "background-repeat", "repeat-x")]
+    #[case("bg-repeat-y", "background-repeat", "repeat-y")]
+    #[case("bg-repeat-round", "background-repeat", "round")]
+    #[case("bg-repeat-space", "background-repeat", "space")]
+    #[case("bg-auto", "background-size", "auto")]
+    #[case("bg-cover", "background-size", "cover")]
+    #[case("bg-contain", "background-size", "contain")]
+    #[case("bg-none", "background-image", "none")]
+    fn test_parse_background_repeat_size(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case(
+        "bg-gradient-to-t",
+        "background-image",
+        "linear-gradient(to top, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-tr",
+        "background-image",
+        "linear-gradient(to top right, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-r",
+        "background-image",
+        "linear-gradient(to right, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-br",
+        "background-image",
+        "linear-gradient(to bottom right, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-b",
+        "background-image",
+        "linear-gradient(to bottom, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-bl",
+        "background-image",
+        "linear-gradient(to bottom left, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-l",
+        "background-image",
+        "linear-gradient(to left, var(--tw-gradient-stops))"
+    )]
+    #[case(
+        "bg-gradient-to-tl",
+        "background-image",
+        "linear-gradient(to top left, var(--tw-gradient-stops))"
+    )]
+    fn test_parse_background_gradient(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.2: Gradient stops (lines 2057-2068)
+    #[rstest]
+    #[case("from-red-500", "--tw-gradient-from", "#ef4444")]
+    #[case("from-blue-500", "--tw-gradient-from", "#3b82f6")]
+    #[case("via-red-500", "--tw-gradient-via", "#ef4444")]
+    #[case("via-blue-500", "--tw-gradient-via", "#3b82f6")]
+    #[case("to-red-500", "--tw-gradient-to", "#ef4444")]
+    #[case("to-blue-500", "--tw-gradient-to", "#3b82f6")]
+    fn test_parse_gradient_stops(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.3: Border corners/sides (lines 2081-2189)
+    #[rstest]
+    #[case("rounded-t-lg", "border-top-left-radius", "0.5rem")]
+    #[case("rounded-r-lg", "border-top-right-radius", "0.5rem")]
+    #[case("rounded-b-lg", "border-bottom-right-radius", "0.5rem")]
+    #[case("rounded-l-lg", "border-bottom-left-radius", "0.5rem")]
+    #[case("rounded-tl-lg", "border-top-left-radius", "0.5rem")]
+    #[case("rounded-tr-lg", "border-top-right-radius", "0.5rem")]
+    #[case("rounded-br-lg", "border-bottom-right-radius", "0.5rem")]
+    #[case("rounded-bl-lg", "border-bottom-left-radius", "0.5rem")]
+    fn test_parse_border_radius_corners(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("border-t-2", "border-top-width", "2px")]
+    #[case("border-r-2", "border-right-width", "2px")]
+    #[case("border-b-2", "border-bottom-width", "2px")]
+    #[case("border-l-2", "border-left-width", "2px")]
+    #[case("border-x-2", "border-inline-width", "2px")]
+    #[case("border-y-2", "border-block-width", "2px")]
+    fn test_parse_border_width_sides(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.4: Border styles, outline, ring, divide (lines 2211-2313)
+    #[rstest]
+    #[case("border-solid", "border-style", "solid")]
+    #[case("border-dashed", "border-style", "dashed")]
+    #[case("border-dotted", "border-style", "dotted")]
+    #[case("border-double", "border-style", "double")]
+    #[case("border-hidden", "border-style", "hidden")]
+    #[case("border-none", "border-style", "none")]
+    fn test_parse_border_styles(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("outline-none", "outline", "2px solid transparent")]
+    #[case("outline", "outline-style", "solid")]
+    #[case("outline-dashed", "outline-style", "dashed")]
+    #[case("outline-dotted", "outline-style", "dotted")]
+    #[case("outline-double", "outline-style", "double")]
+    #[case("outline-0", "outline-width", "0px")]
+    #[case("outline-1", "outline-width", "1px")]
+    #[case("outline-2", "outline-width", "2px")]
+    #[case("outline-4", "outline-width", "4px")]
+    #[case("outline-8", "outline-width", "8px")]
+    fn test_parse_outline_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("ring", "box-shadow", "0 0 0 3px var(--tw-ring-color)")]
+    #[case("ring-0", "--tw-ring-offset-shadow", "0 0 #0000")]
+    #[case("ring-1", "box-shadow", "0 0 0 1px var(--tw-ring-color)")]
+    #[case("ring-2", "box-shadow", "0 0 0 2px var(--tw-ring-color)")]
+    #[case("ring-inset", "--tw-ring-inset", "inset")]
+    fn test_parse_ring_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("divide-x", "--tw-divide-x-reverse", "0")]
+    #[case("divide-y", "--tw-divide-y-reverse", "0")]
+    #[case("divide-x-2", "border-inline-width", "2px")]
+    #[case("divide-y-2", "border-block-width", "2px")]
+    #[case("divide-x-reverse", "--tw-divide-x-reverse", "1")]
+    #[case("divide-y-reverse", "--tw-divide-y-reverse", "1")]
+    fn test_parse_divide_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.5: Effects (lines 2328-2350)
+    #[rstest]
+    #[case("shadow-red-500", "--tw-shadow-color", "#ef4444")]
+    #[case("shadow-blue-500", "--tw-shadow-color", "#3b82f6")]
+    fn test_parse_shadow_color_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("bg-blend-normal", "background-blend-mode", "normal")]
+    #[case("bg-blend-multiply", "background-blend-mode", "multiply")]
+    #[case("bg-blend-screen", "background-blend-mode", "screen")]
+    #[case("bg-blend-overlay", "background-blend-mode", "overlay")]
+    fn test_parse_blend_mode_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.6: Filters & backdrop filters (lines 2365-2555)
+    #[rstest]
+    #[case("blur-none", "filter", "blur(0)")]
+    #[case("blur-sm", "filter", "blur(4px)")]
+    #[case("blur-md", "filter", "blur(12px)")]
+    #[case("blur-xl", "filter", "blur(24px)")]
+    #[case("blur-2xl", "filter", "blur(40px)")]
+    #[case("blur-3xl", "filter", "blur(64px)")]
+    fn test_parse_blur_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("brightness-0", "filter", "brightness(0)")]
+    #[case("brightness-50", "filter", "brightness(.5)")]
+    #[case("brightness-100", "filter", "brightness(1)")]
+    #[case("brightness-150", "filter", "brightness(1.5)")]
+    #[case("brightness-200", "filter", "brightness(2)")]
+    fn test_parse_brightness_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("contrast-0", "filter", "contrast(0)")]
+    #[case("contrast-50", "filter", "contrast(.5)")]
+    #[case("contrast-100", "filter", "contrast(1)")]
+    #[case("contrast-150", "filter", "contrast(1.5)")]
+    #[case("contrast-200", "filter", "contrast(2)")]
+    fn test_parse_contrast_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case(
+        "drop-shadow",
+        "filter",
+        "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))"
+    )]
+    #[case("drop-shadow-sm", "filter", "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))")]
+    #[case(
+        "drop-shadow-md",
+        "filter",
+        "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))"
+    )]
+    #[case(
+        "drop-shadow-lg",
+        "filter",
+        "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))"
+    )]
+    #[case(
+        "drop-shadow-xl",
+        "filter",
+        "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))"
+    )]
+    #[case(
+        "drop-shadow-2xl",
+        "filter",
+        "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"
+    )]
+    #[case("drop-shadow-none", "filter", "drop-shadow(0 0 #0000)")]
+    fn test_parse_drop_shadow_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("hue-rotate-0", "filter", "hue-rotate(0deg)")]
+    #[case("hue-rotate-15", "filter", "hue-rotate(15deg)")]
+    #[case("hue-rotate-30", "filter", "hue-rotate(30deg)")]
+    #[case("hue-rotate-60", "filter", "hue-rotate(60deg)")]
+    #[case("hue-rotate-90", "filter", "hue-rotate(90deg)")]
+    #[case("hue-rotate-180", "filter", "hue-rotate(180deg)")]
+    fn test_parse_hue_rotate_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("invert-0", "filter", "invert(0)")]
+    #[case("invert", "filter", "invert(100%)")]
+    #[case("saturate-0", "filter", "saturate(0)")]
+    #[case("saturate-50", "filter", "saturate(.5)")]
+    #[case("saturate-100", "filter", "saturate(1)")]
+    #[case("saturate-150", "filter", "saturate(1.5)")]
+    #[case("saturate-200", "filter", "saturate(2)")]
+    #[case("sepia-0", "filter", "sepia(0)")]
+    #[case("sepia", "filter", "sepia(100%)")]
+    fn test_parse_filter_effects_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("backdrop-blur", "backdrop-filter", "blur(8px)")]
+    #[case("backdrop-blur-sm", "backdrop-filter", "blur(4px)")]
+    #[case("backdrop-blur-md", "backdrop-filter", "blur(12px)")]
+    #[case("backdrop-blur-lg", "backdrop-filter", "blur(16px)")]
+    #[case("backdrop-blur-xl", "backdrop-filter", "blur(24px)")]
+    #[case("backdrop-blur-2xl", "backdrop-filter", "blur(40px)")]
+    #[case("backdrop-blur-3xl", "backdrop-filter", "blur(64px)")]
+    #[case("backdrop-blur-none", "backdrop-filter", "blur(0)")]
+    fn test_parse_backdrop_blur_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("backdrop-brightness-0", "backdrop-filter", "brightness(0)")]
+    #[case("backdrop-brightness-100", "backdrop-filter", "brightness(1)")]
+    #[case("backdrop-contrast-0", "backdrop-filter", "contrast(0)")]
+    #[case("backdrop-contrast-100", "backdrop-filter", "contrast(1)")]
+    #[case("backdrop-grayscale-0", "backdrop-filter", "grayscale(0)")]
+    #[case("backdrop-grayscale", "backdrop-filter", "grayscale(100%)")]
+    #[case("backdrop-invert-0", "backdrop-filter", "invert(0)")]
+    #[case("backdrop-invert", "backdrop-filter", "invert(100%)")]
+    #[case("backdrop-opacity-0", "backdrop-filter", "opacity(0)")]
+    #[case("backdrop-opacity-100", "backdrop-filter", "opacity(1)")]
+    #[case("backdrop-saturate-0", "backdrop-filter", "saturate(0)")]
+    #[case("backdrop-saturate-100", "backdrop-filter", "saturate(1)")]
+    #[case("backdrop-sepia-0", "backdrop-filter", "sepia(0)")]
+    #[case("backdrop-sepia", "backdrop-filter", "sepia(100%)")]
+    fn test_parse_backdrop_filter_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.7: Transitions & animations (lines 2600-2618)
+    #[rstest]
+    #[case("delay-0", "transition-delay", "0s")]
+    #[case("delay-75", "transition-delay", "75ms")]
+    #[case("delay-100", "transition-delay", "100ms")]
+    #[case("delay-150", "transition-delay", "150ms")]
+    #[case("delay-200", "transition-delay", "200ms")]
+    #[case("delay-300", "transition-delay", "300ms")]
+    #[case("delay-500", "transition-delay", "500ms")]
+    #[case("delay-700", "transition-delay", "700ms")]
+    #[case("delay-1000", "transition-delay", "1000ms")]
+    fn test_parse_delay_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("animate-none", "animation", "none")]
+    #[case("animate-spin", "animation", "spin 1s linear infinite")]
+    #[case(
+        "animate-ping",
+        "animation",
+        "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite"
+    )]
+    #[case(
+        "animate-pulse",
+        "animation",
+        "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"
+    )]
+    #[case("animate-bounce", "animation", "bounce 1s infinite")]
+    fn test_parse_animation_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.8: Transforms (lines 2630-2716)
+    #[rstest]
+    #[case("scale-x-0", "transform", "scaleX(0)")]
+    #[case("scale-x-50", "transform", "scaleX(0.5)")]
+    #[case("scale-x-100", "transform", "scaleX(1)")]
+    #[case("scale-x-150", "transform", "scaleX(1.5)")]
+    #[case("scale-y-0", "transform", "scaleY(0)")]
+    #[case("scale-y-50", "transform", "scaleY(0.5)")]
+    #[case("scale-y-100", "transform", "scaleY(1)")]
+    #[case("scale-y-150", "transform", "scaleY(1.5)")]
+    fn test_parse_scale_axis_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("rotate-0", "transform", "rotate(0deg)")]
+    #[case("rotate-1", "transform", "rotate(1deg)")]
+    #[case("rotate-2", "transform", "rotate(2deg)")]
+    #[case("rotate-3", "transform", "rotate(3deg)")]
+    #[case("rotate-6", "transform", "rotate(6deg)")]
+    #[case("rotate-12", "transform", "rotate(12deg)")]
+    #[case("rotate-90", "transform", "rotate(90deg)")]
+    #[case("rotate-180", "transform", "rotate(180deg)")]
+    fn test_parse_rotate_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("translate-y-4", "transform", "translateY(1rem)")]
+    #[case("translate-y-px", "transform", "translateY(1px)")]
+    #[case("translate-y-full", "transform", "translateY(100%)")]
+    #[case("translate-y-1/2", "transform", "translateY(50%)")]
+    fn test_parse_translate_y_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("skew-x-0", "transform", "skewX(0deg)")]
+    #[case("skew-x-1", "transform", "skewX(1deg)")]
+    #[case("skew-x-2", "transform", "skewX(2deg)")]
+    #[case("skew-x-3", "transform", "skewX(3deg)")]
+    #[case("skew-x-6", "transform", "skewX(6deg)")]
+    #[case("skew-x-12", "transform", "skewX(12deg)")]
+    #[case("skew-y-0", "transform", "skewY(0deg)")]
+    #[case("skew-y-1", "transform", "skewY(1deg)")]
+    #[case("skew-y-2", "transform", "skewY(2deg)")]
+    #[case("skew-y-3", "transform", "skewY(3deg)")]
+    #[case("skew-y-6", "transform", "skewY(6deg)")]
+    #[case("skew-y-12", "transform", "skewY(12deg)")]
+    fn test_parse_skew_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("origin-center", "transform-origin", "center")]
+    #[case("origin-top", "transform-origin", "top")]
+    #[case("origin-top-right", "transform-origin", "top right")]
+    #[case("origin-right", "transform-origin", "right")]
+    #[case("origin-bottom-right", "transform-origin", "bottom right")]
+    #[case("origin-bottom", "transform-origin", "bottom")]
+    #[case("origin-bottom-left", "transform-origin", "bottom left")]
+    #[case("origin-left", "transform-origin", "left")]
+    #[case("origin-top-left", "transform-origin", "top left")]
+    fn test_parse_transform_origin_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.9: Interactivity (lines 2732-2842)
+    #[rstest]
+    #[case("accent-auto", "accent-color", "auto")]
+    #[case("accent-red-500", "accent-color", "#ef4444")]
+    #[case("appearance-none", "appearance", "none")]
+    #[case("appearance-auto", "appearance", "auto")]
+    #[case("caret-red-500", "caret-color", "#ef4444")]
+    fn test_parse_interactivity_accent_caret(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("scroll-auto", "scroll-behavior", "auto")]
+    #[case("scroll-smooth", "scroll-behavior", "smooth")]
+    #[case("scroll-m-4", "scroll-margin", "1rem")]
+    #[case("scroll-p-4", "scroll-padding", "1rem")]
+    fn test_parse_scroll_behavior_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("snap-start", "scroll-snap-align", "start")]
+    #[case("snap-end", "scroll-snap-align", "end")]
+    #[case("snap-center", "scroll-snap-align", "center")]
+    #[case("snap-align-none", "scroll-snap-align", "none")]
+    #[case("snap-none", "scroll-snap-type", "none")]
+    #[case("snap-x", "scroll-snap-type", "x var(--tw-scroll-snap-strictness)")]
+    #[case("snap-y", "scroll-snap-type", "y var(--tw-scroll-snap-strictness)")]
+    #[case(
+        "snap-both",
+        "scroll-snap-type",
+        "both var(--tw-scroll-snap-strictness)"
+    )]
+    #[case("snap-mandatory", "--tw-scroll-snap-strictness", "mandatory")]
+    #[case("snap-proximity", "--tw-scroll-snap-strictness", "proximity")]
+    #[case("snap-normal", "scroll-snap-stop", "normal")]
+    #[case("snap-always", "scroll-snap-stop", "always")]
+    fn test_parse_snap_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("touch-auto", "touch-action", "auto")]
+    #[case("touch-none", "touch-action", "none")]
+    #[case("touch-pan-x", "touch-action", "pan-x")]
+    #[case("touch-pan-y", "touch-action", "pan-y")]
+    #[case("touch-manipulation", "touch-action", "manipulation")]
+    fn test_parse_touch_action_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("will-change-auto", "will-change", "auto")]
+    #[case("will-change-scroll", "will-change", "scroll-position")]
+    #[case("will-change-contents", "will-change", "contents")]
+    #[case("will-change-transform", "will-change", "transform")]
+    fn test_parse_will_change_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 5.10: SVG utilities (lines 2853-2863)
+    #[rstest]
+    #[case("fill-none", "fill", "none")]
+    #[case("stroke-none", "stroke", "none")]
+    #[case("stroke-0", "stroke-width", "0")]
+    #[case("stroke-1", "stroke-width", "1")]
+    fn test_parse_svg_extended_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
     }
 }
