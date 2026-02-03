@@ -162,9 +162,10 @@ describe.each([
     })
   } else {
     it('should return themeStore object for server', async () => {
-      const { createThemeStore } = await import('../theme-store')
-      require.cache[require.resolve('../theme-store')] = undefined
-      const themeStore = createThemeStore()
+      const { createThemeStore: createThemeStoreFn } = require.cache[
+        require.resolve('../theme-store')
+      ]?.exports as unknown as { createThemeStore: typeof createThemeStore }
+      const themeStore = createThemeStoreFn()
 
       // Test SSR store behavior
       expect(themeStore).toBeDefined()
