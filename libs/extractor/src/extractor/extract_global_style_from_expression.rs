@@ -98,14 +98,13 @@ pub fn extract_global_style_from_expression<'a>(
                                                             && let Some(property_name) = get_string_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
+                                                            let it = disassemble_property(&property_name).into_iter();
                                                             Some(
-                                                                disassemble_property(&property_name)
-                                                                    .iter()
-                                                                    .map(|p| {
-                                                                        let v = if check_multi_css_optimize(p) { optimize_mutli_css_value(&s) } else { s.clone() };
-                                                                        if *p == "src" { (p.to_string(), wrap_url(&v)) } else { (p.to_string(), v) }
-                                                                    })
-                                                                    .collect::<Vec<_>>(),
+                                                                it.map(|p| {
+                                                                    let v = if check_multi_css_optimize(&p) { optimize_mutli_css_value(&s) } else { s.clone() };
+                                                                    if p == "src" { (p, wrap_url(&v)) } else { (p, v) }
+                                                                })
+                                                                .collect::<Vec<_>>(),
                                                             )
                                                         } else {
                                                             None
