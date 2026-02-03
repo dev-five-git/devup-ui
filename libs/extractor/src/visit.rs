@@ -407,7 +407,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 });
 
                 if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
-                    modify_prop_object(
+                    let tailwind_styles = modify_prop_object(
                         &self.ast,
                         &mut obj.properties,
                         &mut props_styles,
@@ -416,6 +416,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         props,
                         self.split_filename.as_deref(),
                     );
+                    // Add extracted Tailwind styles to the visitor's style set
+                    self.styles.extend(tailwind_styles);
                 }
 
                 it.arguments[0] = Argument::from(tag);
@@ -616,7 +618,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
-            modify_props(
+            let tailwind_styles = modify_props(
                 &self.ast,
                 attrs,
                 &mut props_styles,
@@ -625,6 +627,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 props,
                 self.split_filename.as_deref(),
             );
+            // Add extracted Tailwind styles to the visitor's style set
+            self.styles.extend(tailwind_styles);
 
             props_styles
                 .iter()

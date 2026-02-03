@@ -1,0 +1,110 @@
+---
+source: libs/extractor/src/tailwind.rs
+expression: sort_styles(styles)
+---
+{
+    Static(
+        ExtractStaticStyle {
+            property: "align-items",
+            value: "center",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "background-color",
+            value: "#FFF",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "border-radius",
+            value: ".5rem",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "box-shadow",
+            value: "0 10px 15px -3px rgb(0 0 0 / .1),0 4px 6px -4px rgb(0 0 0 / .1)",
+            level: 0,
+            selector: Some(
+                Selector(
+                    "&:hover",
+                ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "box-shadow",
+            value: "0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "display",
+            value: "flex",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "justify-content",
+            value: "space-between",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "padding",
+            value: "1rem",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "transition-duration",
+            value: "200ms",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "transition-property",
+            value: "box-shadow",
+            level: 0,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+}

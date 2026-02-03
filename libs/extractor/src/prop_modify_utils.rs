@@ -1,7 +1,8 @@
-use crate::ExtractStyleProp;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
+use crate::tailwind::{has_tailwind_classes, parse_tailwind_to_styles};
 use crate::utils::{get_string_by_property_key, merge_object_expressions};
+use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::CloneIn;
 use oxc_ast::AstBuilder;
 use oxc_ast::ast::JSXAttributeName::Identifier;
@@ -12,6 +13,7 @@ use oxc_ast::ast::{
 use oxc_span::SPAN;
 
 /// modify object props
+/// Returns extracted Tailwind styles from static className strings
 pub fn modify_prop_object<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<ObjectPropertyKind<'a>>,
@@ -20,7 +22,7 @@ pub fn modify_prop_object<'a>(
     style_vars: Option<Expression<'a>>,
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
-) {
+) -> Vec<ExtractStyleValue> {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -47,14 +49,15 @@ pub fn modify_prop_object<'a>(
         }
     }
 
-    if let Some(ex) = get_class_name_expression(
+    let (class_name_expr, tailwind_styles) = get_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
         style_order,
         &spread_props,
         filename,
-    ) {
+    );
+    if let Some(ex) = class_name_expr {
         props.push(ast_builder.object_property_kind_object_property(
             SPAN,
             PropertyKind::Init,
@@ -89,8 +92,10 @@ pub fn modify_prop_object<'a>(
                 .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator)),
         );
     }
+    tailwind_styles
 }
 /// modify JSX props
+/// Returns extracted Tailwind styles from static className strings
 pub fn modify_props<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<JSXAttributeItem<'a>>,
@@ -99,7 +104,7 @@ pub fn modify_props<'a>(
     style_vars: Option<Expression<'a>>,
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
-) {
+) -> Vec<ExtractStyleValue> {
     let mut class_name_prop = None;
     let mut style_prop = None;
     let mut spread_props = vec![];
@@ -138,14 +143,15 @@ pub fn modify_props<'a>(
             }
         }
     }
-    if let Some(ex) = get_class_name_expression(
+    let (class_name_expr, tailwind_styles) = get_class_name_expression(
         ast_builder,
         &class_name_prop,
         styles,
         style_order,
         &spread_props,
         filename,
-    ) {
+    );
+    if let Some(ex) = class_name_expr {
         props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
             ast_builder.jsx_attribute_name_identifier(SPAN, "className"),
@@ -178,8 +184,10 @@ pub fn modify_props<'a>(
             ),
         );
     }
+    tailwind_styles
 }
 
+/// Returns (className expression, extracted Tailwind styles)
 pub fn get_class_name_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     class_name_prop: &Option<Expression<'a>>,
@@ -187,14 +195,29 @@ pub fn get_class_name_expression<'a>(
     style_order: Option<u8>,
     spread_props: &[Expression<'a>],
     filename: Option<&str>,
-) -> Option<Expression<'a>> {
-    // should modify class name prop
-    merge_string_expressions(
+) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
+    // Extract Tailwind styles from static className strings and generate class names
+    let (tailwind_styles, tailwind_class_expr) =
+        extract_tailwind_from_class_name(ast_builder, class_name_prop, style_order, filename);
+
+    // Determine the className expression to use:
+    // - If we extracted Tailwind styles, use generated class names (replace original)
+    // - Otherwise, preserve the original className
+    let class_name_to_use = if tailwind_class_expr.is_some() {
+        // Tailwind className → replaced with generated class names
+        tailwind_class_expr
+    } else {
+        // Non-Tailwind className → keep original
+        class_name_prop
+            .as_ref()
+            .map(|class_name| convert_class_name(ast_builder, class_name))
+    };
+
+    // Merge class names: [tailwind/original class names] + [devup-ui component styles]
+    let expression = merge_string_expressions(
         ast_builder,
         [
-            class_name_prop
-                .as_ref()
-                .map(|class_name| convert_class_name(ast_builder, class_name)),
+            class_name_to_use,
             gen_class_names(ast_builder, styles, style_order, filename),
         ]
         .into_iter()
@@ -221,7 +244,45 @@ pub fn get_class_name_expression<'a>(
         })
         .collect::<Vec<_>>()
         .as_slice(),
-    )
+    );
+
+    (expression, tailwind_styles)
+}
+
+/// Extract Tailwind CSS styles from a static className string and generate devup-ui class names
+/// Returns (extracted styles for CSS generation, generated class names expression)
+fn extract_tailwind_from_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name_prop: &Option<Expression<'a>>,
+    style_order: Option<u8>,
+    filename: Option<&str>,
+) -> (Vec<ExtractStyleValue>, Option<Expression<'a>>) {
+    // Only extract from static string literals
+    if let Some(Expression::StringLiteral(literal)) = class_name_prop {
+        let class_str = literal.value.as_str();
+        if has_tailwind_classes(class_str) {
+            let tailwind_styles = parse_tailwind_to_styles(class_str, filename);
+            if !tailwind_styles.is_empty() {
+                // Convert ExtractStyleValue to ExtractStyleProp::Static for gen_class_names
+                let mut tailwind_style_props: Vec<ExtractStyleProp> = tailwind_styles
+                    .iter()
+                    .cloned()
+                    .map(ExtractStyleProp::Static)
+                    .collect();
+
+                // Generate devup-ui class names for the Tailwind styles
+                let class_names_expr = gen_class_names(
+                    ast_builder,
+                    &mut tailwind_style_props,
+                    style_order,
+                    filename,
+                );
+
+                return (tailwind_styles, class_names_expr);
+            }
+        }
+    }
+    (Vec::new(), None)
 }
 
 pub fn get_style_expression<'a>(

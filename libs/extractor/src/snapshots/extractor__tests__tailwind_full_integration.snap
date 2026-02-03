@@ -1,0 +1,415 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"components/Card.tsx\",\nr#\"import {Box, Flex, Text} from '@devup-ui/core'\n\n// Card component with comprehensive Tailwind usage\nexport const Card = () => (\n  <Box className=\"bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow dark:bg-gray-800\">\n    <Flex className=\"flex-col gap-4 sm:flex-row sm:items-center\">\n      <Box className=\"w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center\">\n        <Text className=\"text-white font-bold text-lg\">A</Text>\n      </Box>\n      <Box className=\"flex-1\">\n        <Text className=\"text-gray-900 font-semibold text-xl dark:text-white\">Title</Text>\n        <Text className=\"text-gray-500 text-sm mt-1 dark:text-gray-400\">Subtitle</Text>\n      </Box>\n    </Flex>\n    <Box className=\"mt-4 pt-4 border-t border-gray-200 dark:border-gray-700\">\n      <Text className=\"text-gray-700 leading-relaxed dark:text-gray-300\">\n        Content goes here with multiple Tailwind utilities combined.\n      </Text>\n    </Box>\n  </Box>\n)\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "align-items",
+                value: "center",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "align-items",
+                value: "center",
+                level: 1,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background-color",
+                value: "#1F2937",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background-color",
+                value: "#3B82F6",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background-color",
+                value: "#FFF",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "#374151",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "#E5E7EB",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-radius",
+                value: ".5rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-radius",
+                value: "9999px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "box-shadow",
+                value: "0 20px 25px -5px rgb(0 0 0 / .1),0 8px 10px -6px rgb(0 0 0 / .1)",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "box-shadow",
+                value: "0 4px 6px -1px rgb(0 0 0 / .1),0 2px 4px -2px rgb(0 0 0 / .1)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#111827",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#374151",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#6B7280",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#9CA3AF",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#D1D5DB",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#FFF",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#FFF",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        ":root[data-theme=dark] &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex",
+                value: "1 1 0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex-direction",
+                value: "column",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flex-direction",
+                value: "row",
+                level: 1,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
+                value: ".875rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
+                value: "1.125rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
+                value: "1.25rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-weight",
+                value: "600",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-weight",
+                value: "700",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "gap",
+                value: "1rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "3rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "justify-content",
+                value: "center",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "line-height",
+                value: "1.625",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: ".25rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "1rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "1.5rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-top",
+                value: "1rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "transition-property",
+                value: "box-shadow",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "3rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n// Card component with comprehensive Tailwind usage\nexport const Card = () => <div className=\"ae af ag ah ai aj ak\">\n    <div className=\"t u v w x\">\n      <div className=\"d e f g h i j\">\n        <span className=\"a b c\">A</span>\n      </div>\n      <div className=\"s\">\n        <span className=\"k l m n\">Title</span>\n        <span className=\"o p q r\">Subtitle</span>\n      </div>\n    </div>\n    <div className=\"aa ab ac a-d\">\n      <span className=\"y z _\">\n        Content goes here with multiple Tailwind utilities combined.\n      </span>\n    </div>\n  </div>;\n",
+}

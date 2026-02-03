@@ -1,0 +1,39 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/core'\n<Box className=\"w-[100px] h-[50vh] text-[#ff0000]\" />\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#F00",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "50vh",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "100px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c\" />;\n",
+}

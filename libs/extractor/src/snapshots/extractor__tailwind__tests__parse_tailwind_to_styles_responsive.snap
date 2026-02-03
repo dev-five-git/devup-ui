@@ -1,0 +1,36 @@
+---
+source: libs/extractor/src/tailwind.rs
+expression: sort_styles(styles)
+---
+{
+    Static(
+        ExtractStaticStyle {
+            property: "background-color",
+            value: "#3B82F6",
+            level: 1,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "display",
+            value: "flex",
+            level: 3,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "padding",
+            value: "2rem",
+            level: 2,
+            selector: None,
+            style_order: None,
+            layer: None,
+        },
+    ),
+}
