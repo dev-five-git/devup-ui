@@ -198,7 +198,7 @@ pub fn merge_expression_for_class_name<'a>(
                     }),
                     cooked: None,
                 };
-                qu.push(ast_builder.template_element(SPAN, t, tail));
+                qu.push(ast_builder.template_element(SPAN, t, tail, false));
             }
 
             Some(ast_builder.expression_template_literal(

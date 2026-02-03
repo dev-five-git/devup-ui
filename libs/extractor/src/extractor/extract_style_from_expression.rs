@@ -376,6 +376,7 @@ pub fn extract_style_from_expression<'a>(
                                         cooked: None,
                                     },
                                     false,
+                                    false,
                                 ),
                                 ast_builder.template_element(
                                     SPAN,
@@ -384,6 +385,7 @@ pub fn extract_style_from_expression<'a>(
                                         cooked: None,
                                     },
                                     true,
+                                    false,
                                 ),
                             ]),
                             ast_builder
@@ -424,6 +426,7 @@ pub fn extract_style_from_expression<'a>(
                                                     cooked: None,
                                                 },
                                                 false,
+                                                false,
                                             ),
                                             ast_builder.template_element(
                                                 SPAN,
@@ -432,6 +435,7 @@ pub fn extract_style_from_expression<'a>(
                                                     cooked: None,
                                                 },
                                                 true,
+                                                false,
                                             ),
                                         ]),
                                         ast_builder.vec_from_array([

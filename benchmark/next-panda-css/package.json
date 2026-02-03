@@ -16,7 +16,7 @@
     "next": "^16.1"
   },
   "devDependencies": {
-    "@pandacss/dev": "^1.7",
+    "@pandacss/dev": "^1.8",
     "typescript": "^5",
     "@types/node": "^25",
     "@types/react": "^19",

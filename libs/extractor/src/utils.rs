@@ -394,6 +394,7 @@ mod tests {
                         raw: "template".into(),
                     },
                     true,
+                    false,
                 )],
                 &allocator,
             ),
@@ -415,6 +416,7 @@ mod tests {
                             raw: "a".into(),
                         },
                         false,
+                        false,
                     ),
                     builder.template_element(
                         SPAN,
@@ -423,6 +425,7 @@ mod tests {
                             raw: "b".into(),
                         },
                         true,
+                        false,
                     ),
                 ],
                 &allocator,
