@@ -6,14 +6,15 @@ type StoreChangeEvent = (newTheme: Theme) => void
 
 const initTheme = null
 
-export function createThemeStore() {
-  if (typeof window === 'undefined')
-    return {
-      get: () => initTheme,
-      set: () => {},
-      subscribe: () => () => {},
-    }
+export function createServerThemeStore() {
+  return {
+    get: () => initTheme,
+    set: () => {},
+    subscribe: () => () => {},
+  }
+}
 
+function createClientThemeStore() {
   const el = document.documentElement
   const subscribers: Set<StoreChangeEvent> = new Set()
   let theme: Theme = initTheme
@@ -47,3 +48,8 @@ export function createThemeStore() {
     subscribe,
   }
 }
+
+export const createThemeStore: typeof createClientThemeStore =
+  typeof window === 'undefined'
+    ? (createServerThemeStore as unknown as typeof createClientThemeStore)
+    : createClientThemeStore

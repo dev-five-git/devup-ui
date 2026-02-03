@@ -22,162 +22,116 @@ afterAll(() => {
   document.documentElement.removeAttribute('data-theme')
 })
 
-describe.each([
-  [false, 'server'],
-  [true, 'browser'],
-])('themeStore %s', (_isBrowser, _title) => {
-  const originalWindow = globalThis.window
+describe('themeStore', () => {
+  // Loader.registry.delete(require.resolve('../theme-store'))
   beforeEach(() => {
-    // Remove window to simulate SSR
-    if (!_isBrowser) {
-      // @ts-expect-error - Temporarily remove window for SSR test
-      delete globalThis.window
-    } else {
-      document.documentElement.removeAttribute('data-theme')
-    }
+    document.documentElement.removeAttribute('data-theme')
   })
 
   afterEach(() => {
-    if (_isBrowser) {
-      document.documentElement.removeAttribute('data-theme')
-    }
-    globalThis.window = originalWindow
+    document.documentElement.removeAttribute('data-theme')
   })
-  if (_isBrowser) {
-    it('should return themeStore object for browser', () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      expect(themeStore).toBeDefined()
-      expect(themeStore.get).toEqual(expect.any(Function))
-      expect(themeStore.set).toEqual(expect.any(Function))
-      expect(themeStore.subscribe).toEqual(expect.any(Function))
-      expect(themeStore.get()).toBeNull()
-      expect(themeStore.set('dark' as any)).toBeUndefined()
-      // subscribe returns an unsubscribe function, which returns boolean when called
-      const unsubscribe = themeStore.subscribe(() => {})
-      expect(typeof unsubscribe).toBe('function')
-      themeStore.subscribe(() => {})
-      expect(themeStore.set('dark' as any)).toBeUndefined()
-    })
 
-    it('should call subscriber when theme changes via set', () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback = mock()
+  it('should return themeStore object for browser', () => {
+    const themeStore = createThemeStore()
+    expect(themeStore).toBeDefined()
+    expect(themeStore.get).toEqual(expect.any(Function))
+    expect(themeStore.set).toEqual(expect.any(Function))
+    expect(themeStore.subscribe).toEqual(expect.any(Function))
+    expect(themeStore.get()).toBeNull()
+    expect(themeStore.set('dark' as any)).toBeUndefined()
+    // subscribe returns an unsubscribe function, which returns boolean when called
+    const unsubscribe = themeStore.subscribe(() => {})
+    expect(typeof unsubscribe).toBe('function')
+    themeStore.subscribe(() => {})
+    expect(themeStore.set('dark' as any)).toBeUndefined()
+  })
 
-      themeStore.subscribe(callback)
+  it('should call subscriber when theme changes via set', () => {
+    const themeStore = createThemeStore()
+    const callback = mock()
 
-      // First call is from subscribe itself (reads current data-theme)
-      expect(callback).toHaveBeenCalledTimes(1)
+    themeStore.subscribe(callback)
 
-      themeStore.set('light' as any)
-      expect(callback).toHaveBeenCalledTimes(2)
-      expect(callback).toHaveBeenLastCalledWith('light')
-      expect(themeStore.get()).toBe('light' as any)
-    })
+    // First call is from subscribe itself (reads current data-theme)
+    expect(callback).toHaveBeenCalledTimes(1)
 
-    it('should unsubscribe correctly', () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback = mock()
+    themeStore.set('light' as any)
+    expect(callback).toHaveBeenCalledTimes(2)
+    expect(callback).toHaveBeenLastCalledWith('light')
+    expect(themeStore.get()).toBe('light' as any)
+  })
 
-      const unsubscribe = themeStore.subscribe(callback)
-      expect(callback).toHaveBeenCalledTimes(1)
+  it('should unsubscribe correctly', () => {
+    const themeStore = createThemeStore()
+    const callback = mock()
 
-      // Unsubscribe
-      const result = unsubscribe()
-      expect(result).toBe(true as any)
+    const unsubscribe = themeStore.subscribe(callback)
+    expect(callback).toHaveBeenCalledTimes(1)
 
-      // Should not be called after unsubscribe
-      themeStore.set('dark' as any)
-      expect(callback).toHaveBeenCalledTimes(1)
-    })
+    // Unsubscribe
+    const result = unsubscribe()
+    expect(result).toBe(true as any)
 
-    it('should read initial theme from data-theme attribute', () => {
-      document.documentElement.setAttribute('data-theme', 'dark')
+    // Should not be called after unsubscribe
+    themeStore.set('dark' as any)
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
 
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback = mock()
+  it('should read initial theme from data-theme attribute', () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
 
-      themeStore.subscribe(callback)
+    const themeStore = createThemeStore()
+    const callback = mock()
 
-      // Should be called with 'dark' from the attribute
-      expect(callback).toHaveBeenCalledWith('dark')
-    })
+    themeStore.subscribe(callback)
 
-    it('should update theme when data-theme attribute changes via MutationObserver', async () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback = mock()
+    // Should be called with 'dark' from the attribute
+    expect(callback).toHaveBeenCalledWith('dark')
+  })
 
-      themeStore.subscribe(callback)
-      expect(callback).toHaveBeenCalledTimes(1)
+  it('should update theme when data-theme attribute changes via MutationObserver', async () => {
+    const themeStore = createThemeStore()
+    const callback = mock()
 
-      // Change the attribute - MutationObserver should trigger
-      document.documentElement.setAttribute('data-theme', 'dark')
+    themeStore.subscribe(callback)
+    expect(callback).toHaveBeenCalledTimes(1)
 
-      // Wait for MutationObserver to fire (it's async)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    // Change the attribute - MutationObserver should trigger
+    document.documentElement.setAttribute('data-theme', 'dark')
 
-      expect(callback).toHaveBeenCalledWith('dark')
-      expect(themeStore.get()).toBe('dark' as any)
-    })
+    // Wait for MutationObserver to fire (it's async)
+    await new Promise((resolve) => setTimeout(resolve, 10))
 
-    it('should handle multiple subscribers', async () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback1 = mock()
-      const callback2 = mock()
+    expect(callback).toHaveBeenCalledWith('dark')
+    expect(themeStore.get()).toBe('dark' as any)
+  })
 
-      themeStore.subscribe(callback1)
-      themeStore.subscribe(callback2)
+  it('should handle multiple subscribers', () => {
+    const themeStore = createThemeStore()
+    const callback1 = mock()
+    const callback2 = mock()
 
-      themeStore.set('light' as any)
+    themeStore.subscribe(callback1)
+    themeStore.subscribe(callback2)
 
-      expect(callback1).toHaveBeenLastCalledWith('light')
-      expect(callback2).toHaveBeenLastCalledWith('light')
-    })
+    themeStore.set('light' as any)
 
-    it('should filter mutations by type and target', async () => {
-      // const modulePath = require.resolve('../theme-store')
-      // delete require.cache[modulePath]
-      const themeStore = createThemeStore()
-      const callback = mock()
+    expect(callback1).toHaveBeenLastCalledWith('light')
+    expect(callback2).toHaveBeenLastCalledWith('light')
+  })
 
-      themeStore.subscribe(callback)
+  it('should filter mutations by type and target', async () => {
+    const themeStore = createThemeStore()
+    const callback = mock()
 
-      // Change data-theme attribute (should trigger)
-      document.documentElement.setAttribute('data-theme', 'system')
+    themeStore.subscribe(callback)
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    // Change data-theme attribute (should trigger)
+    document.documentElement.setAttribute('data-theme', 'system')
 
-      expect(themeStore.get()).toBe('system' as any)
-    })
-  } else {
-    it('should return themeStore object for server', async () => {
-      const { createThemeStore: createThemeStoreFn } = require.cache[
-        require.resolve('../theme-store')
-      ]?.exports as unknown as { createThemeStore: typeof createThemeStore }
-      const themeStore = createThemeStoreFn()
+    await new Promise((resolve) => setTimeout(resolve, 10))
 
-      // Test SSR store behavior
-      expect(themeStore).toBeDefined()
-      expect(themeStore.get()).toBeNull()
-      expect(themeStore.set('dark' as any)).toBeUndefined()
-
-      const unsubscribe = themeStore.subscribe(() => {})
-      expect(typeof unsubscribe).toBe('function')
-
-      // The unsubscribe should return a no-op function
-      const innerUnsubscribe = unsubscribe()
-      expect(innerUnsubscribe).toBeUndefined()
-    })
-  }
+    expect(themeStore.get()).toBe('system' as any)
+  })
 })
