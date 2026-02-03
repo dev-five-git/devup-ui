@@ -23,8 +23,8 @@ afterAll(() => {
 })
 
 describe.each([
-  [false, 'browser'],
   [false, 'server'],
+  [true, 'browser'],
 ])('themeStore %s', (_isBrowser, _title) => {
   const originalWindow = globalThis.window
   beforeEach(() => {
@@ -162,6 +162,8 @@ describe.each([
     })
   } else {
     it('should return themeStore object for server', async () => {
+      const { createThemeStore } = await import('../theme-store')
+      require.cache[require.resolve('../theme-store')] = undefined
       const themeStore = createThemeStore()
 
       // Test SSR store behavior
