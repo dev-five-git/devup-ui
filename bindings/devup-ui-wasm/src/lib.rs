@@ -157,6 +157,7 @@ pub fn import_sheet_internal(sheet: StyleSheet) {
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
+#[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
     let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object)
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -170,6 +171,7 @@ pub fn export_sheet_internal() -> Result<String, String> {
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
+#[cfg(not(tarpaulin_include))]
 pub fn export_sheet() -> Result<String, JsValue> {
     export_sheet_internal().map_err(|e| JsValue::from_str(&e))
 }
@@ -180,6 +182,7 @@ pub fn export_class_map_internal() -> Result<String, String> {
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
+#[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
     set_class_map(
         serde_wasm_bindgen::from_value(sheet_object)
@@ -189,6 +192,7 @@ pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen(js_name = "exportClassMap")]
+#[cfg(not(tarpaulin_include))]
 pub fn export_class_map() -> Result<String, JsValue> {
     export_class_map_internal().map_err(|e| JsValue::from_str(&e))
 }
@@ -199,6 +203,7 @@ pub fn export_file_map_internal() -> Result<String, String> {
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
+#[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
     set_file_map(
         serde_wasm_bindgen::from_value(sheet_object)
@@ -208,6 +213,7 @@ pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen(js_name = "exportFileMap")]
+#[cfg(not(tarpaulin_include))]
 pub fn export_file_map() -> Result<String, JsValue> {
     export_file_map_internal().map_err(|e| JsValue::from_str(&e))
 }
@@ -250,6 +256,7 @@ pub fn code_extract_internal(
 
 #[wasm_bindgen(js_name = "codeExtract")]
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(tarpaulin_include))]
 pub fn code_extract(
     filename: &str,
     code: &str,
@@ -296,6 +303,7 @@ pub fn register_theme_internal(theme: sheet::theme::Theme) {
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
+#[cfg(not(tarpaulin_include))]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
     let theme: sheet::theme::Theme = serde_wasm_bindgen::from_value(theme_object)
         .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
@@ -304,12 +312,14 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen(js_name = "getDefaultTheme")]
+#[cfg(not(tarpaulin_include))]
 pub fn get_default_theme() -> Result<Option<String>, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
     Ok(sheet.theme.get_default_theme())
 }
 
 #[wasm_bindgen(js_name = "getCss")]
+#[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
     Ok(sheet.create_css(
@@ -319,6 +329,7 @@ pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String,
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
+#[cfg(not(tarpaulin_include))]
 pub fn get_theme_interface(
     package_name: &str,
     color_interface_name: &str,
@@ -335,6 +346,7 @@ pub fn get_theme_interface(
 }
 
 #[wasm_bindgen(js_name = "hasDevupUI")]
+#[cfg(not(tarpaulin_include))]
 pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
     has_devup_ui(filename, code, package)
 }
