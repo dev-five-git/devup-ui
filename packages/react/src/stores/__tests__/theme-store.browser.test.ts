@@ -41,10 +41,9 @@ describe.each([
     globalThis.window = originalWindow
   })
   if (_isBrowser) {
-    it('should return themeStore object for browser', async () => {
+    it('should return themeStore object for browser', () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       expect(themeStore).toBeDefined()
       expect(themeStore.get).toEqual(expect.any(Function))
@@ -59,10 +58,9 @@ describe.each([
       expect(themeStore.set('dark' as any)).toBeUndefined()
     })
 
-    it('should call subscriber when theme changes via set', async () => {
+    it('should call subscriber when theme changes via set', () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback = mock()
 
@@ -77,10 +75,9 @@ describe.each([
       expect(themeStore.get()).toBe('light' as any)
     })
 
-    it('should unsubscribe correctly', async () => {
+    it('should unsubscribe correctly', () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback = mock()
 
@@ -96,12 +93,11 @@ describe.each([
       expect(callback).toHaveBeenCalledTimes(1)
     })
 
-    it('should read initial theme from data-theme attribute', async () => {
+    it('should read initial theme from data-theme attribute', () => {
       document.documentElement.setAttribute('data-theme', 'dark')
 
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback = mock()
 
@@ -114,7 +110,6 @@ describe.each([
     it('should update theme when data-theme attribute changes via MutationObserver', async () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback = mock()
 
@@ -134,7 +129,6 @@ describe.each([
     it('should handle multiple subscribers', async () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback1 = mock()
       const callback2 = mock()
@@ -151,7 +145,6 @@ describe.each([
     it('should filter mutations by type and target', async () => {
       // const modulePath = require.resolve('../theme-store')
       // delete require.cache[modulePath]
-      const { createThemeStore } = await import('../theme-store')
       const themeStore = createThemeStore()
       const callback = mock()
 
