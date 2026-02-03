@@ -5675,4 +5675,259 @@ mod tests {
         let result = parse_single_class("backdrop-blur-huge");
         assert!(result.is_none());
     }
+
+    // ============================================================================
+    // WAVE 7: Additional Coverage Gap Tests
+    // ============================================================================
+
+    // Wave 7.1: is_likely_tailwind_class arbitrary value syntax (line 816)
+    #[rstest]
+    #[case("w-[100px]")]
+    #[case("h-[50vh]")]
+    #[case("bg-[#ff0000]")]
+    #[case("text-[1.5rem]")]
+    #[case("grid-cols-[1fr_2fr]")]
+    #[case("p-[calc(100%-20px)]")]
+    fn test_is_likely_tailwind_class_arbitrary_syntax(#[case] class: &str) {
+        assert!(is_likely_tailwind_class(class));
+    }
+
+    // Wave 7.2: is_valid_tailwind_value fraction values (lines 864-866)
+    #[rstest]
+    #[case("1/2", true)]
+    #[case("2/3", true)]
+    #[case("3/4", true)]
+    #[case("5/6", true)]
+    #[case("11/12", true)]
+    #[case("a/b", false)]
+    #[case("foo/bar", false)]
+    fn test_is_valid_tailwind_value_fractions_extended(
+        #[case] value: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_valid_tailwind_value(value), expected);
+    }
+
+    // Wave 7.3: min-w/max-w/min-h/max-h/size with SPACING_SCALE values (lines 1682, 1719, 1760, 1783, 1797)
+    #[rstest]
+    #[case("min-w-4", "min-width", "1rem")]
+    #[case("min-w-8", "min-width", "2rem")]
+    #[case("min-w-12", "min-width", "3rem")]
+    #[case("min-w-px", "min-width", "1px")]
+    #[case("min-w-0.5", "min-width", "0.125rem")]
+    fn test_parse_min_w_spacing_scale(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse min-w spacing");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("max-w-4", "max-width", "1rem")]
+    #[case("max-w-8", "max-width", "2rem")]
+    #[case("max-w-12", "max-width", "3rem")]
+    #[case("max-w-px", "max-width", "1px")]
+    fn test_parse_max_w_spacing_scale(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse max-w spacing");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("min-h-4", "min-height", "1rem")]
+    #[case("min-h-8", "min-height", "2rem")]
+    #[case("min-h-12", "min-height", "3rem")]
+    #[case("min-h-px", "min-height", "1px")]
+    fn test_parse_min_h_spacing_scale(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse min-h spacing");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("max-h-4", "max-height", "1rem")]
+    #[case("max-h-8", "max-height", "2rem")]
+    #[case("max-h-12", "max-height", "3rem")]
+    #[case("max-h-px", "max-height", "1px")]
+    fn test_parse_max_h_spacing_scale(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse max-h spacing");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("size-4", "width", "1rem")]
+    #[case("size-8", "width", "2rem")]
+    #[case("size-12", "width", "3rem")]
+    #[case("size-px", "width", "1px")]
+    #[case("size-0.5", "width", "0.125rem")]
+    fn test_parse_size_spacing_scale(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse size spacing");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.4: text- prefix fallback when not font-size or text-align (line 1833)
+    #[rstest]
+    #[case("text-unknown")]
+    #[case("text-foo")]
+    #[case("text-bar")]
+    fn test_text_prefix_unknown_returns_none(#[case] class: &str) {
+        let result = parse_single_class(class);
+        assert!(result.is_none());
+    }
+
+    // Wave 7.5: Individual rounded variants via full parsing path (lines 2130-2151)
+    #[rstest]
+    #[case("rounded", "border-radius", "0.25rem")]
+    #[case("rounded-none", "border-radius", "0px")]
+    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-md", "border-radius", "0.375rem")]
+    #[case("rounded-lg", "border-radius", "0.5rem")]
+    #[case("rounded-xl", "border-radius", "0.75rem")]
+    #[case("rounded-2xl", "border-radius", "1rem")]
+    #[case("rounded-3xl", "border-radius", "1.5rem")]
+    #[case("rounded-full", "border-radius", "9999px")]
+    fn test_rounded_variants_full_path(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse rounded");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.6: border-0/2/4/8 standalone via full parsing path (lines 2223-2232)
+    #[rstest]
+    #[case("border", "border-width", "1px")]
+    #[case("border-0", "border-width", "0px")]
+    #[case("border-2", "border-width", "2px")]
+    #[case("border-4", "border-width", "4px")]
+    #[case("border-8", "border-width", "8px")]
+    fn test_border_width_standalone_full_path(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse border");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.7: divide- unknown value fallback (line 2313)
+    #[rstest]
+    #[case("divide-unknown")]
+    #[case("divide-xyz")]
+    fn test_divide_unknown_returns_none(#[case] class: &str) {
+        let result = parse_single_class(class);
+        assert!(result.is_none());
+    }
+
+    // Wave 7.8: shadow without suffix (line 2333)
+    #[rstest]
+    #[case(
+        "shadow",
+        "box-shadow",
+        "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"
+    )]
+    fn test_shadow_without_suffix(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse shadow");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.9: mix-blend- prefix (line 2345)
+    #[rstest]
+    #[case("mix-blend-normal", "mix-blend-mode", "normal")]
+    #[case("mix-blend-multiply", "mix-blend-mode", "multiply")]
+    #[case("mix-blend-screen", "mix-blend-mode", "screen")]
+    #[case("mix-blend-overlay", "mix-blend-mode", "overlay")]
+    #[case("mix-blend-darken", "mix-blend-mode", "darken")]
+    #[case("mix-blend-lighten", "mix-blend-mode", "lighten")]
+    #[case("mix-blend-color-dodge", "mix-blend-mode", "color-dodge")]
+    #[case("mix-blend-color-burn", "mix-blend-mode", "color-burn")]
+    #[case("mix-blend-hard-light", "mix-blend-mode", "hard-light")]
+    #[case("mix-blend-soft-light", "mix-blend-mode", "soft-light")]
+    #[case("mix-blend-difference", "mix-blend-mode", "difference")]
+    #[case("mix-blend-exclusion", "mix-blend-mode", "exclusion")]
+    #[case("mix-blend-hue", "mix-blend-mode", "hue")]
+    #[case("mix-blend-saturation", "mix-blend-mode", "saturation")]
+    #[case("mix-blend-color", "mix-blend-mode", "color")]
+    #[case("mix-blend-luminosity", "mix-blend-mode", "luminosity")]
+    fn test_parse_mix_blend_mode(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse mix-blend");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.10: blur- unknown value (line 2368)
+    #[rstest]
+    #[case("blur-unknown")]
+    #[case("blur-huge")]
+    #[case("blur-4xl")]
+    fn test_blur_unknown_value_returns_none(#[case] class: &str) {
+        let result = parse_single_class(class);
+        assert!(result.is_none());
+    }
+
+    // Wave 7.11: grayscale-0 (line 2432)
+    #[rstest]
+    #[case("grayscale-0", "filter", "grayscale(0)")]
+    fn test_grayscale_zero(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse grayscale");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 7.12: hue-rotate- unknown value (line 2444)
+    #[rstest]
+    #[case("hue-rotate-unknown")]
+    #[case("hue-rotate-999")]
+    #[case("hue-rotate-45")]
+    fn test_hue_rotate_unknown_returns_none(#[case] class: &str) {
+        let result = parse_single_class(class);
+        assert!(result.is_none());
+    }
+
+    // Wave 7.13: saturate- unknown value (line 2465)
+    #[rstest]
+    #[case("saturate-unknown")]
+    #[case("saturate-999")]
+    #[case("saturate-75")]
+    fn test_saturate_unknown_returns_none(#[case] class: &str) {
+        let result = parse_single_class(class);
+        assert!(result.is_none());
+    }
 }
