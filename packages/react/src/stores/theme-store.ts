@@ -1,5 +1,6 @@
 'use client'
 import type { DevupTheme } from '../types/theme'
+import { createServerThemeStore } from './theme-store-server'
 
 type Theme = keyof DevupTheme | null
 type StoreChangeEvent = (newTheme: Theme) => void
@@ -39,17 +40,7 @@ function createClientThemeStore() {
   }
 }
 
-const serverThemeStore: ReturnType<typeof createClientThemeStore> = {
-  get: () => null,
-  set: () => {},
-  subscribe: () => () => {},
-} as unknown as ReturnType<typeof createClientThemeStore>
-
-export function createServerThemeStore() {
-  return serverThemeStore
-}
-
 export const createThemeStore: typeof createClientThemeStore =
   typeof window === 'undefined'
-    ? createServerThemeStore
+    ? (createServerThemeStore as unknown as typeof createClientThemeStore)
     : createClientThemeStore

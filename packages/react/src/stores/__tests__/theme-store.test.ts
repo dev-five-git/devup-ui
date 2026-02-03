@@ -3,7 +3,7 @@ import 'bun-test-env-dom'
 
 import { describe, expect, it } from 'bun:test'
 
-import { createServerThemeStore } from '../theme-store'
+import { createServerThemeStore } from '../theme-store-server'
 
 describe('themeStore ssr', () => {
   it('should filter mutations by type and target', async () => {
