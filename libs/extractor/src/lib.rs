@@ -12028,6 +12028,66 @@ globalCss({
 
     #[test]
     #[serial]
+    fn test_global_css_fontfaces_multi_value_optimization() {
+        // Test fontFaces with font-family that needs multi-value optimization (covers line 69, 73-74)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "'Custom Font', 'Fallback Font', sans-serif",
+            src: "local('Custom Font'), url('/fonts/custom.woff2') format('woff2')",
+            fontWeight: "400 700",
+            fontStyle: "normal"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test fontFaces with content property (another multi-optimize property)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { globalCss } from '@devup-ui/core'
+globalCss({
+    fontFaces: [
+        {
+            fontFamily: "IconFont",
+            src: "/fonts/icons.woff2"
+        }
+    ]
+})
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_conditional_expression_with_selector() {
         // Test ConditionalExpression when name.is_none() and selector.is_some() (covers line 134)
         reset_class_map();
