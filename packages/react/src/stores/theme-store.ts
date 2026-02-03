@@ -39,17 +39,17 @@ function createClientThemeStore() {
   }
 }
 
-export function createServerThemeStore(): ReturnType<
-  typeof createClientThemeStore
-> {
-  return {
-    get: () => null,
-    set: () => {},
-    subscribe: () => () => {},
-  } as unknown as ReturnType<typeof createClientThemeStore>
+const serverThemeStore: ReturnType<typeof createClientThemeStore> = {
+  get: () => null,
+  set: () => {},
+  subscribe: () => () => {},
+} as unknown as ReturnType<typeof createClientThemeStore>
+
+export function createServerThemeStore() {
+  return serverThemeStore
 }
 
 export const createThemeStore: typeof createClientThemeStore =
   typeof window === 'undefined'
-    ? (createServerThemeStore as unknown as typeof createClientThemeStore)
+    ? createServerThemeStore
     : createClientThemeStore
