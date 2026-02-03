@@ -30,8 +30,8 @@ describe('themeStore', () => {
   })
 
   it('should return themeStore object for browser', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     expect(themeStore).toBeDefined()
@@ -48,8 +48,8 @@ describe('themeStore', () => {
   })
 
   it('should call subscriber when theme changes via set', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback = mock()
@@ -66,8 +66,8 @@ describe('themeStore', () => {
   })
 
   it('should unsubscribe correctly', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback = mock()
@@ -87,8 +87,8 @@ describe('themeStore', () => {
   it('should read initial theme from data-theme attribute', async () => {
     document.documentElement.setAttribute('data-theme', 'dark')
 
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback = mock()
@@ -100,8 +100,8 @@ describe('themeStore', () => {
   })
 
   it('should update theme when data-theme attribute changes via MutationObserver', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback = mock()
@@ -120,8 +120,8 @@ describe('themeStore', () => {
   })
 
   it('should handle multiple subscribers', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback1 = mock()
@@ -137,8 +137,8 @@ describe('themeStore', () => {
   })
 
   it('should filter mutations by type and target', async () => {
-    const modulePath = require.resolve('../theme-store')
-    delete require.cache[modulePath]
+    // const modulePath = require.resolve('../theme-store')
+    // delete require.cache[modulePath]
     const { createThemeStore } = await import('../theme-store')
     const themeStore = createThemeStore()
     const callback = mock()
