@@ -5180,4 +5180,499 @@ mod tests {
         assert_eq!(parsed.property, expected_prop);
         assert_eq!(parsed.value, expected_value);
     }
+
+    // ============================================================================
+    // WAVE 6: Coverage Gap Tests - Remaining Uncovered Lines
+    // ============================================================================
+
+    // Wave 6.1: TailwindVariant::from_prefix() returning None (line 230)
+    #[test]
+    fn test_tailwind_variant_unknown_prefix_returns_none() {
+        assert_eq!(TailwindVariant::from_prefix("unknown-prefix"), None);
+        assert_eq!(TailwindVariant::from_prefix("nonexistent"), None);
+        assert_eq!(TailwindVariant::from_prefix("foo-bar"), None);
+        assert_eq!(TailwindVariant::from_prefix("xyz"), None);
+        assert_eq!(TailwindVariant::from_prefix(""), None);
+    }
+
+    // Wave 6.2: parse_arbitrary_value edge cases (lines 1015, 1084)
+    #[test]
+    fn test_parse_arbitrary_value_malformed_brackets() {
+        // Test bracket_end <= bracket_start case (line 1015)
+        let result = parse_arbitrary_value("][");
+        assert!(result.is_none());
+
+        let result = parse_arbitrary_value("w-][");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_arbitrary_value_unknown_prefix() {
+        // Test unknown prefix fallback (line 1084)
+        let result = parse_arbitrary_value("unknown-[value]");
+        assert!(result.is_none());
+
+        let result = parse_arbitrary_value("foo-[bar]");
+        assert!(result.is_none());
+
+        let result = parse_arbitrary_value("xyz-[123px]");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.3: Custom aspect-ratio (line 1202)
+    #[rstest]
+    #[case("aspect-4-3", "aspect-ratio", "4 / 3")]
+    #[case("aspect-16-10", "aspect-ratio", "16 / 10")]
+    #[case("aspect-21-9", "aspect-ratio", "21 / 9")]
+    #[case("aspect-3-2", "aspect-ratio", "3 / 2")]
+    fn test_parse_custom_aspect_ratio(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse custom aspect ratio");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.4: Numeric columns fallback (line 1224)
+    #[rstest]
+    #[case("columns-1", "columns", "1")]
+    #[case("columns-2", "columns", "2")]
+    #[case("columns-3", "columns", "3")]
+    #[case("columns-4", "columns", "4")]
+    #[case("columns-5", "columns", "5")]
+    #[case("columns-6", "columns", "6")]
+    #[case("columns-12", "columns", "12")]
+    fn test_parse_numeric_columns(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse numeric columns");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.5: Box decoration break (lines 1258, 1261)
+    #[rstest]
+    #[case("box-decoration-clone", "box-decoration-break", "clone")]
+    #[case("box-decoration-slice", "box-decoration-break", "slice")]
+    fn test_parse_box_decoration_break(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse box-decoration-break");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.6: min-w/max-w/h fallback paths (lines 1681-1785)
+    #[test]
+    fn test_min_w_unknown_value_returns_none() {
+        // min-w- with unknown value should return None (line 1684)
+        let result = parse_single_class("min-w-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_max_w_unknown_value_returns_none() {
+        // max-w- with unknown value should return None (line 1721)
+        let result = parse_single_class("max-w-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_h_unknown_value_returns_none() {
+        // h- with unknown value should return None (line 1739)
+        let result = parse_single_class("h-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_min_h_unknown_value_returns_none() {
+        // min-h- with unknown value should return None (line 1762)
+        let result = parse_single_class("min-h-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_max_h_unknown_value_returns_none() {
+        // max-h- with unknown value should return None (line 1785)
+        let result = parse_single_class("max-h-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_size_unknown_value_returns_none() {
+        // size- with unknown value should return None (line 1797)
+        let result = parse_single_class("size-unknown");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.7: Typography edge cases (lines 1833-1892)
+    #[rstest]
+    #[case("line-through", "text-decoration-line", "line-through")]
+    fn test_parse_line_through(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse line-through");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("truncate", "text-overflow", "ellipsis")]
+    fn test_parse_truncate(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse truncate");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("whitespace-normal", "white-space", "normal")]
+    #[case("whitespace-nowrap", "white-space", "nowrap")]
+    #[case("whitespace-pre", "white-space", "pre")]
+    #[case("whitespace-pre-line", "white-space", "pre-line")]
+    #[case("whitespace-pre-wrap", "white-space", "pre-wrap")]
+    #[case("whitespace-break-spaces", "white-space", "break-spaces")]
+    fn test_parse_whitespace_utilities(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse whitespace");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.8: Tracking/leading fallbacks (lines 1918, 1940)
+    #[rstest]
+    #[case("tracking-custom", "letter-spacing", "custom")]
+    #[case("tracking-0.5em", "letter-spacing", "0.5em")]
+    fn test_parse_tracking_fallback(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse tracking fallback");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("leading-custom", "line-height", "custom")]
+    #[case("leading-1.5", "line-height", "1.5")]
+    fn test_parse_leading_fallback(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse leading fallback");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.9: List style fallback (line 1953)
+    #[test]
+    fn test_list_style_unknown_returns_none() {
+        // list- with unknown value should not match (line 1953)
+        let result = parse_single_class("list-unknown");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.10: Gradient direction fallback (line 2049)
+    #[test]
+    fn test_bg_gradient_unknown_direction_returns_none() {
+        // bg-gradient-to- with unknown direction should return None
+        let result = parse_single_class("bg-gradient-to-xyz");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.11: Individual rounded variants (lines 2130-2151)
+    #[rstest]
+    #[case("rounded-none", "border-radius", "0px")]
+    #[case("rounded-sm", "border-radius", "0.125rem")]
+    #[case("rounded-md", "border-radius", "0.375rem")]
+    #[case("rounded-lg", "border-radius", "0.5rem")]
+    #[case("rounded-xl", "border-radius", "0.75rem")]
+    #[case("rounded-2xl", "border-radius", "1rem")]
+    #[case("rounded-3xl", "border-radius", "1.5rem")]
+    #[case("rounded-full", "border-radius", "9999px")]
+    fn test_parse_individual_rounded_variants(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse rounded variant");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.12: Border collapse/separate and border-0/2/4/8 (lines 2211-2232)
+    #[rstest]
+    #[case("border-collapse", "border-collapse", "collapse")]
+    #[case("border-separate", "border-collapse", "separate")]
+    fn test_parse_border_collapse_separate(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse border collapse/separate");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("border-0", "border-width", "0px")]
+    #[case("border-2", "border-width", "2px")]
+    #[case("border-4", "border-width", "4px")]
+    #[case("border-8", "border-width", "8px")]
+    fn test_parse_border_width_standalone(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse border width");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.13: Outline color (lines 2250-2251)
+    #[rstest]
+    #[case("outline-black", "outline-color", "#000")]
+    #[case("outline-white", "outline-color", "#fff")]
+    #[case("outline-red-500", "outline-color", "#ef4444")]
+    #[case("outline-blue-500", "outline-color", "#3b82f6")]
+    fn test_parse_outline_color(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse outline color");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.14: Ring utilities (lines 2273-2281)
+    #[rstest]
+    #[case("ring-4", "box-shadow", "0 0 0 4px var(--tw-ring-color)")]
+    #[case("ring-8", "box-shadow", "0 0 0 8px var(--tw-ring-color)")]
+    fn test_parse_ring_width_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse ring width");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("ring-black", "--tw-ring-color", "#000")]
+    #[case("ring-white", "--tw-ring-color", "#fff")]
+    #[case("ring-red-500", "--tw-ring-color", "#ef4444")]
+    #[case("ring-blue-500", "--tw-ring-color", "#3b82f6")]
+    fn test_parse_ring_color(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse ring color");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.15: Divide utilities (lines 2293-2313)
+    #[rstest]
+    #[case("divide-black", "--tw-divide-color", "#000")]
+    #[case("divide-white", "--tw-divide-color", "#fff")]
+    #[case("divide-red-500", "--tw-divide-color", "#ef4444")]
+    fn test_parse_divide_color(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse divide color");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("divide-solid", "border-style", "solid")]
+    #[case("divide-dashed", "border-style", "dashed")]
+    #[case("divide-dotted", "border-style", "dotted")]
+    #[case("divide-double", "border-style", "double")]
+    #[case("divide-none", "border-style", "none")]
+    fn test_parse_divide_style(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse divide style");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    // Wave 6.16: Filter fallbacks (lines 2390, 2405, 2419)
+    #[test]
+    fn test_brightness_unknown_value_returns_none() {
+        let result = parse_single_class("brightness-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("brightness-999");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_contrast_unknown_value_returns_none() {
+        let result = parse_single_class("contrast-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("contrast-999");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_drop_shadow_unknown_value_returns_none() {
+        let result = parse_single_class("drop-shadow-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("drop-shadow-huge");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.17: Backdrop filter extended values (lines 2504-2555)
+    #[rstest]
+    #[case("backdrop-brightness-105", "backdrop-filter", "brightness(1.05)")]
+    #[case("backdrop-brightness-110", "backdrop-filter", "brightness(1.1)")]
+    #[case("backdrop-brightness-125", "backdrop-filter", "brightness(1.25)")]
+    #[case("backdrop-brightness-150", "backdrop-filter", "brightness(1.5)")]
+    #[case("backdrop-brightness-200", "backdrop-filter", "brightness(2)")]
+    fn test_parse_backdrop_brightness_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse backdrop-brightness");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("backdrop-contrast-125", "backdrop-filter", "contrast(1.25)")]
+    #[case("backdrop-contrast-150", "backdrop-filter", "contrast(1.5)")]
+    #[case("backdrop-contrast-200", "backdrop-filter", "contrast(2)")]
+    fn test_parse_backdrop_contrast_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse backdrop-contrast");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case("backdrop-saturate-150", "backdrop-filter", "saturate(1.5)")]
+    #[case("backdrop-saturate-200", "backdrop-filter", "saturate(2)")]
+    fn test_parse_backdrop_saturate_extended(
+        #[case] class: &str,
+        #[case] expected_prop: &str,
+        #[case] expected_value: &str,
+    ) {
+        let parsed = parse_single_class(class).expect("Should parse backdrop-saturate");
+        assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[test]
+    fn test_backdrop_brightness_unknown_returns_none() {
+        let result = parse_single_class("backdrop-brightness-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_backdrop_contrast_unknown_returns_none() {
+        let result = parse_single_class("backdrop-contrast-unknown");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_backdrop_saturate_unknown_returns_none() {
+        let result = parse_single_class("backdrop-saturate-unknown");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.18: Transform fallbacks (lines 2654-2714)
+    #[test]
+    fn test_rotate_unknown_value_returns_none() {
+        let result = parse_single_class("rotate-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("rotate-999");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_skew_x_unknown_value_returns_none() {
+        let result = parse_single_class("skew-x-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("skew-x-99");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_skew_y_unknown_value_returns_none() {
+        let result = parse_single_class("skew-y-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("skew-y-99");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_origin_unknown_value_returns_none() {
+        let result = parse_single_class("origin-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("origin-middle");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.19: Snap/will-change fallbacks (lines 2819, 2840)
+    #[test]
+    fn test_snap_unknown_value_returns_none() {
+        let result = parse_single_class("snap-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("snap-xyz");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_will_change_unknown_value_returns_none() {
+        let result = parse_single_class("will-change-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("will-change-xyz");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.20: Break utilities fallback (line 1252)
+    #[test]
+    fn test_break_unknown_value_returns_none() {
+        let result = parse_single_class("break-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("break-xyz");
+        assert!(result.is_none());
+    }
+
+    // Wave 6.21: Backdrop blur unknown value (line 2488)
+    #[test]
+    fn test_backdrop_blur_unknown_returns_none() {
+        let result = parse_single_class("backdrop-blur-unknown");
+        assert!(result.is_none());
+        let result = parse_single_class("backdrop-blur-huge");
+        assert!(result.is_none());
+    }
 }
