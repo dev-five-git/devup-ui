@@ -10,7 +10,9 @@ ToBTreeSet {
                 value: "#22C55E",
                 level: 0,
                 selector: None,
-                style_order: None,
+                style_order: Some(
+                    5,
+                ),
                 layer: None,
             },
         ),
@@ -20,7 +22,9 @@ ToBTreeSet {
                 value: "#3B82F6",
                 level: 0,
                 selector: None,
-                style_order: None,
+                style_order: Some(
+                    5,
+                ),
                 layer: None,
             },
         ),
@@ -30,7 +34,9 @@ ToBTreeSet {
                 value: "1rem",
                 level: 0,
                 selector: None,
-                style_order: None,
+                style_order: Some(
+                    5,
+                ),
                 layer: None,
             },
         ),

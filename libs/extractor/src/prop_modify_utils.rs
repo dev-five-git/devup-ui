@@ -252,6 +252,15 @@ pub fn get_class_name_expression<'a>(
     (expression, tailwind_styles)
 }
 
+/// Apply style_order to all ExtractStyleValue items
+fn apply_style_order_to_styles(styles: &mut [ExtractStyleValue], style_order: Option<u8>) {
+    if let Some(order) = style_order {
+        for style in styles.iter_mut() {
+            style.set_style_order(order);
+        }
+    }
+}
+
 /// Extract Tailwind CSS styles from a static className string and generate devup-ui class names
 /// Returns (extracted styles for CSS generation, generated class names expression)
 fn extract_tailwind_from_class_name<'a>(
@@ -264,8 +273,11 @@ fn extract_tailwind_from_class_name<'a>(
     if let Some(Expression::StringLiteral(literal)) = class_name_prop {
         let class_str = literal.value.as_str();
         if has_tailwind_classes(class_str) {
-            let tailwind_styles = parse_tailwind_to_styles(class_str, filename);
+            let mut tailwind_styles = parse_tailwind_to_styles(class_str, filename);
             if !tailwind_styles.is_empty() {
+                // Apply style_order to all extracted Tailwind styles
+                apply_style_order_to_styles(&mut tailwind_styles, style_order);
+
                 // Convert ExtractStyleValue to ExtractStyleProp::Static for gen_class_names
                 let mut tailwind_style_props: Vec<ExtractStyleProp> = tailwind_styles
                     .iter()
@@ -295,7 +307,9 @@ fn extract_tailwind_from_class_name<'a>(
 
             if !class_mapping.is_empty() {
                 // Collect all styles for CSS generation
-                let tailwind_styles = parse_tailwind_to_styles(&all_classes, filename);
+                let mut tailwind_styles = parse_tailwind_to_styles(&all_classes, filename);
+                // Apply style_order to all extracted Tailwind styles
+                apply_style_order_to_styles(&mut tailwind_styles, style_order);
 
                 // Build new template literal with replaced class names
                 let new_template =
