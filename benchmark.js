@@ -85,13 +85,13 @@ function clearBuildFile() {
       recursive: true,
       force: true,
     })
-  if (existsSync('./benchmark/next-tailwind-devup-ui/.next'))
-    rmSync('./benchmark/next-tailwind-devup-ui/.next', {
+  if (existsSync('./benchmark/next-tailwind-turbo-devup-ui/.next'))
+    rmSync('./benchmark/next-tailwind-turbo-devup-ui/.next', {
       recursive: true,
       force: true,
     })
-  if (existsSync('./benchmark/next-tailwind-devup-ui/df'))
-    rmSync('./benchmark/next-tailwind-devup-ui/df', {
+  if (existsSync('./benchmark/next-tailwind-turbo-devup-ui/df'))
+    rmSync('./benchmark/next-tailwind-turbo-devup-ui/df', {
       recursive: true,
       force: true,
     })
@@ -145,6 +145,6 @@ result.push(benchmark('devup-ui-single'))
 result.push(benchmark('tailwind-turbo'))
 result.push(benchmark('devup-ui-single-turbo'))
 result.push(benchmark('vanilla-extract-devup-ui'))
-result.push(benchmark('tailwind-devup-ui'))
+result.push(benchmark('tailwind-turbo-devup-ui'))
 
 console.info(result.join('\n'))
