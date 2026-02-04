@@ -355,9 +355,12 @@ impl TailwindClass {
                 StyleSelector::At { kind, query, .. } => {
                     has_at_rule = Some((kind, query));
                 }
-                // Note: TailwindVariant::to_selector() never produces Global, but this arm
-                // is required for exhaustive matching. Kept as no-op for forward compatibility.
-                StyleSelector::Global(_, _) => {}
+                // SAFETY: TailwindVariant::to_selector() never produces Global.
+                // This arm exists only for exhaustive matching. If reached, it indicates
+                // a bug where a new TailwindVariant was added that produces Global.
+                StyleSelector::Global(_, _) => {
+                    unreachable!("TailwindVariant should not produce Global selector")
+                }
             }
         }
 
