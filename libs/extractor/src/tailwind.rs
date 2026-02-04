@@ -2530,33 +2530,10 @@ fn parse_border_utility(class: &str) -> Option<(String, String)> {
         }
     }
 
-    // Border without prefix
+    // Standalone "rounded" (without suffix) - note: "rounded-*" variants are handled
+    // via BORDER_RADIUS_SCALE lookup above in the strip_prefix("rounded-") branch
     if class == "rounded" {
         return Some(("border-radius".to_string(), "0.25rem".to_string()));
-    }
-    if class == "rounded-none" {
-        return Some(("border-radius".to_string(), "0px".to_string()));
-    }
-    if class == "rounded-sm" {
-        return Some(("border-radius".to_string(), "0.125rem".to_string()));
-    }
-    if class == "rounded-md" {
-        return Some(("border-radius".to_string(), "0.375rem".to_string()));
-    }
-    if class == "rounded-lg" {
-        return Some(("border-radius".to_string(), "0.5rem".to_string()));
-    }
-    if class == "rounded-xl" {
-        return Some(("border-radius".to_string(), "0.75rem".to_string()));
-    }
-    if class == "rounded-2xl" {
-        return Some(("border-radius".to_string(), "1rem".to_string()));
-    }
-    if class == "rounded-3xl" {
-        return Some(("border-radius".to_string(), "1.5rem".to_string()));
-    }
-    if class == "rounded-full" {
-        return Some(("border-radius".to_string(), "9999px".to_string()));
     }
 
     // Border width
@@ -2623,21 +2600,10 @@ fn parse_border_utility(class: &str) -> Option<(String, String)> {
         }
     }
 
-    // Border without suffix (default 1px)
+    // Standalone "border" (without suffix) - note: "border-0/2/4/8" variants are handled
+    // via BORDER_WIDTH_SCALE lookup above in the strip_prefix("border-") branch
     if class == "border" {
         return Some(("border-width".to_string(), "1px".to_string()));
-    }
-    if class == "border-0" {
-        return Some(("border-width".to_string(), "0px".to_string()));
-    }
-    if class == "border-2" {
-        return Some(("border-width".to_string(), "2px".to_string()));
-    }
-    if class == "border-4" {
-        return Some(("border-width".to_string(), "4px".to_string()));
-    }
-    if class == "border-8" {
-        return Some(("border-width".to_string(), "8px".to_string()));
     }
 
     // Outline
@@ -5398,7 +5364,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // Wave 6.11: Individual rounded variants (lines 2130-2151)
+    // Wave 6.11: Individual rounded variants (via BORDER_RADIUS_SCALE lookup)
     #[rstest]
     #[case("rounded-none", "border-radius", "0px")]
     #[case("rounded-sm", "border-radius", "0.125rem")]
@@ -5418,7 +5384,7 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    // Wave 6.12: Border collapse/separate and border-0/2/4/8 (lines 2211-2232)
+    // Wave 6.12: Border collapse/separate (border-0/2/4/8 handled via BORDER_WIDTH_SCALE)
     #[rstest]
     #[case("border-collapse", "border-collapse", "collapse")]
     #[case("border-separate", "border-collapse", "separate")]
@@ -5798,7 +5764,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // Wave 7.5: Individual rounded variants via full parsing path (lines 2130-2151)
+    // Wave 7.5: Individual rounded variants via BORDER_RADIUS_SCALE lookup
     #[rstest]
     #[case("rounded", "border-radius", "0.25rem")]
     #[case("rounded-none", "border-radius", "0px")]
@@ -5819,7 +5785,7 @@ mod tests {
         assert_eq!(parsed.value, expected_value);
     }
 
-    // Wave 7.6: border-0/2/4/8 standalone via full parsing path (lines 2223-2232)
+    // Wave 7.6: border-0/2/4/8 via BORDER_WIDTH_SCALE lookup
     #[rstest]
     #[case("border", "border-width", "1px")]
     #[case("border-0", "border-width", "0px")]
@@ -5961,7 +5927,7 @@ mod tests {
         assert!(is_likely_tailwind_class(class));
     }
 
-    // Wave 8.3: parse_tailwind_to_styles integration for rounded variants (lines 2130-2151)
+    // Wave 8.3: parse_tailwind_to_styles integration for rounded variants (via BORDER_RADIUS_SCALE)
     #[test]
     #[serial]
     fn test_parse_tailwind_to_styles_rounded_integration() {
@@ -5975,7 +5941,7 @@ mod tests {
         assert_eq!(styles.len(), 8);
     }
 
-    // Wave 8.4: parse_tailwind_to_styles integration for border widths (lines 2223-2232)
+    // Wave 8.4: parse_tailwind_to_styles integration for border widths (via BORDER_WIDTH_SCALE)
     #[test]
     #[serial]
     fn test_parse_tailwind_to_styles_border_width_integration() {
