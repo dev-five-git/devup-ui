@@ -13475,13 +13475,14 @@ export const Card = () => (
     #[serial]
     fn test_tailwind_template_literal_with_style_order() {
         // Test style_order parameter in build_tailwind_class_mapping (covers line 178)
+        // styleOrder prop must be set explicitly to trigger the style_order code path
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-<Box bg="blue" className={`${enabled ? 'text-green-500' : 'text-blue-500'} p-4`}>
+<Box styleOrder={5} className={`${enabled ? 'text-green-500' : 'text-blue-500'} p-4`}>
   hello
 </Box>
 "#,
