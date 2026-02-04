@@ -355,6 +355,8 @@ impl TailwindClass {
                 StyleSelector::At { kind, query, .. } => {
                     has_at_rule = Some((kind, query));
                 }
+                // Note: TailwindVariant::to_selector() never produces Global, but this arm
+                // is required for exhaustive matching. Kept as no-op for forward compatibility.
                 StyleSelector::Global(_, _) => {}
             }
         }
@@ -5929,5 +5931,71 @@ mod tests {
     fn test_saturate_unknown_returns_none(#[case] class: &str) {
         let result = parse_single_class(class);
         assert!(result.is_none());
+    }
+
+    // ============================================================================
+    // WAVE 8: Coverage Gap Tests for Lines 816, 866, 295
+    // ============================================================================
+
+    // Wave 8.1: has_tailwind_classes with arbitrary CSS syntax (line 816)
+    // Classes with [...] that don't match any prefix trigger the arbitrary check
+    // Note: Classes with ':' get split (variant prefix removal), so avoid them
+    #[rstest]
+    #[case("custom-[value]")]
+    #[case("xyz-[test]")]
+    #[case("my-class-[10px]")]
+    #[case("foo-[bar]")]
+    fn test_has_tailwind_classes_arbitrary_css_syntax(#[case] class: &str) {
+        assert!(has_tailwind_classes(class));
+    }
+
+    // Wave 8.2: is_likely_tailwind_class with pure arbitrary syntax (line 816)
+    // These classes have brackets but don't match any standard prefix
+    // The check at line 816 triggers when a class has [...] but doesn't match prefixes
+    #[rstest]
+    #[case("custom-[value]")]
+    #[case("xyz-[100px]")]
+    #[case("my-[test]")]
+    #[case("unknown-[arbitrary]")]
+    fn test_is_likely_tailwind_class_pure_arbitrary_syntax(#[case] class: &str) {
+        assert!(is_likely_tailwind_class(class));
+    }
+
+    // Wave 8.3: parse_tailwind_to_styles integration for rounded variants (lines 2130-2151)
+    #[test]
+    #[serial]
+    fn test_parse_tailwind_to_styles_rounded_integration() {
+        reset_class_map();
+        reset_file_map();
+
+        let styles = parse_tailwind_to_styles(
+            "rounded-none rounded-sm rounded-md rounded-lg rounded-xl rounded-2xl rounded-3xl rounded-full",
+            None,
+        );
+        assert_eq!(styles.len(), 8);
+    }
+
+    // Wave 8.4: parse_tailwind_to_styles integration for border widths (lines 2223-2232)
+    #[test]
+    #[serial]
+    fn test_parse_tailwind_to_styles_border_width_integration() {
+        reset_class_map();
+        reset_file_map();
+
+        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8", None);
+        assert_eq!(styles.len(), 5);
+    }
+
+    // Wave 8.5: is_valid_tailwind_value fraction edge case (line 866)
+    // Edge case where value starts with '/' - empty first part is vacuously all-digits
+    #[rstest]
+    #[case("/2", true)]
+    #[case("/12", true)]
+    #[case("/123", true)]
+    fn test_is_valid_tailwind_value_slash_prefix_fraction(
+        #[case] value: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(is_valid_tailwind_value(value), expected);
     }
 }
