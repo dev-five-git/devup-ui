@@ -7,6 +7,7 @@ mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
 mod prop_modify_utils;
+mod tailwind;
 mod util_type;
 mod utils;
 mod vanilla_extract;
@@ -13080,6 +13081,418 @@ const Button = styled.button({ bg: 'red' })
                     import_main_css: false,
                     import_aliases: aliases
                 },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_classname_extraction() {
+        // Test Tailwind className extraction - classes should be replaced with devup-ui generated names
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="p-4 bg-red-500" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_classname_with_variants() {
+        // Test Tailwind with hover and responsive variants
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="p-4 hover:bg-blue-500 sm:p-8" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_classname_with_devup_props() {
+        // Test Tailwind className combined with devup-ui style props
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="p-4 bg-red-500" margin={2} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_arbitrary_values() {
+        // Test Tailwind arbitrary values like w-[100px]
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="w-[100px] h-[50vh] text-[#ff0000]" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_negative_values() {
+        // Test Tailwind negative values like -m-4
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="-m-4 -translate-x-1/2" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_full_integration() {
+        // Comprehensive integration test: realistic multi-component scenario
+        // Tests multiple Tailwind features together in a real-world usage pattern
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "components/Card.tsx",
+                r#"import {Box, Flex, Text} from '@devup-ui/core'
+
+// Card component with comprehensive Tailwind usage
+export const Card = () => (
+  <Box className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow dark:bg-gray-800">
+    <Flex className="flex-col gap-4 sm:flex-row sm:items-center">
+      <Box className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+        <Text className="text-white font-bold text-lg">A</Text>
+      </Box>
+      <Box className="flex-1">
+        <Text className="text-gray-900 font-semibold text-xl dark:text-white">Title</Text>
+        <Text className="text-gray-500 text-sm mt-1 dark:text-gray-400">Subtitle</Text>
+      </Box>
+    </Flex>
+    <Box className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+      <Text className="text-gray-700 leading-relaxed dark:text-gray-300">
+        Content goes here with multiple Tailwind utilities combined.
+      </Text>
+    </Box>
+  </Box>
+)
+"#,
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_with_all_variant_types() {
+        // Test all variant types: responsive, state, dark mode
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className="p-2 sm:p-4 md:p-6 lg:p-8 xl:p-10 2xl:p-12 hover:bg-blue-500 focus:ring-2 active:scale-95 disabled:opacity-50 dark:bg-gray-900 dark:hover:bg-gray-800" />
+"#,
+                ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_mixed_with_devup_responsive() {
+        // Test Tailwind className with devup-ui responsive array props
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box 
+  className="rounded-lg shadow-md hover:shadow-xl" 
+  p={[2, 4, 6]} 
+  bg={["red", "blue", "green"]}
+  display={["block", "flex"]}
+/>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_with_as_prop() {
+        // Test Tailwind className with "as" prop for polymorphic components
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box as="p" className="text-gray-900">text</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_with_conditional_template_literal() {
+        // Test Tailwind className with conditional expression in template literal
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${enabled ? 'text-green-500' : 'text-blue-500'} text-3xl pr-5`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_logical_expression() {
+        // Test LogicalExpression in template literal (covers lines 239-242, 290-292 in prop_modify_utils.rs)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${isActive && 'text-red-500'} ${fallback || 'text-blue-500'} p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_parenthesized_expression() {
+        // Test ParenthesizedExpression in template literal (covers lines 244-246, 295-296 in prop_modify_utils.rs)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${(cond ? 'text-red-500' : 'text-blue-500')} p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_nested_template_literal() {
+        // Test nested TemplateLiteral (covers lines 248, 299-302 in prop_modify_utils.rs)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${`text-${color}-500`} p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_variable_expression() {
+        // Test non-string expressions (variables/identifiers) - covers line 250 in prop_modify_utils.rs
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${dynamicClass} text-red-500 p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_function_call_expression() {
+        // Test function call expressions in template literal (covers line 250 default branch)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${getClass()} text-blue-500 p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_template_literal_with_style_order() {
+        // Test style_order parameter in build_tailwind_class_mapping (covers line 178)
+        // styleOrder prop must be set explicitly to trigger the style_order code path
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={5} className={`${enabled ? 'text-green-500' : 'text-blue-500'} p-4`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
             )
             .unwrap()
         ));

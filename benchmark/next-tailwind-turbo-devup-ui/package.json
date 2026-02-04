@@ -1,0 +1,29 @@
+{
+  "name": "next-tailwind-turbo-devup-ui-benchmark",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --experimental-debug-memory-usage",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^16.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "react-icons": "^5.5",
+    "@devup-ui/react": "workspace:^"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1",
+    "postcss": "^8.5",
+    "@types/node": "^25",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "tailwindcss": "^4.1",
+    "@devup-ui/next-plugin": "workspace:^"
+  }
+}
