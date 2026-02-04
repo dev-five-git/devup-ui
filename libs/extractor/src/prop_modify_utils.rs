@@ -1,6 +1,8 @@
+use crate::extract_style::ExtractStyleProperty;
+use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
-use crate::tailwind::{has_tailwind_classes, parse_tailwind_to_styles};
+use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
 use crate::utils::{get_string_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::CloneIn;
@@ -11,6 +13,7 @@ use oxc_ast::ast::{
     PropertyKey, PropertyKind, TemplateElementValue,
 };
 use oxc_span::SPAN;
+use std::collections::HashMap;
 
 /// modify object props
 /// Returns extracted Tailwind styles from static className strings
@@ -257,7 +260,7 @@ fn extract_tailwind_from_class_name<'a>(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> (Vec<ExtractStyleValue>, Option<Expression<'a>>) {
-    // Only extract from static string literals
+    // Extract from static string literals
     if let Some(Expression::StringLiteral(literal)) = class_name_prop {
         let class_str = literal.value.as_str();
         if has_tailwind_classes(class_str) {
@@ -282,7 +285,200 @@ fn extract_tailwind_from_class_name<'a>(
             }
         }
     }
+
+    // Extract from template literals (e.g., `${cond ? 'text-red' : 'text-blue'} p-4`)
+    if let Some(Expression::TemplateLiteral(template)) = class_name_prop {
+        let all_classes = extract_all_classes_from_template_literal(template);
+        if has_tailwind_classes(&all_classes) {
+            // Build mapping from Tailwind class → generated class name
+            let class_mapping = build_tailwind_class_mapping(&all_classes, style_order, filename);
+
+            if !class_mapping.is_empty() {
+                // Collect all styles for CSS generation
+                let tailwind_styles = parse_tailwind_to_styles(&all_classes, filename);
+
+                // Build new template literal with replaced class names
+                let new_template =
+                    rebuild_template_literal_with_mapping(ast_builder, template, &class_mapping);
+
+                return (tailwind_styles, Some(new_template));
+            }
+        }
+    }
+
     (Vec::new(), None)
+}
+
+/// Build a mapping from Tailwind class name to generated devup-ui class name
+fn build_tailwind_class_mapping(
+    class_str: &str,
+    style_order: Option<u8>,
+    filename: Option<&str>,
+) -> HashMap<String, String> {
+    let mut mapping = HashMap::new();
+
+    for class in class_str.split_whitespace() {
+        if let Some(parsed) = parse_single_class(class) {
+            let mut static_style = parsed.to_static_style();
+            if let Some(order) = style_order {
+                static_style.style_order = Some(order);
+            }
+            // Extract to get the generated class name
+            if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
+                mapping.insert(class.to_string(), generated);
+            }
+        }
+    }
+
+    mapping
+}
+
+/// Rebuild a template literal, replacing Tailwind classes with generated class names
+fn rebuild_template_literal_with_mapping<'a>(
+    ast_builder: &AstBuilder<'a>,
+    template: &oxc_ast::ast::TemplateLiteral<'a>,
+    class_mapping: &HashMap<String, String>,
+) -> Expression<'a> {
+    // Rebuild quasis with replaced class names
+    let new_quasis = template.quasis.iter().map(|quasi| {
+        let raw = quasi.value.raw.as_str();
+        let replaced = replace_classes_in_string(raw, class_mapping);
+        let cooked = quasi.value.cooked.as_ref().map(|c| {
+            let replaced_cooked = replace_classes_in_string(c.as_str(), class_mapping);
+            ast_builder.atom(&replaced_cooked)
+        });
+        ast_builder.template_element(
+            quasi.span,
+            TemplateElementValue {
+                raw: ast_builder.atom(&replaced),
+                cooked,
+            },
+            quasi.tail,
+            false, // escape_raw
+        )
+    });
+
+    // Rebuild expressions with replaced class names
+    let new_expressions = template
+        .expressions
+        .iter()
+        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, class_mapping));
+
+    ast_builder.expression_template_literal(
+        template.span,
+        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder.allocator),
+        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder.allocator),
+    )
+}
+
+/// Replace Tailwind class names in a string with generated class names
+fn replace_classes_in_string(s: &str, class_mapping: &HashMap<String, String>) -> String {
+    let mut result = s.to_string();
+    // Sort by length descending to avoid partial replacements (e.g., "text-3xl" before "text-3")
+    let mut sorted_classes: Vec<_> = class_mapping.iter().collect();
+    sorted_classes.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+
+    for (tailwind_class, generated_class) in sorted_classes {
+        result = result.replace(tailwind_class, generated_class);
+    }
+    result
+}
+
+/// Rebuild an expression, replacing Tailwind classes in string literals
+fn rebuild_expression_with_mapping<'a>(
+    ast_builder: &AstBuilder<'a>,
+    expr: &Expression<'a>,
+    class_mapping: &HashMap<String, String>,
+) -> Expression<'a> {
+    match expr {
+        Expression::StringLiteral(lit) => {
+            let replaced = replace_classes_in_string(lit.value.as_str(), class_mapping);
+            ast_builder.expression_string_literal(SPAN, ast_builder.atom(&replaced), None)
+        }
+        Expression::ConditionalExpression(cond) => {
+            let consequent =
+                rebuild_expression_with_mapping(ast_builder, &cond.consequent, class_mapping);
+            let alternate =
+                rebuild_expression_with_mapping(ast_builder, &cond.alternate, class_mapping);
+            ast_builder.expression_conditional(
+                cond.span,
+                cond.test.clone_in(ast_builder.allocator),
+                consequent,
+                alternate,
+            )
+        }
+        Expression::LogicalExpression(logic) => {
+            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, class_mapping);
+            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, class_mapping);
+            ast_builder.expression_logical(logic.span, left, logic.operator, right)
+        }
+        Expression::ParenthesizedExpression(paren) => {
+            let inner =
+                rebuild_expression_with_mapping(ast_builder, &paren.expression, class_mapping);
+            ast_builder.expression_parenthesized(paren.span, inner)
+        }
+        Expression::TemplateLiteral(inner_template) => {
+            rebuild_template_literal_with_mapping(ast_builder, inner_template, class_mapping)
+        }
+        // For other expressions (variables, etc.), keep as-is
+        _ => expr.clone_in(ast_builder.allocator),
+    }
+}
+
+/// Extract all class name strings from a template literal, including from conditional expressions
+fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLiteral) -> String {
+    let mut classes = Vec::new();
+
+    // Extract from quasis (static parts of template literal)
+    for quasi in &template.quasis {
+        let raw = quasi.value.raw.as_str();
+        if !raw.trim().is_empty() {
+            classes.push(raw.trim().to_string());
+        }
+    }
+
+    // Extract from expressions (dynamic parts)
+    for expr in &template.expressions {
+        extract_classes_from_expression(expr, &mut classes);
+    }
+
+    classes.join(" ")
+}
+
+/// Recursively extract class name strings from an expression
+fn extract_classes_from_expression(expr: &Expression, classes: &mut Vec<String>) {
+    match expr {
+        // Direct string literal: 'text-red-500'
+        Expression::StringLiteral(lit) => {
+            let value = lit.value.as_str().trim();
+            if !value.is_empty() {
+                classes.push(value.to_string());
+            }
+        }
+        // Ternary/conditional: cond ? 'text-red' : 'text-blue'
+        Expression::ConditionalExpression(cond) => {
+            extract_classes_from_expression(&cond.consequent, classes);
+            extract_classes_from_expression(&cond.alternate, classes);
+        }
+        // Logical OR: value || 'fallback'
+        Expression::LogicalExpression(logic) => {
+            extract_classes_from_expression(&logic.left, classes);
+            extract_classes_from_expression(&logic.right, classes);
+        }
+        // Parenthesized expression: (expr)
+        Expression::ParenthesizedExpression(paren) => {
+            extract_classes_from_expression(&paren.expression, classes);
+        }
+        // Template literal inside expression
+        Expression::TemplateLiteral(inner_template) => {
+            let inner_classes = extract_all_classes_from_template_literal(inner_template);
+            if !inner_classes.is_empty() {
+                classes.push(inner_classes);
+            }
+        }
+        // Other expressions (variables, function calls, etc.) - skip, can't extract statically
+        _ => {}
+    }
 }
 
 pub fn get_style_expression<'a>(

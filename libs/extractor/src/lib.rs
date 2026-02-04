@@ -13290,4 +13290,54 @@ export const Card = () => (
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_with_as_prop() {
+        // Test Tailwind className with "as" prop for polymorphic components
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box as="p" className="text-gray-900">text</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_tailwind_with_conditional_template_literal() {
+        // Test Tailwind className with conditional expression in template literal
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box className={`${enabled ? 'text-green-500' : 'text-blue-500'} text-3xl pr-5`}>
+  hello
+</Box>
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
 }
