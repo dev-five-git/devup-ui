@@ -268,6 +268,50 @@ pub fn extract(
     })
 }
 
+/// Extract styles from code using an explicit context instead of global state.
+///
+/// This function enables stateless extraction for parallel processing (e.g., Turbopack).
+/// It synchronizes the context with global state before extraction and captures any
+/// state changes afterward.
+///
+/// # Arguments
+///
+/// * `filename` - The source file path (used for file-specific class prefixes)
+/// * `code` - The source code to extract styles from
+/// * `option` - Extraction options (package name, CSS directory, etc.)
+/// * `ctx` - Mutable reference to the extraction context
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use extractor::{ExtractionContext, extract_with_context, ExtractOption};
+///
+/// let mut ctx = ExtractionContext::new();
+/// let result = extract_with_context(
+///     "component.tsx",
+///     r#"import { Box } from '@devup-ui/react'; export default () => <Box bg="red" />"#,
+///     ExtractOption::default(),
+///     &mut ctx,
+/// )?;
+/// ```
+pub fn extract_with_context(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    ctx: &mut ExtractionContext,
+) -> Result<ExtractOutput, Box<dyn Error>> {
+    // Sync context state to globals before extraction
+    ctx.sync_to_globals();
+
+    // Perform extraction using existing implementation
+    let result = extract(filename, code, option);
+
+    // Capture any state changes back to context
+    ctx.sync_from_globals();
+
+    result
+}
+
 /// Extract class names from generated code for specific style names
 /// Used for two-pass vanilla-extract processing to resolve selector references
 pub fn extract_class_map_from_code(

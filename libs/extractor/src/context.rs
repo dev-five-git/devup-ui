@@ -180,6 +180,43 @@ impl ExtractionContext {
     }
 }
 
+/// Synchronize context with global state (for incremental migration).
+///
+/// This allows using ExtractionContext while the codebase still uses global
+/// state internally. Once the full migration is complete, this can be removed.
+impl ExtractionContext {
+    /// Populate global state from this context.
+    ///
+    /// Call this before extraction to set up the global state.
+    pub fn sync_to_globals(&self) {
+        css::class_map::set_class_map(self.class_map.clone());
+        css::file_map::set_file_map(self.file_map.clone());
+        css::set_prefix(self.prefix.clone());
+        css::debug::set_debug(self.debug);
+    }
+
+    /// Populate this context from global state.
+    ///
+    /// Call this after extraction to capture any state changes.
+    pub fn sync_from_globals(&mut self) {
+        self.class_map = css::class_map::get_class_map();
+        self.file_map = css::file_map::get_file_map();
+        self.prefix = css::get_prefix();
+        self.debug = css::debug::is_debug();
+    }
+
+    /// Create a context initialized from current global state.
+    #[must_use]
+    pub fn from_globals() -> Self {
+        Self {
+            class_map: css::class_map::get_class_map(),
+            file_map: css::file_map::get_file_map(),
+            prefix: css::get_prefix(),
+            debug: css::debug::is_debug(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
