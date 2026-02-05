@@ -679,6 +679,7 @@ dependencies = [
 name = "extractor"
 version = "0.1.0"
 dependencies = [
+ "bimap",
  "boa_engine",
  "css",
  "insta",

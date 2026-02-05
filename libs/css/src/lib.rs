@@ -1,5 +1,6 @@
 pub mod class_map;
 mod constant;
+pub mod context_ops;
 pub mod debug;
 pub mod file_map;
 pub mod is_special_property;

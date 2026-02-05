@@ -1,5 +1,6 @@
 mod as_visit;
 mod component;
+pub mod context;
 mod css_utils;
 pub mod extract_style;
 mod extractor;
@@ -12,6 +13,7 @@ mod util_type;
 mod utils;
 mod vanilla_extract;
 mod visit;
+pub use crate::context::ExtractionContext;
 pub use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::get_file_num_by_filename;
