@@ -1,0 +1,7 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import styled from '@emotion/styled'\nimport { style } from '@vanilla-extract/css'\nimport { useState } from 'react'\"#,\n\"test.tsx\", \"@devup-ui/react\", &combined_aliases())"
+---
+import { styled } from '@devup-ui/react';
+import { style } from '@devup-ui/react';
+import { useState } from 'react'

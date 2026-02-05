@@ -1,0 +1,87 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"theme-array.css.ts\",\nr#\"import { createTheme, style } from '@devup-ui/react'\nexport const [themeClass, themeVars] = createTheme({\n  colors: { primary: 'blue', secondary: 'green' },\n  spacing: { small: '4px', medium: '8px' }\n})\nexport const themed = style({ color: themeVars.colors.primary })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--colors-primary-style_0-0",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_themeClass",
+                        "theme-array.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--colors-secondary-style_0-1",
+                value: "green",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_themeClass",
+                        "theme-array.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--spacing-medium-style_0-3",
+                value: "8px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_themeClass",
+                        "theme-array.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--spacing-small-style_0-2",
+                value: "4px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ".f0_themeClass",
+                        "theme-array.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--colors-primary-style_0-0)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const themed = \"a\";\nexport const [themeClass, themeVars] = [\"f0_themeClass\", {\n\t\"colors\": {\n\t\t\"primary\": \"var(--colors-primary-style_0-0)\",\n\t\t\"secondary\": \"var(--colors-secondary-style_0-1)\"\n\t},\n\t\"spacing\": {\n\t\t\"small\": \"var(--spacing-small-style_0-2)\",\n\t\t\"medium\": \"var(--spacing-medium-style_0-3)\"\n\t}\n}];\n;\n",
+}

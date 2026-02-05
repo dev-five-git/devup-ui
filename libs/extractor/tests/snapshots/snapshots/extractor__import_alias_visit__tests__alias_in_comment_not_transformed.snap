@@ -1,0 +1,6 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"// This uses @emotion/styled but doesn't import it\nconst x = 1;\"#,\n\"test.tsx\", \"@devup-ui/react\", &emotion_alias())"
+---
+// This uses @emotion/styled but doesn't import it
+const x = 1;

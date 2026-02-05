@@ -1,0 +1,79 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr###\"import {Box} from '@devup-ui/core'\n        <Box\n          aspectRatio=\"5.49\"\n          bg=\"#752E2E\"\n          h=\"22px\"\n          maskImage=\"url('/icons/BI-타이틀.svg')\"\n          maskRepeat=\"no-repeat\"\n          maskSize=\"contain\"\n          w=\"121px\"\n        />\n        \"###,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "aspect-ratio",
+                value: "5.49",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "#752E2E",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "height",
+                value: "22px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mask-image",
+                value: "url('/icons/BI-타이틀.svg')",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mask-repeat",
+                value: "no-repeat",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "mask-size",
+                value: "contain",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "121px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a b c d e f g\" />;\n",
+}

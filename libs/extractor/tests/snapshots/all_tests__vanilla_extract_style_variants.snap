@@ -1,0 +1,39 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"variants.css.ts\",\nr#\"import { styleVariants } from '@devup-ui/react'\nexport const background = styleVariants({\n  primary: { background: 'blue' },\n  secondary: { background: 'gray' },\n  danger: { background: 'red' }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "gray",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const background = {\n\tdanger: \"a\",\n\tprimary: \"b\",\n\tsecondary: \"c\"\n};\n",
+}

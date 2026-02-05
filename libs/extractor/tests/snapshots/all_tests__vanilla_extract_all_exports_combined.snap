@@ -1,0 +1,118 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"all-combined.css.ts\",\nr#\"import { style, globalStyle, keyframes, createVar, createContainer, layer, fontFace, createGlobalTheme, styleVariants } from '@devup-ui/react'\nexport const myVar = createVar()\nexport const myContainer = createContainer()\nexport const myLayer = layer('components')\nexport const myFont = fontFace({ src: 'local(Arial)' })\nexport const vars = createGlobalTheme(':root', { color: { primary: 'blue' } })\nexport const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })\nglobalStyle('body', { margin: 0 })\nconst base = style({ padding: 8 })\nexport const buttons = styleVariants({\n  primary: [base, { bg: 'blue' }],\n  secondary: { bg: 'gray' }\n})\nexport const box = style({ fontFamily: myFont })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--color-primary-global_theme_0-0",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "all-combined.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "gray",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-family",
+                value: "__devup_font_0_0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "all-combined.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "all-combined.css.ts",
+                properties: {
+                    "font-family": "__devup_font_0_0",
+                    "src": "local(Arial)",
+                },
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const box = \"b\";\n;\n;\n;\nexport const fade = \"c\";\nexport const buttons = {\n\tprimary: \"a d\",\n\tsecondary: \"e\"\n};\nexport const myLayer = \"--var-0\";\nexport const myVar = \"__devup_font_0_0\";\nexport const myFont = \"__container_0__\";\nexport const vars = \"components\";\nexport const myContainer = { \"color\": { \"primary\": \"var(--color-primary-global_theme_0-0)\" } };\n",
+}

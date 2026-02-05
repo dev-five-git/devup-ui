@@ -1,0 +1,68 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"test.cjs\",\nr#\"\"use strict\";Object.defineProperty(exports,Symbol.toStringTag,{value:\"Module\"});const {jsx:e1, jsxs:e2}=require(\"react/jsx-runtime\"),r=require(\"@devup-ui/react\");function t(){return e2(\"div\",{children:[e1(r.Box,{_hover:{bg:\"blue\"},bg:\"$text\",color:\"red\",children:\"hello\"}),e1(r.Text,{typography:\"header\",children:\"typo\"}),e1(r.Flex,{as:\"section\",mt:2,children:\"section\"})]})}exports.Lib=t;\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "$text",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:hover",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "flex",
+                level: 0,
+                selector: None,
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Typography(
+            "header",
+        ),
+    },
+    code: "\"use strict\";\nimport \"@devup-ui/react/devup-ui.css\";\nObject.defineProperty(exports, Symbol.toStringTag, { value: \"Module\" });\nconst { jsx: e1, jsxs: e2 } = require(\"react/jsx-runtime\"), r = require(\"@devup-ui/react\");\nfunction t() {\n\treturn e2(\"div\", { children: [\n\t\te1(\"div\", {\n\t\t\tchildren: \"hello\",\n\t\t\tclassName: \"a b c\"\n\t\t}),\n\t\te1(\"span\", {\n\t\t\tchildren: \"typo\",\n\t\t\tclassName: \"typo-header\"\n\t\t}),\n\t\te1(\"section\", {\n\t\t\tchildren: \"section\",\n\t\t\tclassName: \"d e\"\n\t\t})\n\t] });\n}\nexports.Lib = t;\n",
+}

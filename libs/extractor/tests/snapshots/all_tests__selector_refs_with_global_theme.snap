@@ -1,0 +1,67 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"theme-refs.css.ts\",\nr#\"import { style, createGlobalTheme } from '@devup-ui/react'\nexport const vars = createGlobalTheme(':root', {\n  colors: { primary: 'blue', secondary: 'green' }\n})\nexport const parent = style({ background: 'white' })\nexport const child = style({\n  selectors: {\n    [`${parent}:hover &`]: { color: 'red' }\n  }\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "--colors-primary-global_theme_0-0",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "theme-refs.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "--colors-secondary-global_theme_0-1",
+                value: "green",
+                level: 0,
+                selector: Some(
+                    Global(
+                        ":root",
+                        "theme-refs.css.ts",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "white",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "a:hover &",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const child = \"b\";\nexport const parent = \"a\";\n;\nexport const vars = { \"colors\": {\n\t\"primary\": \"var(--colors-primary-global_theme_0-0)\",\n\t\"secondary\": \"var(--colors-secondary-global_theme_0-1)\"\n} };\n",
+}

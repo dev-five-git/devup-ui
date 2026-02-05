@@ -1,0 +1,30 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"fonts-multi.css.ts\",\nr#\"import { fontFace, style } from '@devup-ui/react'\nconst roboto = fontFace({\n  src: 'url(\"/fonts/Roboto.woff2\") format(\"woff2\")',\n  fontWeight: 400,\n  fontStyle: 'normal'\n})\nexport const body = style({\n  fontFamily: roboto\n})\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "font-family",
+                value: "__devup_font_0_0",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        FontFace(
+            ExtractFontFace {
+                file: "fonts-multi.css.ts",
+                properties: {
+                    "font-family": "__devup_font_0_0",
+                    "font-style": "normal",
+                    "font-weight": "400",
+                    "src": "url(\"/fonts/Roboto.woff2\") format(\"woff2\")",
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const body = \"a\";\n;\nconst roboto = \"__devup_font_0_0\";\n",
+}

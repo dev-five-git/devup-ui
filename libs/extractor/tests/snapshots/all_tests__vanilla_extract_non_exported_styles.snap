@@ -1,0 +1,55 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"mixed-exports.css.ts\",\nr#\"import { style, keyframes, createVar, createContainer, layer } from '@devup-ui/react'\nconst internalStyle = style({ padding: 4 })\nconst internalKeyframe = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })\nconst internalVar = createVar()\nconst internalContainer = createContainer()\nconst internalLayer = layer('internal')\nexport const publicStyle = style({ margin: 8 })\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "32px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {
+                    "from": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "0",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                    "to": [
+                        ExtractStaticStyle {
+                            property: "opacity",
+                            value: "1",
+                            level: 0,
+                            selector: None,
+                            style_order: None,
+                            layer: None,
+                        },
+                    ],
+                },
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst internalStyle = \"a\";\nexport const publicStyle = \"b\";\nconst internalKeyframe = \"c\";\nconst internalVar = \"--var-0\";\nconst internalContainer = \"__container_0__\";\nconst internalLayer = \"internal\";\n",
+}

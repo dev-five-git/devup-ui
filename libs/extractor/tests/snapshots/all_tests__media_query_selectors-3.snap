@@ -1,0 +1,25 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/core'\n<Box _speech={{ display: \"none\" }} />\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: false, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "display",
+                value: "none",
+                level: 0,
+                selector: Some(
+                    At {
+                        kind: Media,
+                        query: "speech",
+                        selector: None,
+                    },
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui-0.css\";\n<div className=\"a-a\" />;\n",
+}

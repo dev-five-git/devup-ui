@@ -1,0 +1,48 @@
+---
+source: libs/extractor/src/tailwind.rs
+expression: sort_styles(styles)
+---
+{
+    Static(
+        ExtractStaticStyle {
+            property: "background-color",
+            value: "#3B82F6",
+            level: 0,
+            selector: Some(
+                Selector(
+                    "&:hover",
+                ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "color",
+            value: "#FFF",
+            level: 0,
+            selector: Some(
+                Selector(
+                    ":root[data-theme=dark] &",
+                ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+    Static(
+        ExtractStaticStyle {
+            property: "outline",
+            value: "2px solid transparent",
+            level: 0,
+            selector: Some(
+                Selector(
+                    "&:focus",
+                ),
+            ),
+            style_order: None,
+            layer: None,
+        },
+    ),
+}

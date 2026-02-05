@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r#\"import * as VE from '@vanilla-extract/css'\"#,\n\"test.tsx\", \"@devup-ui/react\", &vanilla_extract_alias())"
+---
+import * as VE from '@devup-ui/react';

@@ -1,0 +1,15 @@
+---
+source: libs/extractor/tests/all_tests.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Text} from '@devup-ui/core'\n        <Text typography={a ? \"bold\" : \"bold2\"} />\n        \"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Typography(
+            "bold",
+        ),
+        Typography(
+            "bold2",
+        ),
+    },
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<span className={a ? \"typo-bold\" : \"typo-bold2\"} />;\n",
+}
