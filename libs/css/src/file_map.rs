@@ -24,6 +24,7 @@ where
     F: FnOnce(&BiHashMap<String, usize>) -> R,
 {
     #[cfg(target_arch = "wasm32")]
+    #[cfg(not(tarpaulin_include))]
     {
         GLOBAL_FILE_MAP.with(|map| f(&map.borrow()))
     }
@@ -39,6 +40,7 @@ where
     F: FnOnce(&mut BiHashMap<String, usize>) -> R,
 {
     #[cfg(target_arch = "wasm32")]
+    #[cfg(not(tarpaulin_include))]
     {
         GLOBAL_FILE_MAP.with(|map| f(&mut map.borrow_mut()))
     }
