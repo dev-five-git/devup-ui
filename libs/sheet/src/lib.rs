@@ -14,6 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering::Equal;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fmt::Write;
 use std::sync::LazyLock;
 
 trait ExtractStyle {
@@ -82,6 +83,22 @@ impl ExtractStyle for StyleSheetProperty {
 static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$[\w.]+").unwrap());
 static INTERFACE_KEY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
+
+/// Cached header string — computed once from compile-time included package.json
+static HEADER: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "/*! devup-ui v{version} | Apache License 2.0 | https://devup-ui.com */",
+        version = include_str!("../../../bindings/devup-ui-wasm/package.json")
+            .lines()
+            .find(|line| line.contains("\"version\""))
+            .unwrap()
+            .split(":")
+            .nth(1)
+            .unwrap()
+            .trim()
+            .replace("\"", ""),
+    )
+});
 
 fn convert_interface_key(key: &str) -> String {
     if INTERFACE_KEY_RE.is_match(key) {
@@ -535,110 +552,112 @@ impl StyleSheet {
                             selector_map.entry(selector.clone()).or_default().push(prop);
                         }
                     }
-                    let mut inner_css = String::new();
-                    for (selector, props) in selector_map {
-                        inner_css.push_str(&format!(
-                            "{}{{{}}}",
-                            selector,
-                            props
-                                .into_iter()
-                                .map(|prop| format!("{}:{}", prop.property, prop.value))
-                                .collect::<Vec<String>>()
-                                .join(";")
-                        ));
+                    if let Some(break_point) = break_point {
+                        write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
                     }
-                    current_css.push_str(
-                        if let Some(break_point) = break_point {
-                            format!("@media(min-width:{break_point}px){{{inner_css}}}")
-                        } else {
-                            inner_css
+                    for (selector, props) in selector_map {
+                        current_css.push_str(&selector);
+                        current_css.push('{');
+                        let mut first = true;
+                        for prop in props {
+                            if !first {
+                                current_css.push(';');
+                            }
+                            first = false;
+                            current_css.push_str(&prop.property);
+                            current_css.push(':');
+                            current_css.push_str(&prop.value);
                         }
-                        .as_str(),
-                    );
+                        current_css.push('}');
+                    }
+                    if break_point.is_some() {
+                        current_css.push('}');
+                    }
                 }
             }
 
             if !sorted_props.is_empty() {
-                let inner_css = sorted_props
-                    .into_iter()
-                    .map(ExtractStyle::extract)
-                    .collect::<String>();
-                current_css.push_str(
-                    if let Some(break_point) = break_point {
-                        format!("@media(min-width:{break_point}px){{{inner_css}}}")
-                    } else {
-                        inner_css
-                    }
-                    .as_str(),
-                );
+                if let Some(break_point) = break_point {
+                    write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
+                }
+                for prop in sorted_props {
+                    current_css.push_str(&prop.extract());
+                }
+                if break_point.is_some() {
+                    current_css.push('}');
+                }
             }
             for ((kind, query), props) in at_rules {
-                let inner_css = props
-                    .into_iter()
-                    .map(ExtractStyle::extract)
-                    .collect::<String>();
-                current_css.push_str(
-                    if let Some(break_point) = break_point {
-                        match kind {
-                            AtRuleKind::Media => {
-                                // Combine @media queries with 'and'
-                                format!("@media(min-width:{break_point}px)and {query}{{{inner_css}}}")
-                            }
-                            AtRuleKind::Supports => {
-                                // Nest @supports inside @media for breakpoint
-                                format!("@media(min-width:{break_point}px){{@supports{query}{{{inner_css}}}}}")
-                            }
-                            AtRuleKind::Container => {
-                                // Nest @container inside @media for breakpoint
-                                format!("@media(min-width:{break_point}px){{@container{query}{{{inner_css}}}}}")
-                            }
-                            AtRuleKind::Layer => {
-                                // Nest @layer inside @media for breakpoint
-                                format!("@media(min-width:{break_point}px){{@layer {query}{{{inner_css}}}}}")
-                            }
+                if let Some(break_point) = break_point {
+                    match kind {
+                        AtRuleKind::Media => {
+                            write!(
+                                current_css,
+                                "@media(min-width:{break_point}px)and {query}{{"
+                            )
+                            .unwrap();
                         }
-                    } else {
-                        format!("@{kind}{}{{{}}}", if query.starts_with("(") { query.clone() } else { format!(" {query}") }, inner_css.as_str())
+                        AtRuleKind::Supports => {
+                            write!(
+                                current_css,
+                                "@media(min-width:{break_point}px){{@supports{query}{{"
+                            )
+                            .unwrap();
+                        }
+                        AtRuleKind::Container => {
+                            write!(
+                                current_css,
+                                "@media(min-width:{break_point}px){{@container{query}{{"
+                            )
+                            .unwrap();
+                        }
+                        AtRuleKind::Layer => {
+                            write!(
+                                current_css,
+                                "@media(min-width:{break_point}px){{@layer {query}{{"
+                            )
+                            .unwrap();
+                        }
                     }
-                    .as_str(),
-                );
+                    for prop in props {
+                        current_css.push_str(&prop.extract());
+                    }
+                    match kind {
+                        AtRuleKind::Media => current_css.push('}'),
+                        _ => current_css.push_str("}}"),
+                    }
+                } else {
+                    write!(current_css, "@{kind}").unwrap();
+                    if query.starts_with('(') {
+                        write!(current_css, "{query}{{").unwrap();
+                    } else {
+                        write!(current_css, " {query}{{").unwrap();
+                    }
+                    for prop in props {
+                        current_css.push_str(&prop.extract());
+                    }
+                    current_css.push('}');
+                }
             }
         }
         current_css
     }
 
-    fn create_header(&self) -> String {
-        format!(
-            "/*! devup-ui v{version} | Apache License 2.0 | https://devup-ui.com */",
-            // get version from package.json
-            version = include_str!("../../../bindings/devup-ui-wasm/package.json")
-                .lines()
-                .find(|line| line.contains("\"version\""))
-                .unwrap()
-                .split(":")
-                .nth(1)
-                .unwrap()
-                .trim()
-                .replace("\"", ""),
-        )
+    #[inline]
+    fn create_header(&self) -> &'static str {
+        &HEADER
     }
 
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
-        let header = self.create_header();
-        let mut css = format!(
-            "{header}{}",
-            self.imports
-                .values()
-                .flatten()
-                .map(|import| {
-                    if import.starts_with("\"") {
-                        format!("@import {import};")
-                    } else {
-                        format!("@import \"{import}\";")
-                    }
-                })
-                .collect::<String>()
-        );
+        let mut css = String::with_capacity(4096);
+        css.push_str(self.create_header());
+        for import in self.imports.values().flatten() {
+            if import.starts_with('"') {
+                write!(css, "@import {import};").unwrap();
+            } else {
+                write!(css, "@import \"{import}\";").unwrap();
+            }
+        }
 
         let write_global = filename.is_none();
 
@@ -670,28 +689,39 @@ impl StyleSheet {
             }
             layers_vec.extend(style_orders.iter().map(|v| format!("o{v}")));
             if !layers_vec.is_empty() {
-                css.push_str(&format!("@layer {};", layers_vec.join(",")));
+                css.push_str("@layer ");
+                let mut first = true;
+                for layer in &layers_vec {
+                    if !first {
+                        css.push(',');
+                    }
+                    first = false;
+                    css.push_str(layer);
+                }
+                css.push(';');
             }
             if !theme_css.is_empty() {
-                css.push_str(&format!("@layer t{{{theme_css}}}",));
+                write!(css, "@layer t{{{theme_css}}}").unwrap();
             }
             for (_, font_faces) in self.font_faces.iter() {
                 for font_face in font_faces.iter() {
-                    css.push_str(&format!(
-                        "@font-face{{{}}}",
-                        font_face
-                            .iter()
-                            .map(|(key, value)| format!("{key}:{value}"))
-                            .collect::<Vec<String>>()
-                            .join(";")
-                    ));
+                    css.push_str("@font-face{");
+                    let mut first = true;
+                    for (key, value) in font_face.iter() {
+                        if !first {
+                            css.push(';');
+                        }
+                        first = false;
+                        write!(css, "{key}:{value}").unwrap();
+                    }
+                    css.push('}');
                 }
             }
 
             // global css
             for (_, _css) in self.css.iter() {
                 for _css in _css.iter() {
-                    css.push_str(&_css.extract());
+                    css.push_str(&_css.css);
                 }
             }
 
@@ -700,14 +730,22 @@ impl StyleSheet {
                 BTreeMap::new();
             let base_css = self.create_style_with_layers(&base_styles, &mut layered_styles);
             if !base_css.is_empty() {
-                css.push_str(format!("@layer b{{{base_css}}}",).as_str());
+                write!(css, "@layer b{{{base_css}}}").unwrap();
             }
 
             // Generate @layer declarations and wrapped styles for custom layers
             if !layered_styles.is_empty() {
                 // Add layer declarations
-                let layer_names: Vec<_> = layered_styles.keys().cloned().collect();
-                css.push_str(&format!("@layer {};", layer_names.join(",")));
+                css.push_str("@layer ");
+                let mut first = true;
+                for name in layered_styles.keys() {
+                    if !first {
+                        css.push(',');
+                    }
+                    first = false;
+                    css.push_str(name);
+                }
+                css.push(';');
 
                 // Generate styles wrapped in @layer blocks
                 for (layer_name, styles) in layered_styles {
@@ -720,19 +758,21 @@ impl StyleSheet {
                             .push((property, value));
                     }
 
-                    let mut layer_css = String::new();
+                    write!(css, "@layer {layer_name}{{").unwrap();
                     for (selector, props) in selector_map {
-                        layer_css.push_str(&format!(
-                            "{}{{{}}}",
-                            selector,
-                            props
-                                .into_iter()
-                                .map(|(p, v)| format!("{p}:{v}"))
-                                .collect::<Vec<_>>()
-                                .join(";")
-                        ));
+                        css.push_str(&selector);
+                        css.push('{');
+                        let mut first = true;
+                        for (p, v) in props {
+                            if !first {
+                                css.push(';');
+                            }
+                            first = false;
+                            write!(css, "{p}:{v}").unwrap();
+                        }
+                        css.push('}');
                     }
-                    css.push_str(&format!("@layer {layer_name}{{{layer_css}}}"));
+                    css.push('}');
                 }
             }
         } else {
@@ -745,19 +785,20 @@ impl StyleSheet {
 
         if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
             for (name, map) in keyframes {
-                css.push_str(&format!(
-                    "@keyframes {name}{{{}}}",
-                    map.iter()
-                        .map(|(key, props)| format!(
-                            "{key}{{{}}}",
-                            props
-                                .iter()
-                                .map(|(key, value)| format!("{key}:{value}"))
-                                .collect::<Vec<String>>()
-                                .join(";")
-                        ))
-                        .collect::<String>()
-                ));
+                write!(css, "@keyframes {name}{{").unwrap();
+                for (key, props) in map.iter() {
+                    write!(css, "{key}{{").unwrap();
+                    let mut first = true;
+                    for (k, v) in props.iter() {
+                        if !first {
+                            css.push(';');
+                        }
+                        first = false;
+                        write!(css, "{k}:{v}").unwrap();
+                    }
+                    css.push('}');
+                }
+                css.push('}');
             }
         }
 
@@ -772,14 +813,11 @@ impl StyleSheet {
 
                 if !current_css.is_empty() {
                     // order style 255 is user css
-                    css.push_str(
-                        if *style_order == 255 {
-                            current_css
-                        } else {
-                            format!("@layer o{}{{{current_css}}}", style_order)
-                        }
-                        .as_str(),
-                    );
+                    if *style_order == 255 {
+                        css.push_str(&current_css);
+                    } else {
+                        write!(css, "@layer o{style_order}{{{current_css}}}").unwrap();
+                    }
                 }
             }
         }
