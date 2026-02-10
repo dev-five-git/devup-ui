@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 
 #[cfg(target_arch = "wasm32")]
 thread_local! {
-    static GLOBAL_CLASS_MAP: RefCell<HashMap<String, HashMap<String, usize>>> = const { RefCell::new(HashMap::new()) };
+    static GLOBAL_CLASS_MAP: RefCell<HashMap<String, HashMap<String, usize>>> = RefCell::new(HashMap::new());
 }
 
 #[cfg(not(target_arch = "wasm32"))]

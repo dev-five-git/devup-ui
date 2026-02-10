@@ -8,13 +8,13 @@ use css::{
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
-use std::borrow::Cow;
-use std::sync::LazyLock;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::borrow::Cow;
 use std::cmp::Ordering::Equal;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::LazyLock;
 
 trait ExtractStyle {
     fn extract(&self) -> String;

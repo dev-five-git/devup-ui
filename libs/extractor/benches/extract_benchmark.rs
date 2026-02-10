@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::collections::HashMap;
 use std::hint::black_box;
 
@@ -6,7 +6,7 @@ use css::class_map::reset_class_map;
 use css::debug::set_debug;
 use css::file_map::reset_file_map;
 use css::set_prefix;
-use extractor::{extract, ExtractOption};
+use extractor::{ExtractOption, extract};
 
 fn make_option() -> ExtractOption {
     ExtractOption {
@@ -62,7 +62,7 @@ const a = <Flex direction="column" gap={4}>
   <Box borderTop="1px solid gray" borderBottom="1px solid gray" px={4} py={2} />
   <Box gap={[2, 4, 6]} rowGap={2} columnGap={4} />
   <Box w={["100%", "50%", "33%"]} h={["auto", "200px", "300px"]} />
-  <Box _hover={{_before: {{bg: "blue"}}}} p={4} />
+  <Box _hover={{_before: {bg: "blue"}}} p={4} />
   <Box objectFit="cover" objectPosition="center" aspectRatio="16/9" />
   <Flex direction={["column", "row"]} wrap="wrap" gap={[2, 4]} />
   <Box outlineColor="blue" outlineWidth="2px" outlineStyle="solid" outlineOffset="2px" />

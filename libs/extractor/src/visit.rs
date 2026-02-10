@@ -572,8 +572,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 match &specifiers[i] {
                     ImportSpecifier(import) => {
                         let imported_str = import.imported.to_string();
-                        if let Ok(kind) = ExportVariableKind::from_str(&imported_str)
-                        {
+                        if let Ok(kind) = ExportVariableKind::from_str(&imported_str) {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
                         } else if let Ok(kind) = UtilType::from_str(&imported_str) {

@@ -1,9 +1,9 @@
 use crate::{
+    COLOR_HASH, F_SPACE_RE, ZERO_RE,
     constant::{
-        DOT_ZERO_RE, F_DOT_RE, F_RGBA_RE, F_RGB_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
+        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
         ZERO_PERCENT_FUNCTION,
     },
-    COLOR_HASH, F_SPACE_RE, ZERO_RE,
 };
 
 pub fn optimize_value(value: &str) -> String {

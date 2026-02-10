@@ -110,11 +110,7 @@ impl Ord for StyleSelector {
                     return k;
                 }
                 let c = a.cmp(b);
-                if c == Ordering::Equal {
-                    aa.cmp(bb)
-                } else {
-                    c
-                }
+                if c == Ordering::Equal { aa.cmp(bb) } else { c }
             }
             (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
                 let order_cmp = get_selector_order(a).cmp(&get_selector_order(b));
@@ -286,11 +282,7 @@ fn get_selector_order(selector: &str) -> u8 {
         }
     }
 
-    if t.starts_with("&") {
-        0
-    } else {
-        99
-    }
+    if t.starts_with("&") { 0 } else { 99 }
 }
 
 #[cfg(test)]
