@@ -1,5 +1,6 @@
 use crate::constant::{M_BASE_ARRAY, N_BASE_ARRAY};
 
+#[inline]
 pub fn num_to_nm_base(num: usize) -> String {
     if num == 0 {
         return N_BASE_ARRAY[0].to_string();

@@ -71,16 +71,14 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
             selector,
         } => StyleSelector::At {
             kind,
-            query: query.to_string(),
-            selector: selector
-                .as_ref()
-                .map(|s| optimize_selector_string(s.as_str())),
+            query,
+            selector: selector.map(|s| optimize_selector_string(&s)),
         },
         StyleSelector::Selector(selector) => {
             StyleSelector::Selector(optimize_selector_string(&selector))
         }
         StyleSelector::Global(selector, file) => {
-            StyleSelector::Global(optimize_selector_string(&selector), file.to_string())
+            StyleSelector::Global(optimize_selector_string(&selector), file)
         }
     }
 }
@@ -231,43 +229,38 @@ impl From<(&StyleSelector, &str)> for StyleSelector {
 
 impl Display for StyleSelector {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                StyleSelector::Selector(value) => value.to_string(),
-                StyleSelector::At {
-                    kind,
-                    query,
-                    selector,
-                } => {
-                    let space = if query.starts_with('(') { "" } else { " " };
-                    if let Some(selector) = selector {
-                        format!("@{kind}{space}{query} {selector}")
-                    } else {
-                        format!("@{kind}{space}{query}")
-                    }
+        match self {
+            StyleSelector::Selector(value) => f.write_str(value),
+            StyleSelector::At {
+                kind,
+                query,
+                selector,
+            } => {
+                write!(f, "@{kind}")?;
+                if !query.starts_with('(') {
+                    f.write_str(" ")?;
                 }
-                StyleSelector::Global(value, _) => value.to_string(),
+                f.write_str(query)?;
+                if let Some(selector) = selector {
+                    write!(f, " {selector}")?;
+                }
+                Ok(())
             }
-        )
+            StyleSelector::Global(value, _) => f.write_str(value),
+        }
     }
 }
 
 fn get_selector_order(selector: &str) -> u8 {
-    // & count
-    let t = if selector.chars().filter(|c| c == &'&').count() == 1 {
-        selector
-            .split('&')
-            .next_back()
-            .map(|a| a.to_string())
-            .unwrap_or(selector.to_string())
+    // Extract the part after the single '&' (avoid String allocation)
+    let t: &str = if selector.chars().filter(|c| *c == '&').count() == 1 {
+        selector.split('&').next_back().unwrap_or(selector)
     } else {
-        selector.to_string()
+        selector
     };
 
     // First, try to find the order in the map (for regular selectors like &:hover)
-    if let Some(order) = SELECTOR_ORDER_MAP.get(&t) {
+    if let Some(order) = SELECTOR_ORDER_MAP.get(t) {
         return *order;
     }
 
@@ -282,7 +275,7 @@ fn get_selector_order(selector: &str) -> u8 {
         }
     }
 
-    if t.starts_with("&") { 0 } else { 99 }
+    if t.starts_with('&') { 0 } else { 99 }
 }
 
 #[cfg(test)]

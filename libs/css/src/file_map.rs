@@ -1,41 +1,86 @@
 use bimap::BiHashMap;
+
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Mutex;
 
-use once_cell::sync::Lazy;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::LazyLock;
 
-pub(crate) static GLOBAL_FILE_MAP: Lazy<Mutex<BiHashMap<String, usize>>> =
-    Lazy::new(|| Mutex::new(BiHashMap::new()));
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static GLOBAL_FILE_MAP: RefCell<BiHashMap<String, usize>> = RefCell::new(BiHashMap::new());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static GLOBAL_FILE_MAP: LazyLock<Mutex<BiHashMap<String, usize>>> =
+    LazyLock::new(|| Mutex::new(BiHashMap::new()));
+
+#[inline]
+fn with_file_map<F, R>(f: F) -> R
+where
+    F: FnOnce(&BiHashMap<String, usize>) -> R,
+{
+    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(tarpaulin_include))]
+    {
+        GLOBAL_FILE_MAP.with(|map| f(&map.borrow()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        f(&GLOBAL_FILE_MAP.lock().unwrap())
+    }
+}
+
+#[inline]
+fn with_file_map_mut<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut BiHashMap<String, usize>) -> R,
+{
+    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(tarpaulin_include))]
+    {
+        GLOBAL_FILE_MAP.with(|map| f(&mut map.borrow_mut()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        f(&mut GLOBAL_FILE_MAP.lock().unwrap())
+    }
+}
 
 /// for test
 pub fn reset_file_map() {
-    let mut map = GLOBAL_FILE_MAP.lock().unwrap();
-    map.clear();
+    with_file_map_mut(|map| map.clear());
 }
 
-pub fn set_file_map(map: BiHashMap<String, usize>) {
-    let mut global_map = GLOBAL_FILE_MAP.lock().unwrap();
-    *global_map = map;
+pub fn set_file_map(new_map: BiHashMap<String, usize>) {
+    with_file_map_mut(|map| *map = new_map);
 }
 
 pub fn get_file_map() -> BiHashMap<String, usize> {
-    GLOBAL_FILE_MAP.lock().unwrap().clone()
+    with_file_map(|map| map.clone())
 }
 
+#[inline]
 pub fn get_file_num_by_filename(filename: &str) -> usize {
-    let mut map = GLOBAL_FILE_MAP.lock().unwrap();
-    let len = map.len();
-    if !map.contains_left(filename) {
-        map.insert(filename.to_string(), len);
-    }
-    *map.get_by_left(filename).unwrap()
+    with_file_map_mut(|map| {
+        let len = map.len();
+        if !map.contains_left(filename) {
+            map.insert(filename.to_string(), len);
+        }
+        *map.get_by_left(filename).unwrap()
+    })
 }
 
 pub fn get_filename_by_file_num(file_num: usize) -> String {
-    let map = GLOBAL_FILE_MAP.lock().unwrap();
-    map.get_by_right(&file_num)
-        .map(|s| s.as_str())
-        .unwrap_or_default()
-        .to_string()
+    with_file_map(|map| {
+        map.get_by_right(&file_num)
+            .map(|s| s.as_str())
+            .unwrap_or_default()
+            .to_string()
+    })
 }
 
 #[cfg(test)]

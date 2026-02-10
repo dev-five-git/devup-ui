@@ -1,33 +1,31 @@
+#[inline]
 pub fn to_kebab_case(value: &str) -> String {
-    value
-        .chars()
-        .enumerate()
-        .map(|(i, c)| {
-            if c.is_uppercase() {
-                if i == 0 {
-                    c.to_ascii_lowercase().to_string()
-                } else {
-                    format!("-{}", c.to_ascii_lowercase())
-                }
-            } else {
-                c.to_string()
+    let mut result = String::with_capacity(value.len() + 4);
+    for (i, c) in value.chars().enumerate() {
+        if c.is_uppercase() {
+            if i != 0 {
+                result.push('-');
             }
-        })
-        .collect()
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
+#[inline]
 pub fn to_camel_case(value: &str) -> String {
-    value
-        .split('-')
-        .enumerate()
-        .map(|(i, s)| {
-            if i == 0 {
-                s.to_string()
-            } else {
-                format!("{}{}", s[0..1].to_uppercase(), &s[1..])
-            }
-        })
-        .collect()
+    let mut result = String::with_capacity(value.len());
+    for (i, s) in value.split('-').enumerate() {
+        if i == 0 {
+            result.push_str(s);
+        } else if let Some(first) = s.chars().next() {
+            result.push(first.to_ascii_uppercase());
+            result.push_str(&s[first.len_utf8()..]);
+        }
+    }
+    result
 }
 
 #[cfg(test)]

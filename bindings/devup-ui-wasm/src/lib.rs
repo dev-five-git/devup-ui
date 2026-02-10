@@ -2,14 +2,13 @@ use css::class_map::{get_class_map, set_class_map};
 use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
-use once_cell::sync::Lazy;
 use sheet::StyleSheet;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 
-static GLOBAL_STYLE_SHEET: Lazy<Mutex<StyleSheet>> =
-    Lazy::new(|| Mutex::new(StyleSheet::default()));
+static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
+    LazyLock::new(|| Mutex::new(StyleSheet::default()));
 
 #[wasm_bindgen]
 pub struct Output {
