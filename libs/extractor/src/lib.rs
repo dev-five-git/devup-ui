@@ -14035,6 +14035,56 @@ export { c as Lib };"#,
             )
             .unwrap()
         ));
+
+        // Coverage: visit.rs — ParsedStyleOrder::None + _ match arm in visit_call_expression
+        // Call expression WITHOUT any styleOrder property.
+        // Pre-scan finds no styleOrder → ParsedStyleOrder::None.
+        // extract_style_from_expression also returns style_order=None.
+        // Exercises: ParsedStyleOrder::None branch and the _ => (non-Conditional) arm.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { bg: "red", p: 4 });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs — _ match arm in visit_jsx_element (non-Conditional path)
+        // JSX element WITHOUT any styleOrder prop at all.
+        // parsed_style_order stays ParsedStyleOrder::None (default).
+        // Exercises the _ => arm in visit_jsx_element's match on parsed_style_order.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box bg="red" p={4} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]

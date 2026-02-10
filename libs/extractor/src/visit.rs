@@ -421,14 +421,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 );
 
                 // Use pre-scanned ParsedStyleOrder, falling back to extract_style_from_expression's
-                // static result for backward compat
+                // static result for backward compat.
+                // Note: pre-scan and extract_style_from_expression both use get_number_by_literal_expression
+                // on the same value, so style_order is always None when parsed_style_order is None.
                 let parsed_style_order = match parsed_style_order {
                     ParsedStyleOrder::None => {
-                        // Use the static value from extract_style_from_expression
-                        match style_order {
-                            Some(v) => ParsedStyleOrder::Static(v),
-                            None => ParsedStyleOrder::None,
-                        }
+                        style_order.map_or(ParsedStyleOrder::None, ParsedStyleOrder::Static)
                     }
                     other => other,
                 };
