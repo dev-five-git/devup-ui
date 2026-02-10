@@ -14036,4 +14036,46 @@ export { c as Lib };"#,
             .unwrap()
         ));
     }
+
+    #[test]
+    fn test_combine_conditional_class_name() {
+        use crate::prop_modify_utils::combine_conditional_class_name;
+        use crate::utils::expression_to_code;
+        use oxc_span::SPAN;
+
+        let allocator = Allocator::default();
+        let builder = oxc_ast::AstBuilder::new(&allocator);
+
+        let make_cond = || builder.expression_identifier(SPAN, builder.atom("cond"));
+        let make_str = |s| builder.expression_string_literal(SPAN, builder.atom(s), None);
+
+        // (Some, Some) — both branches have classNames
+        let result = combine_conditional_class_name(
+            &builder,
+            make_cond(),
+            Some(make_str("a")),
+            Some(make_str("b")),
+        );
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (Some, None) — only consequent has className, alternate falls back to ""
+        let result =
+            combine_conditional_class_name(&builder, make_cond(), Some(make_str("a")), None);
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (None, Some) — only alternate has className, consequent falls back to ""
+        let result =
+            combine_conditional_class_name(&builder, make_cond(), None, Some(make_str("b")));
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (None, None) — neither has className
+        let result = combine_conditional_class_name(&builder, make_cond(), None, None);
+        assert!(result.is_none());
+    }
 }

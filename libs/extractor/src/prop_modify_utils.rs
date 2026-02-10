@@ -15,6 +15,35 @@ use oxc_ast::ast::{
 use oxc_span::SPAN;
 use std::collections::HashMap;
 
+/// Combine two optional className expressions into a conditional expression.
+/// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
+/// Returns `None` only when both branches are `None`.
+pub(crate) fn combine_conditional_class_name<'a>(
+    ast_builder: &AstBuilder<'a>,
+    condition: Expression<'a>,
+    con_expr: Option<Expression<'a>>,
+    alt_expr: Option<Expression<'a>>,
+) -> Option<Expression<'a>> {
+    match (con_expr, alt_expr) {
+        (Some(con), Some(alt)) => {
+            Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
+        }
+        (Some(con), None) => Some(ast_builder.expression_conditional(
+            SPAN,
+            condition,
+            con,
+            ast_builder.expression_string_literal(SPAN, "", None),
+        )),
+        (None, Some(alt)) => Some(ast_builder.expression_conditional(
+            SPAN,
+            condition,
+            ast_builder.expression_string_literal(SPAN, "", None),
+            alt,
+        )),
+        (None, None) => None,
+    }
+}
+
 /// modify object props
 /// Returns extracted Tailwind styles from static className strings
 /// `conditional_branch`: If Some, contains (condition, alternate_styles, alternate_style_order)
@@ -79,25 +108,8 @@ pub fn modify_prop_object<'a>(
                 filename,
             );
 
-            // Combine into conditional expression: condition ? consequent_class : alternate_class
-            let combined_expr = match (con_expr, alt_expr) {
-                (Some(con), Some(alt)) => {
-                    Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
-                }
-                (Some(con), None) => Some(ast_builder.expression_conditional(
-                    SPAN,
-                    condition,
-                    con,
-                    ast_builder.expression_string_literal(SPAN, "", None),
-                )),
-                (None, Some(alt)) => Some(ast_builder.expression_conditional(
-                    SPAN,
-                    condition,
-                    ast_builder.expression_string_literal(SPAN, "", None),
-                    alt,
-                )),
-                (None, None) => None,
-            };
+            let combined_expr =
+                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
 
             let mut all_tailwind = con_tailwind;
             all_tailwind.extend(alt_tailwind);
@@ -226,25 +238,8 @@ pub fn modify_props<'a>(
                 filename,
             );
 
-            // Combine into conditional expression: condition ? consequent_class : alternate_class
-            let combined_expr = match (con_expr, alt_expr) {
-                (Some(con), Some(alt)) => {
-                    Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
-                }
-                (Some(con), None) => Some(ast_builder.expression_conditional(
-                    SPAN,
-                    condition,
-                    con,
-                    ast_builder.expression_string_literal(SPAN, "", None),
-                )),
-                (None, Some(alt)) => Some(ast_builder.expression_conditional(
-                    SPAN,
-                    condition,
-                    ast_builder.expression_string_literal(SPAN, "", None),
-                    alt,
-                )),
-                (None, None) => None,
-            };
+            let combined_expr =
+                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
 
             let mut all_tailwind = con_tailwind;
             all_tailwind.extend(alt_tailwind);
