@@ -38,15 +38,15 @@
     "dist"
   ],
   "dependencies": {
-    "typescript-eslint": "^8.54",
-    "@typescript-eslint/utils": "^8.54"
+    "typescript-eslint": "^8.55",
+    "@typescript-eslint/utils": "^8.55"
   },
   "peerDependencies": {
     "typescript-eslint": "*",
     "@typescript-eslint/utils": "*"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.54",
+    "@typescript-eslint/rule-tester": "^8.55",
     "typescript": "^5.9"
   }
 }
