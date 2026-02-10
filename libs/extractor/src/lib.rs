@@ -13937,4 +13937,101 @@ export const Card = () => (
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn style_order_coverage_additional() {
+        // Coverage: visit.rs:241 — non-object 2nd argument in call expression
+        // When 2nd arg is a variable (not ObjectExpression), pre-scan should return None
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, someVariable);
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs:492 — non-conditional _ branch in JSX with static styleOrder
+        // Ensures the `_ =>` (non-Conditional) match arm in visit_jsx_element is hit
+        // with an explicit static styleOrder value
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={5} bg="red" p={4} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs:259,262 — ParsedStyleOrder::None fallback with static styleOrder
+        // via call expression where pre-scan finds styleOrder=5 (static), so extract_style_from_expression
+        // also returns style_order=Some(5), but the pre-scan already resolved it to Static(5)
+        // This ensures the full `ParsedStyleOrder::None => match style_order` path in visit_call_expression
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: 5, bg: "red", p: 4 });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: lib.rs:55 — MemberExpression clone_in with conditional styleOrder
+        // (also verified in style_order_conditional_coverage but included here for explicit coverage)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={a ? 1 : 2} bg={theme.colors.primary} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
 }
