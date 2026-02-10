@@ -795,6 +795,24 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn test_debug_sheet_to_classname_with_filename() {
+        reset_class_map();
+        set_debug(true);
+        // Debug mode + filename triggers the file_suffix branch (lines 234-235)
+        let class_name =
+            sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
+        assert!(class_name.contains("background-0-red--255-"));
+        // Should have a file number suffix
+        let parts: Vec<&str> = class_name.split('-').collect();
+        assert!(
+            parts.len() >= 6,
+            "Expected file suffix in debug classname: {class_name}"
+        );
+        set_debug(false);
+    }
+
+    #[test]
     fn test_merge_selector() {
         assert_eq!(merge_selector("cls", Some(&"hover".into())), ".cls:hover");
         assert_eq!(

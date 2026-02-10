@@ -2207,4 +2207,42 @@ mod tests {
         assert!(css.contains("@layer components"));
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
     }
+
+    #[test]
+    fn test_stylesheet_css_extract() {
+        let css_entry = StyleSheetCss {
+            css: "div{display:flex}".to_string(),
+        };
+        assert_eq!(css_entry.extract(), "div{display:flex}");
+
+        let empty = StyleSheetCss { css: String::new() };
+        assert_eq!(empty.extract(), "");
+    }
+
+    #[test]
+    fn test_keyframes_multi_property() {
+        let mut sheet = StyleSheet::default();
+        let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        // Multiple properties in a single keyframe step to cover the semicolon separator (line 548)
+        keyframes.insert(
+            String::from("from"),
+            vec![
+                (String::from("opacity"), String::from("0")),
+                (String::from("transform"), String::from("scale(0.5)")),
+            ],
+        );
+        keyframes.insert(
+            String::from("to"),
+            vec![
+                (String::from("opacity"), String::from("1")),
+                (String::from("transform"), String::from("scale(1)")),
+            ],
+        );
+        sheet.add_keyframes("slideIn", keyframes, None);
+        let css = sheet.create_css(None, false);
+        // Verify semicolon separator between multiple properties in a keyframe step
+        assert!(css.contains("opacity:0;transform:scale(0.5)"));
+        assert!(css.contains("opacity:1;transform:scale(1)"));
+        assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
 }

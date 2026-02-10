@@ -42,10 +42,6 @@ pub fn optimize_value(value: &str) -> String {
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }
-        let trimmed = ret.trim();
-        if trimmed.len() != ret.len() {
-            ret = trimmed.to_string();
-        }
     }
     let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex::Captures| {
         let r = c[1].parse::<i32>().unwrap();
