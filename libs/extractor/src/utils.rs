@@ -7,7 +7,7 @@ use oxc_ast::{
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
-use oxc_syntax::operator::UnaryOperator;
+use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
 /// Convert a value to a pixel value
 pub(super) fn convert_value(value: &str) -> String {
@@ -54,6 +54,101 @@ pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> 
         (Expression::Identifier(a), Expression::Identifier(b)) => a.name == b.name,
         _ => false,
     }
+}
+
+/// Represents a parsed styleOrder value that may be conditional
+#[derive(Debug)]
+pub(super) enum ParsedStyleOrder<'a> {
+    /// No styleOrder specified
+    None,
+    /// Static numeric value: styleOrder={5}
+    Static(u8),
+    /// Conditional: styleOrder={condition ? consequent : alternate}
+    Conditional {
+        condition: Expression<'a>,
+        consequent: Option<u8>,
+        alternate: Option<u8>,
+    },
+}
+
+impl ParsedStyleOrder<'_> {
+    /// Convert to Option<u8> for backward compatibility (returns None for Conditional)
+    pub fn as_static(&self) -> Option<u8> {
+        match self {
+            ParsedStyleOrder::Static(v) => Some(*v),
+            _ => None,
+        }
+    }
+}
+
+/// Parse styleOrder from a JSX attribute value, supporting conditionals
+pub(super) fn jsx_expression_to_style_order<'a>(
+    expr: &JSXAttributeValue<'a>,
+    allocator: &'a Allocator,
+) -> ParsedStyleOrder<'a> {
+    // First try static resolution
+    if let Some(n) = jsx_expression_to_number(expr) {
+        return ParsedStyleOrder::Static(n as u8);
+    }
+    // Check for conditional or logical expression
+    if let JSXAttributeValue::ExpressionContainer(ec) = expr {
+        if let Some(Expression::ConditionalExpression(cond)) = ec.expression.as_expression() {
+            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
+            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
+            return ParsedStyleOrder::Conditional {
+                condition: cond.test.clone_in(allocator),
+                consequent,
+                alternate,
+            };
+        }
+        // Handle logical &&: styleOrder={a === 1 && 5}
+        // truthy → right side (number), falsy → None (no styleOrder)
+        if let Some(Expression::LogicalExpression(logical)) = ec.expression.as_expression()
+            && logical.operator == LogicalOperator::And
+        {
+            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
+            return ParsedStyleOrder::Conditional {
+                condition: logical.left.clone_in(allocator),
+                consequent,
+                alternate: None,
+            };
+        }
+    }
+    ParsedStyleOrder::None
+}
+
+/// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
+pub(super) fn expression_to_style_order<'a>(
+    expr: &Expression<'a>,
+    allocator: &'a Allocator,
+) -> ParsedStyleOrder<'a> {
+    // First try static resolution
+    if let Some(n) = get_number_by_literal_expression(expr) {
+        return ParsedStyleOrder::Static(n as u8);
+    }
+    // Check for conditional expression
+    if let Expression::ConditionalExpression(cond) = expr {
+        let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
+        let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
+        return ParsedStyleOrder::Conditional {
+            condition: cond.test.clone_in(allocator),
+            consequent,
+            alternate,
+        };
+    }
+    // Handle logical &&: styleOrder: a === 1 && 5
+    // truthy → right side (number), falsy → None (no styleOrder)
+    if let Expression::LogicalExpression(logical) = expr
+        && logical.operator == LogicalOperator::And
+    {
+        let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
+        return ParsedStyleOrder::Conditional {
+            condition: logical.left.clone_in(allocator),
+            consequent,
+            alternate: None,
+        };
+    }
+    ParsedStyleOrder::None
 }
 
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {

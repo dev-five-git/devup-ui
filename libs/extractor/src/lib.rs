@@ -15,7 +15,7 @@ mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
 use css::file_map::get_file_num_by_filename;
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
@@ -57,7 +57,45 @@ pub enum ExtractStyleProp<'a> {
     },
 }
 
-impl ExtractStyleProp<'_> {
+impl<'a> ExtractStyleProp<'a> {
+    pub fn clone_in(&self, alloc: &'a Allocator) -> Self {
+        match self {
+            ExtractStyleProp::Static(v) => ExtractStyleProp::Static(v.clone()),
+            ExtractStyleProp::StaticArray(arr) => {
+                ExtractStyleProp::StaticArray(arr.iter().map(|s| s.clone_in(alloc)).collect())
+            }
+            ExtractStyleProp::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => ExtractStyleProp::Conditional {
+                condition: condition.clone_in(alloc),
+                consequent: consequent.as_ref().map(|c| Box::new(c.clone_in(alloc))),
+                alternate: alternate.as_ref().map(|a| Box::new(a.clone_in(alloc))),
+            },
+            ExtractStyleProp::Enum { condition, map } => ExtractStyleProp::Enum {
+                condition: condition.clone_in(alloc),
+                map: map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.iter().map(|s| s.clone_in(alloc)).collect()))
+                    .collect(),
+            },
+            ExtractStyleProp::Expression { styles, expression } => ExtractStyleProp::Expression {
+                styles: styles.clone(),
+                expression: expression.clone_in(alloc),
+            },
+            ExtractStyleProp::MemberExpression { map, expression } => {
+                ExtractStyleProp::MemberExpression {
+                    map: map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), Box::new(v.clone_in(alloc))))
+                        .collect(),
+                    expression: expression.clone_in(alloc),
+                }
+            }
+        }
+    }
+
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
             ExtractStyleProp::Static(style) => vec![style.clone()],
@@ -6193,6 +6231,409 @@ export {
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order_conditional() {
+        // Test 1: styleOrder={condition ? 5 : 10} — ternary with two static numbers
+        // Since jsx_expression_to_number doesn't handle ConditionalExpression,
+        // styleOrder should be None (not applied)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} bg="red" p="4" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 2: styleOrder={condition ? 5 : variable} — ternary with mixed static/dynamic
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : order} bg="red" p="4" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 3: styleOrder={variable} — fully dynamic styleOrder
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={order} bg="red" p="4" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 4: styleOrder={condition ? 5 : 10} with conditional style props
+        // Verifies interaction between conditional styleOrder and conditional style values
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} bg={isActive ? "red" : "blue"} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 5: styleOrder={condition ? 5 : 10} with css() className
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box, css} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} className={css({color:"white"})} bg="red" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order_logical_and() {
+        // Test 1: JSX path — styleOrder={a === 1 && 5}
+        // truthy → styleOrder=5, falsy → no styleOrder (None)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={a === 1 && 5} bg="red" p="4" />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 2: JSX path — styleOrder={a === 1 && 5} with conditional style props
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={a === 1 && 5} bg={isActive ? "red" : "blue"} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 3: Call expression path — styleOrder: a === 1 && 5
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: a === 1 && 5, bg: "red", p: "4" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order_conditional_coverage() {
+        // Coverage: lib.rs:53 — Enum variant clone_in (positioning={variable} with conditional styleOrder)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} positioning={mode} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: lib.rs:54 — Expression variant clone_in (typography={variable} with conditional styleOrder)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Text} from '@devup-ui/core'
+<Text styleOrder={isActive ? 5 : 10} typography={typo} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: lib.rs:55 — MemberExpression variant clone_in (computed member expression with conditional styleOrder)
+        // bg={["red","blue"][idx]} produces ExtractStyleProp::MemberExpression which gets clone_in'd
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} bg={["red","blue"][idx]} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: prop_modify_utils.rs:58,130 — (None, None) branch: no styles, only conditional styleOrder
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={isActive ? 5 : 10} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: prop_modify_utils.rs:56-58 — (None, None) branch via call expression path
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: isActive ? 5 : 10 });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: utils.rs:100 — expression_to_style_order with plain variable (not conditional, not static)
+        // Also covers visit.rs:259,262 — fallback from pre-scan None to extract_style_from_expression's result
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: order, bg: "red" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs:297/492 — non-conditional static styleOrder via call expression (fallback _ branch)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { bg: "red" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order_conditional_call_expression() {
+        // Test 1: styleOrder: isActive ? 5 : 10 — ternary with two static numbers via call expression
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: isActive ? 5 : 10, bg: "red", p: "4" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 2: styleOrder: isActive ? 5 : 10 with conditional style props via call expression
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: isActive ? 5 : 10, bg: isActive ? "red" : "blue" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Test 3: static styleOrder via call expression (backward compat)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: 5, bg: "red", p: "4" });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
                     import_aliases: HashMap::new()
@@ -13496,5 +13937,195 @@ export const Card = () => (
             )
             .unwrap()
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn style_order_coverage_additional() {
+        // Coverage: visit.rs:241 — non-object 2nd argument in call expression
+        // When 2nd arg is a variable (not ObjectExpression), pre-scan should return None
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, someVariable);
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs:492 — non-conditional _ branch in JSX with static styleOrder
+        // Ensures the `_ =>` (non-Conditional) match arm in visit_jsx_element is hit
+        // with an explicit static styleOrder value
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={5} bg="red" p={4} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs:259,262 — ParsedStyleOrder::None fallback with static styleOrder
+        // via call expression where pre-scan finds styleOrder=5 (static), so extract_style_from_expression
+        // also returns style_order=Some(5), but the pre-scan already resolved it to Static(5)
+        // This ensures the full `ParsedStyleOrder::None => match style_order` path in visit_call_expression
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { styleOrder: 5, bg: "red", p: 4 });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: lib.rs:55 — MemberExpression variant clone_in with conditional styleOrder
+        // Requires a computed member expression pattern (array/object indexed by variable)
+        // to produce ExtractStyleProp::MemberExpression, which is then cloned for the alternate branch
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box styleOrder={a ? 1 : 2} bg={["red", "blue"][idx]} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs — ParsedStyleOrder::None + _ match arm in visit_call_expression
+        // Call expression WITHOUT any styleOrder property.
+        // Pre-scan finds no styleOrder → ParsedStyleOrder::None.
+        // extract_style_from_expression also returns style_order=None.
+        // Exercises: ParsedStyleOrder::None branch and the _ => (non-Conditional) arm.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.mjs",
+                r#"import { jsx as e } from "react/jsx-runtime";
+import { Box as o } from "@devup-ui/react";
+function c() {
+  return e(o, { bg: "red", p: 4 });
+}
+export { c as Lib };"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Coverage: visit.rs — _ match arm in visit_jsx_element (non-Conditional path)
+        // JSX element WITHOUT any styleOrder prop at all.
+        // parsed_style_order stays ParsedStyleOrder::None (default).
+        // Exercises the _ => arm in visit_jsx_element's match on parsed_style_order.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box bg="red" p={4} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    fn test_combine_conditional_class_name() {
+        use crate::prop_modify_utils::combine_conditional_class_name;
+        use crate::utils::expression_to_code;
+        use oxc_span::SPAN;
+
+        let allocator = Allocator::default();
+        let builder = oxc_ast::AstBuilder::new(&allocator);
+
+        let make_cond = || builder.expression_identifier(SPAN, builder.atom("cond"));
+        let make_str = |s| builder.expression_string_literal(SPAN, builder.atom(s), None);
+
+        // (Some, Some) — both branches have classNames
+        let result = combine_conditional_class_name(
+            &builder,
+            make_cond(),
+            Some(make_str("a")),
+            Some(make_str("b")),
+        );
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (Some, None) — only consequent has className, alternate falls back to ""
+        let result =
+            combine_conditional_class_name(&builder, make_cond(), Some(make_str("a")), None);
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (None, Some) — only alternate has className, consequent falls back to ""
+        let result =
+            combine_conditional_class_name(&builder, make_cond(), None, Some(make_str("b")));
+        assert!(result.is_some());
+        let code = expression_to_code(&result.unwrap());
+        assert!(code.contains("cond"), "expected condition in: {code}");
+
+        // (None, None) — neither has className
+        let result = combine_conditional_class_name(&builder, make_cond(), None, None);
+        assert!(result.is_none());
     }
 }

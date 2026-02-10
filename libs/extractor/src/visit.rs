@@ -25,8 +25,8 @@ use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPattern, CallExpression, Expression, ImportDeclaration, ImportOrExportKind,
-    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, Program, Statement,
-    VariableDeclarator, WithClause,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, ObjectPropertyKind, Program,
+    Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -35,7 +35,10 @@ use oxc_ast_visit::walk_mut::{
 };
 use strum::IntoEnumIterator;
 
-use crate::utils::{get_string_by_property_key, jsx_expression_to_number};
+use crate::utils::{
+    ParsedStyleOrder, expression_to_style_order, get_string_by_property_key,
+    jsx_expression_to_style_order,
+};
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::{HashMap, HashSet};
@@ -368,6 +371,25 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             if let Some(kind) = element_kind
                 && it.arguments.len() > 1
             {
+                // Pre-scan: detect conditional styleOrder before extract_style_from_expression
+                // consumes the property (which only handles static values)
+                let parsed_style_order =
+                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression() {
+                        obj.properties.iter().find_map(|prop| {
+                            if let ObjectPropertyKind::ObjectProperty(p) = prop
+                                && let Some(name) = get_string_by_property_key(&p.key)
+                                && name == "styleOrder"
+                            {
+                                Some(expression_to_style_order(&p.value, self.ast.allocator))
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                    .unwrap_or(ParsedStyleOrder::None);
+
                 let mut tag =
                     self.ast
                         .expression_string_literal(SPAN, self.ast.atom(kind.to_tag()), None);
@@ -397,27 +419,89 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         .rev()
                         .map(ExtractStyleProp::Static),
                 );
-                props_styles.iter().rev().for_each(|style| {
-                    self.styles.extend(style.extract().into_iter().map(|mut s| {
-                        style_order.into_iter().for_each(|order| {
-                            s.set_style_order(order);
-                        });
-                        s
-                    }))
-                });
 
-                if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
-                    let tailwind_styles = modify_prop_object(
-                        &self.ast,
-                        &mut obj.properties,
-                        &mut props_styles,
-                        style_order,
-                        style_vars,
-                        props,
-                        self.split_filename.as_deref(),
-                    );
-                    // Add extracted Tailwind styles to the visitor's style set
-                    self.styles.extend(tailwind_styles);
+                // Use pre-scanned ParsedStyleOrder, falling back to extract_style_from_expression's
+                // static result for backward compat.
+                // Note: pre-scan and extract_style_from_expression both use get_number_by_literal_expression
+                // on the same value, so style_order is always None when parsed_style_order is None.
+                let parsed_style_order = match parsed_style_order {
+                    ParsedStyleOrder::None => {
+                        style_order.map_or(ParsedStyleOrder::None, ParsedStyleOrder::Static)
+                    }
+                    other => other,
+                };
+
+                if let ParsedStyleOrder::Conditional {
+                    condition,
+                    consequent,
+                    alternate,
+                } = &parsed_style_order
+                {
+                    // Clone styles for alternate branch before consequent processing mutates them
+                    let mut alt_props_styles: Vec<ExtractStyleProp<'a>> = props_styles
+                        .iter()
+                        .map(|s| s.clone_in(self.ast.allocator))
+                        .collect();
+
+                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
+                        let tailwind_styles = modify_prop_object(
+                            &self.ast,
+                            &mut obj.properties,
+                            &mut props_styles,
+                            *consequent,
+                            style_vars,
+                            props,
+                            self.split_filename.as_deref(),
+                            Some((
+                                condition.clone_in(self.ast.allocator),
+                                &mut alt_props_styles,
+                                *alternate,
+                            )),
+                        );
+                        self.styles.extend(tailwind_styles);
+                    }
+
+                    // Collect styles from both branches for CSS output
+                    props_styles.iter().rev().for_each(|style| {
+                        self.styles.extend(style.extract().into_iter().map(|mut s| {
+                            if let Some(order) = consequent {
+                                s.set_style_order(*order);
+                            }
+                            s
+                        }))
+                    });
+                    alt_props_styles.iter().rev().for_each(|style| {
+                        self.styles.extend(style.extract().into_iter().map(|mut s| {
+                            if let Some(order) = alternate {
+                                s.set_style_order(*order);
+                            }
+                            s
+                        }))
+                    });
+                } else {
+                    let style_order = parsed_style_order.as_static();
+                    props_styles.iter().rev().for_each(|style| {
+                        self.styles.extend(style.extract().into_iter().map(|mut s| {
+                            style_order.into_iter().for_each(|order| {
+                                s.set_style_order(order);
+                            });
+                            s
+                        }))
+                    });
+
+                    if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression_mut() {
+                        let tailwind_styles = modify_prop_object(
+                            &self.ast,
+                            &mut obj.properties,
+                            &mut props_styles,
+                            style_order,
+                            style_vars,
+                            props,
+                            self.split_filename.as_deref(),
+                            None,
+                        );
+                        self.styles.extend(tailwind_styles);
+                    }
                 }
 
                 it.arguments[0] = Argument::from(tag);
@@ -555,7 +639,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             // extract ExtractStyleProp and remain style and class name, just extract
             let mut duplicate_set = HashSet::new();
-            let mut style_order = None;
+            let mut parsed_style_order = ParsedStyleOrder::None;
             let mut style_vars = None;
             let mut props = None;
             for i in (0..attrs.len()).rev() {
@@ -569,9 +653,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if !duplicate_set.contains(&name) {
                             duplicate_set.insert(name.clone());
                             if property_name == "styleOrder" {
-                                style_order =
-                                    jsx_expression_to_number(attr.value.as_ref().unwrap())
-                                        .map(|n| n as u8);
+                                parsed_style_order = jsx_expression_to_style_order(
+                                    attr.value.as_ref().unwrap(),
+                                    self.ast.allocator,
+                                );
                             } else if property_name == "props" {
                                 if let Some(value) = attr.value.as_ref()
                                     && let JSXAttributeValue::ExpressionContainer(expr) = value
@@ -618,23 +703,71 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 .rev()
                 .for_each(|ex| props_styles.push(ExtractStyleProp::Static(ex)));
 
-            let tailwind_styles = modify_props(
-                &self.ast,
-                attrs,
-                &mut props_styles,
-                style_order,
-                style_vars,
-                props,
-                self.split_filename.as_deref(),
-            );
-            // Add extracted Tailwind styles to the visitor's style set
-            self.styles.extend(tailwind_styles);
+            if let ParsedStyleOrder::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } = &parsed_style_order
+            {
+                // Clone styles for alternate branch before consequent processing mutates them
+                let mut alt_props_styles: Vec<ExtractStyleProp<'a>> = props_styles
+                    .iter()
+                    .map(|s| s.clone_in(self.ast.allocator))
+                    .collect();
 
-            props_styles
-                .iter()
-                .rev()
-                .for_each(|style| self.styles.extend(style.extract()));
-            // modify!!
+                // Process consequent branch
+                let tailwind_styles_con = modify_props(
+                    &self.ast,
+                    attrs,
+                    &mut props_styles,
+                    *consequent,
+                    style_vars,
+                    props,
+                    self.split_filename.as_deref(),
+                    Some((
+                        condition.clone_in(self.ast.allocator),
+                        &mut alt_props_styles,
+                        *alternate,
+                    )),
+                );
+                self.styles.extend(tailwind_styles_con);
+
+                // Collect styles from both branches for CSS output
+                props_styles.iter().rev().for_each(|style| {
+                    self.styles.extend(style.extract().into_iter().map(|mut s| {
+                        if let Some(order) = consequent {
+                            s.set_style_order(*order);
+                        }
+                        s
+                    }))
+                });
+                alt_props_styles.iter().rev().for_each(|style| {
+                    self.styles.extend(style.extract().into_iter().map(|mut s| {
+                        if let Some(order) = alternate {
+                            s.set_style_order(*order);
+                        }
+                        s
+                    }))
+                });
+            } else {
+                let style_order = parsed_style_order.as_static();
+                let tailwind_styles = modify_props(
+                    &self.ast,
+                    attrs,
+                    &mut props_styles,
+                    style_order,
+                    style_vars,
+                    props,
+                    self.split_filename.as_deref(),
+                    None,
+                );
+                self.styles.extend(tailwind_styles);
+
+                props_styles
+                    .iter()
+                    .rev()
+                    .for_each(|style| self.styles.extend(style.extract()));
+            }
 
             if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {
                 Some(str.value.as_str())
