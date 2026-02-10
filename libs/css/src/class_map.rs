@@ -1,23 +1,64 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::collections::HashMap;
 
-use once_cell::sync::Lazy;
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
 
-pub(crate) static GLOBAL_CLASS_MAP: Lazy<Mutex<HashMap<String, HashMap<String, usize>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Mutex;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::LazyLock;
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static GLOBAL_CLASS_MAP: RefCell<HashMap<String, HashMap<String, usize>>> = const { RefCell::new(HashMap::new()) };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static GLOBAL_CLASS_MAP: LazyLock<Mutex<HashMap<String, HashMap<String, usize>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[inline]
+pub fn with_class_map<F, R>(f: F) -> R
+where
+    F: FnOnce(&HashMap<String, HashMap<String, usize>>) -> R,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        GLOBAL_CLASS_MAP.with(|map| f(&map.borrow()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        f(&GLOBAL_CLASS_MAP.lock().unwrap())
+    }
+}
+
+#[inline]
+pub fn with_class_map_mut<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, HashMap<String, usize>>) -> R,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        GLOBAL_CLASS_MAP.with(|map| f(&mut map.borrow_mut()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        f(&mut GLOBAL_CLASS_MAP.lock().unwrap())
+    }
+}
 
 /// for test
 pub fn reset_class_map() {
-    let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-    map.clear();
+    with_class_map_mut(|map| map.clear());
 }
 
-pub fn set_class_map(map: HashMap<String, HashMap<String, usize>>) {
-    let mut global_map = GLOBAL_CLASS_MAP.lock().unwrap();
-    *global_map = map;
+pub fn set_class_map(new_map: HashMap<String, HashMap<String, usize>>) {
+    with_class_map_mut(|map| *map = new_map);
 }
 
 pub fn get_class_map() -> HashMap<String, HashMap<String, usize>> {
-    GLOBAL_CLASS_MAP.lock().unwrap().clone()
+    with_class_map(|map| map.clone())
 }
 
 #[cfg(test)]

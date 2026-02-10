@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use once_cell::sync::Lazy;
 use phf::{phf_map, phf_set};
 use regex::Regex;
+use std::sync::LazyLock;
 
-pub(super) static SELECTOR_ORDER_MAP: Lazy<HashMap<String, u8>> = Lazy::new(|| {
+pub(super) static SELECTOR_ORDER_MAP: LazyLock<HashMap<String, u8>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     for (idx, selector) in [
         "hover",
@@ -161,40 +161,43 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
     "tan(",
 };
 
-pub(super) static F_SPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*,\s*").unwrap());
-pub(super) static CSS_FUNCTION_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
-pub(super) static CHECK_QUOTES_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[()\s]").unwrap());
+pub(super) static F_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*,\s*").unwrap());
+pub(super) static CSS_FUNCTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
+pub(super) static CHECK_QUOTES_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[()\s]").unwrap());
 
-pub(super) static CSS_COMMENT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
+pub(super) static CSS_COMMENT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
 
-pub(super) static F_DOT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
-pub(super) static DOT_ZERO_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
+pub(super) static F_DOT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
+pub(super) static DOT_ZERO_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
 
-pub(super) static COLOR_HASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
-pub(super) static INNER_TRIM_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
+pub(super) static COLOR_HASH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
+pub(super) static INNER_TRIM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
 
-pub(super) static RM_MINUS_ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+pub(super) static RM_MINUS_ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap()
 });
 
-pub(super) static NUM_TRIM_RE: Lazy<Regex> = Lazy::new(|| {
+pub(super) static NUM_TRIM_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
         .unwrap()
 });
-pub(super) static ZERO_RE: Lazy<Regex> = Lazy::new(|| {
+pub(super) static ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)")
         .unwrap()
 });
 
-pub(super) static F_RGBA_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
+pub(super) static F_RGBA_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
 
-pub(super) static F_RGB_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
+pub(super) static F_RGB_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
 
 pub(super) static N_BASE_ARRAY: [char; 27] = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',

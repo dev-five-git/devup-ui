@@ -1,9 +1,9 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use once_cell::sync::Lazy;
+use criterion::{criterion_group, criterion_main, Criterion};
 use regex::Regex;
 use std::hint::black_box;
+use std::sync::LazyLock;
 
-static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$\w+").unwrap());
+static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\w+").unwrap());
 
 fn convert_theme_variable_value_a(value: &str) -> String {
     if value.contains("$") {

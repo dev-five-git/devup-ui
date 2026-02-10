@@ -516,7 +516,7 @@ name = "css"
 version = "0.1.0"
 dependencies = [
  "bimap",
- "once_cell",
+ "criterion",
  "phf",
  "regex",
  "rstest",
@@ -680,6 +680,7 @@ name = "extractor"
 version = "0.1.0"
 dependencies = [
  "boa_engine",
+ "criterion",
  "css",
  "insta",
  "oxc_allocator",
@@ -2182,7 +2183,6 @@ dependencies = [
  "css",
  "extractor",
  "insta",
- "once_cell",
  "regex",
  "rstest",
  "serde",

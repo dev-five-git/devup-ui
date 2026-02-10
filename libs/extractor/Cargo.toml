@@ -24,3 +24,8 @@ boa_engine = "0.21"
 insta = "1.46.3"
 serial_test = "3.3.1"
 rstest = "0.26.1"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "extract_benchmark"
+harness = false

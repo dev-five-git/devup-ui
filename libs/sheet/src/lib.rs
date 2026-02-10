@@ -8,7 +8,7 @@ use css::{
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -78,9 +78,9 @@ impl ExtractStyle for StyleSheetProperty {
     }
 }
 
-static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\$[\w.]+").unwrap());
-static INTERFACE_KEY_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
+static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$[\w.]+").unwrap());
+static INTERFACE_KEY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
 
 fn convert_interface_key(key: &str) -> String {
     if INTERFACE_KEY_RE.is_match(key) {
