@@ -17,6 +17,9 @@ use std::collections::HashMap;
 
 /// modify object props
 /// Returns extracted Tailwind styles from static className strings
+/// `conditional_branch`: If Some, contains (condition, alternate_styles, alternate_style_order)
+///   for generating a conditional className expression: `condition ? consequent_class : alternate_class`
+#[allow(clippy::too_many_arguments)]
 pub fn modify_prop_object<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<ObjectPropertyKind<'a>>,
@@ -25,6 +28,7 @@ pub fn modify_prop_object<'a>(
     style_vars: Option<Expression<'a>>,
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
+    conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
 ) -> Vec<ExtractStyleValue> {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -52,14 +56,63 @@ pub fn modify_prop_object<'a>(
         }
     }
 
-    let (class_name_expr, tailwind_styles) = get_class_name_expression(
-        ast_builder,
-        &class_name_prop,
-        styles,
-        style_order,
-        &spread_props,
-        filename,
-    );
+    let (class_name_expr, tailwind_styles) =
+        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
+            // Conditional styleOrder: generate className for both branches
+            let (con_expr, con_tailwind) = get_class_name_expression(
+                ast_builder,
+                &class_name_prop,
+                styles,
+                style_order,
+                &spread_props,
+                filename,
+            );
+            let alt_class_name_prop = class_name_prop
+                .as_ref()
+                .map(|c| c.clone_in(ast_builder.allocator));
+            let (alt_expr, alt_tailwind) = get_class_name_expression(
+                ast_builder,
+                &alt_class_name_prop,
+                alt_styles,
+                alt_style_order,
+                &spread_props,
+                filename,
+            );
+
+            // Combine into conditional expression: condition ? consequent_class : alternate_class
+            let combined_expr = match (con_expr, alt_expr) {
+                (Some(con), Some(alt)) => {
+                    Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
+                }
+                (Some(con), None) => Some(ast_builder.expression_conditional(
+                    SPAN,
+                    condition,
+                    con,
+                    ast_builder.expression_string_literal(SPAN, "", None),
+                )),
+                (None, Some(alt)) => Some(ast_builder.expression_conditional(
+                    SPAN,
+                    condition,
+                    ast_builder.expression_string_literal(SPAN, "", None),
+                    alt,
+                )),
+                (None, None) => None,
+            };
+
+            let mut all_tailwind = con_tailwind;
+            all_tailwind.extend(alt_tailwind);
+            (combined_expr, all_tailwind)
+        } else {
+            get_class_name_expression(
+                ast_builder,
+                &class_name_prop,
+                styles,
+                style_order,
+                &spread_props,
+                filename,
+            )
+        };
+
     if let Some(ex) = class_name_expr {
         props.push(ast_builder.object_property_kind_object_property(
             SPAN,
@@ -99,6 +152,9 @@ pub fn modify_prop_object<'a>(
 }
 /// modify JSX props
 /// Returns extracted Tailwind styles from static className strings
+/// `conditional_branch`: If Some, contains (condition, alternate_styles, alternate_style_order)
+///   for generating a conditional className expression: `condition ? consequent_class : alternate_class`
+#[allow(clippy::too_many_arguments)]
 pub fn modify_props<'a>(
     ast_builder: &AstBuilder<'a>,
     props: &mut oxc_allocator::Vec<JSXAttributeItem<'a>>,
@@ -107,6 +163,7 @@ pub fn modify_props<'a>(
     style_vars: Option<Expression<'a>>,
     props_prop: Option<Expression<'a>>,
     filename: Option<&str>,
+    conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
 ) -> Vec<ExtractStyleValue> {
     let mut class_name_prop = None;
     let mut style_prop = None;
@@ -146,14 +203,62 @@ pub fn modify_props<'a>(
             }
         }
     }
-    let (class_name_expr, tailwind_styles) = get_class_name_expression(
-        ast_builder,
-        &class_name_prop,
-        styles,
-        style_order,
-        &spread_props,
-        filename,
-    );
+    let (class_name_expr, tailwind_styles) =
+        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
+            // Conditional styleOrder: generate className for both branches
+            let (con_expr, con_tailwind) = get_class_name_expression(
+                ast_builder,
+                &class_name_prop,
+                styles,
+                style_order,
+                &spread_props,
+                filename,
+            );
+            let alt_class_name_prop = class_name_prop
+                .as_ref()
+                .map(|c| c.clone_in(ast_builder.allocator));
+            let (alt_expr, alt_tailwind) = get_class_name_expression(
+                ast_builder,
+                &alt_class_name_prop,
+                alt_styles,
+                alt_style_order,
+                &spread_props,
+                filename,
+            );
+
+            // Combine into conditional expression: condition ? consequent_class : alternate_class
+            let combined_expr = match (con_expr, alt_expr) {
+                (Some(con), Some(alt)) => {
+                    Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
+                }
+                (Some(con), None) => Some(ast_builder.expression_conditional(
+                    SPAN,
+                    condition,
+                    con,
+                    ast_builder.expression_string_literal(SPAN, "", None),
+                )),
+                (None, Some(alt)) => Some(ast_builder.expression_conditional(
+                    SPAN,
+                    condition,
+                    ast_builder.expression_string_literal(SPAN, "", None),
+                    alt,
+                )),
+                (None, None) => None,
+            };
+
+            let mut all_tailwind = con_tailwind;
+            all_tailwind.extend(alt_tailwind);
+            (combined_expr, all_tailwind)
+        } else {
+            get_class_name_expression(
+                ast_builder,
+                &class_name_prop,
+                styles,
+                style_order,
+                &spread_props,
+                filename,
+            )
+        };
     if let Some(ex) = class_name_expr {
         props.push(ast_builder.jsx_attribute_item_attribute(
             SPAN,
