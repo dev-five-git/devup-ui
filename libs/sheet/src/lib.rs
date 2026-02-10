@@ -8,6 +8,7 @@ use css::{
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
+use std::borrow::Cow;
 use std::sync::LazyLock;
 use regex::Regex;
 use serde::de::Error;
@@ -90,15 +91,17 @@ fn convert_interface_key(key: &str) -> String {
     }
 }
 
-fn convert_theme_variable_value(value: &str) -> String {
-    if value.contains("$") {
-        VAR_RE
-            .replace_all(value, |caps: &regex::Captures| {
-                format!("var(--{})", &caps[0][1..].replace('.', "-"))
-            })
-            .to_string()
+fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
+    if value.contains('$') {
+        Cow::Owned(
+            VAR_RE
+                .replace_all(value, |caps: &regex::Captures| {
+                    format!("var(--{})", &caps[0][1..].replace('.', "-"))
+                })
+                .into_owned(),
+        )
     } else {
-        value.to_string()
+        Cow::Borrowed(value)
     }
 }
 

@@ -81,6 +81,9 @@ pub fn css_to_style_literal<'a>(
     // Parse CSS to extract static styles
     let static_styles = css_to_style(&combined_css, level, selector);
 
+    // Shared allocator for AST builder used in dynamic expression processing
+    let shared_allocator = Allocator::default();
+
     // Process each static style and check if it contains expression placeholders
     for style in static_styles {
         let value = style.value();
@@ -146,8 +149,7 @@ pub fn css_to_style_literal<'a>(
                             | oxc_ast::ast::Expression::FunctionExpression(_)
                     );
 
-                    let allocator = Allocator::default();
-                    let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                    let ast_builder = oxc_ast::AstBuilder::new(&shared_allocator);
                     let identifier = if is_function {
                         expression_to_code(&wrap_direct_call(
                             &ast_builder,
@@ -191,8 +193,7 @@ pub fn css_to_style_literal<'a>(
                                     | oxc_ast::ast::Expression::FunctionExpression(_)
                             );
 
-                            let allocator = Allocator::default();
-                            let ast_builder = oxc_ast::AstBuilder::new(&allocator);
+                            let ast_builder = oxc_ast::AstBuilder::new(&shared_allocator);
                             let expr_code = if is_function {
                                 expression_to_code(&wrap_direct_call(
                                     &ast_builder,
@@ -460,44 +461,74 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
 }
 
 pub fn optimize_css_block(css: &str) -> String {
-    rm_css_comment(css)
-        .split("{")
-        .map(|s| s.trim().to_string())
-        .collect::<Vec<String>>()
-        .join("{")
-        .split("}")
-        .map(|s| s.trim().to_string())
-        .collect::<Vec<String>>()
-        .join("}")
-        .split(";")
-        .map(|s| {
-            let parts = s.split("{").collect::<Vec<&str>>();
-            let first_part = if parts.len() == 1 {
-                "".to_string()
-            } else {
-                format!("{}{{", parts.first().unwrap().trim())
-            };
-            let last_part = parts.last().unwrap().trim();
-            if !last_part.contains(":") {
-                format!("{first_part}{last_part}")
-            } else {
-                let mut iter = last_part.split(":");
-                let property = iter.next().unwrap().trim();
-                let value = iter.next().unwrap().trim();
+    // First pass: remove comments and normalize whitespace around structural chars
+    let cleaned = rm_css_comment(css);
 
-                let value = if check_multi_css_optimize(property.split("{").last().unwrap()) {
+    // Second pass: trim around {, }, ; and optimize declarations in one go
+    let mut result = String::with_capacity(cleaned.len());
+    // Split by ; then process, preserving { and }
+    let trimmed = {
+        let mut s = String::with_capacity(cleaned.len());
+        for part in cleaned.split('{') {
+            if !s.is_empty() {
+                s.push('{');
+            }
+            s.push_str(part.trim());
+        }
+        let mut s2 = String::with_capacity(s.len());
+        for part in s.split('}') {
+            if !s2.is_empty() {
+                s2.push('}');
+            }
+            s2.push_str(part.trim());
+        }
+        s2
+    };
+
+    let segments: Vec<&str> = trimmed.split(';').collect();
+    for (i, s) in segments.iter().enumerate() {
+        if i > 0 {
+            result.push(';');
+        }
+        let parts: Vec<&str> = s.split('{').collect();
+        let first_part_str = if parts.len() > 1 {
+            parts[..parts.len() - 1]
+                .iter()
+                .map(|p| p.trim())
+                .collect::<Vec<_>>()
+                .join("{")
+                + "{"
+        } else {
+            String::new()
+        };
+        let last_part = parts.last().unwrap().trim();
+        if !last_part.contains(':') {
+            result.push_str(&first_part_str);
+            result.push_str(last_part);
+        } else {
+            let mut iter = last_part.split(':');
+            let property = iter.next().unwrap().trim();
+            let value = iter.next().unwrap().trim();
+
+            let optimized_value =
+                if check_multi_css_optimize(property.split('{').next_back().unwrap()) {
                     optimize_mutli_css_value(value)
                 } else {
                     value.to_string()
                 };
-                format!("{first_part}{property}:{value}")
-            }
-        })
-        .collect::<Vec<String>>()
-        .join(";")
-        .trim()
-        .replace(";}", "}")
-        .to_string()
+            result.push_str(&first_part_str);
+            result.push_str(property);
+            result.push(':');
+            result.push_str(&optimized_value);
+        }
+    }
+
+    // Remove trailing ";}" -> "}"
+    let trimmed_result = result.trim();
+    if trimmed_result.is_empty() {
+        return String::new();
+    }
+    trimmed_result.replace(";}", "}").to_string()
 }
 
 #[cfg(test)]

@@ -290,12 +290,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Expression::Identifier(ident) = &tag.tag
             && let Some(css_type) = self.util_imports.get(ident.name.as_str())
         {
-            let css_str = tag
-                .quasi
-                .quasis
-                .iter()
-                .map(|quasi| quasi.value.raw.to_string())
-                .collect::<String>();
+            let css_str = {
+                let mut s = String::new();
+                for quasi in tag.quasi.quasis.iter() {
+                    s.push_str(quasi.value.raw.as_str());
+                }
+                s
+            };
             let r = css_type.as_ref();
             *it = if let UtilType::Css = r {
                 let styles = css_to_style_literal(&tag.quasi, 0, &None);
@@ -362,7 +363,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.imports.get(ident.name.as_str()).cloned()
             } else if let Expression::StaticMemberExpression(member) = expr
                 && let Expression::Identifier(ident) = &member.object
-                && self.import_object == Some(ident.name.to_string())
+                && self.import_object.as_deref() == Some(ident.name.as_str())
             {
                 ExportVariableKind::try_from(member.property.name.to_string()).ok()
             } else {
@@ -570,15 +571,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             for i in (0..specifiers.len()).rev() {
                 match &specifiers[i] {
                     ImportSpecifier(import) => {
-                        if let Ok(kind) = ExportVariableKind::try_from(import.imported.to_string())
+                        let imported_str = import.imported.to_string();
+                        if let Ok(kind) = ExportVariableKind::from_str(&imported_str)
                         {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
-                        } else if let Ok(kind) = UtilType::try_from(import.imported.to_string()) {
+                        } else if let Ok(kind) = UtilType::from_str(&imported_str) {
                             self.util_imports
                                 .insert(import.local.to_string(), Rc::new(kind));
                             specifiers.remove(i);
-                        } else if import.imported.to_string() == "styled" {
+                        } else if imported_str == "styled" {
                             self.styled_import = Some(import.local.to_string());
                             specifiers.remove(i);
                         }
