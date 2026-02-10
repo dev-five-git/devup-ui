@@ -6458,14 +6458,15 @@ export { c as Lib };"#,
             .unwrap()
         ));
 
-        // Coverage: lib.rs:55 — MemberExpression variant clone_in (bg={obj.color} with conditional styleOrder)
+        // Coverage: lib.rs:55 — MemberExpression variant clone_in (computed member expression with conditional styleOrder)
+        // bg={["red","blue"][idx]} produces ExtractStyleProp::MemberExpression which gets clone_in'd
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
-<Box styleOrder={isActive ? 5 : 10} bg={obj.color} />
+<Box styleOrder={isActive ? 5 : 10} bg={["red","blue"][idx]} />
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -14013,15 +14014,16 @@ export { c as Lib };"#,
             .unwrap()
         ));
 
-        // Coverage: lib.rs:55 — MemberExpression clone_in with conditional styleOrder
-        // (also verified in style_order_conditional_coverage but included here for explicit coverage)
+        // Coverage: lib.rs:55 — MemberExpression variant clone_in with conditional styleOrder
+        // Requires a computed member expression pattern (array/object indexed by variable)
+        // to produce ExtractStyleProp::MemberExpression, which is then cloned for the alternate branch
         reset_class_map();
         reset_file_map();
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
                 r#"import {Box} from '@devup-ui/core'
-<Box styleOrder={a ? 1 : 2} bg={theme.colors.primary} />
+<Box styleOrder={a ? 1 : 2} bg={["red", "blue"][idx]} />
 "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
