@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use phf::{phf_map, phf_set};
-use regex::Regex;
+use regex_lite::Regex;
 use std::sync::LazyLock;
 
 pub(super) static SELECTOR_ORDER_MAP: LazyLock<HashMap<String, u8>> = LazyLock::new(|| {

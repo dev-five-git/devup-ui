@@ -43,7 +43,7 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex::Captures| {
+    let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
         let r = c[1].parse::<i32>().unwrap();
         let g = c[2].parse::<i32>().unwrap();
         let b = c[3].parse::<i32>().unwrap();
@@ -59,7 +59,7 @@ pub fn optimize_value(value: &str) -> String {
     if let std::borrow::Cow::Owned(s) = replaced {
         ret = s;
     }
-    let replaced = F_RGB_RE.replace_all(&ret, |c: &regex::Captures| {
+    let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
         let r = c[1].parse::<i32>().unwrap();
         let g = c[2].parse::<i32>().unwrap();
         let b = c[3].parse::<i32>().unwrap();
@@ -69,7 +69,8 @@ pub fn optimize_value(value: &str) -> String {
         ret = s;
     }
     if ret.contains('#') {
-        let replaced = COLOR_HASH.replace_all(&ret, |c: &regex::Captures| optimize_color(&c[1]));
+        let replaced =
+            COLOR_HASH.replace_all(&ret, |c: &regex_lite::Captures| optimize_color(&c[1]));
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }

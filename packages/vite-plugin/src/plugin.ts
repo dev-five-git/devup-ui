@@ -3,6 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  createNodeModulesExcludeRegex,
+  getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
@@ -34,11 +36,6 @@ export interface DevupUIPluginOptions {
    * Set to `false` to disable specific aliases
    */
   importAliases?: ImportAliases
-}
-
-function getFileNumByFilename(filename: string) {
-  if (filename.endsWith('devup-ui.css')) return null
-  return parseInt(filename.split('devup-ui-')[1].split('.')[0])
 }
 
 async function writeDataFiles(
@@ -194,13 +191,7 @@ export function DevupUI({
 
       const fileName = id.split('?')[0]
       if (!/\.(tsx|ts|js|mjs|jsx)$/i.test(fileName)) return
-      if (
-        new RegExp(
-          `node_modules(?!.*(${['@devup-ui', ...include]
-            .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-        ).test(fileName)
-      ) {
+      if (createNodeModulesExcludeRegex(include).test(fileName)) {
         return
       }
 

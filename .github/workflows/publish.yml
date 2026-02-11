@@ -18,15 +18,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Cargo tarpaulin and fmt
-        run: |
-          cargo install cargo-tarpaulin
-          rustup component add rustfmt clippy
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-benchmark-${{ runner.os }}-
+
       - uses: oven-sh/setup-bun@v2
         name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -45,15 +62,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Cargo tarpaulin and fmt
-        run: |
-          cargo install cargo-tarpaulin
-          rustup component add rustfmt clippy
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-publish-${{ runner.os }}-
+
+      - name: Install cargo-binstall
+        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+
+      - name: Install cargo-tarpaulin
+        run: cargo binstall cargo-tarpaulin --no-confirm
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
       - uses: oven-sh/setup-bun@v2
         name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -89,6 +132,14 @@ jobs:
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
           bun run --filter landing build
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       - name: Check for Existing E2E Snapshots

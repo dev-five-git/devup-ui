@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 /**
  * Mock the GitHub API to return a fixed star count so screenshots are deterministic.
  */
@@ -22,7 +24,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
+    await waitForFontsReady(page)
   })
 
   test('GetStarted button hover screenshot', async ({ page }) => {
@@ -34,7 +36,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     )
 
     await getStartedLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(getStartedLink).toHaveScreenshot('hover-get-started-after.png')
   })
@@ -46,7 +48,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await expect(starLink).toHaveScreenshot('hover-star-before.png')
 
     await starLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(starLink).toHaveScreenshot('hover-star-after.png')
   })
@@ -58,7 +60,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await expect(sponsorLink).toHaveScreenshot('hover-sponsor-before.png')
 
     await sponsorLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(sponsorLink).toHaveScreenshot('hover-sponsor-after.png')
   })
@@ -71,7 +73,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await expect(discordLink).toHaveScreenshot('hover-discord-before.png')
 
     await discordLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(discordLink).toHaveScreenshot('hover-discord-after.png')
   })
@@ -84,7 +86,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await expect(kakaoLink).toHaveScreenshot('hover-kakao-before.png')
 
     await kakaoLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(kakaoLink).toHaveScreenshot('hover-kakao-after.png')
   })
@@ -92,7 +94,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
   test('Feature card hover screenshot', async ({ page }) => {
     const featureHeading = page.getByText('Features', { exact: true }).first()
     await featureHeading.scrollIntoViewIfNeeded()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     // Find the first feature card in the grid
     const featureSection = featureHeading
@@ -111,7 +113,7 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await expect(firstCard).toHaveScreenshot('hover-feature-card-before.png')
 
     await firstCard.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     await expect(firstCard).toHaveScreenshot('hover-feature-card-after.png')
   })

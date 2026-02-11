@@ -42,8 +42,7 @@
   ],
   "dependencies": {
     "@devup-ui/plugin-utils": "workspace:^",
-    "@devup-ui/wasm": "workspace:^",
-    "vite": "^7.3"
+    "@devup-ui/wasm": "workspace:^"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

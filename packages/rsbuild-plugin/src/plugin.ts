@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 
 import {
+  createNodeModulesExcludeRegex,
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
@@ -136,13 +137,7 @@ export const DevupUI = ({
           test: /\.(tsx|ts|js|mjs|jsx)$/,
         },
         async ({ code, resourcePath }) => {
-          if (
-            new RegExp(
-              `node_modules(?!.*(${['@devup-ui', ...include]
-                .join('|')
-                .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`,
-            ).test(resourcePath)
-          )
+          if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
           const {
             code: retCode,

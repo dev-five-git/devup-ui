@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForStyleSettle } from './helpers'
+
 /**
  * Normalize a color string to lowercase hex.
  */
@@ -33,7 +35,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'light'),
     )
-    await page.waitForTimeout(100)
+    await waitForStyleSettle(page)
 
     const bodyBg = await page.evaluate(
       () => getComputedStyle(document.body).backgroundColor,
@@ -47,7 +49,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'light'),
     )
-    await page.waitForTimeout(100)
+    await waitForStyleSettle(page)
 
     const bodyColor = await page.evaluate(
       () => getComputedStyle(document.body).color,
@@ -60,7 +62,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'dark'),
     )
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
 
     // The main content wrapper (inside body) has bg=$background
     // which is #131313 in dark. Body itself has $footerBg = #2E303C in dark.
@@ -76,7 +78,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'dark'),
     )
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
 
     const bodyColor = await page.evaluate(
       () => getComputedStyle(document.body).color,
@@ -96,7 +98,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'dark'),
     )
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
 
     const darkFooterBg = await page.evaluate(() => {
       const footer = document.querySelector('footer')
@@ -114,7 +116,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'light'),
     )
-    await page.waitForTimeout(100)
+    await waitForStyleSettle(page)
     const lightBg = await page.evaluate(
       () => getComputedStyle(document.body).backgroundColor,
     )
@@ -123,7 +125,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'dark'),
     )
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
     const darkBg = await page.evaluate(
       () => getComputedStyle(document.body).backgroundColor,
     )
@@ -132,7 +134,7 @@ test.describe('Landing Page - Theme Switching', () => {
     await page.evaluate(() =>
       document.documentElement.setAttribute('data-theme', 'light'),
     )
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
     const lightBgAgain = await page.evaluate(
       () => getComputedStyle(document.body).backgroundColor,
     )

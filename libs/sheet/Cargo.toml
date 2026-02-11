@@ -7,7 +7,7 @@ edition = "2024"
 css = { path = "../css" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-regex = "1.12.3"
+regex-lite = "0.1"
 extractor = { path = "../extractor" }
 
 [dev-dependencies]

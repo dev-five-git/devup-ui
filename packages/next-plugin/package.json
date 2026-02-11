@@ -54,7 +54,6 @@
   "dependencies": {
     "@devup-ui/plugin-utils": "workspace:^",
     "@devup-ui/webpack-plugin": "workspace:^",
-    "next": "^16.1",
     "@devup-ui/wasm": "workspace:^"
   },
   "devDependencies": {

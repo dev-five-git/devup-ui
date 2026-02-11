@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use regex::Regex;
+use regex_lite::Regex;
 use std::hint::black_box;
 use std::sync::LazyLock;
 
@@ -8,7 +8,7 @@ static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\w+").unwrap())
 fn convert_theme_variable_value_a(value: &str) -> String {
     if value.contains("$") {
         VAR_RE
-            .replace_all(value, |caps: &regex::Captures| {
+            .replace_all(value, |caps: &regex_lite::Captures| {
                 format!("var(--{})", &caps[0][1..])
             })
             .to_string()
@@ -19,7 +19,7 @@ fn convert_theme_variable_value_a(value: &str) -> String {
 
 fn convert_theme_variable_value_b(value: &str) -> String {
     VAR_RE
-        .replace_all(value, |caps: &regex::Captures| {
+        .replace_all(value, |caps: &regex_lite::Captures| {
             format!("var(--{})", &caps[0][1..])
         })
         .to_string()
