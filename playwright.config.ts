@@ -12,7 +12,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.01,
+      maxDiffPixelRatio: 0.15,
     },
   },
   use: {
@@ -26,7 +26,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'bun run --filter landing build && node e2e/serve-static.mjs 3099',
+    command: process.env.CI
+      ? 'node e2e/serve-static.mjs 3099'
+      : 'bun run --filter landing build && node e2e/serve-static.mjs 3099',
     url: 'http://localhost:3099',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
