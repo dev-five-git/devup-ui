@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import { loadDevupConfigSync, mergeImportAliases } from '@devup-ui/plugin-utils'
+import {
+  createNodeModulesExcludeRegex,
+  loadDevupConfigSync,
+  mergeImportAliases,
+} from '@devup-ui/plugin-utils'
 import {
   exportClassMap,
   exportFileMap,
@@ -86,11 +90,7 @@ export function DevupUI(
       writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
     }
     // disable turbo parallel
-    const excludeRegex = new RegExp(
-      `(node_modules(?!.*(${['@devup-ui', ...include]
-        .join('|')
-        .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-    )
+    const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
     const coordinatorPortFile = join(distDir, 'coordinator.port')
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { Agent, request } from 'node:http'
 
+import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 import {
   getCss,
   importClassMap,
@@ -9,15 +10,6 @@ import {
   registerTheme,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
-
-function getFileNumByFilename(filename: string) {
-  // Handle query parameter format: devup-ui.css?fileNum=79
-  // Turbopack may embed query params in resourcePath
-  const queryMatch = filename.match(/[?&]fileNum=(\d+)/)
-  if (queryMatch) return parseInt(queryMatch[1])
-  if (filename.endsWith('devup-ui.css')) return null
-  return parseInt(filename.split('devup-ui-')[1].split('.')[0])
-}
 
 export interface DevupUICssLoaderOptions {
   // turbo

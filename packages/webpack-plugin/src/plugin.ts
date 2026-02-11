@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
 import {
+  createNodeModulesExcludeRegex,
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
@@ -178,10 +179,9 @@ export class DevupUIWebpackPlugin {
     compiler.options.module.rules.push(
       {
         test: /\.(tsx|ts|js|mjs|jsx)$/,
-        exclude: new RegExp(
-          `(node_modules(?!.*(${['@devup-ui', ...this.options.include]
-            .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
+        exclude: createNodeModulesExcludeRegex(
+          this.options.include,
+          '.mdx.[tj]sx?$',
         ),
         enforce: 'pre',
         use: [
