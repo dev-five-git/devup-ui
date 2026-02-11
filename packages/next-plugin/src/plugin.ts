@@ -19,7 +19,6 @@ import {
 import { type NextConfig } from 'next'
 
 import { startCoordinator } from './coordinator'
-import { preload } from './preload'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -95,39 +94,24 @@ export function DevupUI(
 
     const coordinatorPortFile = join(distDir, 'coordinator.port')
 
-    if (process.env.NODE_ENV !== 'production') {
-      // create devup-ui.css file
-      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
+    // create devup-ui.css file
+    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
 
-      const coordinator = startCoordinator({
-        package: libPackage,
-        cssDir,
-        singleCss,
-        sheetFile,
-        classMapFile,
-        fileMapFile,
-        importAliases: importAliases as unknown as Record<
-          string,
-          string | null
-        >,
-        coordinatorPortFile,
-      })
+    const coordinator = startCoordinator({
+      package: libPackage,
+      cssDir,
+      singleCss,
+      sheetFile,
+      classMapFile,
+      fileMapFile,
+      importAliases: importAliases as unknown as Record<string, string | null>,
+      coordinatorPortFile,
+    })
 
-      // Cleanup on exit
-      process.on('exit', () => {
-        coordinator.close()
-      })
-    } else {
-      // build
-      preload(
-        excludeRegex,
-        libPackage,
-        singleCss,
-        cssDir,
-        include,
-        importAliases,
-      )
-    }
+    // Cleanup on exit
+    process.on('exit', () => {
+      coordinator.close()
+    })
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())
     const defaultFileMap = JSON.parse(exportFileMap())

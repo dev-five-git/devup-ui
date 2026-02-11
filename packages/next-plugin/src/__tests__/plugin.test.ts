@@ -15,7 +15,6 @@ import {
 
 import * as coordinatorModule from '../coordinator'
 import { DevupUI } from '../plugin'
-import * as preloadModule from '../preload'
 
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
@@ -30,7 +29,6 @@ let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
-let preloadSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
 
 let originalEnv: NodeJS.ProcessEnv
@@ -67,7 +65,6 @@ beforeEach(() => {
     webpackPluginModule,
     'DevupUIWebpackPlugin',
   ).mockImplementation(mock() as never)
-  preloadSpy = spyOn(preloadModule, 'preload').mockReturnValue(undefined)
   startCoordinatorSpy = spyOn(
     coordinatorModule,
     'startCoordinator',
@@ -96,7 +93,6 @@ afterEach(() => {
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
   devupUIWebpackPluginSpy.mockRestore()
-  preloadSpy.mockRestore()
   startCoordinatorSpy.mockRestore()
 })
 
@@ -429,32 +425,34 @@ describe('DevupUINextPlugin', () => {
         '*',
       )
     })
-    it('should throw error if NODE_ENV is production', () => {
+    it('should start coordinator even in production mode', () => {
       ;(process.env as any).NODE_ENV = 'production'
       process.env.TURBOPACK = '1'
-      preloadSpy.mockReturnValue(undefined)
+      existsSyncSpy
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
       const ret = DevupUI({})
       expect(ret).toEqual({
         turbopack: {
           rules: expect.any(Object),
         },
       })
-      expect(preloadSpy).toHaveBeenCalledWith(
-        new RegExp(
-          `(node_modules(?!.*(${['@devup-ui']
-            .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-        ),
-        '@devup-ui/react',
-        false,
-        expect.any(String),
-        [],
-        {
+      expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        package: '@devup-ui/react',
+        cssDir: resolve('df', 'devup-ui'),
+        singleCss: false,
+        sheetFile: join('df', 'sheet.json'),
+        classMapFile: join('df', 'classMap.json'),
+        fileMapFile: join('df', 'fileMap.json'),
+        importAliases: {
           '@emotion/styled': 'styled',
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
         },
-      )
+        coordinatorPortFile: join('df', 'coordinator.port'),
+      })
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
@@ -598,20 +596,6 @@ describe('DevupUINextPlugin', () => {
       expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
 
       processOnSpy.mockRestore()
-    })
-    it('should not start coordinator in production mode', async () => {
-      ;(process.env as any).NODE_ENV = 'production'
-      process.env.TURBOPACK = '1'
-      existsSyncSpy
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(false)
-
-      DevupUI({})
-
-      // Coordinator should NOT be started in production mode
-      expect(startCoordinatorSpy).not.toHaveBeenCalled()
     })
   })
 })

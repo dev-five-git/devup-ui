@@ -104,8 +104,8 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       importAliases = {},
     } = this.getOptions()
 
-    // Coordinator mode: delegate to HTTP server in dev mode
-    if (coordinatorPortFile && watch) {
+    // Coordinator mode: delegate to HTTP server
+    if (coordinatorPortFile) {
       const callback = this.async()
       const tryCoordinator = (retries: number) => {
         if (!existsSync(coordinatorPortFile)) {

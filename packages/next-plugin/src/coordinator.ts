@@ -37,6 +37,37 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 let server: Server | null = null
 
+// Extraction tracking for waitForIdle
+let activeExtractions = 0
+let totalExtractions = 0
+let lastCompletedAt = 0
+const IDLE_THRESHOLD_MS = 500
+const MAX_WAIT_MS = 30_000
+
+function waitForIdle(): Promise<void> {
+  const start = Date.now()
+  return new Promise((resolve) => {
+    const check = () => {
+      const now = Date.now()
+      if (now - start > MAX_WAIT_MS) {
+        // Timeout — return whatever CSS we have
+        resolve()
+        return
+      }
+      if (
+        totalExtractions > 0 &&
+        activeExtractions === 0 &&
+        now - lastCompletedAt >= IDLE_THRESHOLD_MS
+      ) {
+        resolve()
+        return
+      }
+      setTimeout(check, 50)
+    }
+    check()
+  })
+}
+
 export function startCoordinator(options: CoordinatorOptions): {
   close: () => void
 } {
@@ -63,13 +94,20 @@ export function startCoordinator(options: CoordinatorOptions): {
     if (req.method === 'GET' && url.pathname === '/css') {
       const fileNumParam = url.searchParams.get('fileNum')
       const importMainCss = url.searchParams.get('importMainCss') === 'true'
+      const shouldWait = url.searchParams.get('waitForIdle') === 'true'
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
+
+      if (shouldWait) {
+        await waitForIdle()
+      }
+
       res.writeHead(200, { 'Content-Type': 'text/css' })
       res.end(getCss(fileNum ?? null, importMainCss))
       return
     }
 
     if (req.method === 'POST' && url.pathname === '/extract') {
+      activeExtractions++
       try {
         const body = JSON.parse(await readBody(req))
         const { filename, code, resourcePath } = body as {
@@ -94,6 +132,18 @@ export function startCoordinator(options: CoordinatorOptions): {
           true,
           importAliases,
         )
+
+        // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
+        // Instead of importing "devup-ui-79.css" (which doesn't exist as a resolvable module),
+        // rewrite to "devup-ui.css?fileNum=79" — the placeholder file exists and the query
+        // makes each import a unique module for Turbopack.
+        let transformedCode = result.code
+        if (!singleCss && transformedCode) {
+          transformedCode = transformedCode.replace(
+            /devup-ui-(\d+)\.css/g,
+            'devup-ui.css?fileNum=$1',
+          )
+        }
 
         const promises: Promise<void>[] = []
 
@@ -144,7 +194,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(
           JSON.stringify({
-            code: result.code,
+            code: transformedCode,
             map: result.map,
             cssFile: result.cssFile,
             updatedBaseStyle: result.updatedBaseStyle,
@@ -157,6 +207,10 @@ export function startCoordinator(options: CoordinatorOptions): {
             error: error instanceof Error ? error.message : String(error),
           }),
         )
+      } finally {
+        activeExtractions--
+        totalExtractions++
+        lastCompletedAt = Date.now()
       }
       return
     }
@@ -193,4 +247,7 @@ export const resetCoordinator = () => {
     server.close()
     server = null
   }
+  activeExtractions = 0
+  totalExtractions = 0
+  lastCompletedAt = 0
 }
