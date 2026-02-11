@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForStyleSettle } from './helpers'
+
 test.describe('Landing Page - Zero Runtime Validation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -16,9 +18,9 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
 
     // Interact with the page: scroll, hover, etc.
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-    await page.waitForTimeout(500)
+    await waitForStyleSettle(page)
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(500)
+    await waitForStyleSettle(page)
 
     // Count again after interactions
     const afterInteractionStyleCount = await page.evaluate(
@@ -152,18 +154,18 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
     const getStarted = page.getByRole('link', { name: /Get started/i })
     if (await getStarted.isVisible()) {
       await getStarted.hover()
-      await page.waitForTimeout(200)
+      await waitForStyleSettle(page)
     }
 
     const discord = page.getByRole('link', { name: /Join our Discord/i })
     if (await discord.isVisible()) {
       await discord.hover()
-      await page.waitForTimeout(200)
+      await waitForStyleSettle(page)
     }
 
     // Move away
     await page.mouse.move(0, 0)
-    await page.waitForTimeout(200)
+    await waitForStyleSettle(page)
 
     const finalCount = await page.evaluate(
       () => document.querySelectorAll('style').length,

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 /**
  * All tests use javaScriptEnabled: false because the Next.js static export
  * serves correct SSR HTML, but client-side hydration triggers a 404 under
@@ -20,7 +22,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const docsLink = page.locator('a[href="/docs/overview"]').first()
       await expect(docsLink).toBeVisible()
@@ -36,7 +38,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const getStarted = page.locator('a[href="/docs/overview"]').filter({
         hasText: 'Get started',
@@ -53,7 +55,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       // The header nav link should not be visible on mobile
       const docsNavLink = page
@@ -72,7 +74,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const docsNavLink = page
         .locator('a[href="/docs/overview"]')
@@ -91,7 +93,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       // The home page should mention Zero Runtime, which is a key concept
       await expect(page.getByText('Zero Runtime').first()).toBeVisible()
@@ -106,7 +108,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       await expect(page.getByText('Features').first()).toBeVisible()
 
@@ -120,7 +122,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       await expect(page.getByText('Type Safety').first()).toBeVisible()
 
@@ -134,7 +136,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const figmaPlugin = page.getByText('Figma Plugin').first()
       await figmaPlugin.scrollIntoViewIfNeeded()
@@ -152,11 +154,11 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const features = page.getByText('Features').first()
       await features.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot('docs-features-section-desktop.png', {
         fullPage: false,
@@ -172,11 +174,11 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const features = page.getByText('Features').first()
       await features.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot('docs-features-section-mobile.png', {
         fullPage: false,
@@ -196,11 +198,11 @@ test.describe('Documentation Pages', () => {
       await page.evaluate(() =>
         document.documentElement.setAttribute('data-theme', 'dark'),
       )
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       const features = page.getByText('Features').first()
       await features.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot(
         'dark-docs-features-section-desktop.png',
@@ -219,7 +221,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const getStarted = page.getByText('Get started').first()
       await expect(getStarted).toBeVisible()
@@ -234,7 +236,7 @@ test.describe('Documentation Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const getStarted = page.getByText('Get started').first()
       await expect(getStarted).toBeVisible()

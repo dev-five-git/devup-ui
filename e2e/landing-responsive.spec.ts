@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForStyleSettle } from './helpers'
+
 test.describe('Landing Page - Responsive Layout', () => {
   test.describe('Mobile viewport (375px)', () => {
     test.beforeEach(async ({ page }) => {
@@ -147,7 +149,7 @@ test.describe('Landing Page - Responsive Layout', () => {
       // Resize to desktop
       await page.setViewportSize({ width: 1440, height: 900 })
       // Allow CSS to recompute
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const desktopColumns = await page.evaluate(() => {
         const grids = Array.from(document.querySelectorAll('*'))

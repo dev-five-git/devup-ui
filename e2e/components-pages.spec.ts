@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 test.describe('Components Pages', () => {
   test.describe('Components link availability', () => {
     test('header has Components link pointing to /components/overview', async ({
@@ -11,7 +13,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page.locator('a[href="/components/overview"]').first()
       await expect(link).toBeVisible()
@@ -26,7 +28,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page
         .locator('a[href="/components/overview"]')
@@ -42,7 +44,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page
         .locator('a[href="/components/overview"]')
@@ -59,7 +61,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page
         .locator('a[href="/components/overview"]')
@@ -77,7 +79,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page.locator('a[href="/storybook/index.html"]').first()
       await expect(link).toBeVisible()
@@ -91,7 +93,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const link = page
         .locator('a[href="/storybook/index.html"]')
@@ -110,7 +112,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       await expect(page.getByText('Comparison Bechmarks').first()).toBeVisible()
       await context.close()
@@ -123,7 +125,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const benchSection = page.getByText('Comparison Bechmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
@@ -144,11 +146,11 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const benchSection = page.getByText('Comparison Bechmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       // Check that several competitor names are visible
       await expect(page.getByText('Chakra UI').first()).toBeVisible()
@@ -163,11 +165,11 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const benchSection = page.getByText('Comparison Bechmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot(
         'components-benchmark-section-desktop.png',
@@ -183,11 +185,11 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const benchSection = page.getByText('Comparison Bechmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot(
         'components-benchmark-section-mobile.png',
@@ -204,11 +206,11 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const benchSection = page.getByText('Comparison Bechmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       await expect(page).toHaveScreenshot(
         'dark-components-benchmark-section-desktop.png',
@@ -226,7 +228,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const community = page.getByText('Join our community').first()
       await community.scrollIntoViewIfNeeded()
@@ -241,7 +243,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const discordLink = page
         .locator('a[href="https://discord.gg/8zjcGc7cWh"]')
@@ -257,7 +259,7 @@ test.describe('Components Pages', () => {
       })
       const page = await context.newPage()
       await page.goto('/')
-      await page.waitForTimeout(500)
+      await waitForFontsReady(page)
 
       const kakaoLink = page
         .locator('a[href="https://open.kakao.com/o/giONwVAh"]')

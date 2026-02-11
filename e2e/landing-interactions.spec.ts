@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForStyleSettle } from './helpers'
+
 function normalizeColor(raw: string): string {
   const trimmed = raw.trim().toLowerCase()
   if (trimmed.startsWith('#')) {
@@ -40,7 +42,7 @@ test.describe('Landing Page - Interactions', () => {
 
     // Hover
     await getStartedLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     const bgAfter = await getStartedLink.evaluate((el) => {
       const inner = el.querySelector('div') || el
@@ -69,7 +71,7 @@ test.describe('Landing Page - Interactions', () => {
     })
 
     await discordLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     const bgAfter = await discordLink.evaluate((el) => {
       const inner = el.querySelector('div') || el
@@ -92,7 +94,7 @@ test.describe('Landing Page - Interactions', () => {
     })
 
     await kakaoLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     const bgAfter = await kakaoLink.evaluate((el) => {
       const inner = el.querySelector('div') || el
@@ -121,7 +123,7 @@ test.describe('Landing Page - Interactions', () => {
     })
 
     await figmaLink.hover()
-    await page.waitForTimeout(300)
+    await waitForStyleSettle(page)
 
     const bgAfter = await figmaLink.evaluate((el) => {
       const inner = el.querySelector('div') || el

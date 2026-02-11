@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 /**
  * NOTE: Sub-page navigation is not possible in the current static export +
  * `serve -s` setup. Header tests that required sub-page navigation have been
@@ -122,7 +124,7 @@ test.describe('Landing Page - Header & Navigation', () => {
 
       // Scroll down significantly
       await page.evaluate(() => window.scrollBy(0, 1000))
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       // Logo should still be visible because header is fixed/sticky
       await expect(logoLink).toBeVisible()
@@ -159,7 +161,7 @@ test.describe('Landing Page - Header & Navigation', () => {
         }
       })
 
-      await page.waitForTimeout(500)
+      await waitForStyleSettle(page)
 
       const newTheme = await page.evaluate(() =>
         document.documentElement.getAttribute('data-theme'),
@@ -211,7 +213,7 @@ test.describe('Landing Page - Header & Navigation', () => {
       await expect(menuButton).toBeVisible()
 
       await menuButton.click()
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
 
       // After clicking menu, the URL should contain menu=1
       const url = page.url()
@@ -255,7 +257,7 @@ test.describe('Landing Page - Header & Navigation', () => {
 
       if ((await searchInput.count()) > 0) {
         await searchInput.click()
-        await page.waitForTimeout(500)
+        await waitForStyleSettle(page)
 
         const url = page.url()
         const hasSearchParam = url.includes('search=')

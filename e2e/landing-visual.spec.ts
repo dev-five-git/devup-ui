@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 /**
  * Mock the GitHub API to return a fixed star count so screenshots are deterministic.
  * StarButton fetches: https://api.github.com/repos/dev-five-git/devup-ui
@@ -25,7 +27,7 @@ test.describe('Landing Page - Visual Regression', () => {
       await page.goto('/')
       await page.waitForLoadState('networkidle')
       // Wait for fonts and images
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
 
       await expect(page).toHaveScreenshot('full-page-mobile.png', {
         fullPage: true,
@@ -37,7 +39,7 @@ test.describe('Landing Page - Visual Regression', () => {
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.goto('/')
       await page.waitForLoadState('networkidle')
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
 
       await expect(page).toHaveScreenshot('full-page-desktop.png', {
         fullPage: true,
@@ -51,7 +53,7 @@ test.describe('Landing Page - Visual Regression', () => {
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.goto('/')
       await page.waitForLoadState('networkidle')
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
     })
 
     test('TopBanner section', async ({ page }) => {
@@ -70,7 +72,7 @@ test.describe('Landing Page - Visual Regression', () => {
     test('Feature section', async ({ page }) => {
       const featureHeading = page.getByText('Features', { exact: true }).first()
       await featureHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       // Get the feature section container
       const featureSection = featureHeading
@@ -84,7 +86,7 @@ test.describe('Landing Page - Visual Regression', () => {
     test('Bench section', async ({ page }) => {
       const benchHeading = page.getByText('Comparison Bechmarks').first()
       await benchHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const benchSection = benchHeading
         .locator('..')
@@ -97,7 +99,7 @@ test.describe('Landing Page - Visual Regression', () => {
     test('Discord section', async ({ page }) => {
       const discordHeading = page.getByText('Join our community').first()
       await discordHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const discordSection = discordHeading
         .locator('..')
@@ -110,7 +112,7 @@ test.describe('Landing Page - Visual Regression', () => {
     test('Footer section', async ({ page }) => {
       const footer = page.locator('footer')
       await footer.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       await expect(footer).toHaveScreenshot('section-footer.png')
     })

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady, waitForStyleSettle } from './helpers'
+
 /**
  * Mock the GitHub API to return a fixed star count so screenshots are deterministic.
  */
@@ -24,7 +26,7 @@ async function setDarkThemeAttribute(page: import('@playwright/test').Page) {
   await page.evaluate(() =>
     document.documentElement.setAttribute('data-theme', 'dark'),
   )
-  await page.waitForTimeout(300)
+  await waitForStyleSettle(page)
 }
 
 test.describe('Landing Page - Dark Mode Visual Regression', () => {
@@ -36,7 +38,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
       await page.goto('/')
       await page.waitForLoadState('networkidle')
       await setDarkThemeAttribute(page)
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
 
       await expect(page).toHaveScreenshot('dark-full-page-mobile.png', {
         fullPage: true,
@@ -50,7 +52,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
       await page.goto('/')
       await page.waitForLoadState('networkidle')
       await setDarkThemeAttribute(page)
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
 
       await expect(page).toHaveScreenshot('dark-full-page-desktop.png', {
         fullPage: true,
@@ -66,7 +68,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
       await page.goto('/')
       await page.waitForLoadState('networkidle')
       await setDarkThemeAttribute(page)
-      await page.waitForTimeout(1000)
+      await waitForFontsReady(page)
     })
 
     test('TopBanner section (dark)', async ({ page }) => {
@@ -84,7 +86,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
     test('Feature section (dark)', async ({ page }) => {
       const featureHeading = page.getByText('Features', { exact: true }).first()
       await featureHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const featureSection = featureHeading
         .locator('..')
@@ -97,7 +99,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
     test('Bench section (dark)', async ({ page }) => {
       const benchHeading = page.getByText('Comparison Bechmarks').first()
       await benchHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const benchSection = benchHeading
         .locator('..')
@@ -110,7 +112,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
     test('Discord section (dark)', async ({ page }) => {
       const discordHeading = page.getByText('Join our community').first()
       await discordHeading.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       const discordSection = discordHeading
         .locator('..')
@@ -123,7 +125,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
     test('Footer section (dark)', async ({ page }) => {
       const footer = page.locator('footer')
       await footer.scrollIntoViewIfNeeded()
-      await page.waitForTimeout(300)
+      await waitForStyleSettle(page)
 
       await expect(footer).toHaveScreenshot('dark-section-footer.png')
     })
