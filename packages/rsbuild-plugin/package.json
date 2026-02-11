@@ -18,7 +18,7 @@
     "rsbuild"
   ],
   "type": "module",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "scripts": {
     "lint": "eslint",
     "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
