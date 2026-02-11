@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-oxc_parser = "0.112.0"
-oxc_syntax = "0.112.0"
-oxc_span = "0.112.0"
-oxc_allocator = "0.112.0"
-oxc_ast = "0.112.0"
-oxc_ast_visit = "0.112.0"
-oxc_codegen = "0.112.0"
-oxc_transformer = "0.112.0"
-oxc_semantic = "0.112.0"
+oxc_parser = "0.113.0"
+oxc_syntax = "0.113.0"
+oxc_span = "0.113.0"
+oxc_allocator = "0.113.0"
+oxc_ast = "0.113.0"
+oxc_ast_visit = "0.113.0"
+oxc_codegen = "0.113.0"
+oxc_transformer = "0.113.0"
+oxc_semantic = "0.113.0"
 css = { path = "../css" }
 phf = "0.13"
 strum = "0.27.2"
@@ -24,3 +24,8 @@ boa_engine = "0.21"
 insta = "1.46.3"
 serial_test = "3.3.1"
 rstest = "0.26.1"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "extract_benchmark"
+harness = false

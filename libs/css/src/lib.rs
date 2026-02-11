@@ -11,11 +11,8 @@ mod selector_separator;
 pub mod style_selector;
 pub mod utils;
 
-use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 
-use crate::class_map::GLOBAL_CLASS_MAP;
 use crate::constant::{
     COLOR_HASH, F_SPACE_RE, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY, ZERO_RE,
 };
@@ -26,31 +23,64 @@ use crate::optimize_value::optimize_value;
 use crate::style_selector::StyleSelector;
 use crate::utils::to_kebab_case;
 
-static GLOBAL_PREFIX: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
-
-pub fn set_prefix(prefix: Option<String>) {
-    *GLOBAL_PREFIX.lock().unwrap() = prefix;
+#[cfg(target_arch = "wasm32")]
+mod prefix_state {
+    use std::cell::RefCell;
+    thread_local! {
+        static GLOBAL_PREFIX: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+    pub fn set_prefix(prefix: Option<String>) {
+        GLOBAL_PREFIX.with(|p| *p.borrow_mut() = prefix);
+    }
+    pub fn get_prefix() -> Option<String> {
+        GLOBAL_PREFIX.with(|p| p.borrow().clone())
+    }
 }
 
-pub fn get_prefix() -> Option<String> {
-    GLOBAL_PREFIX.lock().unwrap().clone()
+#[cfg(not(target_arch = "wasm32"))]
+mod prefix_state {
+    use std::sync::LazyLock;
+    use std::sync::Mutex;
+    static GLOBAL_PREFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
+    pub fn set_prefix(prefix: Option<String>) {
+        *GLOBAL_PREFIX.lock().unwrap() = prefix;
+    }
+    pub fn get_prefix() -> Option<String> {
+        GLOBAL_PREFIX.lock().unwrap().clone()
+    }
 }
+
+pub use prefix_state::{get_prefix, set_prefix};
 
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            StyleSelector::Selector(value) => value.replace("&", &format!(".{class_name}")),
+            StyleSelector::Selector(value) => {
+                let mut dot_class = String::with_capacity(1 + class_name.len());
+                dot_class.push('.');
+                dot_class.push_str(class_name);
+                value.replace("&", &dot_class)
+            }
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
-                    s.replace("&", &format!(".{class_name}"))
+                    let mut dot_class = String::with_capacity(1 + class_name.len());
+                    dot_class.push('.');
+                    dot_class.push_str(class_name);
+                    s.replace("&", &dot_class)
                 } else {
-                    format!(".{class_name}")
+                    let mut result = String::with_capacity(1 + class_name.len());
+                    result.push('.');
+                    result.push_str(class_name);
+                    result
                 }
             }
             StyleSelector::Global(v, _) => v.to_string(),
         }
     } else {
-        format!(".{class_name}")
+        let mut result = String::with_capacity(1 + class_name.len());
+        result.push('.');
+        result.push_str(class_name);
+        result
     }
 }
 
@@ -132,31 +162,40 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
     let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
-        format!("{}k-{keyframes}", prefix)
+        let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
+        result.push_str(&prefix);
+        result.push_str("k-");
+        result.push_str(keyframes);
+        result
     } else {
-        let key = format!("k-{keyframes}");
-        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        let filename = filename.unwrap_or_default().to_string();
-        let class_num = map
-            .entry(filename.to_string())
-            .or_default()
-            .get(&key)
-            .map(|v| num_to_nm_base(*v).to_string())
-            .unwrap_or_else(|| {
-                let m = map.entry(filename.to_string()).or_default();
-                let len = m.len();
-                m.insert(key, len);
-                num_to_nm_base(len).to_string()
-            });
-        if !filename.is_empty() {
-            format!(
-                "{}{}-{}",
-                prefix,
-                num_to_nm_base(get_file_num_by_filename(&filename)),
-                class_num
-            )
+        let mut key = String::with_capacity(2 + keyframes.len());
+        key.push_str("k-");
+        key.push_str(keyframes);
+        let filename_key = filename.unwrap_or_default();
+        let class_num = class_map::with_class_map_mut(|map| {
+            let file_entry = map.entry(filename_key.to_string()).or_default();
+            if let Some(&num) = file_entry.get(&key) {
+                num_to_nm_base(num)
+            } else {
+                let len = file_entry.len();
+                file_entry.insert(key, len);
+                num_to_nm_base(len)
+            }
+        });
+        if let Some(fname) = filename {
+            let file_num = num_to_nm_base(get_file_num_by_filename(fname));
+            let mut result =
+                String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
+            result.push_str(&prefix);
+            result.push_str(&file_num);
+            result.push('-');
+            result.push_str(&class_num);
+            result
         } else {
-            format!("{}{}", prefix, class_num)
+            let mut result = String::with_capacity(prefix.len() + class_num.len());
+            result.push_str(&prefix);
+            result.push_str(&class_num);
+            result
         }
     }
 }
@@ -223,59 +262,98 @@ pub fn sheet_to_classname(
     } else {
         filename
     };
+    let optimized = optimize_value(value.unwrap_or_default());
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
-        format!(
-            "{}{}-{}-{}-{}-{}{}",
-            prefix,
-            property.trim(),
-            level,
-            optimize_value(value.unwrap_or_default()),
-            if selector.is_empty() {
-                "".to_string()
-            } else {
-                encode_selector(selector)
-            },
-            style_order.unwrap_or(255),
-            filename
-                .map(|v| format!("-{}", get_file_num_by_filename(v)))
-                .unwrap_or_default(),
-        )
-    } else {
-        let key = format!(
-            "{}-{}-{}-{}-{}{}",
-            property.trim(),
-            level,
-            optimize_value(value.unwrap_or_default()),
-            selector.unwrap_or_default().trim(),
-            style_order.unwrap_or(255),
-            filename
-                .map(|v| format!("-{}", get_file_num_by_filename(v)))
-                .unwrap_or_default(),
-        );
-        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        let filename = filename.map(|v| v.to_string()).unwrap_or_default();
-        let clas_num = map
-            .entry(filename.to_string())
-            .or_default()
-            .get(&key)
-            .map(|v| num_to_nm_base(*v))
-            .unwrap_or_else(|| {
-                let m = map.entry(filename.to_string()).or_default();
-                let len = m.len();
-                m.insert(key, len);
-                num_to_nm_base(len)
-            });
-        if !filename.is_empty() {
-            format!(
-                "{}{}-{}",
-                prefix,
-                num_to_nm_base(get_file_num_by_filename(&filename)),
-                clas_num
-            )
+        let encoded = if selector.is_empty() {
+            String::new()
         } else {
-            format!("{}{}", prefix, clas_num)
+            encode_selector(selector)
+        };
+        let file_suffix = filename.map(get_file_num_by_filename);
+        let order = style_order.unwrap_or(255);
+        let prop = property.trim();
+        // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
+        let mut result =
+            String::with_capacity(prefix.len() + prop.len() + optimized.len() + encoded.len() + 16);
+        result.push_str(&prefix);
+        result.push_str(prop);
+        result.push('-');
+        write_u8(&mut result, level);
+        result.push('-');
+        result.push_str(&optimized);
+        result.push('-');
+        result.push_str(&encoded);
+        result.push('-');
+        write_u8(&mut result, order);
+        if let Some(fnum) = file_suffix {
+            result.push('-');
+            result.push_str(&num_to_nm_base(fnum));
         }
+        result
+    } else {
+        let trimmed_selector = selector.unwrap_or_default().trim();
+        let order = style_order.unwrap_or(255);
+        let file_num = filename.map(get_file_num_by_filename);
+        let trimmed_prop = property.trim();
+
+        // Build key with pre-allocated capacity
+        let mut key = String::with_capacity(
+            trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16,
+        );
+        key.push_str(trimmed_prop);
+        key.push('-');
+        write_u8(&mut key, level);
+        key.push('-');
+        key.push_str(&optimized);
+        key.push('-');
+        key.push_str(trimmed_selector);
+        key.push('-');
+        write_u8(&mut key, order);
+        if let Some(fnum) = file_num {
+            key.push('-');
+            key.push_str(&num_to_nm_base(fnum));
+        }
+
+        let filename_key = filename.unwrap_or_default();
+        let clas_num = class_map::with_class_map_mut(|map| {
+            let file_entry = map.entry(filename_key.to_string()).or_default();
+            if let Some(&num) = file_entry.get(&key) {
+                num_to_nm_base(num)
+            } else {
+                let len = file_entry.len();
+                file_entry.insert(key, len);
+                num_to_nm_base(len)
+            }
+        });
+        if filename.is_some() {
+            let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
+            result.push_str(&prefix);
+            result.push_str(&num_to_nm_base(file_num.unwrap()));
+            result.push('-');
+            result.push_str(&clas_num);
+            result
+        } else {
+            let mut result = String::with_capacity(prefix.len() + clas_num.len());
+            result.push_str(&prefix);
+            result.push_str(&clas_num);
+            result
+        }
+    }
+}
+
+/// Write a u8 value to a string without allocating via format!
+#[inline]
+fn write_u8(s: &mut String, v: u8) {
+    if v >= 100 {
+        s.push((b'0' + v / 100) as char);
+        s.push((b'0' + (v / 10) % 10) as char);
+        s.push((b'0' + v % 10) as char);
+    } else if v >= 10 {
+        s.push((b'0' + v / 10) as char);
+        s.push((b'0' + v % 10) as char);
+    } else {
+        s.push((b'0' + v) as char);
     }
 }
 
@@ -283,35 +361,44 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
     let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
-        format!(
-            "--{}{}-{}-{}",
-            prefix,
-            property,
-            level,
-            if selector.is_empty() {
-                "".to_string()
-            } else {
-                encode_selector(selector)
-            }
-        )
+        let encoded = if selector.is_empty() {
+            String::new()
+        } else {
+            encode_selector(selector)
+        };
+        let mut result =
+            String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
+        result.push_str("--");
+        result.push_str(&prefix);
+        result.push_str(property);
+        result.push('-');
+        write_u8(&mut result, level);
+        result.push('-');
+        result.push_str(&encoded);
+        result
     } else {
-        let key = format!(
-            "{}-{}-{}",
-            property,
-            level,
-            selector.unwrap_or_default().trim()
-        );
-        let mut map = GLOBAL_CLASS_MAP.lock().unwrap();
-        map.entry("".to_string())
-            .or_default()
-            .get(&key)
-            .map(|v| format!("--{}{}", prefix, num_to_nm_base(*v)))
-            .unwrap_or_else(|| {
-                let m = map.entry("".to_string()).or_default();
-                let len = m.len();
-                m.insert(key, len);
-                format!("--{}{}", prefix, num_to_nm_base(len))
-            })
+        let trimmed_selector = selector.unwrap_or_default().trim();
+        let mut key = String::with_capacity(property.len() + 4 + trimmed_selector.len());
+        key.push_str(property);
+        key.push('-');
+        write_u8(&mut key, level);
+        key.push('-');
+        key.push_str(trimmed_selector);
+        class_map::with_class_map_mut(|map| {
+            let file_entry = map.entry(String::new()).or_default();
+            let base_name = if let Some(&num) = file_entry.get(&key) {
+                num_to_nm_base(num)
+            } else {
+                let len = file_entry.len();
+                file_entry.insert(key, len);
+                num_to_nm_base(len)
+            };
+            let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
+            result.push_str("--");
+            result.push_str(&prefix);
+            result.push_str(&base_name);
+            result
+        })
     }
 }
 
@@ -491,13 +578,12 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FF000080"), None, None, None),
         );
 
-        {
-            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+        class_map::with_class_map(|map| {
             assert_eq!(
                 map.get("").unwrap().get("background-0-#FF000080--255"),
                 Some(&2)
             );
-        }
+        });
         assert_eq!(
             sheet_to_classname("background", 0, Some("#fff"), None, None, None),
             sheet_to_classname("  background  ", 0, Some("#FFF"), None, None, None),
@@ -508,10 +594,9 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FFF"), None, None, None),
         );
 
-        {
-            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+        class_map::with_class_map(|map| {
             assert_eq!(map.get("").unwrap().get("background-0-#FFF--255"), Some(&3));
-        }
+        });
 
         assert_eq!(
             sheet_to_classname("background", 0, Some("#ffffff"), None, None, None),
@@ -523,13 +608,12 @@ mod tests {
             sheet_to_classname("background", 0, Some("#FFFFFFaa"), None, None, None),
         );
 
-        {
-            let map = GLOBAL_CLASS_MAP.lock().unwrap();
+        class_map::with_class_map(|map| {
             assert_eq!(
                 map.get("").unwrap().get("background-0-#FFFA--255"),
                 Some(&4)
             );
-        }
+        });
         assert_eq!(
             sheet_to_classname(
                 "background",
@@ -708,6 +792,24 @@ mod tests {
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
             "background-1-red-hover-255"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_debug_sheet_to_classname_with_filename() {
+        reset_class_map();
+        set_debug(true);
+        // Debug mode + filename triggers the file_suffix branch (lines 234-235)
+        let class_name =
+            sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
+        assert!(class_name.contains("background-0-red--255-"));
+        // Should have a file number suffix
+        let parts: Vec<&str> = class_name.split('-').collect();
+        assert!(
+            parts.len() >= 6,
+            "Expected file suffix in debug classname: {class_name}"
+        );
+        set_debug(false);
     }
 
     #[test]

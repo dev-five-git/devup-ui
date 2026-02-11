@@ -1,14 +1,15 @@
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-static DEBUG: Mutex<bool> = Mutex::new(false);
+static DEBUG: AtomicBool = AtomicBool::new(false);
 
+#[inline(always)]
 pub fn set_debug(value: bool) {
-    let mut debug = DEBUG.lock().unwrap();
-    *debug = value;
+    DEBUG.store(value, Ordering::Relaxed);
 }
 
+#[inline(always)]
 pub fn is_debug() -> bool {
-    *DEBUG.lock().unwrap()
+    DEBUG.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

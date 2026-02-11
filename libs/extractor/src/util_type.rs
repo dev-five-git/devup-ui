@@ -9,6 +9,12 @@ impl TryFrom<String> for UtilType {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        UtilType::from_str(&value).map_err(|()| value)
+    }
+}
+
+impl UtilType {
+    pub fn from_str(value: &str) -> Result<Self, ()> {
         if value == "css" {
             Ok(UtilType::Css)
         } else if value == "globalCss" {
@@ -16,7 +22,7 @@ impl TryFrom<String> for UtilType {
         } else if value == "keyframes" {
             Ok(UtilType::Keyframes)
         } else {
-            Err(value)
+            Err(())
         }
     }
 }

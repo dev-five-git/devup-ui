@@ -94,6 +94,12 @@ impl TryFrom<String> for ExportVariableKind {
     type Error = ();
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        ExportVariableKind::from_str(&value)
+    }
+}
+
+impl ExportVariableKind {
+    pub fn from_str(value: &str) -> Result<Self, ()> {
         for kind in ExportVariableKind::iter() {
             if kind.to_string() == value {
                 return Ok(kind);

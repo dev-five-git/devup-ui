@@ -23,7 +23,7 @@
     "@types/bun": "latest",
     "@types/node": "^25.2",
     "bun-test-env-dom": "^1.0.3",
-    "eslint": "^9.39",
+    "eslint": "^9",
     "eslint-plugin-devup": "^2.0",
     "eslint-plugin-eslint-plugin": "^7.3",
     "eslint-plugin-jsonc": "^2.21",
