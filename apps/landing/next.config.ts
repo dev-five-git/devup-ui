@@ -6,9 +6,14 @@ const withMDX = createMDX({
 })
 
 export default withMDX(
-  DevupUI({
-    pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
-    output: 'export',
-    reactCompiler: true,
-  }),
+  DevupUI(
+    {
+      pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
+      output: 'export',
+      reactCompiler: true,
+    },
+    {
+      singleCss: process.env.DEVUP_SINGLE_CSS === '1',
+    },
+  ),
 )

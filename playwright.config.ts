@@ -22,17 +22,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-        launchOptions: {
-          args: [
-            '--font-render-hinting=none',
-            '--disable-font-subpixel-positioning',
-            '--disable-skia-runtime-opts',
-            '--disable-lcd-text',
-          ],
-        },
-      },
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
   webServer: {

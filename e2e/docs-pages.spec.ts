@@ -185,18 +185,17 @@ test.describe('Documentation Pages', () => {
       await context.close()
     })
 
-    // Dark mode screenshot requires JS for ThemeScript to set data-theme attribute.
-    // With javaScriptEnabled: false, the theme cannot switch to dark mode.
-    // Using colorScheme: 'dark' in context only sets prefers-color-scheme media,
-    // which is insufficient if the app relies on a JS-driven theme class/attribute.
-    test.skip('dark mode features section screenshot', async ({ browser }) => {
+    test('dark mode features section screenshot', async ({ browser }) => {
       const context = await browser.newContext({
-        javaScriptEnabled: false,
         viewport: { width: 1440, height: 900 },
         colorScheme: 'dark',
       })
       const page = await context.newPage()
       await page.goto('/')
+      await page.waitForLoadState('networkidle')
+      await page.evaluate(() =>
+        document.documentElement.setAttribute('data-theme', 'dark'),
+      )
       await page.waitForTimeout(500)
 
       const features = page.getByText('Features').first()

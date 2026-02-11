@@ -91,6 +91,21 @@ jobs:
           bun run --filter landing build
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
+      - name: Check for Existing E2E Snapshots
+        id: check-snapshots
+        run: |
+          SNAPSHOT_COUNT=$(find e2e -name '*.png' -path '*-snapshots/*' 2>/dev/null | wc -l)
+          echo "count=$SNAPSHOT_COUNT" >> $GITHUB_OUTPUT
+          echo "Found $SNAPSHOT_COUNT existing snapshot(s)"
+      - name: Generate E2E Snapshots
+        if: steps.check-snapshots.outputs.count == '0'
+        run: bunx playwright test --update-snapshots
+      - name: Commit E2E Snapshots
+        if: steps.check-snapshots.outputs.count == '0' && github.event_name == 'pull_request'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: generate e2e visual snapshots from CI"
+          file_pattern: "e2e/**/*-snapshots/*.png"
       - name: Run E2E Tests
         run: bun run test:e2e
       - name: Upload artifact
@@ -100,6 +115,12 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - uses: actions/deploy-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Build Landing (singleCss)
+        run: |
+          rm -rf apps/landing/out apps/landing/.next apps/landing/df
+          DEVUP_SINGLE_CSS=1 bun run --filter landing build
+      - name: Run E2E Tests (singleCss)
+        run: bun run test:e2e
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
