@@ -18,3 +18,5 @@ tarpaulin-report.json
 storybook-static
 .claude
 .sisyphus
+test-results
+playwright-report
