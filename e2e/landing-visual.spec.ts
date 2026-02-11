@@ -29,7 +29,6 @@ test.describe('Landing Page - Visual Regression', () => {
 
       await expect(page).toHaveScreenshot('full-page-mobile.png', {
         fullPage: true,
-        maxDiffPixelRatio: 0.02,
       })
     })
 
@@ -42,7 +41,6 @@ test.describe('Landing Page - Visual Regression', () => {
 
       await expect(page).toHaveScreenshot('full-page-desktop.png', {
         fullPage: true,
-        maxDiffPixelRatio: 0.02,
       })
     })
   })
@@ -66,9 +64,7 @@ test.describe('Landing Page - Visual Regression', () => {
         .first()
 
       await expect(topBanner).toBeVisible()
-      await expect(topBanner).toHaveScreenshot('section-top-banner.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(topBanner).toHaveScreenshot('section-top-banner.png')
     })
 
     test('Feature section', async ({ page }) => {
@@ -82,9 +78,7 @@ test.describe('Landing Page - Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(featureSection).toHaveScreenshot('section-features.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(featureSection).toHaveScreenshot('section-features.png')
     })
 
     test('Bench section', async ({ page }) => {
@@ -97,9 +91,7 @@ test.describe('Landing Page - Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(benchSection).toHaveScreenshot('section-bench.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(benchSection).toHaveScreenshot('section-bench.png')
     })
 
     test('Discord section', async ({ page }) => {
@@ -112,9 +104,7 @@ test.describe('Landing Page - Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(discordSection).toHaveScreenshot('section-discord.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(discordSection).toHaveScreenshot('section-discord.png')
     })
 
     test('Footer section', async ({ page }) => {
@@ -122,9 +112,7 @@ test.describe('Landing Page - Visual Regression', () => {
       await footer.scrollIntoViewIfNeeded()
       await page.waitForTimeout(300)
 
-      await expect(footer).toHaveScreenshot('section-footer.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(footer).toHaveScreenshot('section-footer.png')
     })
   })
 })

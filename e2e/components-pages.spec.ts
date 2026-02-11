@@ -171,10 +171,7 @@ test.describe('Components Pages', () => {
 
       await expect(page).toHaveScreenshot(
         'components-benchmark-section-desktop.png',
-        {
-          fullPage: false,
-          maxDiffPixelRatio: 0.02,
-        },
+        { fullPage: false },
       )
       await context.close()
     })
@@ -194,10 +191,7 @@ test.describe('Components Pages', () => {
 
       await expect(page).toHaveScreenshot(
         'components-benchmark-section-mobile.png',
-        {
-          fullPage: false,
-          maxDiffPixelRatio: 0.02,
-        },
+        { fullPage: false },
       )
       await context.close()
     })
@@ -218,10 +212,7 @@ test.describe('Components Pages', () => {
 
       await expect(page).toHaveScreenshot(
         'dark-components-benchmark-section-desktop.png',
-        {
-          fullPage: false,
-          maxDiffPixelRatio: 0.02,
-        },
+        { fullPage: false },
       )
       await context.close()
     })

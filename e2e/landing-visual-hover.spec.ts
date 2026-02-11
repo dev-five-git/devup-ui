@@ -31,48 +31,36 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
 
     await expect(getStartedLink).toHaveScreenshot(
       'hover-get-started-before.png',
-      { maxDiffPixelRatio: 0.02 },
     )
 
     await getStartedLink.hover()
     await page.waitForTimeout(300)
 
-    await expect(getStartedLink).toHaveScreenshot(
-      'hover-get-started-after.png',
-      { maxDiffPixelRatio: 0.02 },
-    )
+    await expect(getStartedLink).toHaveScreenshot('hover-get-started-after.png')
   })
 
   test('Star button hover screenshot', async ({ page }) => {
     const starLink = page.locator('a', { hasText: /Star/i }).first()
     await expect(starLink).toBeVisible()
 
-    await expect(starLink).toHaveScreenshot('hover-star-before.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(starLink).toHaveScreenshot('hover-star-before.png')
 
     await starLink.hover()
     await page.waitForTimeout(300)
 
-    await expect(starLink).toHaveScreenshot('hover-star-after.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(starLink).toHaveScreenshot('hover-star-after.png')
   })
 
   test('Sponsor button hover screenshot', async ({ page }) => {
     const sponsorLink = page.locator('a', { hasText: /Sponsor/i }).first()
     await expect(sponsorLink).toBeVisible()
 
-    await expect(sponsorLink).toHaveScreenshot('hover-sponsor-before.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(sponsorLink).toHaveScreenshot('hover-sponsor-before.png')
 
     await sponsorLink.hover()
     await page.waitForTimeout(300)
 
-    await expect(sponsorLink).toHaveScreenshot('hover-sponsor-after.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(sponsorLink).toHaveScreenshot('hover-sponsor-after.png')
   })
 
   test('Discord button hover screenshot', async ({ page }) => {
@@ -80,16 +68,12 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await discordLink.scrollIntoViewIfNeeded()
     await expect(discordLink).toBeVisible()
 
-    await expect(discordLink).toHaveScreenshot('hover-discord-before.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(discordLink).toHaveScreenshot('hover-discord-before.png')
 
     await discordLink.hover()
     await page.waitForTimeout(300)
 
-    await expect(discordLink).toHaveScreenshot('hover-discord-after.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(discordLink).toHaveScreenshot('hover-discord-after.png')
   })
 
   test('KakaoTalk button hover screenshot', async ({ page }) => {
@@ -97,16 +81,12 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
     await kakaoLink.scrollIntoViewIfNeeded()
     await expect(kakaoLink).toBeVisible()
 
-    await expect(kakaoLink).toHaveScreenshot('hover-kakao-before.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(kakaoLink).toHaveScreenshot('hover-kakao-before.png')
 
     await kakaoLink.hover()
     await page.waitForTimeout(300)
 
-    await expect(kakaoLink).toHaveScreenshot('hover-kakao-after.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(kakaoLink).toHaveScreenshot('hover-kakao-after.png')
   })
 
   test('Feature card hover screenshot', async ({ page }) => {
@@ -128,15 +108,11 @@ test.describe('Landing Page - Hover State Visual Regression', () => {
       })
       .first()
 
-    await expect(firstCard).toHaveScreenshot('hover-feature-card-before.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(firstCard).toHaveScreenshot('hover-feature-card-before.png')
 
     await firstCard.hover()
     await page.waitForTimeout(300)
 
-    await expect(firstCard).toHaveScreenshot('hover-feature-card-after.png', {
-      maxDiffPixelRatio: 0.02,
-    })
+    await expect(firstCard).toHaveScreenshot('hover-feature-card-after.png')
   })
 })

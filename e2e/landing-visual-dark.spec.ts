@@ -40,7 +40,6 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
 
       await expect(page).toHaveScreenshot('dark-full-page-mobile.png', {
         fullPage: true,
-        maxDiffPixelRatio: 0.02,
       })
     })
 
@@ -55,7 +54,6 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
 
       await expect(page).toHaveScreenshot('dark-full-page-desktop.png', {
         fullPage: true,
-        maxDiffPixelRatio: 0.02,
       })
     })
   })
@@ -80,9 +78,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
         .first()
 
       await expect(topBanner).toBeVisible()
-      await expect(topBanner).toHaveScreenshot('dark-section-top-banner.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(topBanner).toHaveScreenshot('dark-section-top-banner.png')
     })
 
     test('Feature section (dark)', async ({ page }) => {
@@ -95,12 +91,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(featureSection).toHaveScreenshot(
-        'dark-section-features.png',
-        {
-          maxDiffPixelRatio: 0.02,
-        },
-      )
+      await expect(featureSection).toHaveScreenshot('dark-section-features.png')
     })
 
     test('Bench section (dark)', async ({ page }) => {
@@ -113,9 +104,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(benchSection).toHaveScreenshot('dark-section-bench.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(benchSection).toHaveScreenshot('dark-section-bench.png')
     })
 
     test('Discord section (dark)', async ({ page }) => {
@@ -128,12 +117,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
         .locator('..')
         .locator('..')
 
-      await expect(discordSection).toHaveScreenshot(
-        'dark-section-discord.png',
-        {
-          maxDiffPixelRatio: 0.02,
-        },
-      )
+      await expect(discordSection).toHaveScreenshot('dark-section-discord.png')
     })
 
     test('Footer section (dark)', async ({ page }) => {
@@ -141,9 +125,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
       await footer.scrollIntoViewIfNeeded()
       await page.waitForTimeout(300)
 
-      await expect(footer).toHaveScreenshot('dark-section-footer.png', {
-        maxDiffPixelRatio: 0.02,
-      })
+      await expect(footer).toHaveScreenshot('dark-section-footer.png')
     })
   })
 })

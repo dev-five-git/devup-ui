@@ -160,7 +160,6 @@ test.describe('Documentation Pages', () => {
 
       await expect(page).toHaveScreenshot('docs-features-section-desktop.png', {
         fullPage: false,
-        maxDiffPixelRatio: 0.02,
       })
 
       await context.close()
@@ -181,7 +180,6 @@ test.describe('Documentation Pages', () => {
 
       await expect(page).toHaveScreenshot('docs-features-section-mobile.png', {
         fullPage: false,
-        maxDiffPixelRatio: 0.02,
       })
 
       await context.close()
@@ -207,10 +205,7 @@ test.describe('Documentation Pages', () => {
 
       await expect(page).toHaveScreenshot(
         'dark-docs-features-section-desktop.png',
-        {
-          fullPage: false,
-          maxDiffPixelRatio: 0.02,
-        },
+        { fullPage: false },
       )
 
       await context.close()
