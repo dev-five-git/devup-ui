@@ -468,6 +468,10 @@ mod tests {
     #[case(";", "_sc_")]
     #[case("{", "_lc_")]
     #[case("}", "_rc_")]
+    // ASCII not in lookup table and not alphanumeric/-/_  (line 212 branch)
+    #[case("`", "_u0060_")]
+    #[case("\t", "_u0009_")]
+    #[case("\x01", "_u0001_")]
     // Unicode character (non-ASCII)
     #[case("한글", "_ud55c__uae00_")]
     #[case("emoji😀", "emoji_u1f600_")]
