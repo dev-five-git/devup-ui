@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { waitForFontsReady, waitForStyleSettle } from './helpers'
+import { waitForStyleSettle } from './helpers'
 
 /**
  * NOTE: Sub-page navigation is not possible in the current static export +
@@ -213,7 +213,7 @@ test.describe('Landing Page - Header & Navigation', () => {
       await expect(menuButton).toBeVisible()
 
       await menuButton.click()
-      await waitForFontsReady(page)
+      await page.waitForTimeout(10)
 
       // After clicking menu, the URL should contain menu=1
       const url = page.url()
