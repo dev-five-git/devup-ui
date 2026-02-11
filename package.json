@@ -7,8 +7,10 @@
   "scripts": {
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
     "lint:fix": "eslint --fix && cargo fmt",
-    "pretest": "bun run --filter @devup-ui/vite-plugin build",
-    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets --engine llvm && bun test",
+    "test": "cargo tarpaulin --out xml --out stdout --out html --all-targets --engine llvm && bun test && bun run test:e2e",
+    "test:e2e": "bunx playwright test",
+    "test:e2e:ui": "bunx playwright test --ui",
+    "test:e2e:update": "bunx playwright test --update-snapshots",
     "build": "bun run --filter @devup-ui/wasm --filter @devup-ui/plugin-utils build && bun run --filter @devup-ui/react --filter @devup-ui/webpack-plugin build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/components --filter @devup-ui/reset-css build",
     "dev": "bun run --filter '*' dev",
     "benchmark": "bun benchmark.js",
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:^",
+    "@playwright/test": "^1.58.2",
     "@types/bun": "latest",
     "@types/node": "^25.2",
     "bun-test-env-dom": "^1.0.3",
