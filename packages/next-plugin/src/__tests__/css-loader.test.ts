@@ -383,6 +383,33 @@ describe('devupUICssLoader', () => {
     server.close()
   })
 
+  it('should error when readCoordinatorPort throws', async () => {
+    const portFile = `test-coordinator-throw.port`
+
+    existsSyncSpy.mockImplementation((p: unknown) => p === portFile)
+    readFileSyncSpy.mockImplementation((p: unknown) => {
+      if (p === portFile) throw new Error('EACCES: permission denied')
+      return '{}'
+    })
+
+    const error = await new Promise<Error>((resolve) => {
+      const asyncCallback = mock((err: Error | null) => {
+        if (err) resolve(err)
+      })
+      devupUICssLoader.bind({
+        async: () => asyncCallback,
+        addContextDependency: mock(),
+        getOptions: () => ({
+          ...defaultOptions,
+          coordinatorPortFile: portFile,
+        }),
+        resourcePath: 'devup-ui.css',
+      } as any)(Buffer.from(''), '', '')
+    })
+
+    expect(error.message).toBe('EACCES: permission denied')
+  })
+
   it('should error when coordinator connection fails', async () => {
     const portFile = `test-coordinator-conn-err.port`
 
