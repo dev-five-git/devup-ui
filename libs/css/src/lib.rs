@@ -200,48 +200,59 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
     }
 }
 
+/// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
+/// or fall through to the Unicode escape path.
+const SELECTOR_ENCODE: [Option<&str>; 128] = {
+    let mut table: [Option<&str>; 128] = [None; 128];
+    table[b'&' as usize] = Some("_a_");
+    table[b':' as usize] = Some("_c_");
+    table[b'(' as usize] = Some("_lp_");
+    table[b')' as usize] = Some("_rp_");
+    table[b'[' as usize] = Some("_lb_");
+    table[b']' as usize] = Some("_rb_");
+    table[b'=' as usize] = Some("_eq_");
+    table[b'>' as usize] = Some("_gt_");
+    table[b'<' as usize] = Some("_lt_");
+    table[b'~' as usize] = Some("_tl_");
+    table[b'+' as usize] = Some("_pl_");
+    table[b' ' as usize] = Some("_s_");
+    table[b'*' as usize] = Some("_st_");
+    table[b'.' as usize] = Some("_d_");
+    table[b'#' as usize] = Some("_h_");
+    table[b',' as usize] = Some("_cm_");
+    table[b'"' as usize] = Some("_dq_");
+    table[b'\'' as usize] = Some("_sq_");
+    table[b'/' as usize] = Some("_sl_");
+    table[b'\\' as usize] = Some("_bs_");
+    table[b'%' as usize] = Some("_pc_");
+    table[b'^' as usize] = Some("_cr_");
+    table[b'$' as usize] = Some("_dl_");
+    table[b'|' as usize] = Some("_pp_");
+    table[b'@' as usize] = Some("_at_");
+    table[b'!' as usize] = Some("_ex_");
+    table[b'?' as usize] = Some("_qm_");
+    table[b';' as usize] = Some("_sc_");
+    table[b'{' as usize] = Some("_lc_");
+    table[b'}' as usize] = Some("_rc_");
+    table
+};
+
 fn encode_selector(selector: &str) -> String {
-    let mut result = String::with_capacity(selector.len() * 2);
+    use std::fmt::Write;
+    let mut result = String::with_capacity(selector.len() * 3);
     for c in selector.chars() {
-        match c {
-            '&' => result.push_str("_a_"),
-            ':' => result.push_str("_c_"),
-            '(' => result.push_str("_lp_"),
-            ')' => result.push_str("_rp_"),
-            '[' => result.push_str("_lb_"),
-            ']' => result.push_str("_rb_"),
-            '=' => result.push_str("_eq_"),
-            '>' => result.push_str("_gt_"),
-            '<' => result.push_str("_lt_"),
-            '~' => result.push_str("_tl_"),
-            '+' => result.push_str("_pl_"),
-            ' ' => result.push_str("_s_"),
-            '*' => result.push_str("_st_"),
-            '.' => result.push_str("_d_"),
-            '#' => result.push_str("_h_"),
-            ',' => result.push_str("_cm_"),
-            '"' => result.push_str("_dq_"),
-            '\'' => result.push_str("_sq_"),
-            '/' => result.push_str("_sl_"),
-            '\\' => result.push_str("_bs_"),
-            '%' => result.push_str("_pc_"),
-            '^' => result.push_str("_cr_"),
-            '$' => result.push_str("_dl_"),
-            '|' => result.push_str("_pp_"),
-            '@' => result.push_str("_at_"),
-            '!' => result.push_str("_ex_"),
-            '?' => result.push_str("_qm_"),
-            ';' => result.push_str("_sc_"),
-            '{' => result.push_str("_lc_"),
-            '}' => result.push_str("_rc_"),
-            '-' => result.push('-'),
-            '_' => result.push('_'),
-            _ if c.is_ascii_alphanumeric() => result.push(c),
-            _ => {
-                result.push_str("_u");
-                result.push_str(&format!("{:04x}", c as u32));
-                result.push('_');
+        if c.is_ascii() {
+            let byte = c as u8;
+            if let Some(encoded) = SELECTOR_ENCODE[byte as usize] {
+                result.push_str(encoded);
+            } else if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                result.push(c);
+            } else {
+                // ASCII but not in table and not alphanumeric/-/_
+                let _ = write!(result, "_u{:04x}_", c as u32);
             }
+        } else {
+            let _ = write!(result, "_u{:04x}_", c as u32);
         }
     }
     result

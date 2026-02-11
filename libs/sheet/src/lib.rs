@@ -8,7 +8,7 @@ use css::{
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
-use regex::Regex;
+use regex_lite::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
@@ -112,7 +112,7 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
     if value.contains('$') {
         Cow::Owned(
             VAR_RE
-                .replace_all(value, |caps: &regex::Captures| {
+                .replace_all(value, |caps: &regex_lite::Captures| {
                     format!("var(--{})", &caps[0][1..].replace('.', "-"))
                 })
                 .into_owned(),
@@ -488,7 +488,9 @@ impl StyleSheet {
         map: &BTreeMap<u8, HashSet<StyleSheetProperty>>,
         layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
     ) -> String {
-        let mut current_css = String::new();
+        // Estimate ~64 bytes per property for pre-allocation
+        let prop_count: usize = map.values().map(|s| s.len()).sum();
+        let mut current_css = String::with_capacity(prop_count * 64);
         for (level, props) in map.iter() {
             let (mut global_props, rest): (Vec<_>, Vec<_>) = props
                 .iter()

@@ -9,7 +9,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 [dependencies]
 phf = { version = "0.13", features = ["macros"] }
 serde = { version = "1.0.228", features = ["derive"] }
-regex = "1.12.3"
+regex-lite = "0.1"
 bimap = { version = "0.6.3" }
 
 [dev-dependencies]
