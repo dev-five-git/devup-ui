@@ -26,5 +26,5 @@ export async function waitForFontsReady(page: Page): Promise<void> {
  * Falls back to waitForLoadState('load') when JavaScript is disabled.
  */
 export async function waitForStyleSettle(page: Page): Promise<void> {
-  await page.waitForTimeout(10)
+  await page.waitForTimeout(100)
 }
