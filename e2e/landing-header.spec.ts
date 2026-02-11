@@ -213,7 +213,7 @@ test.describe('Landing Page - Header & Navigation', () => {
       await expect(menuButton).toBeVisible()
 
       await menuButton.click()
-      await page.waitForTimeout(100)
+      await page.waitForTimeout(1000)
 
       // After clicking menu, the URL should contain menu=1
       const url = page.url()
