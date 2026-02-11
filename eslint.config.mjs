@@ -9,6 +9,7 @@ export default [
     ignores: [
       'benchmark/next-panda-css/styled-system',
       'bindings/devup-ui-wasm/pkg',
+      'test-results',
     ],
   },
   // eslint-plugin-devup

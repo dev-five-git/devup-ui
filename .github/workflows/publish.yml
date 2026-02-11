@@ -89,6 +89,10 @@ jobs:
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
           bun run --filter landing build
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium --with-deps
+      - name: Run E2E Tests
+        run: bun run test:e2e
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
