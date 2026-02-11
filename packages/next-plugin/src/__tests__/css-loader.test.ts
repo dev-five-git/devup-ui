@@ -159,4 +159,57 @@ describe('devupUICssLoader', () => {
     // Should call registerTheme with empty object when theme is missing
     expect(registerThemeSpy).toHaveBeenCalledWith({})
   })
+
+  it('should pass through source as-is in coordinator mode', () => {
+    const callback = mock()
+    const addContextDependency = mock()
+    devupUICssLoader.bind({
+      callback,
+      addContextDependency,
+      getOptions: () => ({
+        ...defaultOptions,
+        watch: true,
+        coordinatorPortFile: 'some/coordinator.port',
+      }),
+      resourcePath: 'devup-ui-1.css',
+    } as any)(Buffer.from('css content'), 'existing-map', 'meta')
+
+    // Source should be returned as-is
+    expect(callback).toHaveBeenCalledWith(
+      null,
+      Buffer.from('css content'),
+      'existing-map',
+      'meta',
+    )
+
+    // NO WASM functions should be called
+    expect(getCssSpy).not.toHaveBeenCalled()
+    expect(importSheetSpy).not.toHaveBeenCalled()
+    expect(importClassMapSpy).not.toHaveBeenCalled()
+    expect(importFileMapSpy).not.toHaveBeenCalled()
+    expect(registerThemeSpy).not.toHaveBeenCalled()
+  })
+
+  it('should NOT be in coordinator mode when coordinatorPortFile is set but watch is false', () => {
+    const callback = mock()
+    const addContextDependency = mock()
+    devupUICssLoader.bind({
+      callback,
+      addContextDependency,
+      getOptions: () => ({
+        ...defaultOptions,
+        watch: false,
+        coordinatorPortFile: 'some/coordinator.port',
+      }),
+      resourcePath: 'devup-ui.css',
+    } as any)(Buffer.from('data'), '')
+
+    // In non-watch mode, should use normal path (source returned as-is for non-watch)
+    expect(callback).toHaveBeenCalledWith(
+      null,
+      Buffer.from('data'),
+      '',
+      undefined,
+    )
+  })
 })

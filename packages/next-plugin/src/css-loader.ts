@@ -17,6 +17,7 @@ function getFileNumByFilename(filename: string) {
 export interface DevupUICssLoaderOptions {
   // turbo
   watch: boolean
+  coordinatorPortFile?: string
   sheetFile: string
   classMapFile: string
   fileMapFile: string
@@ -33,6 +34,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
   function (source, map, meta) {
     const {
       watch,
+      coordinatorPortFile,
       sheetFile,
       classMapFile,
       fileMapFile,
@@ -42,6 +44,12 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       defaultFileMap,
       defaultSheet,
     } = this.getOptions()
+
+    // Coordinator mode: CSS already written by coordinator, pass through as-is
+    if (coordinatorPortFile && watch) {
+      this.callback(null, source, map, meta)
+      return
+    }
 
     if (!init) {
       init = true
