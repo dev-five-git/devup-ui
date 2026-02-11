@@ -1,0 +1,1 @@
+{"changes":{"packages/eslint-plugin/package.json":"Patch","packages/next-plugin/package.json":"Patch","bindings/devup-ui-wasm/package.json":"Patch"},"note":"Refactor build and dev process","date":"2026-02-11T17:09:50.999761800Z"}

@@ -13,8 +13,8 @@ import {
   spyOn,
 } from 'bun:test'
 
+import * as coordinatorModule from '../coordinator'
 import { DevupUI } from '../plugin'
-import * as preloadModule from '../preload'
 
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
@@ -29,7 +29,7 @@ let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
-let preloadSpy: ReturnType<typeof spyOn>
+let startCoordinatorSpy: ReturnType<typeof spyOn>
 
 let originalEnv: NodeJS.ProcessEnv
 let originalFetch: typeof global.fetch
@@ -65,7 +65,10 @@ beforeEach(() => {
     webpackPluginModule,
     'DevupUIWebpackPlugin',
   ).mockImplementation(mock() as never)
-  preloadSpy = spyOn(preloadModule, 'preload').mockReturnValue(undefined)
+  startCoordinatorSpy = spyOn(
+    coordinatorModule,
+    'startCoordinator',
+  ).mockReturnValue({ close: mock() as () => void })
 
   originalEnv = { ...process.env }
   originalFetch = global.fetch
@@ -90,7 +93,7 @@ afterEach(() => {
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
   devupUIWebpackPluginSpy.mockRestore()
-  preloadSpy.mockRestore()
+  startCoordinatorSpy.mockRestore()
 })
 
 describe('DevupUINextPlugin', () => {
@@ -170,6 +173,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -195,6 +199,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -252,6 +257,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -289,6 +295,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -342,6 +349,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -379,6 +387,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -416,32 +425,34 @@ describe('DevupUINextPlugin', () => {
         '*',
       )
     })
-    it('should throw error if NODE_ENV is production', () => {
+    it('should start coordinator even in production mode', () => {
       ;(process.env as any).NODE_ENV = 'production'
       process.env.TURBOPACK = '1'
-      preloadSpy.mockReturnValue(undefined)
+      existsSyncSpy
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(false)
       const ret = DevupUI({})
       expect(ret).toEqual({
         turbopack: {
           rules: expect.any(Object),
         },
       })
-      expect(preloadSpy).toHaveBeenCalledWith(
-        new RegExp(
-          `(node_modules(?!.*(${['@devup-ui']
-            .join('|')
-            .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
-        ),
-        '@devup-ui/react',
-        false,
-        expect.any(String),
-        [],
-        {
+      expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        package: '@devup-ui/react',
+        cssDir: resolve('df', 'devup-ui'),
+        singleCss: false,
+        sheetFile: join('df', 'sheet.json'),
+        classMapFile: join('df', 'classMap.json'),
+        fileMapFile: join('df', 'fileMap.json'),
+        importAliases: {
           '@emotion/styled': 'styled',
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
         },
-      )
+        coordinatorPortFile: join('df', 'coordinator.port'),
+      })
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
@@ -530,10 +541,9 @@ describe('DevupUINextPlugin', () => {
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
     })
-    it('should handle debugPort fetch failure in development mode', async () => {
+    it('should start coordinator in development mode', async () => {
       process.env.TURBOPACK = '1'
       ;(process.env as any).NODE_ENV = 'development'
-      process.env.PORT = '3000'
       existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
@@ -541,36 +551,51 @@ describe('DevupUINextPlugin', () => {
         .mockReturnValueOnce(false)
       writeFileSyncSpy.mockReturnValue(undefined)
 
-      // Mock process.exit to prevent actual exit
-      const originalExit = process.exit
-      const exitSpy = mock()
-      process.exit = exitSpy as any
+      const closeMock = mock() as () => void
+      startCoordinatorSpy.mockReturnValue({ close: closeMock })
 
-      // Mock process.debugPort
-      process.debugPort = 9229
+      const exitHandlers: (() => void)[] = []
+      const processOnSpy = spyOn(process, 'on').mockImplementation(
+        (event: string, handler: (...args: unknown[]) => void) => {
+          if (event === 'exit') exitHandlers.push(handler as () => void)
+          return process
+        },
+      )
 
-      // Mock fetch globally before calling DevupUI
-      const fetchMock = mock((url: string | URL) => {
-        const urlString = typeof url === 'string' ? url : url.toString()
-        if (urlString.includes('9229')) {
-          return Promise.reject(new Error('Connection refused'))
-        }
-        return Promise.resolve({} as Response)
+      DevupUI({})
+
+      // Verify coordinator was started with correct options
+      expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        package: '@devup-ui/react',
+        cssDir: resolve('df', 'devup-ui'),
+        singleCss: false,
+        sheetFile: join('df', 'sheet.json'),
+        classMapFile: join('df', 'classMap.json'),
+        fileMapFile: join('df', 'fileMap.json'),
+        importAliases: {
+          '@emotion/styled': 'styled',
+          '@vanilla-extract/css': null,
+          'styled-components': 'styled',
+        },
+        coordinatorPortFile: join('df', 'coordinator.port'),
       })
-      global.fetch = fetchMock as any
 
-      try {
-        DevupUI({})
+      // Verify initial CSS file is written
+      expect(writeFileSyncSpy).toHaveBeenCalledWith(
+        join(resolve('df', 'devup-ui'), 'devup-ui.css'),
+        '',
+      )
 
-        // Wait for the fetch promise to reject and setTimeout to fire (500ms in plugin.ts + buffer)
-        await new Promise((resolve) => setTimeout(resolve, 600))
+      // Verify exit handler was registered and calls coordinator.close()
+      expect(exitHandlers.length).toBeGreaterThan(0)
+      exitHandlers[0]!()
+      expect(closeMock).toHaveBeenCalledTimes(1)
 
-        // Verify process.exit was called with code 77
-        expect(exitSpy).toHaveBeenCalledWith(77)
-      } finally {
-        // Restore
-        process.exit = originalExit
-      }
+      // Verify --inspect-brk env vars are NOT set
+      expect(process.env.TURBOPACK_DEBUG_JS).toBeUndefined()
+      expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
+
+      processOnSpy.mockRestore()
     })
   })
 })

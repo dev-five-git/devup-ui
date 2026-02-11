@@ -439,7 +439,6 @@
         "@devup-ui/wasm": "workspace:^",
         "@devup-ui/webpack-plugin": "workspace:^",
         "next": "^16.1",
-        "tinyglobby": "^0.2",
       },
       "devDependencies": {
         "@types/webpack": "^5.28",

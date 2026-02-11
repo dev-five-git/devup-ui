@@ -18,7 +18,7 @@ import {
 } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
-import { preload } from './preload'
+import { startCoordinator } from './coordinator'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -92,30 +92,26 @@ export function DevupUI(
         .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)`,
     )
 
-    if (process.env.NODE_ENV !== 'production') {
-      // check if debugger is attached
-      fetch('http://localhost:' + process.env.PORT)
-      fetch('http://localhost:' + process.debugPort).catch(() => {
-        setTimeout(() => {
-          process.exit(77)
-        }, 500)
-      })
-      process.env.TURBOPACK_DEBUG_JS = '*'
-      process.env.NODE_OPTIONS ??= ''
-      process.env.NODE_OPTIONS += ' --inspect-brk'
-      // create devup-ui.css file
-      writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
-    } else {
-      // build
-      preload(
-        excludeRegex,
-        libPackage,
-        singleCss,
-        cssDir,
-        include,
-        importAliases,
-      )
-    }
+    const coordinatorPortFile = join(distDir, 'coordinator.port')
+
+    // create devup-ui.css file
+    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
+
+    const coordinator = startCoordinator({
+      package: libPackage,
+      cssDir,
+      singleCss,
+      sheetFile,
+      classMapFile,
+      fileMapFile,
+      importAliases: importAliases as unknown as Record<string, string | null>,
+      coordinatorPortFile,
+    })
+
+    // Cleanup on exit
+    process.on('exit', () => {
+      coordinator.close()
+    })
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())
     const defaultFileMap = JSON.parse(exportFileMap())
@@ -135,6 +131,7 @@ export function DevupUI(
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
             watch: process.env.NODE_ENV === 'development',
+            coordinatorPortFile,
             sheetFile,
             classMapFile,
             fileMapFile,
@@ -153,6 +150,7 @@ export function DevupUI(
             options: {
               package: libPackage,
               cssDir,
+              coordinatorPortFile,
               sheetFile,
               classMapFile,
               fileMapFile,
