@@ -392,9 +392,7 @@
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
-        "csstype-extra": "latest",
         "react": "^19.2.4",
-        "react-dom": "^19.2.4",
       },
       "devDependencies": {
         "@devup-ui/vite-plugin": "workspace:^",
@@ -411,7 +409,6 @@
       },
       "peerDependencies": {
         "@devup-ui/react": "workspace:^",
-        "csstype-extra": "*",
         "react": "*",
       },
     },
@@ -438,7 +435,6 @@
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
         "@devup-ui/webpack-plugin": "workspace:^",
-        "next": "^16.1",
       },
       "devDependencies": {
         "@types/webpack": "^5.28",
@@ -512,7 +508,6 @@
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
-        "vite": "^7.3",
       },
       "devDependencies": {
         "typescript": "^5.9.3",

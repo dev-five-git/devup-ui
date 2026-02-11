@@ -44,9 +44,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/react": "workspace:^",
-    "csstype-extra": "latest",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
     "clsx": "^2.1"
   },
   "devDependencies": {
@@ -64,7 +62,6 @@
   },
   "peerDependencies": {
     "@devup-ui/react": "workspace:^",
-    "csstype-extra": "*",
     "react": "*"
   }
 }
