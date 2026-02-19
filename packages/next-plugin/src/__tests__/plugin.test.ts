@@ -20,11 +20,15 @@ let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
 let writeFileSyncSpy: ReturnType<typeof spyOn>
+let unlinkSyncSpy: ReturnType<typeof spyOn>
 let getDefaultThemeSpy: ReturnType<typeof spyOn>
 let getThemeInterfaceSpy: ReturnType<typeof spyOn>
 let setPrefixSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let getCssSpy: ReturnType<typeof spyOn>
+let importSheetSpy: ReturnType<typeof spyOn>
+let importClassMapSpy: ReturnType<typeof spyOn>
+let importFileMapSpy: ReturnType<typeof spyOn>
 let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
@@ -40,11 +44,15 @@ beforeEach(() => {
   mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue('' as any)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
+  unlinkSyncSpy = spyOn(fs, 'unlinkSync').mockReturnValue(undefined)
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
   getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue('')
   setPrefixSpy = spyOn(wasm, 'setPrefix').mockReturnValue(undefined)
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockReturnValue(undefined)
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
+  importSheetSpy = spyOn(wasm, 'importSheet').mockReturnValue(undefined)
+  importClassMapSpy = spyOn(wasm, 'importClassMap').mockReturnValue(undefined)
+  importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
   exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue(
     JSON.stringify({
       css: {},
@@ -84,11 +92,15 @@ afterEach(() => {
   mkdirSyncSpy.mockRestore()
   readFileSyncSpy.mockRestore()
   writeFileSyncSpy.mockRestore()
+  unlinkSyncSpy.mockRestore()
   getDefaultThemeSpy.mockRestore()
   getThemeInterfaceSpy.mockRestore()
   setPrefixSpy.mockRestore()
   registerThemeSpy.mockRestore()
   getCssSpy.mockRestore()
+  importSheetSpy.mockRestore()
+  importClassMapSpy.mockRestore()
+  importFileMapSpy.mockRestore()
   exportSheetSpy.mockRestore()
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
@@ -540,6 +552,66 @@ describe('DevupUINextPlugin', () => {
         .mockReturnValueOnce(false)
       DevupUI({}, { prefix: 'my-prefix' })
       expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
+    })
+    it('should import previous session state on restart', () => {
+      process.env.TURBOPACK = '1'
+      existsSyncSpy
+        .mockReturnValueOnce(true) // distDir
+        .mockReturnValueOnce(true) // cssDir
+        .mockReturnValueOnce(true) // gitignoreFile
+        .mockReturnValueOnce(false) // devupFile in loadDevupConfigSync
+
+      // Simulate previous session state files on disk
+      const prevSheet = {
+        css: { a: 'color:red' },
+        font_faces: {},
+        global_css_files: [],
+        imports: {},
+        keyframes: {},
+        properties: {},
+      }
+      const prevClassMap = { a: 0 }
+      const prevFileMap = { 'src/App.tsx': 0 }
+
+      readFileSyncSpy
+        .mockReturnValueOnce(JSON.stringify(prevSheet)) // sheetFile
+        .mockReturnValueOnce(JSON.stringify(prevClassMap)) // classMapFile
+        .mockReturnValueOnce(JSON.stringify(prevFileMap)) // fileMapFile
+
+      DevupUI({})
+
+      // Verify previous state was imported before registerTheme
+      expect(importSheetSpy).toHaveBeenCalledWith(prevSheet)
+      expect(importClassMapSpy).toHaveBeenCalledWith(prevClassMap)
+      expect(importFileMapSpy).toHaveBeenCalledWith(prevFileMap)
+      expect(registerThemeSpy).toHaveBeenCalledWith({})
+
+      // Verify stale port file was deleted before starting coordinator
+      expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
+    })
+    it('should handle missing state files gracefully on first run', () => {
+      process.env.TURBOPACK = '1'
+      existsSyncSpy
+        .mockReturnValueOnce(false) // distDir — doesn't exist
+        .mockReturnValueOnce(false) // cssDir
+        .mockReturnValueOnce(false) // gitignoreFile
+        .mockReturnValueOnce(false) // devupFile
+
+      // readFileSync throws for state files (they don't exist)
+      readFileSyncSpy.mockImplementation((path: string) => {
+        throw new Error(`ENOENT: no such file or directory, open '${path}'`)
+      })
+
+      // Should not throw — try-catch handles missing files
+      DevupUI({})
+
+      // importSheet should NOT have been called (readFileSync threw)
+      expect(importSheetSpy).not.toHaveBeenCalled()
+      expect(importClassMapSpy).not.toHaveBeenCalled()
+      expect(importFileMapSpy).not.toHaveBeenCalled()
+
+      // registerTheme should still be called with empty theme
+      expect(registerThemeSpy).toHaveBeenCalledWith({})
     })
     it('should start coordinator in development mode', async () => {
       process.env.TURBOPACK = '1'

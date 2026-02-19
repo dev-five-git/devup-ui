@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 import {
@@ -13,6 +19,9 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
+  importClassMap,
+  importFileMap,
+  importSheet,
   registerTheme,
   setPrefix,
 } from '@devup-ui/wasm'
@@ -76,9 +85,23 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+    // Import previous session state to handle Turbopack persistent cache.
+    // When the dev server restarts, Turbopack may skip re-running loaders for
+    // unchanged files. Without importing previous state, the coordinator's WASM
+    // starts empty and CSS for cached files would be missing.
+    try {
+      importSheet(JSON.parse(readFileSync(sheetFile, 'utf-8')))
+      importClassMap(JSON.parse(readFileSync(classMapFile, 'utf-8')))
+      importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
+    } catch {
+      // No previous session state (first run) or corrupt files — start fresh
+    }
+
     const devupConfig = loadDevupConfigSync(devupFile)
 
     const theme: any = devupConfig.theme ?? {}
+    // Register current theme after importing previous state,
+    // since importSheet replaces the entire sheet including its theme.
     registerTheme(theme)
     const themeInterface = getThemeInterface(
       libPackage,
@@ -96,6 +119,15 @@ export function DevupUI(
 
     // create devup-ui.css file
     writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
+
+    // Delete stale port file from previous session so loaders don't connect
+    // to a dead coordinator port. The new coordinator writes a fresh port file
+    // once it starts listening.
+    try {
+      unlinkSync(coordinatorPortFile)
+    } catch {
+      // Port file doesn't exist (first run) — safe to ignore
+    }
 
     const coordinator = startCoordinator({
       package: libPackage,
