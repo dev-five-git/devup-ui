@@ -60,9 +60,6 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -116,6 +113,7 @@ jobs:
           echo 'merge_derives = true' >> .rustfmt.toml
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
+      - run: cargo install cargo-tarpaulin
       - run: bun run test
       - name: Format Rollback
         run: |
