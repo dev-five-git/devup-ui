@@ -31,9 +31,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-benchmark-${{ runner.os }}-
-
       - uses: oven-sh/setup-bun@v2
         name: Install bun
 
@@ -42,9 +39,6 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
           version: 'latest'
@@ -75,8 +69,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-benchmark-${{ runner.os }}-
 
       - uses: oven-sh/setup-bun@v2
         name: Install bun
@@ -86,8 +78,6 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -133,8 +123,6 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
       - name: Check for Existing E2E Snapshots
