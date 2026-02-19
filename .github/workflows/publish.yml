@@ -60,6 +60,9 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
+    container:
+      image: xd009642/tarpaulin:develop-nightly
+      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -77,12 +80,6 @@ jobs:
           key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-publish-${{ runner.os }}-
-
-      - name: Install cargo-binstall
-        run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-
-      - name: Install cargo-tarpaulin
-        run: cargo binstall cargo-tarpaulin --no-confirm
 
       - name: Install Rust components
         run: rustup component add rustfmt clippy
