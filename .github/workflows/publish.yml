@@ -52,7 +52,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: 22
+          node-version: 24
       - run: bun install
       - run: bun run build
       - name: Benchmark
@@ -77,12 +77,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-publish-${{ runner.os }}-
-
-      - name: Install Rust components
-        run: rustup component add rustfmt clippy
+            cargo-benchmark-${{ runner.os }}-
 
       - uses: oven-sh/setup-bun@v2
         name: Install bun
@@ -102,7 +99,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           registry-url: "https://registry.npmjs.org"
-          node-version: 22
+          node-version: 24
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: bun install
