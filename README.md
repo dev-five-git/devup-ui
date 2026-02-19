@@ -242,6 +242,7 @@ To set up the development environment, install the following packages:
 bun install
 bun run build
 cargo install cargo-tarpaulin
+
 cargo install wasm-pack
 ```
 
