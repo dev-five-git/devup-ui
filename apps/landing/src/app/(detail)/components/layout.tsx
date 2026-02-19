@@ -2,12 +2,14 @@ import { Box, Flex } from '@devup-ui/react'
 
 import { RightIndex } from '../docs/RightIndex'
 import { LeftMenu } from './LeftMenu'
+import { ScrollToTop } from './ScrollToTop'
 
 export default function Layout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
+      <ScrollToTop />
       <Flex maxW="1920px" minH="calc(100vh - 500px)" mx="auto">
         <Box display={['none', null, 'initial']} p="20px 16px" w="220px">
           <Box pos="sticky" top={['70px', null, '90px']}>
