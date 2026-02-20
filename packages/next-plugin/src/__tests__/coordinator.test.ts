@@ -554,6 +554,152 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
+  it('should touch devup-ui.css to invalidate Turbopack cache when singleCss=false and new CSS collected', async () => {
+    codeExtractSpy.mockReturnValue({
+      code: 'import "./../../df/devup-ui/devup-ui-5.css";\nconst x = 1;',
+      map: undefined,
+      cssFile: 'devup-ui-5.css',
+      updatedBaseStyle: false,
+      css: '.a{color:yellow}',
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockImplementation(
+      (fileNum: number | null, _importMainCss: boolean) => {
+        if (fileNum === null) return 'base-css'
+        return `file-css-${fileNum}`
+      },
+    )
+    exportSheetSpy.mockReturnValue('{}')
+    exportClassMapSpy.mockReturnValue('{}')
+    exportFileMapSpy.mockReturnValue('{}')
+
+    const options = makeOptions({ singleCss: false })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box color="yellow" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+
+    // 5 writes: per-file CSS + sheet + classmap + filemap + devup-ui.css invalidation
+    expect(writeFileSpy).toHaveBeenCalledTimes(5)
+
+    // Verify devup-ui.css was written to trigger Turbopack invalidation
+    const devupUiCssWrite = writeFileSpy.mock.calls.find(
+      (call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].endsWith('devup-ui.css'),
+    )
+    expect(devupUiCssWrite).toBeTruthy()
+    // Content should include base CSS + timestamp nonce
+    const content = devupUiCssWrite![1] as string
+    expect(content).toContain('base-css')
+    expect(content).toMatch(/\/\* \d+ \*\//)
+
+    coordinator.close()
+  })
+
+  it('should NOT touch devup-ui.css when singleCss=false but no new CSS collected', async () => {
+    codeExtractSpy.mockReturnValue({
+      code: 'const x = 1;',
+      map: undefined,
+      cssFile: 'devup-ui-5.css',
+      updatedBaseStyle: false,
+      css: undefined, // no new CSS collected
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('file-css')
+    exportSheetSpy.mockReturnValue('{}')
+    exportClassMapSpy.mockReturnValue('{}')
+    exportFileMapSpy.mockReturnValue('{}')
+
+    const options = makeOptions({ singleCss: false })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = 1',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    // 4 writes: per-file CSS + sheet + classmap + filemap (NO devup-ui.css touch)
+    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+
+    // Verify NO devup-ui.css write
+    const devupUiCssWrite = writeFileSpy.mock.calls.find(
+      (call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].endsWith('devup-ui.css'),
+    )
+    expect(devupUiCssWrite).toBeUndefined()
+
+    coordinator.close()
+  })
+
+  it('should NOT touch devup-ui.css for singleCss=true (not needed)', async () => {
+    codeExtractSpy.mockReturnValue({
+      code: 'const x = 1;',
+      map: undefined,
+      cssFile: 'devup-ui.css',
+      updatedBaseStyle: false,
+      css: '.a{color:yellow}',
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('all-styles')
+    exportSheetSpy.mockReturnValue('{}')
+    exportClassMapSpy.mockReturnValue('{}')
+    exportFileMapSpy.mockReturnValue('{}')
+
+    const options = makeOptions({ singleCss: true })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box color="yellow" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    // 4 writes: CSS file (devup-ui.css via cssFile) + sheet + classmap + filemap
+    // NO additional devup-ui.css invalidation write (singleCss=true doesn't need it)
+    expect(writeFileSpy).toHaveBeenCalledTimes(4)
+
+    coordinator.close()
+  })
+
   it('should be reset via resetCoordinator while server is active', async () => {
     const options = makeOptions()
     startCoordinator(options)
