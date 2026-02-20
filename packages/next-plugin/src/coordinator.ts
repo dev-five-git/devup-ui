@@ -152,7 +152,7 @@ export function startCoordinator(options: CoordinatorOptions): {
             new Promise<void>((resolve, reject) =>
               writeFile(
                 join(cssDir, 'devup-ui.css'),
-                getCss(null, false),
+                `${getCss(null, false)}\n/* ${Date.now()} */`,
                 'utf-8',
                 (err) => (err ? reject(err) : resolve()),
               ),
@@ -187,6 +187,25 @@ export function startCoordinator(options: CoordinatorOptions): {
               ),
             ),
           )
+
+          // In non-singleCss mode, imports are rewritten from devup-ui-N.css to
+          // devup-ui.css?fileNum=N (line 142). Turbopack watches devup-ui.css for
+          // all these modules, but above we only write devup-ui-N.css. Without
+          // updating devup-ui.css, Turbopack never re-runs the css-loader and
+          // new CSS rules are invisible to the browser.
+          // When updatedBaseStyle is true, devup-ui.css is already written above.
+          if (!singleCss && !result.updatedBaseStyle && result.css != null) {
+            promises.push(
+              new Promise<void>((resolve, reject) =>
+                writeFile(
+                  join(cssDir, 'devup-ui.css'),
+                  `${getCss(null, false)}\n/* ${Date.now()} */`,
+                  'utf-8',
+                  (err) => (err ? reject(err) : resolve()),
+                ),
+              ),
+            )
+          }
         }
 
         await Promise.all(promises)
