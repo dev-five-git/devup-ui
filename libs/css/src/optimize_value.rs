@@ -43,30 +43,34 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-        let r = c[1].parse::<i32>().unwrap();
-        let g = c[2].parse::<i32>().unwrap();
-        let b = c[3].parse::<i32>().unwrap();
-        let a = c[4].parse::<f32>().unwrap();
-        format!(
-            "#{:02X}{:02X}{:02X}{:02X}",
-            r,
-            g,
-            b,
-            (a * 255.0).round() as i32
-        )
-    });
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    if ret.contains("rgba(") {
+        let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            let a = c[4].parse::<f32>().unwrap();
+            format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                r,
+                g,
+                b,
+                (a * 255.0).round() as i32
+            )
+        });
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
-    let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-        let r = c[1].parse::<i32>().unwrap();
-        let g = c[2].parse::<i32>().unwrap();
-        let b = c[3].parse::<i32>().unwrap();
-        format!("#{r:02X}{g:02X}{b:02X}")
-    });
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    if ret.contains("rgb(") {
+        let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            format!("#{r:02X}{g:02X}{b:02X}")
+        });
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
     if ret.contains('#') {
         let replaced =
@@ -91,32 +95,33 @@ pub fn optimize_value(value: &str) -> String {
 
         let mut lower = ret.to_lowercase();
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            if lower.contains(f) {
-                let index = lower.find(f).unwrap() + f.len();
+            if let Some(start) = lower.find(f) {
+                let index = start + f.len();
                 let mut zero_idx = Vec::with_capacity(4);
-                let mut depth = 0;
-                let chars: Vec<char> = lower.chars().collect();
-                let byte_indices: Vec<usize> = lower.char_indices().map(|(i, _)| i).collect();
+                let mut depth: i32 = 0;
+                let bytes = lower.as_bytes();
 
-                for (char_idx, &ch) in chars.iter().enumerate().skip(index) {
-                    if ch == '(' {
-                        depth += 1;
-                    } else if ch == ')' {
-                        depth -= 1;
-                    } else if ch == '0'
-                        && (char_idx == 0 || !chars[char_idx - 1].is_ascii_digit())
-                        && (char_idx + 1 >= chars.len() || !chars[char_idx + 1].is_ascii_digit())
-                        && depth == 0
-                    {
-                        zero_idx.push(byte_indices[char_idx]);
+                for i in index..bytes.len() {
+                    match bytes[i] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        b'0' if depth == 0
+                            && (i == 0 || !bytes[i - 1].is_ascii_digit())
+                            && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
+                        {
+                            zero_idx.push(i);
+                        }
+                        _ => {}
                     }
                 }
                 // In-place replacement: replace each '0' with '0%' from back to front
                 for i in zero_idx.iter().rev() {
                     ret.replace_range(*i..*i + 1, "0%");
                 }
-                // Refresh lowercase after modification for subsequent iterations
-                lower = ret.to_lowercase();
+                if !zero_idx.is_empty() {
+                    // Refresh lowercase only when modification occurred
+                    lower = ret.to_lowercase();
+                }
             }
         }
     }

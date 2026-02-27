@@ -18,6 +18,7 @@ use oxc_span::{GetSpan, SourceType};
 use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -1196,10 +1197,10 @@ pub fn collected_styles_to_code_partial(
     package: &str,
     style_names: &FxHashSet<String>,
 ) -> String {
-    let mut code_parts = Vec::new();
+    let mut output = String::new();
 
     if !style_names.is_empty() {
-        code_parts.push(format!("import {{ css }} from '{}'", package));
+        write!(output, "import {{ css }} from '{}'", package).unwrap();
     }
 
     // Generate only the specified styles
@@ -1212,10 +1213,13 @@ pub fn collected_styles_to_code_partial(
 
     for (name, entry) in styles {
         // Generate as non-exported for first pass
-        code_parts.push(format!("const {} = css({})", name, entry.json));
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        write!(output, "const {} = css({})", name, entry.json).unwrap();
     }
 
-    code_parts.join("\n")
+    output
 }
 
 /// Convert collected styles to code with selector references replaced by class names
@@ -1259,6 +1263,19 @@ pub fn collected_styles_to_code_with_classes(
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
         .collect();
 
+    // Pre-build search/replace pairs to avoid format!() per iteration
+    let replacements: Vec<_> = class_map
+        .iter()
+        .map(|(style_name, class_name)| {
+            (
+                format!("\"{}:", style_name),
+                format!("\"{}:", class_name),
+                format!("\"{} ", style_name),
+                format!("\"{} ", class_name),
+            )
+        })
+        .collect();
+
     let mut styles: Vec<_> = collected.styles.iter().collect();
     styles.sort_by_key(|(name, _)| *name);
 
@@ -1267,10 +1284,13 @@ pub fn collected_styles_to_code_with_classes(
 
         // Replace style name references with class names in JSON
         let mut json = entry.json.clone();
-        for (style_name, class_name) in class_map {
-            // Replace patterns like "stylename:" with "classname:"
-            json = json.replace(&format!("\"{}:", style_name), &format!("\"{}:", class_name));
-            json = json.replace(&format!("\"{} ", style_name), &format!("\"{} ", class_name));
+        for (search_colon, replace_colon, search_space, replace_space) in &replacements {
+            if json.contains(search_colon.as_str()) {
+                json = json.replace(search_colon, replace_colon);
+            }
+            if json.contains(search_space.as_str()) {
+                json = json.replace(search_space, replace_space);
+            }
         }
 
         if entry.bases.is_empty() {

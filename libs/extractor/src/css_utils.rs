@@ -486,11 +486,12 @@ pub fn optimize_css_block(css: &str) -> String {
         s2
     };
 
-    let segments: Vec<&str> = trimmed.split(';').collect();
-    for (i, s) in segments.iter().enumerate() {
-        if i > 0 {
+    let mut first_segment = true;
+    for s in trimmed.split(';') {
+        if !first_segment {
             result.push(';');
         }
+        first_segment = false;
         let parts: Vec<&str> = s.split('{').collect();
         let first_part_str = if parts.len() > 1 {
             parts[..parts.len() - 1]

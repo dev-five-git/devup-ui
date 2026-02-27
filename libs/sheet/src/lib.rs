@@ -671,7 +671,7 @@ impl StyleSheet {
                         base_styles
                             .entry(*prop.0)
                             .or_default()
-                            .extend(prop.1.clone());
+                            .extend(prop.1.iter().cloned());
                     });
                 }
             });
@@ -680,23 +680,29 @@ impl StyleSheet {
             // base style
 
             let theme_css = self.theme.to_css();
-            let mut layers_vec = Vec::new();
-            if style_orders.remove(&0) {
-                layers_vec.push("b".to_string());
-            }
-            if !theme_css.is_empty() {
-                layers_vec.push("t".to_string());
-            }
-            layers_vec.extend(style_orders.iter().map(|v| format!("o{v}")));
-            if !layers_vec.is_empty() {
+            let has_base = style_orders.remove(&0);
+            let has_theme = !theme_css.is_empty();
+            let has_orders = !style_orders.is_empty();
+            if has_base || has_theme || has_orders {
                 css.push_str("@layer ");
                 let mut first = true;
-                for layer in &layers_vec {
+                if has_base {
+                    css.push('b');
+                    first = false;
+                }
+                if has_theme {
+                    if !first {
+                        css.push(',');
+                    }
+                    css.push('t');
+                    first = false;
+                }
+                for v in &style_orders {
                     if !first {
                         css.push(',');
                     }
                     first = false;
-                    css.push_str(layer);
+                    write!(css, "o{v}").unwrap();
                 }
                 css.push(';');
             }
