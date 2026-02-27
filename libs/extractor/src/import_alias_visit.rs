@@ -85,39 +85,51 @@ fn generate_transformed_import(
     match alias {
         ImportAlias::DefaultToNamed(named_export) => {
             // Transform: `import foo from 'pkg'` → `import { named as foo } from 'target'`
+            // Check for namespace import first (early return)
+            if let Some(ns_spec) = specifiers.iter().find_map(|s| {
+                if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) = s {
+                    Some(ns)
+                } else {
+                    None
+                }
+            }) {
+                return format!(
+                    "import * as {} from '{}';",
+                    ns_spec.local.name.as_str(),
+                    package
+                );
+            }
+
             let mut parts = String::new();
 
+            // Handle default specifier (always first and at most one in valid JS)
+            if let Some(default_spec) = specifiers.iter().find_map(|s| {
+                if let ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) = s {
+                    Some(ds)
+                } else {
+                    None
+                }
+            }) {
+                let local_name = default_spec.local.name.as_str();
+                if local_name == named_export {
+                    parts.push_str(named_export);
+                } else {
+                    write!(parts, "{} as {}", named_export, local_name).unwrap();
+                }
+            }
+
+            // Handle named specifiers
             for specifier in specifiers {
-                match specifier {
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                        let local_name = default_spec.local.name.as_str();
-                        if !parts.is_empty() {
-                            parts.push_str(", ");
-                        }
-                        if local_name == named_export {
-                            parts.push_str(named_export);
-                        } else {
-                            write!(parts, "{} as {}", named_export, local_name).unwrap();
-                        }
+                if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
+                    if !parts.is_empty() {
+                        parts.push_str(", ");
                     }
-                    ImportDeclarationSpecifier::ImportSpecifier(spec) => {
-                        let imported = spec.imported.to_string();
-                        let local = spec.local.name.as_str();
-                        if !parts.is_empty() {
-                            parts.push_str(", ");
-                        }
-                        if imported == local {
-                            parts.push_str(&imported);
-                        } else {
-                            write!(parts, "{} as {}", imported, local).unwrap();
-                        }
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                        return format!(
-                            "import * as {} from '{}';",
-                            ns_spec.local.name.as_str(),
-                            package
-                        );
+                    let imported = spec.imported.to_string();
+                    let local = spec.local.name.as_str();
+                    if imported == local {
+                        parts.push_str(&imported);
+                    } else {
+                        write!(parts, "{} as {}", imported, local).unwrap();
                     }
                 }
             }
@@ -127,34 +139,46 @@ fn generate_transformed_import(
         ImportAlias::NamedToNamed => {
             // Just change the source, keep specifiers as-is
             // `import { style } from 'pkg'` → `import { style } from 'target'`
+            // Check for namespace import first (early return)
+            if let Some(ns_spec) = specifiers.iter().find_map(|s| {
+                if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) = s {
+                    Some(ns)
+                } else {
+                    None
+                }
+            }) {
+                return format!(
+                    "import * as {} from '{}';",
+                    ns_spec.local.name.as_str(),
+                    package
+                );
+            }
+
             let mut parts = String::new();
 
+            // Handle default specifier first (becomes `default as localName`)
+            if let Some(default_spec) = specifiers.iter().find_map(|s| {
+                if let ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) = s {
+                    Some(ds)
+                } else {
+                    None
+                }
+            }) {
+                write!(parts, "default as {}", default_spec.local.name.as_str()).unwrap();
+            }
+
+            // Handle named specifiers
             for specifier in specifiers {
-                match specifier {
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                        if !parts.is_empty() {
-                            parts.push_str(", ");
-                        }
-                        write!(parts, "default as {}", default_spec.local.name.as_str()).unwrap();
+                if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
+                    if !parts.is_empty() {
+                        parts.push_str(", ");
                     }
-                    ImportDeclarationSpecifier::ImportSpecifier(spec) => {
-                        let imported = spec.imported.to_string();
-                        let local = spec.local.name.as_str();
-                        if !parts.is_empty() {
-                            parts.push_str(", ");
-                        }
-                        if imported == local {
-                            parts.push_str(&imported);
-                        } else {
-                            write!(parts, "{} as {}", imported, local).unwrap();
-                        }
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                        return format!(
-                            "import * as {} from '{}';",
-                            ns_spec.local.name.as_str(),
-                            package
-                        );
+                    let imported = spec.imported.to_string();
+                    let local = spec.local.name.as_str();
+                    if imported == local {
+                        parts.push_str(&imported);
+                    } else {
+                        write!(parts, "{} as {}", imported, local).unwrap();
                     }
                 }
             }
