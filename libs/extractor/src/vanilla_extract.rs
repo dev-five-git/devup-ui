@@ -17,6 +17,7 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
 use oxc_transformer::{TransformOptions, Transformer};
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::path::Path;
@@ -39,7 +40,7 @@ pub struct StyleEntry {
     /// Whether this style is exported
     pub exported: bool,
     /// Base class references for composition (placeholder IDs like "__style_0__")
-    pub bases: Vec<String>,
+    pub bases: SmallVec<[String; 2]>,
 }
 
 /// Entry for createGlobalTheme() - CSS variables scoped to a selector
@@ -48,7 +49,7 @@ pub struct GlobalThemeEntry {
     /// CSS selector (e.g., ":root")
     pub selector: String,
     /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand-0-0", "blue")]
-    pub css_vars: Vec<(String, String)>,
+    pub css_vars: SmallVec<[(String, String); 8]>,
     /// Serialized JS object with var() references
     pub vars_object_json: String,
     /// Whether this is exported
@@ -59,7 +60,7 @@ pub struct GlobalThemeEntry {
 #[derive(Debug, Clone, Default)]
 pub struct ThemeEntry {
     /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand", "blue")]
-    pub css_vars: Vec<(String, String)>,
+    pub css_vars: SmallVec<[(String, String); 8]>,
     /// Whether this is exported
     pub exported: bool,
     /// For single-arg createTheme: the vars object JSON with var() references
@@ -209,7 +210,7 @@ fn extract_theme_vars(
     contract: &JsValue,
     values: &JsValue,
     ctx: &mut Context,
-    css_vars: &mut Vec<(String, String)>,
+    css_vars: &mut SmallVec<[(String, String); 8]>,
     path: &[String],
 ) {
     if let (Some(contract_obj), Some(values_obj)) = (contract.as_object(), values.as_object()) {
@@ -263,7 +264,7 @@ fn transform_theme_to_vars(
     value: &JsValue,
     ctx: &mut Context,
     placeholder_id: &str,
-    css_vars: &mut Vec<(String, String)>,
+    css_vars: &mut SmallVec<[(String, String); 8]>,
     var_counter: &mut usize,
     path: &[String],
 ) -> JsValue {
@@ -748,7 +749,7 @@ fn preprocess_typescript(code: &str, package: &str) -> String {
 
     // Process all import patterns (multiple imports may exist)
     let lines: Vec<&str> = js_code.lines().collect();
-    let mut new_lines = Vec::new();
+    let mut new_lines = Vec::with_capacity(lines.len());
 
     for line in lines {
         let mut matched = false;
@@ -802,7 +803,7 @@ fn register_vanilla_extract_apis(
             {
                 // It's an array - handle composition
                 let len = len as u32;
-                let mut base_classes = Vec::new();
+                let mut base_classes = SmallVec::new();
                 let mut merged_styles = String::from("{");
                 let mut first_style = true;
 
@@ -834,7 +835,7 @@ fn register_vanilla_extract_apis(
                 (merged_styles, base_classes)
             } else {
                 // No length property, just a style object
-                (js_value_to_json(style_obj, ctx), Vec::new())
+                (js_value_to_json(style_obj, ctx), SmallVec::new())
             };
             collector_style.borrow_mut().styles.styles.insert(
                 id.clone(),
@@ -883,7 +884,7 @@ fn register_vanilla_extract_apis(
                 StyleEntry {
                     json,
                     exported: false,
-                    bases: Vec::new(),
+                    bases: SmallVec::new(),
                 },
             );
 
@@ -1002,7 +1003,7 @@ fn register_vanilla_extract_apis(
             if is_single_arg {
                 // Single arg: createTheme({ color: { brand: 'blue' } })
                 // Returns [themeClass, vars] where vars has var() references
-                let mut css_vars = Vec::new();
+                let mut css_vars = SmallVec::new();
                 let mut var_counter = 0usize;
 
                 // Transform values to var() references and collect CSS variables
@@ -1038,7 +1039,7 @@ fn register_vanilla_extract_apis(
             } else {
                 // Two args: createTheme(contract, values)
                 // Returns just the themeClass
-                let mut css_vars = Vec::new();
+                let mut css_vars = SmallVec::new();
                 extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &[]);
 
                 // Store the theme entry
@@ -1107,7 +1108,7 @@ fn register_vanilla_extract_apis(
             let theme_obj = args.get_or_undefined(1);
 
             // Collect CSS variables and build new object with var() references
-            let mut css_vars = Vec::new();
+            let mut css_vars = SmallVec::new();
             let mut var_counter = 0usize;
             let result_obj = transform_theme_to_vars(
                 theme_obj,
@@ -1228,7 +1229,7 @@ pub fn collected_styles_to_code_with_classes(
     package: &str,
     class_map: &FxHashMap<String, String>,
 ) -> String {
-    let mut code_parts = Vec::new();
+    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
 
     // Generate import statement
     let mut imports = Vec::new();
@@ -1519,7 +1520,7 @@ fn append_non_style_code(
 
 /// Convert collected styles to code that can be processed by existing extract logic
 pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
-    let mut code_parts = Vec::new();
+    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
 
     // Generate import statement
     let mut imports = Vec::new();
@@ -1881,6 +1882,7 @@ fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smallvec::smallvec;
 
     #[test]
     fn test_is_vanilla_extract_file() {
@@ -2029,7 +2031,7 @@ globalStyle("body", { margin: 0, padding: 0 })"#;
             StyleEntry {
                 json: r#"{"background":"red"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2212,7 +2214,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         // Add composed style with bases
@@ -2221,7 +2223,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"color":"red"}"#.to_string(),
                 exported: true,
-                bases: vec!["base".to_string()],
+                bases: smallvec!["base".to_string()],
             },
         );
 
@@ -2248,7 +2250,7 @@ export const lightTheme = createTheme(vars, {
             "themeClass".to_string(),
             super::ThemeEntry {
                 class_name: "f0_theme".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: Some(
@@ -2269,7 +2271,7 @@ export const lightTheme = createTheme(vars, {
             "darkTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f1_darkTheme".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "white".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "white".to_string())],
                 exported: true,
                 vars_name: None,
                 vars_object_json: None,
@@ -2288,7 +2290,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"from":{"opacity":"0"},"to":{"opacity":"1"}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2318,7 +2320,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"padding":"16px","margin":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         // Add composed style
@@ -2327,7 +2329,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"background":"blue"}"#.to_string(),
                 exported: true,
-                bases: vec!["baseStyle".to_string()],
+                bases: smallvec!["baseStyle".to_string()],
             },
         );
 
@@ -2356,7 +2358,7 @@ export const lightTheme = createTheme(vars, {
         let array = boa_engine::object::builtins::JsArray::new(&mut context);
         let _ = array.push(boa_engine::JsValue::from(1), &mut context);
         let value = boa_engine::JsValue::from(array);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -2446,7 +2448,7 @@ export const lightTheme = createTheme(vars, {
         );
 
         let value = JsValue::from(obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -2504,7 +2506,7 @@ export const lightTheme = createTheme(vars, {
 
         let contract = JsValue::from(contract_obj);
         let values = JsValue::from(values_obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
 
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
 
@@ -2574,7 +2576,7 @@ export const lightTheme = createTheme(vars, {
         let mut context = boa_engine::Context::default();
         let contract = boa_engine::JsValue::from(boa_engine::js_string!("not-a-var"));
         let values = boa_engine::JsValue::from(boa_engine::js_string!("some-value"));
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // No CSS vars should be extracted because contract isn't a var() string
         assert!(css_vars.is_empty());
@@ -2689,7 +2691,7 @@ export const lightTheme = createTheme(vars, {
             "rootVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
                 vars_object_json: r#"{"color":{"primary":"var(--color-primary)"}}"#.to_string(),
                 exported: true,
             },
@@ -2737,7 +2739,7 @@ export const lightTheme = createTheme(vars, {
             "emptyTheme".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![], // Empty
+                css_vars: smallvec![],
                 vars_object_json: "{}".to_string(),
                 exported: true,
             },
@@ -2748,7 +2750,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2796,7 +2798,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         let mut variants = rustc_hash::FxHashMap::default();
@@ -2824,7 +2826,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         original
@@ -2835,7 +2837,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         original
@@ -2917,7 +2919,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.styles.insert(
@@ -2925,7 +2927,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"color":"blue"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2952,7 +2954,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"background":"white"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.styles.insert(
@@ -2960,7 +2962,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"selectors":{"parent:hover &":{"color":"blue"}}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3008,7 +3010,7 @@ export const box = style({ padding: 8 })"#;
         );
         let contract = boa_engine::JsValue::from(contract_obj);
         let values = boa_engine::JsValue::from(values_obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // Should process index keys
         assert!(css_vars.is_empty() || !css_vars.is_empty());
@@ -3027,7 +3029,7 @@ export const box = style({ padding: 8 })"#;
             &mut context,
         );
         let value = boa_engine::JsValue::from(obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -3048,7 +3050,7 @@ export const box = style({ padding: 8 })"#;
         let contract = boa_engine::JsValue::from(boa_engine::js_string!("var(--num)"));
         // Use a number instead of string - will need to_string conversion
         let values = boa_engine::JsValue::from(42);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // Should extract the value as string
         assert!(!css_vars.is_empty());
@@ -3062,7 +3064,7 @@ export const box = style({ padding: 8 })"#;
         let mut context = boa_engine::Context::default();
         // Use a number instead of string - will need to_string conversion
         let value = boa_engine::JsValue::from(123);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let _result = super::transform_theme_to_vars(
             &value,
@@ -3131,14 +3133,14 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "theme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_theme".to_string(),
-                css_vars: vec![("--color".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color".to_string(), "blue".to_string())],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: Some(r#"{"color":"var(--color)"}"#.to_string()),
@@ -3160,14 +3162,14 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "simpleTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_simple".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: None, // No vars object
@@ -3206,7 +3208,7 @@ export const box = style({ padding: 8 })"#;
             "rootTheme".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![
+                css_vars: smallvec![
                     ("--bg".to_string(), "white".to_string()),
                     ("--fg".to_string(), "black".to_string()),
                 ],
@@ -3222,7 +3224,7 @@ export const box = style({ padding: 8 })"#;
                 json: r#"{"0%":{"transform":"scale(1)"},"50%":{"transform":"scale(1.1)"}}"#
                     .to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3244,7 +3246,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"borderRadius":"4px","padding":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3284,7 +3286,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"display":"flex"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3322,7 +3324,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected
@@ -3343,7 +3345,7 @@ export const box = style({ padding: 8 })"#;
             "partialTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_partial".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: Some("themeVars".to_string()),
                 vars_object_json: None,
@@ -3366,7 +3368,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3381,7 +3383,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"from":{"opacity":"0"}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3404,14 +3406,14 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "simpleTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_simple".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: None,
                 vars_object_json: None,
@@ -3467,7 +3469,7 @@ export const box = style({ padding: 8 })"#;
             "rootVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![
+                css_vars: smallvec![
                     ("--primary".to_string(), "blue".to_string()),
                     ("--secondary".to_string(), "green".to_string()),
                 ],
@@ -3491,7 +3493,7 @@ export const box = style({ padding: 8 })"#;
                 json: r#"{"from":{"transform":"rotate(0)"},"to":{"transform":"rotate(360deg)"}}"#
                     .to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.keyframes.insert(
@@ -3499,7 +3501,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"0%":{"opacity":"0"}}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3589,7 +3591,7 @@ export const box = style({ padding: 8 })"#;
             "themeVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![("--bg".to_string(), "white".to_string())],
+                css_vars: smallvec![("--bg".to_string(), "white".to_string())],
                 vars_object_json: r#"{"bg":"var(--bg)"}"#.to_string(),
                 exported: true,
             },

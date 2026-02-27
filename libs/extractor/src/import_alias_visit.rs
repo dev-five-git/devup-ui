@@ -13,6 +13,7 @@ use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 /// Transform source code by rewriting aliased imports to the target package
 ///
@@ -84,32 +85,34 @@ fn generate_transformed_import(
     match alias {
         ImportAlias::DefaultToNamed(named_export) => {
             // Transform: `import foo from 'pkg'` → `import { named as foo } from 'target'`
-            let mut import_parts = Vec::new();
+            let mut parts = String::new();
 
             for specifier in specifiers {
                 match specifier {
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
                         let local_name = default_spec.local.name.as_str();
+                        if !parts.is_empty() {
+                            parts.push_str(", ");
+                        }
                         if local_name == named_export {
-                            // Same name: `import { styled } from 'pkg'`
-                            import_parts.push(named_export.clone());
+                            parts.push_str(named_export);
                         } else {
-                            // Different name: `import { styled as foo } from 'pkg'`
-                            import_parts.push(format!("{} as {}", named_export, local_name));
+                            write!(parts, "{} as {}", named_export, local_name).unwrap();
                         }
                     }
                     ImportDeclarationSpecifier::ImportSpecifier(spec) => {
-                        // Keep named imports
                         let imported = spec.imported.to_string();
                         let local = spec.local.name.as_str();
+                        if !parts.is_empty() {
+                            parts.push_str(", ");
+                        }
                         if imported == local {
-                            import_parts.push(imported);
+                            parts.push_str(&imported);
                         } else {
-                            import_parts.push(format!("{} as {}", imported, local));
+                            write!(parts, "{} as {}", imported, local).unwrap();
                         }
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                        // Namespace imports are kept but shouldn't really happen for CSS-in-JS
                         return format!(
                             "import * as {} from '{}';",
                             ns_spec.local.name.as_str(),
@@ -119,32 +122,31 @@ fn generate_transformed_import(
                 }
             }
 
-            format!(
-                "import {{ {} }} from '{}';",
-                import_parts.join(", "),
-                package
-            )
+            format!("import {{ {} }} from '{}';", parts, package)
         }
         ImportAlias::NamedToNamed => {
             // Just change the source, keep specifiers as-is
             // `import { style } from 'pkg'` → `import { style } from 'target'`
-            let mut import_parts = Vec::new();
+            let mut parts = String::new();
 
             for specifier in specifiers {
                 match specifier {
                     ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                        // Default import in NamedToNamed mode - just keep it
-                        // (shouldn't happen for @vanilla-extract/css)
-                        import_parts
-                            .push(format!("default as {}", default_spec.local.name.as_str()));
+                        if !parts.is_empty() {
+                            parts.push_str(", ");
+                        }
+                        write!(parts, "default as {}", default_spec.local.name.as_str()).unwrap();
                     }
                     ImportDeclarationSpecifier::ImportSpecifier(spec) => {
                         let imported = spec.imported.to_string();
                         let local = spec.local.name.as_str();
+                        if !parts.is_empty() {
+                            parts.push_str(", ");
+                        }
                         if imported == local {
-                            import_parts.push(imported);
+                            parts.push_str(&imported);
                         } else {
-                            import_parts.push(format!("{} as {}", imported, local));
+                            write!(parts, "{} as {}", imported, local).unwrap();
                         }
                     }
                     ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
@@ -157,11 +159,7 @@ fn generate_transformed_import(
                 }
             }
 
-            format!(
-                "import {{ {} }} from '{}';",
-                import_parts.join(", "),
-                package
-            )
+            format!("import {{ {} }} from '{}';", parts, package)
         }
     }
 }

@@ -61,7 +61,7 @@ pub fn css_to_style_literal<'a>(
 
     // Build a combined CSS string with unique placeholders for expressions
     // Use a format that won't conflict with actual CSS values
-    let mut css_parts = Vec::new();
+    let mut css_parts = Vec::with_capacity(css.quasis.len() * 2);
     let mut expression_map =
         rustc_hash::FxHashMap::with_capacity_and_hasher(css.expressions.len(), Default::default());
 

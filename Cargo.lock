@@ -697,6 +697,7 @@ dependencies = [
  "rustc-hash",
  "serde_json",
  "serial_test",
+ "smallvec",
  "strum",
  "strum_macros",
 ]
