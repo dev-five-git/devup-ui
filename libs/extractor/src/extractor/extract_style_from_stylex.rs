@@ -3,11 +3,10 @@ use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    SelectorPart, StylexIncludeRef, decompose_value_conditions, format_number,
-    is_first_that_works_call, is_include_call_static, is_types_call, is_unitless_property,
-    normalize_stylex_property,
+    SelectorPart, StylexIncludeRef, decompose_value_conditions, is_first_that_works_call,
+    is_include_call_static, is_types_call, normalize_stylex_property,
 };
-use crate::utils::{get_number_by_literal_expression, get_string_by_literal_expression};
+use crate::utils::get_string_by_literal_expression;
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
 use oxc_ast::AstBuilder;
@@ -203,12 +202,6 @@ pub fn extract_stylex_namespace_styles<'a>(
             // Phase 1: static string/number values
             let css_value = if let Some(s) = get_string_by_literal_expression(&style_prop.value) {
                 s
-            } else if let Some(n) = get_number_by_literal_expression(&style_prop.value) {
-                if is_unitless_property(&css_property) || n == 0.0 {
-                    format_number(n)
-                } else {
-                    format!("{}px", format_number(n))
-                }
             } else if matches!(&style_prop.value, Expression::ObjectExpression(_)) {
                 // Phase 2: value-level conditions
                 for decomposed in decompose_value_conditions(&css_property, &style_prop.value, &[])
@@ -245,22 +238,6 @@ pub fn extract_stylex_namespace_styles<'a>(
                                 layer: None,
                             },
                         )));
-                    } else if let Some(n) = get_number_by_literal_expression(arg_expr) {
-                        let formatted = if is_unitless_property(&css_property) || n == 0.0 {
-                            format_number(n)
-                        } else {
-                            format!("{}px", format_number(n))
-                        };
-                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                            ExtractStaticStyle {
-                                property: css_property.clone(),
-                                value: optimize_value(&formatted),
-                                level: 0,
-                                selector: None,
-                                style_order: None,
-                                layer: None,
-                            },
-                        )));
                     }
                 }
                 continue;
@@ -272,12 +249,6 @@ pub fn extract_stylex_namespace_styles<'a>(
                 let inner = call.arguments[0].to_expression();
                 let css_value = if let Some(s) = get_string_by_literal_expression(inner) {
                     s
-                } else if let Some(n) = get_number_by_literal_expression(inner) {
-                    if is_unitless_property(&css_property) || n == 0.0 {
-                        format_number(n)
-                    } else {
-                        format!("{}px", format_number(n))
-                    }
                 } else {
                     continue; // Can't resolve inner value
                 };
@@ -420,12 +391,6 @@ fn extract_stylex_dynamic_namespace<'a>(
             }
             let css_value = if let Some(s) = get_string_by_literal_expression(&prop.value) {
                 s
-            } else if let Some(n) = get_number_by_literal_expression(&prop.value) {
-                if is_unitless_property(&css_property) || n == 0.0 {
-                    format_number(n)
-                } else {
-                    format!("{}px", format_number(n))
-                }
             } else {
                 continue;
             };

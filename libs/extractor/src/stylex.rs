@@ -1,9 +1,7 @@
 use css::style_selector::{AtRuleKind, StyleSelector};
 use oxc_ast::ast::{Expression, ObjectPropertyKind};
 
-use crate::utils::{
-    get_number_by_literal_expression, get_string_by_literal_expression, get_string_by_property_key,
-};
+use crate::utils::{get_string_by_literal_expression, get_string_by_property_key};
 
 /// Which StyleX function a named import refers to
 #[derive(Debug, Clone, PartialEq)]
@@ -78,49 +76,6 @@ pub fn normalize_stylex_property(name: &str) -> String {
     css::utils::to_kebab_case(name)
 }
 
-/// CSS properties that are unitless (numeric values don't get "px" appended).
-const UNITLESS_PROPERTIES: &[&str] = &[
-    "opacity",
-    "line-height",
-    "z-index",
-    "font-weight",
-    "flex",
-    "flex-grow",
-    "flex-shrink",
-    "order",
-    "grid-row",
-    "grid-column",
-    "grid-row-start",
-    "grid-row-end",
-    "grid-column-start",
-    "grid-column-end",
-    "widows",
-    "orphans",
-    "animation-iteration-count",
-    "column-count",
-    "fill-opacity",
-    "flood-opacity",
-    "stop-opacity",
-    "stroke-dashoffset",
-    "stroke-miterlimit",
-    "stroke-opacity",
-    "stroke-width",
-];
-
-/// Returns true if the given CSS property (in kebab-case) is unitless.
-pub fn is_unitless_property(property: &str) -> bool {
-    UNITLESS_PROPERTIES.contains(&property)
-}
-
-/// Format a number value, stripping trailing ".0" for integers.
-pub fn format_number(n: f64) -> String {
-    if n == n.trunc() {
-        format!("{}", n as i64)
-    } else {
-        format!("{n}")
-    }
-}
-
 /// Intermediate selector parts collected during recursion.
 #[derive(Debug, Clone)]
 pub enum SelectorPart {
@@ -180,20 +135,6 @@ pub fn decompose_value_conditions(
         }];
     }
 
-    // Number literal → leaf
-    if let Some(n) = get_number_by_literal_expression(value) {
-        let formatted = if is_unitless_property(css_property) || n == 0.0 {
-            format_number(n)
-        } else {
-            format!("{}px", format_number(n))
-        };
-        return vec![DecomposedStyle {
-            property: css_property.to_string(),
-            value: Some(formatted),
-            selector: compose_selectors(parent_selectors),
-        }];
-    }
-
     // NullLiteral → tracked but no CSS
     if matches!(value, Expression::NullLiteral(_)) {
         return vec![DecomposedStyle {
@@ -216,17 +157,6 @@ pub fn decompose_value_conditions(
                     value: Some(s),
                     selector: compose_selectors(parent_selectors),
                 });
-            } else if let Some(n) = get_number_by_literal_expression(arg_expr) {
-                let formatted = if is_unitless_property(css_property) || n == 0.0 {
-                    format_number(n)
-                } else {
-                    format!("{}px", format_number(n))
-                };
-                results.push(DecomposedStyle {
-                    property: css_property.to_string(),
-                    value: Some(formatted),
-                    selector: compose_selectors(parent_selectors),
-                });
             }
         }
         return results;
@@ -242,17 +172,6 @@ pub fn decompose_value_conditions(
             return vec![DecomposedStyle {
                 property: css_property.to_string(),
                 value: Some(s),
-                selector: compose_selectors(parent_selectors),
-            }];
-        } else if let Some(n) = get_number_by_literal_expression(inner) {
-            let formatted = if is_unitless_property(css_property) || n == 0.0 {
-                format_number(n)
-            } else {
-                format!("{}px", format_number(n))
-            };
-            return vec![DecomposedStyle {
-                property: css_property.to_string(),
-                value: Some(formatted),
                 selector: compose_selectors(parent_selectors),
             }];
         }
@@ -369,24 +288,5 @@ mod tests {
         assert_eq!(normalize_stylex_property("fontSize"), "font-size");
         assert_eq!(normalize_stylex_property("color"), "color");
         assert_eq!(normalize_stylex_property("zIndex"), "z-index");
-    }
-
-    #[test]
-    fn test_is_unitless_property() {
-        assert!(is_unitless_property("opacity"));
-        assert!(is_unitless_property("z-index"));
-        assert!(is_unitless_property("font-weight"));
-        assert!(is_unitless_property("flex"));
-        assert!(!is_unitless_property("font-size"));
-        assert!(!is_unitless_property("width"));
-        assert!(!is_unitless_property("padding"));
-    }
-
-    #[test]
-    fn test_format_number() {
-        assert_eq!(format_number(16.0), "16");
-        assert_eq!(format_number(0.0), "0");
-        assert_eq!(format_number(1.5), "1.5");
-        assert_eq!(format_number(-1.0), "-1");
     }
 }

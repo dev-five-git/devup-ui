@@ -15863,4 +15863,367 @@ const styles = create({ base: { color: 'red' } });"#,
             .unwrap()
         ));
     }
+
+    // ==========================================
+    // Coverage tests: extract_style_from_stylex.rs
+    // ==========================================
+
+    /// Line 24: Non-object argument to stylex.create()
+    #[test]
+    #[serial]
+    fn test_stylex_create_non_object_arg() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create("not-object");"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Lines 100, 103: Non-ObjectProperty / no string key inside pseudo inner properties
+    #[test]
+    #[serial]
+    fn test_stylex_pseudo_inner_spread_and_computed() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const other = { fontSize: '14px' };
+const styles = stylex.create({ base: { ':hover': { ...other, [Symbol()]: 'val', color: 'red' } } });"#,
+                ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Lines 232, 236: Non-ObjectProperty / no key in dynamic body (spread and computed)
+    #[test]
+    #[serial]
+    fn test_stylex_dynamic_body_spread_and_computed() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const other = { fontSize: '14px' };
+const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, color: 'red' }) });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 269: Unresolvable value in dynamic namespace (not a param, not string, not number)
+    #[test]
+    #[serial]
+    fn test_stylex_dynamic_unresolvable_value() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const someVar = getSomething();
+const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    // ==========================================
+    // Coverage tests: stylex.rs
+    // ==========================================
+
+    /// Line 48: false from is_include_call_static — spread with non-include call
+    #[test]
+    #[serial]
+    fn test_stylex_spread_non_include_call() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+function notInclude() { return {}; }
+const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Lines 66-67: Named import types.X()
+    #[test]
+    #[serial]
+    fn test_stylex_named_import_types() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { create, types } from '@stylexjs/stylex';
+const styles = create({ base: { width: types.length('100px') } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 70: false from is_types_call — call expression value that's not types or firstThatWorks
+    #[test]
+    #[serial]
+    fn test_stylex_non_types_non_ftw_call() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+function someFunc() { return 'red'; }
+const styles = stylex.create({ base: { color: someFunc() } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 183: types with unresolvable inside condition object
+    #[test]
+    #[serial]
+    fn test_stylex_types_unresolvable_in_condition() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const someVar = getSomething();
+const styles = stylex.create({ base: { fontSize: { default: stylex.types.length(someVar) } } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 188: Non-object/non-string/non-number/non-null/non-call value in decompose (array expression)
+    #[test]
+    #[serial]
+    fn test_stylex_array_in_condition_object() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 195: Non-ObjectProperty inside condition object (spread)
+    #[test]
+    #[serial]
+    fn test_stylex_spread_in_condition_object() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const spreadObj = { ':hover': 'blue' };
+const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 198: No string key in condition object (computed key)
+    #[test]
+    #[serial]
+    fn test_stylex_computed_key_in_condition_object() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const key = ':hover';
+const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    // ==========================================
+    // Coverage tests: visit.rs
+    // ==========================================
+
+    /// Line 188: Empty className in static namespace — styles.empty where empty has no properties
+    #[test]
+    #[serial]
+    fn test_stylex_props_empty_namespace() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ empty: {} });
+const el = <div {...stylex.props(styles.empty)} />;"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 198: styles.nonexistent — member not found in namespace map
+    #[test]
+    #[serial]
+    fn test_stylex_props_nonexistent_member() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });
+const el = <div {...stylex.props(styles.missing)} />;"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 208: None from LogicalExpression when right side can't resolve
+    #[test]
+    #[serial]
+    fn test_stylex_props_logical_unresolvable_right() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });
+const el = <div {...stylex.props(isActive && unknownRef)} />;"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Line 332: include with empty class_name_str — include a namespace that has no properties
+    #[test]
+    #[serial]
+    fn test_stylex_include_empty_namespace() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const base = stylex.create({ empty: {} });
+const composed = stylex.create({ test: { ...stylex.include(base.empty), color: 'red' } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
 }
