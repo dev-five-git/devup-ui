@@ -46,6 +46,29 @@ export function firstThatWorks<T extends StyleValue>(
   throw new Error('Cannot run on the runtime')
 }
 
+export function include<S extends StyleProperties>(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  style: S,
+): S {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function defineVars<V extends Record<string, StyleValue>>(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  vars: V,
+): { readonly [K in keyof V]: string } {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function createTheme<V extends Record<string, string>>(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  vars: V,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  overrides: { readonly [K in keyof V]: StyleValue },
+): Record<string, StyleValue> {
+  throw new Error('Cannot run on the runtime')
+}
+
 export const types: StyleXTypes = new Proxy({} as StyleXTypes, {
   get() {
     return () => {

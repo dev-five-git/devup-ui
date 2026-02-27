@@ -14,6 +14,7 @@ pub enum StylexFunction {
     FirstThatWorks,
     DefineVars,
     CreateTheme,
+    Include,
 }
 
 /// Check if a call expression is stylex.firstThatWorks() or named firstThatWorks().
@@ -31,6 +32,29 @@ pub fn is_first_that_works_call(callee: &Expression) -> bool {
         return true;
     }
     false
+}
+
+/// Check if a call expression is stylex.include() or named include().
+/// This is a static check that does NOT require access to the visitor.
+pub fn is_include_call_static(callee: &Expression) -> bool {
+    if let Expression::StaticMemberExpression(member) = callee
+        && member.property.name.as_str() == "include"
+    {
+        return true;
+    }
+    if let Expression::Identifier(ident) = callee
+        && ident.name.as_str() == "include"
+    {
+        return true;
+    }
+    false
+}
+
+/// A reference to a stylex.include(base.member) call found inside stylex.create().
+#[derive(Debug, Clone)]
+pub struct StylexIncludeRef {
+    pub var_name: String,
+    pub member_name: String,
 }
 
 /// Check if a call expression is stylex.types.X() or types.X() (type wrapper).
@@ -177,6 +201,62 @@ pub fn decompose_value_conditions(
             value: None,
             selector: compose_selectors(parent_selectors),
         }];
+    }
+
+    // CallExpression: firstThatWorks() → multiple fallback values with current selectors
+    if let Expression::CallExpression(call) = value
+        && is_first_that_works_call(&call.callee)
+    {
+        let mut results = vec![];
+        for arg in call.arguments.iter().rev() {
+            let arg_expr = arg.to_expression();
+            if let Some(s) = get_string_by_literal_expression(arg_expr) {
+                results.push(DecomposedStyle {
+                    property: css_property.to_string(),
+                    value: Some(s),
+                    selector: compose_selectors(parent_selectors),
+                });
+            } else if let Some(n) = get_number_by_literal_expression(arg_expr) {
+                let formatted = if is_unitless_property(css_property) || n == 0.0 {
+                    format_number(n)
+                } else {
+                    format!("{}px", format_number(n))
+                };
+                results.push(DecomposedStyle {
+                    property: css_property.to_string(),
+                    value: Some(formatted),
+                    selector: compose_selectors(parent_selectors),
+                });
+            }
+        }
+        return results;
+    }
+
+    // CallExpression: types.*() → extract inner value, pass through selectors
+    if let Expression::CallExpression(call) = value
+        && is_types_call(&call.callee)
+        && !call.arguments.is_empty()
+    {
+        let inner = call.arguments[0].to_expression();
+        if let Some(s) = get_string_by_literal_expression(inner) {
+            return vec![DecomposedStyle {
+                property: css_property.to_string(),
+                value: Some(s),
+                selector: compose_selectors(parent_selectors),
+            }];
+        } else if let Some(n) = get_number_by_literal_expression(inner) {
+            let formatted = if is_unitless_property(css_property) || n == 0.0 {
+                format_number(n)
+            } else {
+                format!("{}px", format_number(n))
+            };
+            return vec![DecomposedStyle {
+                property: css_property.to_string(),
+                value: Some(formatted),
+                selector: compose_selectors(parent_selectors),
+            }];
+        }
+        return vec![];
     }
 
     // ObjectExpression → recurse into condition keys

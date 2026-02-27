@@ -433,14 +433,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
             let mut namespace_map: FxHashMap<String, StylexNamespaceValue> = FxHashMap::default();
             let mut properties = oxc_allocator::Vec::new_in(self.ast.allocator);
-            for (ns_name, mut styles, css_vars) in namespaces {
+            for (ns_name, mut styles, css_vars, include_refs) in namespaces {
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
                 self.styles
                     .extend(styles.into_iter().flat_map(|ex| ex.extract()));
 
                 // Extract className string for props() resolution
-                let class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
+                let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
                     if let Expression::StringLiteral(s) = expr {
                         s.value.to_string()
                     } else {
@@ -448,19 +448,45 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
                 });
 
+                // Resolve include() references — prepend included classNames
+                for inc_ref in &include_refs {
+                    if let Some(ns) = self.stylex_namespaces.get(&inc_ref.var_name)
+                        && let Some(ns_value) = ns.get(&inc_ref.member_name)
+                    {
+                        let included_class = match ns_value {
+                            StylexNamespaceValue::Static(s) => s.clone(),
+                            StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
+                        };
+                        if !included_class.is_empty() {
+                            if class_name_str.is_empty() {
+                                class_name_str = included_class;
+                            } else {
+                                class_name_str = format!("{} {}", included_class, class_name_str);
+                            }
+                        }
+                    }
+                }
+
                 let ns_value = if let Some(vars) = css_vars {
                     StylexNamespaceValue::Dynamic(StylexDynamicInfo {
-                        class_name: class_name_str,
+                        class_name: class_name_str.clone(),
                         css_vars: vars,
                     })
                 } else {
-                    StylexNamespaceValue::Static(class_name_str)
+                    StylexNamespaceValue::Static(class_name_str.clone())
                 };
                 namespace_map.insert(ns_name.clone(), ns_value);
-                let value = class_name.unwrap_or_else(|| {
+
+                // If include refs changed the className, use the combined string
+                let value = if !include_refs.is_empty() && !class_name_str.is_empty() {
                     self.ast
-                        .expression_string_literal(SPAN, self.ast.atom(""), None)
-                });
+                        .expression_string_literal(SPAN, self.ast.atom(&class_name_str), None)
+                } else {
+                    class_name.unwrap_or_else(|| {
+                        self.ast
+                            .expression_string_literal(SPAN, self.ast.atom(""), None)
+                    })
+                };
 
                 properties.push(self.ast.object_property_kind_object_property(
                     SPAN,
@@ -1029,6 +1055,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 "firstThatWorks" => Some(StylexFunction::FirstThatWorks),
                                 "defineVars" => Some(StylexFunction::DefineVars),
                                 "createTheme" => Some(StylexFunction::CreateTheme),
+                                "include" => Some(StylexFunction::Include),
                                 _ => None,
                             };
                             if let Some(func) = func {

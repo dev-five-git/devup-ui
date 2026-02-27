@@ -15288,4 +15288,115 @@ const styles = stylex.create({
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn test_stylex_types_in_condition() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({
+    base: {
+        width: {
+            default: '100%',
+            '@media (min-width: 768px)': stylex.types.length('50%'),
+        },
+    },
+});"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_include_basic() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const base = stylex.create({
+    root: { color: 'red', fontSize: '16px' },
+});
+const composed = stylex.create({
+    fancy: { ...stylex.include(base.root), backgroundColor: 'blue' },
+});"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_include_named_import() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { create, include } from '@stylexjs/stylex';
+const base = create({
+    root: { color: 'red' },
+});
+const composed = create({
+    fancy: { ...include(base.root), padding: '8px' },
+});"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_include_with_props() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const base = stylex.create({
+    root: { color: 'red' },
+});
+const composed = stylex.create({
+    fancy: { ...stylex.include(base.root), backgroundColor: 'blue' },
+});
+const el = <div {...stylex.props(composed.fancy)} />;"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
 }

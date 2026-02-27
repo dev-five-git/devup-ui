@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'bun:test'
 
-import { create, firstThatWorks, keyframes, props, types } from '../stylex'
+import {
+  create,
+  createTheme,
+  defineVars,
+  firstThatWorks,
+  include,
+  keyframes,
+  props,
+  types,
+} from '../stylex'
 
 describe('stylex', () => {
   it('create should throw at runtime', () => {
@@ -31,5 +40,23 @@ describe('stylex', () => {
 
   it('types.color should throw at runtime', () => {
     expect(() => types.color('red')).toThrowError('Cannot run on the runtime')
+  })
+
+  it('include should throw at runtime', () => {
+    expect(() => include({ color: 'red' })).toThrowError(
+      'Cannot run on the runtime',
+    )
+  })
+
+  it('defineVars should throw at runtime', () => {
+    expect(() => defineVars({ primary: 'red' })).toThrowError(
+      'Cannot run on the runtime',
+    )
+  })
+
+  it('createTheme should throw at runtime', () => {
+    expect(() =>
+      createTheme({ primary: '--x' }, { primary: 'blue' }),
+    ).toThrowError('Cannot run on the runtime')
   })
 })

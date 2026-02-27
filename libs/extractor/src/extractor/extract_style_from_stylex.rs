@@ -3,8 +3,9 @@ use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    SelectorPart, decompose_value_conditions, format_number, is_first_that_works_call,
-    is_types_call, is_unitless_property, normalize_stylex_property,
+    SelectorPart, StylexIncludeRef, decompose_value_conditions, format_number,
+    is_first_that_works_call, is_include_call_static, is_types_call, is_unitless_property,
+    normalize_stylex_property,
 };
 use crate::utils::{get_number_by_literal_expression, get_string_by_literal_expression};
 use css::optimize_value::optimize_value;
@@ -19,7 +20,7 @@ use crate::utils::get_string_by_property_key;
 ///
 /// Handles static string/number values (Phase 1) and value-level conditions (Phase 2).
 ///
-/// Returns a Vec of `(namespace_name, style_props)` pairs. Each namespace
+/// Returns a Vec of `(namespace_name, style_props, css_vars, include_refs)` tuples. Each namespace
 /// corresponds to a top-level key in the `stylex.create({...})` argument.
 #[allow(clippy::type_complexity)]
 pub fn extract_stylex_namespace_styles<'a>(
@@ -30,6 +31,7 @@ pub fn extract_stylex_namespace_styles<'a>(
     String,
     Vec<ExtractStyleProp<'a>>,
     Option<Vec<(usize, String)>>,
+    Vec<StylexIncludeRef>,
 )> {
     let Expression::ObjectExpression(obj) = expression else {
         return vec![];
@@ -63,25 +65,41 @@ pub fn extract_stylex_namespace_styles<'a>(
             if let Some((styles, css_vars)) =
                 extract_stylex_dynamic_namespace(arrow, keyframe_names)
             {
-                result.push((ns_name, styles, Some(css_vars)));
+                result.push((ns_name, styles, Some(css_vars), vec![]));
             } else {
-                result.push((ns_name, vec![], None));
+                result.push((ns_name, vec![], None, vec![]));
             }
             continue;
         }
 
         let Expression::ObjectExpression(ns_obj) = &prop.value else {
             // Non-object namespace value (e.g., null): push empty styles
-            result.push((ns_name, vec![], None));
+            result.push((ns_name, vec![], None, vec![]));
             continue;
         };
 
         let mut styles = vec![];
+        let mut include_refs = vec![];
 
         for style_prop in ns_obj.properties.iter() {
             let ObjectPropertyKind::ObjectProperty(style_prop) = style_prop else {
-                // Phase 4c: Spread not supported in style properties
-                if matches!(style_prop, ObjectPropertyKind::SpreadProperty(_)) {
+                // Check for stylex.include() spread
+                if let ObjectPropertyKind::SpreadProperty(spread) = style_prop
+                    && let Expression::CallExpression(call) = &spread.argument
+                    && is_include_call_static(&call.callee)
+                    && !call.arguments.is_empty()
+                {
+                    // Parse include(base.member)
+                    if let Expression::StaticMemberExpression(member) =
+                        call.arguments[0].to_expression()
+                        && let Expression::Identifier(ident) = &member.object
+                    {
+                        include_refs.push(StylexIncludeRef {
+                            var_name: ident.name.to_string(),
+                            member_name: member.property.name.to_string(),
+                        });
+                    }
+                } else if matches!(style_prop, ObjectPropertyKind::SpreadProperty(_)) {
                     eprintln!(
                         "[stylex] ERROR: Object spread is not allowed in stylex.create() namespaces. Define all properties explicitly."
                     );
@@ -299,7 +317,7 @@ pub fn extract_stylex_namespace_styles<'a>(
             )));
         }
 
-        result.push((ns_name, styles, None));
+        result.push((ns_name, styles, None, include_refs));
     }
 
     result
