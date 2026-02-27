@@ -9,11 +9,12 @@ use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
 use regex_lite::Regex;
+use rustc_hash::FxHashSet;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering::Equal;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::sync::LazyLock;
 
@@ -133,7 +134,7 @@ impl ExtractStyle for StyleSheetCss {
     }
 }
 
-type PropertyMap = BTreeMap<u8, BTreeMap<u8, HashSet<StyleSheetProperty>>>;
+type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
 type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
 
 fn deserialize_btree_map_u8<'de, D>(
@@ -145,7 +146,7 @@ where
     let mut result: BTreeMap<String, PropertyMap> = BTreeMap::new();
     for (key, value) in BTreeMap::<
         String,
-        BTreeMap<String, BTreeMap<String, HashSet<StyleSheetProperty>>>,
+        BTreeMap<String, BTreeMap<String, FxHashSet<StyleSheetProperty>>>,
     >::deserialize(deserializer)?
     {
         let mut tmp_map: PropertyMap = BTreeMap::new();
@@ -328,7 +329,7 @@ impl StyleSheet {
 
     pub fn update_styles(
         &mut self,
-        styles: &HashSet<ExtractStyleValue>,
+        styles: &FxHashSet<ExtractStyleValue>,
         filename: &str,
         single_css: bool,
     ) -> (bool, bool) {
@@ -476,13 +477,13 @@ impl StyleSheet {
             )
         }
     }
-    fn create_style(&self, map: &BTreeMap<u8, HashSet<StyleSheetProperty>>) -> String {
+    fn create_style(&self, map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>) -> String {
         self.create_style_with_layers(map, &mut BTreeMap::new())
     }
 
     fn create_style_with_layers(
         &self,
-        map: &BTreeMap<u8, HashSet<StyleSheetProperty>>,
+        map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>,
         layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
@@ -662,7 +663,7 @@ impl StyleSheet {
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
-            let mut base_styles = BTreeMap::<u8, HashSet<StyleSheetProperty>>::new();
+            let mut base_styles = BTreeMap::<u8, FxHashSet<StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
                 style_orders.extend(map.iter().filter(|(_, v)| !v.is_empty()).map(|(k, _)| *k));
                 if let Some(_base_styles) = map.get(&0) {
@@ -2040,7 +2041,7 @@ mod tests {
     #[test]
     fn test_update_styles() {
         let mut sheet = StyleSheet::default();
-        sheet.update_styles(&HashSet::new(), "index.tsx", true);
+        sheet.update_styles(&FxHashSet::default(), "index.tsx", true);
         assert_debug_snapshot!(
             sheet
                 .create_css(Some("index.tsx"), true)
@@ -2060,7 +2061,7 @@ mod tests {
         use extractor::extract_style::extract_style_value::ExtractStyleValue;
 
         let mut sheet = StyleSheet::default();
-        let mut styles = HashSet::new();
+        let mut styles = FxHashSet::default();
         styles.insert(ExtractStyleValue::Typography("$heading".to_string()));
         let (collected, updated) = sheet.update_styles(&styles, "index.tsx", true);
         // Typography doesn't collect or update

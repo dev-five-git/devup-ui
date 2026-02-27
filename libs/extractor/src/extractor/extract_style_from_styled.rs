@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{
     ExtractStyleProp,
@@ -19,7 +19,7 @@ use oxc_span::SPAN;
 
 fn extract_base_tag_and_class_name<'a>(
     input: &Expression<'a>,
-    imports: &HashMap<String, ExportVariableKind>,
+    imports: &FxHashMap<String, ExportVariableKind>,
 ) -> (Option<String>, Option<Vec<ExtractStyleValue>>) {
     if let Expression::StaticMemberExpression(member) = input {
         (Some(member.property.name.to_string()), None)
@@ -58,7 +58,7 @@ pub fn extract_style_from_styled<'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
     split_filename: Option<&str>,
-    imports: &HashMap<String, ExportVariableKind>,
+    imports: &FxHashMap<String, ExportVariableKind>,
 ) -> (ExtractResult<'a>, Expression<'a>) {
     let (result, new_expr) = if let Expression::TaggedTemplateExpression(tag) = expression
         && let (Some(tag_name), default_class_name) =

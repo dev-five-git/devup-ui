@@ -2,8 +2,9 @@ use css::class_map::{get_class_map, set_class_map};
 use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
+use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 
@@ -34,7 +35,7 @@ pub struct Output {
 impl Output {
     fn new(
         code: String,
-        styles: HashSet<ExtractStyleValue>,
+        styles: FxHashSet<ExtractStyleValue>,
         map: Option<String>,
         single_css: bool,
         filename: String,
@@ -739,7 +740,7 @@ mod tests {
         css::class_map::reset_class_map();
 
         // Create output with empty styles
-        let styles = HashSet::new();
+        let styles = FxHashSet::default();
         let output = Output::new(
             "code".to_string(),
             styles,
@@ -839,7 +840,7 @@ mod tests {
         css::class_map::reset_class_map();
 
         // Now create output which should trigger rm_global_css
-        let styles = HashSet::new();
+        let styles = FxHashSet::default();
         let output = Output::new(
             "new code".to_string(),
             styles,

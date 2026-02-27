@@ -16,8 +16,8 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
 use oxc_transformer::{TransformOptions, Transformer};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -74,29 +74,29 @@ pub struct ThemeEntry {
 #[derive(Debug, Default)]
 pub struct CollectedStyles {
     /// style() calls: variable_name -> (json, exported)
-    pub styles: HashMap<String, StyleEntry>,
+    pub styles: FxHashMap<String, StyleEntry>,
     /// globalStyle() calls: selector -> style object JSON
     pub global_styles: Vec<(String, String)>,
     /// keyframes() calls: variable_name -> (json, exported)
-    pub keyframes: HashMap<String, StyleEntry>,
+    pub keyframes: FxHashMap<String, StyleEntry>,
     /// createVar() calls: variable_name -> (CSS variable string, exported)
-    pub vars: HashMap<String, (String, bool)>,
+    pub vars: FxHashMap<String, (String, bool)>,
     /// fontFace() calls: placeholder_id -> (font_face JSON, font-family name, exported)
-    pub font_faces: HashMap<String, (String, String, bool)>,
+    pub font_faces: FxHashMap<String, (String, String, bool)>,
     /// styleVariants() calls: variable_name -> (variants, exported)
-    pub style_variants: HashMap<String, (HashMap<String, StyleVariant>, bool)>,
+    pub style_variants: FxHashMap<String, (FxHashMap<String, StyleVariant>, bool)>,
     /// createContainer() calls: variable_name -> (container name string, exported)
-    pub containers: HashMap<String, (String, bool)>,
+    pub containers: FxHashMap<String, (String, bool)>,
     /// layer() calls: variable_name -> (layer name string, exported)
-    pub layers: HashMap<String, (String, bool)>,
+    pub layers: FxHashMap<String, (String, bool)>,
     /// createGlobalTheme() calls: variable_name -> GlobalThemeEntry
-    pub global_themes: HashMap<String, GlobalThemeEntry>,
+    pub global_themes: FxHashMap<String, GlobalThemeEntry>,
     /// createTheme() calls: variable_name -> ThemeEntry
-    pub themes: HashMap<String, ThemeEntry>,
+    pub themes: FxHashMap<String, ThemeEntry>,
     /// Theme vars from array destructuring: vars_name -> (vars_object_json, exported)
-    pub theme_vars: HashMap<String, (String, bool)>,
+    pub theme_vars: FxHashMap<String, (String, bool)>,
     /// Non-style constant exports: variable_name -> value (as code string)
-    pub constant_exports: HashMap<String, String>,
+    pub constant_exports: FxHashMap<String, String>,
 }
 
 /// Check if a filename is a vanilla-extract style file
@@ -528,17 +528,17 @@ fn remap_style_names(
     let file_prefix = format!("f{}", file_num);
     // Build mapping from placeholder ID to original name
     // The order of style() calls matches the order of variable declarations
-    let mut placeholder_to_name: HashMap<String, String> = HashMap::new();
-    let mut font_placeholder_to_name: HashMap<String, String> = HashMap::new();
-    let mut new_styles = HashMap::new();
-    let mut new_keyframes = HashMap::new();
-    let mut new_style_variants = HashMap::new();
-    let mut new_vars = HashMap::new();
-    let mut new_containers = HashMap::new();
-    let mut new_layers = HashMap::new();
-    let mut new_font_faces = HashMap::new();
-    let mut new_global_themes = HashMap::new();
-    let mut new_themes = HashMap::new();
+    let mut placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
+    let mut font_placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
+    let mut new_styles = FxHashMap::default();
+    let mut new_keyframes = FxHashMap::default();
+    let mut new_style_variants = FxHashMap::default();
+    let mut new_vars = FxHashMap::default();
+    let mut new_containers = FxHashMap::default();
+    let mut new_layers = FxHashMap::default();
+    let mut new_font_faces = FxHashMap::default();
+    let mut new_global_themes = FxHashMap::default();
+    let mut new_themes = FxHashMap::default();
     let mut style_idx = 0;
     let mut font_idx = 0;
     let mut global_theme_idx = 0;
@@ -677,7 +677,7 @@ fn remap_style_names(
 
     // Replace font placeholders in style JSONs with actual font-family names
     // Build a mapping from placeholder to font-family name
-    let font_family_map: HashMap<&str, &str> = font_placeholder_to_name
+    let font_family_map: FxHashMap<&str, &str> = font_placeholder_to_name
         .iter()
         .filter_map(|(placeholder, name)| {
             new_font_faces
@@ -1170,10 +1170,9 @@ fn register_vanilla_extract_apis(
 
 /// Find all style names that are referenced in selectors of other styles
 /// Returns a set of style names that need to be extracted first
-pub fn find_selector_references(collected: &CollectedStyles) -> std::collections::HashSet<String> {
-    let mut referenced = std::collections::HashSet::new();
-    let style_names: std::collections::HashSet<&str> =
-        collected.styles.keys().map(|s| s.as_str()).collect();
+pub fn find_selector_references(collected: &CollectedStyles) -> FxHashSet<String> {
+    let mut referenced = rustc_hash::FxHashSet::default();
+    let style_names: FxHashSet<&str> = collected.styles.keys().map(|s| s.as_str()).collect();
 
     for entry in collected.styles.values() {
         // Check if this style's JSON contains references to other style names
@@ -1195,7 +1194,7 @@ pub fn find_selector_references(collected: &CollectedStyles) -> std::collections
 pub fn collected_styles_to_code_partial(
     collected: &CollectedStyles,
     package: &str,
-    style_names: &std::collections::HashSet<String>,
+    style_names: &FxHashSet<String>,
 ) -> String {
     let mut code_parts = Vec::new();
 
@@ -1223,7 +1222,7 @@ pub fn collected_styles_to_code_partial(
 pub fn collected_styles_to_code_with_classes(
     collected: &CollectedStyles,
     package: &str,
-    class_map: &HashMap<String, String>,
+    class_map: &FxHashMap<String, String>,
 ) -> String {
     let mut code_parts = Vec::new();
 
@@ -1254,7 +1253,7 @@ pub fn collected_styles_to_code_with_classes(
     }
 
     // Generate style declarations with selector references replaced
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
@@ -1401,7 +1400,7 @@ fn append_non_style_code(
     }
 
     // Generate styleVariants
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
@@ -1530,7 +1529,7 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
 
     // Generate style declarations (sorted for deterministic output)
     // First, build a map of name -> json for looking up base styles
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
@@ -1798,8 +1797,8 @@ impl Clone for CollectedStyles {
 fn parse_style_variants(
     variants_obj: &JsValue,
     context: &mut Context,
-) -> HashMap<String, StyleVariant> {
-    let mut result = HashMap::new();
+) -> FxHashMap<String, StyleVariant> {
+    let mut result = FxHashMap::default();
 
     if let Some(obj) = variants_obj.as_object() {
         // Get the object's own property keys
@@ -2206,7 +2205,7 @@ export const lightTheme = createTheme(vars, {
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> = [
+        let class_map: rustc_hash::FxHashMap<String, String> = [
             ("base".to_string(), "a".to_string()),
             ("composed".to_string(), "b".to_string()),
         ]
@@ -2742,7 +2741,7 @@ export const lightTheme = createTheme(vars, {
     fn test_style_variants_without_base() {
         // Test styleVariants without base composition (covers line 1179)
         let mut collected = CollectedStyles::default();
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "small".to_string(),
             super::StyleVariant {
@@ -2780,7 +2779,7 @@ export const lightTheme = createTheme(vars, {
                 bases: Vec::new(),
             },
         );
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "variant".to_string(),
             super::StyleVariant {
@@ -2918,7 +2917,7 @@ export const box = style({ padding: 8 })"#;
     fn test_collected_styles_to_code_partial_empty() {
         // Test collected_styles_to_code_partial with empty style_names
         let collected = CollectedStyles::default();
-        let empty_set = std::collections::HashSet::new();
+        let empty_set = rustc_hash::FxHashSet::default();
         let code =
             super::collected_styles_to_code_partial(&collected, "@devup-ui/react", &empty_set);
         assert!(code.is_empty());
@@ -2945,7 +2944,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> =
+        let class_map: rustc_hash::FxHashMap<String, String> =
             [("parent".to_string(), "a".to_string())]
                 .into_iter()
                 .collect();
@@ -3126,7 +3125,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("[theme, vars]"));
@@ -3155,7 +3154,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("const simpleTheme = \"f0_simple\""));
@@ -3230,7 +3229,7 @@ export const box = style({ padding: 8 })"#;
         );
 
         // Add styleVariants with base
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "primary".to_string(),
             super::StyleVariant {
@@ -3269,7 +3268,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "sm".to_string(),
             super::StyleVariant {
@@ -3288,7 +3287,7 @@ export const box = style({ padding: 8 })"#;
             .style_variants
             .insert("sizes".to_string(), (variants, true));
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("sizes"));
@@ -3310,7 +3309,7 @@ export const box = style({ padding: 8 })"#;
             .constant_exports
             .insert("CONFIG".to_string(), "{ debug: true }".to_string());
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("export const CONFIG"));
@@ -3366,7 +3365,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> =
+        let class_map: rustc_hash::FxHashMap<String, String> =
             [("box".to_string(), "a".to_string())].into_iter().collect();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
@@ -3399,7 +3398,7 @@ export const box = style({ padding: 8 })"#;
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("const simpleTheme = \"f0_simple\""));

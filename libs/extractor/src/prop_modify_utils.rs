@@ -13,7 +13,7 @@ use oxc_ast::ast::{
     PropertyKey, PropertyKind, TemplateElementValue,
 };
 use oxc_span::SPAN;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
@@ -428,8 +428,8 @@ fn build_tailwind_class_mapping(
     class_str: &str,
     style_order: Option<u8>,
     filename: Option<&str>,
-) -> HashMap<String, String> {
-    let mut mapping = HashMap::new();
+) -> FxHashMap<String, String> {
+    let mut mapping = FxHashMap::default();
 
     for class in class_str.split_whitespace() {
         if let Some(parsed) = parse_single_class(class) {
@@ -451,7 +451,7 @@ fn build_tailwind_class_mapping(
 fn rebuild_template_literal_with_mapping<'a>(
     ast_builder: &AstBuilder<'a>,
     template: &oxc_ast::ast::TemplateLiteral<'a>,
-    class_mapping: &HashMap<String, String>,
+    class_mapping: &FxHashMap<String, String>,
 ) -> Expression<'a> {
     // Rebuild quasis with replaced class names
     let new_quasis = template.quasis.iter().map(|quasi| {
@@ -486,7 +486,7 @@ fn rebuild_template_literal_with_mapping<'a>(
 }
 
 /// Replace Tailwind class names in a string with generated class names
-fn replace_classes_in_string(s: &str, class_mapping: &HashMap<String, String>) -> String {
+fn replace_classes_in_string(s: &str, class_mapping: &FxHashMap<String, String>) -> String {
     let mut result = s.to_string();
     // Sort by length descending to avoid partial replacements (e.g., "text-3xl" before "text-3")
     let mut sorted_classes: Vec<_> = class_mapping.iter().collect();
@@ -502,7 +502,7 @@ fn replace_classes_in_string(s: &str, class_mapping: &HashMap<String, String>) -
 fn rebuild_expression_with_mapping<'a>(
     ast_builder: &AstBuilder<'a>,
     expr: &Expression<'a>,
-    class_mapping: &HashMap<String, String>,
+    class_mapping: &FxHashMap<String, String>,
 ) -> Expression<'a> {
     match expr {
         Expression::StringLiteral(lit) => {
