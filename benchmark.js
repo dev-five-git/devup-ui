@@ -4,97 +4,15 @@ import { join } from 'node:path'
 import { execSync } from 'child_process'
 
 function clearBuildFile() {
-  if (existsSync('./benchmark/next-stylex/.next'))
-    rmSync('./benchmark/next-stylex/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-vanilla-extract/.next'))
-    rmSync('./benchmark/next-vanilla-extract/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-tailwind/.next'))
-    rmSync('./benchmark/next-tailwind/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-kuma-ui/.next'))
-    rmSync('./benchmark/next-kuma-ui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-chakra-ui/.next'))
-    rmSync('./benchmark/next-chakra-ui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-devup-ui/.next'))
-    rmSync('./benchmark/next-devup-ui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-devup-ui-single/.next'))
-    rmSync('./benchmark/next-devup-ui-single/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-mui/.next'))
-    rmSync('./benchmark/next-mui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-panda-css/.next'))
-    rmSync('./benchmark/next-panda-css/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-devup-ui/df'))
-    rmSync('./benchmark/next-devup-ui/df', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-devup-ui-single/df'))
-    rmSync('./benchmark/next-devup-ui-single/df', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-tailwind-turbo/.next'))
-    rmSync('./benchmark/next-tailwind-turbo/.next', {
-      recursive: true,
-      force: true,
-    })
-
-  if (existsSync('./benchmark/next-devup-ui-single-turbo/.next'))
-    rmSync('./benchmark/next-devup-ui-single-turbo/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-devup-ui-single-turbo/df'))
-    rmSync('./benchmark/next-devup-ui-single-turbo/df', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-vanilla-extract-devup-ui/.next'))
-    rmSync('./benchmark/next-vanilla-extract-devup-ui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-vanilla-extract-devup-ui/df'))
-    rmSync('./benchmark/next-vanilla-extract-devup-ui/df', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-tailwind-turbo-devup-ui/.next'))
-    rmSync('./benchmark/next-tailwind-turbo-devup-ui/.next', {
-      recursive: true,
-      force: true,
-    })
-  if (existsSync('./benchmark/next-tailwind-turbo-devup-ui/df'))
-    rmSync('./benchmark/next-tailwind-turbo-devup-ui/df', {
-      recursive: true,
-      force: true,
-    })
+  const dirs = readdirSync('./benchmark')
+  for (const dir of dirs) {
+    const base = join('./benchmark', dir)
+    if (!statSync(base).isDirectory()) continue
+    for (const output of ['.next', 'dist', 'df']) {
+      const target = join(base, output)
+      if (existsSync(target)) rmSync(target, { recursive: true, force: true })
+    }
+  }
 }
 
 function checkDirSize(path) {
@@ -120,15 +38,24 @@ function checkDirSize(path) {
 clearBuildFile()
 
 function benchmark(target) {
+  // Support both short names ('tailwind' -> next-tailwind) and full names ('vinext-devup-ui')
+  const hasDir = existsSync(join('./benchmark', target, 'package.json'))
+  const dir = hasDir ? target : 'next-' + target
+
   performance.mark(target + '-start')
   console.profile(target)
-  execSync('bun run --filter next-' + target + '-benchmark build', {
+  execSync('bun run --filter ' + dir + '-benchmark build', {
     stdio: 'inherit',
   })
   console.profileEnd(target)
   performance.mark(target + '-end')
   performance.measure(target, target + '-start', target + '-end')
-  return `${target} ${(performance.getEntriesByName(target)[0].duration / 1000).toFixed(2).toLocaleString()}s ${checkDirSize('./benchmark/next-' + target + '/.next').toLocaleString()} bytes`
+
+  const benchmarkDir = join('./benchmark', dir)
+  const outputDir = existsSync(join(benchmarkDir, '.next'))
+    ? join(benchmarkDir, '.next')
+    : join(benchmarkDir, 'dist')
+  return `${target} ${(performance.getEntriesByName(target)[0].duration / 1000).toFixed(2).toLocaleString()}s ${checkDirSize(outputDir).toLocaleString()} bytes`
 }
 
 let result = []
@@ -146,5 +73,6 @@ result.push(benchmark('tailwind-turbo'))
 result.push(benchmark('devup-ui-single-turbo'))
 result.push(benchmark('vanilla-extract-devup-ui'))
 result.push(benchmark('tailwind-turbo-devup-ui'))
+result.push(benchmark('vinext-devup-ui'))
 
 console.info(result.join('\n'))
