@@ -16,6 +16,38 @@ pub enum StylexFunction {
     CreateTheme,
 }
 
+/// Check if a call expression is stylex.firstThatWorks() or named firstThatWorks().
+pub fn is_first_that_works_call(callee: &Expression) -> bool {
+    // stylex.firstThatWorks(...)
+    if let Expression::StaticMemberExpression(member) = callee
+        && member.property.name.as_str() == "firstThatWorks"
+    {
+        return true;
+    }
+    // firstThatWorks(...) (named import)
+    if let Expression::Identifier(ident) = callee
+        && ident.name.as_str() == "firstThatWorks"
+    {
+        return true;
+    }
+    false
+}
+
+/// Check if a call expression is stylex.types.X() or types.X() (type wrapper).
+pub fn is_types_call(callee: &Expression) -> bool {
+    if let Expression::StaticMemberExpression(member) = callee {
+        // stylex.types.X(...)
+        if let Expression::StaticMemberExpression(inner) = &member.object {
+            return inner.property.name.as_str() == "types";
+        }
+        // types.X(...) (named import)
+        if let Expression::Identifier(ident) = &member.object {
+            return ident.name.as_str() == "types";
+        }
+    }
+    false
+}
+
 /// Convert camelCase CSS property name to kebab-case.
 /// StyleX uses standard CSS properties only — NO devup-ui shorthand expansion.
 pub fn normalize_stylex_property(name: &str) -> String {
@@ -81,6 +113,24 @@ pub struct DecomposedStyle {
     /// `None` means null (no CSS emitted, tracked for atomic override).
     pub value: Option<String>,
     pub selector: Option<StyleSelector>,
+}
+
+/// Information about a dynamic StyleX namespace (arrow function in stylex.create())
+#[derive(Debug, Clone)]
+pub struct StylexDynamicInfo {
+    /// Combined class name string for all properties (static + dynamic)
+    pub class_name: String,
+    /// Maps (param_index, css_variable_name) for each dynamic property
+    pub css_vars: Vec<(usize, String)>,
+}
+
+/// A StyleX namespace entry — either static or dynamic (arrow function)
+#[derive(Debug, Clone)]
+pub enum StylexNamespaceValue {
+    /// Static namespace: just a className string
+    Static(String),
+    /// Dynamic namespace (from arrow function): className + CSS variable mappings
+    Dynamic(StylexDynamicInfo),
 }
 
 /// Decompose a StyleX value-level condition object into flat (css_value, selector) tuples.

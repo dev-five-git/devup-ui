@@ -1,14 +1,17 @@
 use crate::ExtractStyleProp;
+use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    SelectorPart, decompose_value_conditions, format_number, is_unitless_property,
-    normalize_stylex_property,
+    SelectorPart, decompose_value_conditions, format_number, is_first_that_works_call,
+    is_types_call, is_unitless_property, normalize_stylex_property,
 };
 use crate::utils::{get_number_by_literal_expression, get_string_by_literal_expression};
 use css::optimize_value::optimize_value;
+use css::sheet_to_variable_name;
 use oxc_ast::AstBuilder;
-use oxc_ast::ast::{Expression, ObjectPropertyKind};
+use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
+use rustc_hash::FxHashMap;
 
 use crate::utils::get_string_by_property_key;
 
@@ -18,10 +21,16 @@ use crate::utils::get_string_by_property_key;
 ///
 /// Returns a Vec of `(namespace_name, style_props)` pairs. Each namespace
 /// corresponds to a top-level key in the `stylex.create({...})` argument.
+#[allow(clippy::type_complexity)]
 pub fn extract_stylex_namespace_styles<'a>(
     _ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
-) -> Vec<(String, Vec<ExtractStyleProp<'a>>)> {
+    keyframe_names: &FxHashMap<String, String>,
+) -> Vec<(
+    String,
+    Vec<ExtractStyleProp<'a>>,
+    Option<Vec<(usize, String)>>,
+)> {
     let Expression::ObjectExpression(obj) = expression else {
         return vec![];
     };
@@ -30,16 +39,40 @@ pub fn extract_stylex_namespace_styles<'a>(
 
     for prop in obj.properties.iter() {
         let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+            // Phase 4c: Spread not supported at namespace level
+            if matches!(prop, ObjectPropertyKind::SpreadProperty(_)) {
+                eprintln!(
+                    "[stylex] ERROR: Object spread is not allowed at the namespace level of stylex.create()."
+                );
+            }
             continue;
         };
 
         let Some(ns_name) = get_string_by_property_key(&prop.key) else {
+            // Phase 4c: Computed namespace keys not supported
+            if prop.computed {
+                eprintln!(
+                    "[stylex] ERROR: Computed namespace keys are not allowed in stylex.create()."
+                );
+            }
             continue;
         };
 
+        // Phase 4b: Arrow function (dynamic namespace)
+        if let Expression::ArrowFunctionExpression(arrow) = &prop.value {
+            if let Some((styles, css_vars)) =
+                extract_stylex_dynamic_namespace(arrow, keyframe_names)
+            {
+                result.push((ns_name, styles, Some(css_vars)));
+            } else {
+                result.push((ns_name, vec![], None));
+            }
+            continue;
+        }
+
         let Expression::ObjectExpression(ns_obj) = &prop.value else {
             // Non-object namespace value (e.g., null): push empty styles
-            result.push((ns_name, vec![]));
+            result.push((ns_name, vec![], None));
             continue;
         };
 
@@ -47,10 +80,22 @@ pub fn extract_stylex_namespace_styles<'a>(
 
         for style_prop in ns_obj.properties.iter() {
             let ObjectPropertyKind::ObjectProperty(style_prop) = style_prop else {
+                // Phase 4c: Spread not supported in style properties
+                if matches!(style_prop, ObjectPropertyKind::SpreadProperty(_)) {
+                    eprintln!(
+                        "[stylex] ERROR: Object spread is not allowed in stylex.create() namespaces. Define all properties explicitly."
+                    );
+                }
                 continue;
             };
 
             let Some(prop_name) = get_string_by_property_key(&style_prop.key) else {
+                // Phase 4c: Computed property keys not supported
+                if style_prop.computed {
+                    eprintln!(
+                        "[stylex] ERROR: Computed property keys are not allowed in stylex.create(). Use static string keys instead."
+                    );
+                }
                 continue;
             };
 
@@ -92,6 +137,51 @@ pub fn extract_stylex_namespace_styles<'a>(
 
             let css_property = normalize_stylex_property(&prop_name);
 
+            // Phase 4c: Warn about CSS shorthand properties
+            const SHORTHAND_PROPERTIES: &[&str] = &[
+                "margin",
+                "padding",
+                "background",
+                "border",
+                "font",
+                "outline",
+                "overflow",
+                "flex",
+                "grid",
+                "gap",
+                "border-radius",
+                "border-color",
+                "border-style",
+                "border-width",
+                "margin-inline",
+                "margin-block",
+                "padding-inline",
+                "padding-block",
+            ];
+            if SHORTHAND_PROPERTIES.contains(&css_property.as_str()) {
+                eprintln!(
+                    "[stylex] WARNING: Shorthand property '{}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft').",
+                    css_property
+                );
+            }
+
+            // Phase 4a: Resolve keyframe variable references (e.g., animationName: fadeIn)
+            if let Expression::Identifier(ident) = &style_prop.value
+                && let Some(anim_name) = keyframe_names.get(ident.name.as_str())
+            {
+                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                    ExtractStaticStyle {
+                        property: css_property,
+                        value: optimize_value(anim_name),
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                )));
+                continue;
+            }
+
             // Phase 1: static string/number values
             let css_value = if let Some(s) = get_string_by_literal_expression(&style_prop.value) {
                 s
@@ -119,8 +209,79 @@ pub fn extract_stylex_namespace_styles<'a>(
                     }
                 }
                 continue;
+            } else if let Expression::CallExpression(call) = &style_prop.value
+                && is_first_that_works_call(&call.callee)
+            {
+                // firstThatWorks('a', 'b', 'c'): last arg is least preferred, first is most preferred.
+                // CSS fallback: output in reverse order (least preferred first, most preferred last).
+                for arg in call.arguments.iter().rev() {
+                    let arg_expr = arg.to_expression();
+                    if let Some(s) = get_string_by_literal_expression(arg_expr) {
+                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                            ExtractStaticStyle {
+                                property: css_property.clone(),
+                                value: optimize_value(&s),
+                                level: 0,
+                                selector: None,
+                                style_order: None,
+                                layer: None,
+                            },
+                        )));
+                    } else if let Some(n) = get_number_by_literal_expression(arg_expr) {
+                        let formatted = if is_unitless_property(&css_property) || n == 0.0 {
+                            format_number(n)
+                        } else {
+                            format!("{}px", format_number(n))
+                        };
+                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                            ExtractStaticStyle {
+                                property: css_property.clone(),
+                                value: optimize_value(&formatted),
+                                level: 0,
+                                selector: None,
+                                style_order: None,
+                                layer: None,
+                            },
+                        )));
+                    }
+                }
+                continue;
+            } else if let Expression::CallExpression(call) = &style_prop.value
+                && is_types_call(&call.callee)
+                && !call.arguments.is_empty()
+            {
+                // stylex.types.length('100px') → extract inner value '100px'
+                let inner = call.arguments[0].to_expression();
+                let css_value = if let Some(s) = get_string_by_literal_expression(inner) {
+                    s
+                } else if let Some(n) = get_number_by_literal_expression(inner) {
+                    if is_unitless_property(&css_property) || n == 0.0 {
+                        format_number(n)
+                    } else {
+                        format!("{}px", format_number(n))
+                    }
+                } else {
+                    continue; // Can't resolve inner value
+                };
+                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                    ExtractStaticStyle {
+                        property: css_property,
+                        value: optimize_value(&css_value),
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                )));
+                continue;
             } else {
-                // Skip NullLiteral, dynamic values, etc.
+                // Phase 4c: Non-static values in create() are not supported
+                if !matches!(&style_prop.value, Expression::NullLiteral(_)) {
+                    eprintln!(
+                        "[stylex] ERROR: Non-static value for property '{}' in stylex.create(). Only string literals, numbers, null, objects (conditions), firstThatWorks(), types.*(), and arrow functions are allowed.",
+                        prop_name
+                    );
+                }
                 continue;
             };
 
@@ -138,8 +299,130 @@ pub fn extract_stylex_namespace_styles<'a>(
             )));
         }
 
-        result.push((ns_name, styles));
+        result.push((ns_name, styles, None));
     }
 
     result
+}
+
+/// Extract styles from a dynamic StyleX namespace (arrow function).
+/// Returns (styles_for_css, css_vars) where css_vars maps param_index to CSS variable name.
+#[allow(clippy::type_complexity)]
+fn extract_stylex_dynamic_namespace<'a>(
+    arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
+    keyframe_names: &FxHashMap<String, String>,
+) -> Option<(Vec<ExtractStyleProp<'a>>, Vec<(usize, String)>)> {
+    // 1. Extract parameter names
+    let param_names: Vec<String> = arrow
+        .params
+        .items
+        .iter()
+        .filter_map(|param| {
+            if let BindingPattern::BindingIdentifier(ident) = &param.pattern {
+                Some(ident.name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if param_names.is_empty() {
+        return None;
+    }
+
+    // 2. Get body ObjectExpression from expression body: (x) => ({ ... })
+    if !arrow.expression {
+        return None;
+    }
+    let stmt = arrow.body.statements.first()?;
+    let Statement::ExpressionStatement(expr_stmt) = stmt else {
+        return None;
+    };
+    // Handle both direct ObjectExpression and ParenthesizedExpression wrapping
+    let body_obj = match &expr_stmt.expression {
+        Expression::ObjectExpression(obj) => obj,
+        Expression::ParenthesizedExpression(paren) => {
+            if let Expression::ObjectExpression(obj) = &paren.expression {
+                obj
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+
+    // 3. Process each property
+    let mut styles = vec![];
+    let mut css_vars = vec![];
+
+    for prop in body_obj.properties.iter() {
+        let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+            continue;
+        };
+
+        let Some(prop_name) = get_string_by_property_key(&prop.key) else {
+            continue;
+        };
+        let css_property = normalize_stylex_property(&prop_name);
+
+        // Check if value references a parameter (dynamic)
+        let is_dynamic = if prop.shorthand {
+            // Shorthand: { height } is equivalent to { height: height }
+            param_names.iter().position(|p| p == &prop_name)
+        } else if let Expression::Identifier(ident) = &prop.value {
+            param_names.iter().position(|p| p == ident.name.as_str())
+        } else {
+            None
+        };
+
+        if let Some(param_idx) = is_dynamic {
+            // Dynamic property: generate CSS variable
+            let var_name = sheet_to_variable_name(&css_property, 0, None);
+            css_vars.push((param_idx, var_name));
+            let param_name = &param_names[param_idx];
+            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
+                ExtractDynamicStyle::new(&css_property, 0, param_name, None),
+            )));
+        } else {
+            // Static property: resolve keyframe references or literal values
+            if let Expression::Identifier(ident) = &prop.value
+                && let Some(anim_name) = keyframe_names.get(ident.name.as_str())
+            {
+                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                    ExtractStaticStyle {
+                        property: css_property,
+                        value: optimize_value(anim_name),
+                        level: 0,
+                        selector: None,
+                        style_order: None,
+                        layer: None,
+                    },
+                )));
+                continue;
+            }
+            let css_value = if let Some(s) = get_string_by_literal_expression(&prop.value) {
+                s
+            } else if let Some(n) = get_number_by_literal_expression(&prop.value) {
+                if is_unitless_property(&css_property) || n == 0.0 {
+                    format_number(n)
+                } else {
+                    format!("{}px", format_number(n))
+                }
+            } else {
+                continue;
+            };
+            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                ExtractStaticStyle {
+                    property: css_property,
+                    value: optimize_value(&css_value),
+                    level: 0,
+                    selector: None,
+                    style_order: None,
+                    layer: None,
+                },
+            )));
+        }
+    }
+
+    Some((styles, css_vars))
 }

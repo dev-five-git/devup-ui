@@ -18,6 +18,7 @@ describe('export', () => {
       globalCss: expect.any(Function),
       keyframes: expect.any(Function),
       styled: expect.any(Object),
+      stylex: expect.any(Object),
 
       ThemeScript: expect.any(Function),
 
