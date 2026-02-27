@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import stylex from '@stylexjs/stylex';\nconst key = 'base';\nconst styles = stylex.create({ [key]: { color: 'red' } });\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {},
+    code: "import stylex from \"@stylexjs/stylex\";\nconst key = \"base\";\nconst styles = {};\n",
+}
