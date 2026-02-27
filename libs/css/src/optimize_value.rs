@@ -89,14 +89,14 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
 
+        let mut lower = ret.to_lowercase();
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            let tmp = ret.to_lowercase();
-            if tmp.contains(f) {
-                let index = tmp.find(f).unwrap() + f.len();
+            if lower.contains(f) {
+                let index = lower.find(f).unwrap() + f.len();
                 let mut zero_idx = Vec::with_capacity(4);
                 let mut depth = 0;
-                let chars: Vec<char> = tmp.chars().collect();
-                let byte_indices: Vec<usize> = tmp.char_indices().map(|(i, _)| i).collect();
+                let chars: Vec<char> = lower.chars().collect();
+                let byte_indices: Vec<usize> = lower.char_indices().map(|(i, _)| i).collect();
 
                 for (char_idx, &ch) in chars.iter().enumerate().skip(index) {
                     if ch == '(' {
@@ -115,6 +115,8 @@ pub fn optimize_value(value: &str) -> String {
                 for i in zero_idx.iter().rev() {
                     ret.replace_range(*i..*i + 1, "0%");
                 }
+                // Refresh lowercase after modification for subsequent iterations
+                lower = ret.to_lowercase();
             }
         }
     }
@@ -181,25 +183,35 @@ fn optimize_color(value: &str) -> String {
     let mut ret = value.to_uppercase();
 
     if ret.len() == 6 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] {
-            ret = format!("{}{}{}", ch[0], ch[2], ch[4]);
+        let b = ret.as_bytes();
+        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] {
+            let (c0, c2, c4) = (b[0], b[2], b[4]);
+            ret.clear();
+            ret.push(c0 as char);
+            ret.push(c2 as char);
+            ret.push(c4 as char);
         }
     } else if ret.len() == 8 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
-            ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
-            if ret.ends_with("F") {
-                ret = ret[..ret.len() - 1].to_string();
+        let b = ret.as_bytes();
+        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] && b[6] == b[7] {
+            let (c0, c2, c4, c6) = (b[0], b[2], b[4], b[6]);
+            let has_trailing_f = c6 == b'F';
+            ret.clear();
+            ret.push(c0 as char);
+            ret.push(c2 as char);
+            ret.push(c4 as char);
+            if !has_trailing_f {
+                ret.push(c6 as char);
             }
         } else if ret.ends_with("FF") {
-            ret = ret[..ret.len() - 2].to_string();
+            ret.truncate(ret.len() - 2);
         }
-    } else if ret.len() == 4 && ret.ends_with("F") {
-        ret = ret[..ret.len() - 1].to_string();
+    } else if ret.len() == 4 && ret.ends_with('F') {
+        ret.truncate(ret.len() - 1);
     }
 
-    format!("#{ret}")
+    ret.insert(0, '#');
+    ret
 }
 
 #[cfg(test)]

@@ -545,59 +545,34 @@ fn remap_style_names(
     // Track the last processed theme's vars_object_json for ThemeVars handling
     let mut last_theme_vars_json: Option<String> = None;
 
-    // First pass: collect old entries preserving all fields
-    let old_styles: HashMap<String, StyleEntry> = collected.styles.drain().collect();
-    let old_keyframes: HashMap<String, StyleEntry> = collected.keyframes.drain().collect();
-    let old_style_variants: HashMap<String, HashMap<String, StyleVariant>> = collected
-        .style_variants
-        .drain()
-        .map(|(k, v)| (k, v.0))
-        .collect();
-    let old_vars: HashMap<String, String> = collected.vars.drain().map(|(k, v)| (k, v.0)).collect();
-    let old_containers: HashMap<String, String> = collected
-        .containers
-        .drain()
-        .map(|(k, v)| (k, v.0))
-        .collect();
-    let old_layers: HashMap<String, String> =
-        collected.layers.drain().map(|(k, v)| (k, v.0)).collect();
-    // font_faces: placeholder_id -> (json, font_family, exported)
-    let old_font_faces: HashMap<String, (String, String)> = collected
-        .font_faces
-        .drain()
-        .map(|(k, v)| (k, (v.0, v.1)))
-        .collect();
-    // global_themes: placeholder_id -> GlobalThemeEntry (without exported flag for remapping)
-    let old_global_themes: HashMap<String, GlobalThemeEntry> =
-        collected.global_themes.drain().collect();
-    // themes: placeholder_id -> ThemeEntry (without exported flag for remapping)
-    let old_themes: HashMap<String, ThemeEntry> = collected.themes.drain().collect();
+    // First pass: take ownership of old entries (avoids drain+collect overhead)
+    let mut old_styles = std::mem::take(&mut collected.styles);
+    let mut old_keyframes = std::mem::take(&mut collected.keyframes);
+    let mut old_style_variants = std::mem::take(&mut collected.style_variants);
+    let mut old_vars = std::mem::take(&mut collected.vars);
+    let mut old_containers = std::mem::take(&mut collected.containers);
+    let mut old_layers = std::mem::take(&mut collected.layers);
+    let mut old_font_faces = std::mem::take(&mut collected.font_faces);
+    let mut old_global_themes = std::mem::take(&mut collected.global_themes);
+    let mut old_themes = std::mem::take(&mut collected.themes);
 
     for (name, info) in vars {
         match info {
             VarInfo::StyleApi { exported } => {
                 // First check if this is a fontFace (uses __font_N__ placeholder)
                 let font_placeholder = format!("__font_{}__", font_idx);
-                if let Some((json, font_family)) = old_font_faces.get(&font_placeholder) {
-                    font_placeholder_to_name.insert(font_placeholder.clone(), name.clone());
-                    new_font_faces
-                        .insert(name.clone(), (json.clone(), font_family.clone(), *exported));
+                if let Some((json, font_family, _)) = old_font_faces.remove(&font_placeholder) {
+                    font_placeholder_to_name.insert(font_placeholder, name.clone());
+                    new_font_faces.insert(name.clone(), (json, font_family, *exported));
                     font_idx += 1;
                     continue;
                 }
 
                 // Check if this is a createGlobalTheme (uses __global_theme_N__ placeholder)
                 let global_theme_placeholder = format!("__global_theme_{}__", global_theme_idx);
-                if let Some(entry) = old_global_themes.get(&global_theme_placeholder) {
-                    new_global_themes.insert(
-                        name.clone(),
-                        GlobalThemeEntry {
-                            selector: entry.selector.clone(),
-                            css_vars: entry.css_vars.clone(),
-                            vars_object_json: entry.vars_object_json.clone(),
-                            exported: *exported,
-                        },
-                    );
+                if let Some(mut entry) = old_global_themes.remove(&global_theme_placeholder) {
+                    entry.exported = *exported;
+                    new_global_themes.insert(name.clone(), entry);
                     global_theme_idx += 1;
                     continue;
                 }
@@ -605,39 +580,27 @@ fn remap_style_names(
                 let placeholder = format!("__style_{}__", style_idx);
                 placeholder_to_name.insert(placeholder.clone(), name.clone());
 
-                if let Some(entry) = old_styles.get(&placeholder) {
-                    new_styles.insert(
-                        name.clone(),
-                        StyleEntry {
-                            json: entry.json.clone(),
-                            exported: *exported,
-                            bases: entry.bases.clone(),
-                        },
-                    );
+                if let Some(mut entry) = old_styles.remove(&placeholder) {
+                    entry.exported = *exported;
+                    new_styles.insert(name.clone(), entry);
                     style_idx += 1;
-                } else if let Some(entry) = old_keyframes.get(&placeholder) {
-                    new_keyframes.insert(
-                        name.clone(),
-                        StyleEntry {
-                            json: entry.json.clone(),
-                            exported: *exported,
-                            bases: entry.bases.clone(),
-                        },
-                    );
+                } else if let Some(mut entry) = old_keyframes.remove(&placeholder) {
+                    entry.exported = *exported;
+                    new_keyframes.insert(name.clone(), entry);
                     style_idx += 1;
-                } else if let Some(variants) = old_style_variants.get(&placeholder) {
-                    new_style_variants.insert(name.clone(), (variants.clone(), *exported));
+                } else if let Some((variants, _)) = old_style_variants.remove(&placeholder) {
+                    new_style_variants.insert(name.clone(), (variants, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_vars.get(&placeholder) {
-                    new_vars.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_vars.remove(&placeholder) {
+                    new_vars.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_containers.get(&placeholder) {
-                    new_containers.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_containers.remove(&placeholder) {
+                    new_containers.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_layers.get(&placeholder) {
-                    new_layers.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_layers.remove(&placeholder) {
+                    new_layers.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(entry) = old_themes.get(&placeholder) {
+                } else if let Some(mut entry) = old_themes.remove(&placeholder) {
                     // Track this theme name for the next ThemeVars entry
                     if entry.vars_object_json.is_some() {
                         last_theme_vars_json = Some(name.clone());
@@ -662,16 +625,10 @@ fn remap_style_names(
                             .push((format!(".{}", class_name), vars_json));
                     }
 
-                    new_themes.insert(
-                        name.clone(),
-                        ThemeEntry {
-                            css_vars: entry.css_vars.clone(),
-                            exported: *exported,
-                            vars_object_json: entry.vars_object_json.clone(),
-                            vars_name: None, // Will be set by ThemeVars if present
-                            class_name,
-                        },
-                    );
+                    entry.exported = *exported;
+                    entry.vars_name = None;
+                    entry.class_name = class_name;
+                    new_themes.insert(name.clone(), entry);
                     style_idx += 1;
                 }
             }
@@ -705,30 +662,27 @@ fn remap_style_names(
 
     // Remap base references in styles (for composition)
     for entry in new_styles.values_mut() {
-        entry.bases = entry
-            .bases
-            .iter()
+        let old_bases = std::mem::take(&mut entry.bases);
+        entry.bases = old_bases
+            .into_iter()
             .map(|b| {
-                placeholder_to_name
-                    .get(b)
-                    .cloned()
-                    .unwrap_or_else(|| b.clone())
+                if let Some(name) = placeholder_to_name.get(&b) {
+                    name.clone()
+                } else {
+                    b
+                }
             })
             .collect();
     }
 
     // Replace font placeholders in style JSONs with actual font-family names
     // Build a mapping from placeholder to font-family name
-    let font_family_map: HashMap<String, String> = new_font_faces
+    let font_family_map: HashMap<&str, &str> = font_placeholder_to_name
         .iter()
-        .map(|(name, (_, font_family, _))| {
-            // Find the placeholder that maps to this name
-            let placeholder = font_placeholder_to_name
-                .iter()
-                .find(|(_, n)| *n == name)
-                .map(|(p, _)| p.clone())
-                .unwrap_or_default();
-            (placeholder, font_family.clone())
+        .filter_map(|(placeholder, name)| {
+            new_font_faces
+                .get(name)
+                .map(|(_, font_family, _)| (placeholder.as_str(), font_family.as_str()))
         })
         .collect();
 

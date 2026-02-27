@@ -294,24 +294,21 @@ impl StyleSheet {
         self.font_faces.remove(file);
         let property_key = if single_css { "" } else { file }.to_string();
 
-        for map in self
-            .properties
-            .entry(property_key.clone())
-            .or_default()
-            .values_mut()
-        {
-            for props in map.values_mut() {
-                props.retain(|prop| {
-                    if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
-                        f != file
-                    } else {
-                        true
-                    }
-                });
-            }
-            // remove empty map
-            if map.iter().all(|(_, v)| v.is_empty()) {
-                map.clear();
+        if let Some(prop_map) = self.properties.get_mut(&property_key) {
+            for map in prop_map.values_mut() {
+                for props in map.values_mut() {
+                    props.retain(|prop| {
+                        if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
+                            f != file
+                        } else {
+                            true
+                        }
+                    });
+                }
+                // remove empty map
+                if map.iter().all(|(_, v)| v.is_empty()) {
+                    map.clear();
+                }
             }
         }
         if self
@@ -551,14 +548,14 @@ impl StyleSheet {
                     let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
                     for prop in non_layered_props {
                         if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map.entry(selector.clone()).or_default().push(prop);
+                            selector_map.entry(selector).or_default().push(prop);
                         }
                     }
                     if let Some(break_point) = break_point {
                         write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
                     }
                     for (selector, props) in selector_map {
-                        current_css.push_str(&selector);
+                        current_css.push_str(selector);
                         current_css.push('{');
                         let mut first = true;
                         for prop in props {

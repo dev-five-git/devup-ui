@@ -62,7 +62,7 @@ pub fn css_to_style_literal<'a>(
     // Build a combined CSS string with unique placeholders for expressions
     // Use a format that won't conflict with actual CSS values
     let mut css_parts = Vec::new();
-    let mut expression_map = std::collections::HashMap::new();
+    let mut expression_map = std::collections::HashMap::with_capacity(css.expressions.len());
 
     for (i, quasi) in css.quasis.iter().enumerate() {
         css_parts.push(quasi.value.raw.to_string());
