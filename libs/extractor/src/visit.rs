@@ -41,21 +41,21 @@ use crate::utils::{
 };
 use oxc_ast::AstBuilder;
 use oxc_span::SPAN;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
     filename: String,
-    imports: HashMap<String, ExportVariableKind>,
+    imports: FxHashMap<String, ExportVariableKind>,
     import_object: Option<String>,
-    jsx_imports: HashMap<String, String>,
-    util_imports: HashMap<String, Rc<UtilType>>,
+    jsx_imports: FxHashMap<String, String>,
+    util_imports: FxHashMap<String, Rc<UtilType>>,
     jsx_object: Option<String>,
     package: String,
     split_filename: Option<String>,
     pub css_files: Vec<String>,
-    pub styles: HashSet<ExtractStyleValue>,
+    pub styles: FxHashSet<ExtractStyleValue>,
     styled_import: Option<String>,
 }
 
@@ -70,14 +70,14 @@ impl<'a> DevupVisitor<'a> {
         Self {
             ast: AstBuilder::new(allocator),
             filename: filename.to_string(),
-            imports: HashMap::new(),
-            jsx_imports: HashMap::new(),
+            imports: FxHashMap::default(),
+            jsx_imports: FxHashMap::default(),
             package: package.to_string(),
             css_files,
-            styles: HashSet::new(),
+            styles: FxHashSet::default(),
             import_object: None,
             jsx_object: None,
-            util_imports: HashMap::new(),
+            util_imports: FxHashMap::default(),
             split_filename,
             styled_import: None,
         }
@@ -639,7 +639,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let mut props_styles = vec![];
 
             // extract ExtractStyleProp and remain style and class name, just extract
-            let mut duplicate_set = HashSet::new();
+            let mut duplicate_set = FxHashSet::default();
             let mut parsed_style_order = ParsedStyleOrder::None;
             let mut style_vars = None;
             let mut props = None;

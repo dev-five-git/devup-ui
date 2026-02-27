@@ -21,7 +21,8 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -131,7 +132,7 @@ impl<'a> ExtractStyleProp<'a> {
 #[derive(Debug)]
 pub struct ExtractOutput {
     // used styles
-    pub styles: HashSet<ExtractStyleValue>,
+    pub styles: FxHashSet<ExtractStyleValue>,
 
     // output source
     pub code: String,
@@ -182,7 +183,7 @@ pub fn extract(
     if !has_relevant_import {
         // skip if not using package
         return Ok(ExtractOutput {
-            styles: HashSet::new(),
+            styles: FxHashSet::default(),
             code: code.to_string(),
             map: None,
             css_file: None,
@@ -216,7 +217,7 @@ pub fn extract(
                     let class_map = if !partial_code.is_empty() {
                         extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
                     } else {
-                        std::collections::HashMap::new()
+                        FxHashMap::default()
                     };
 
                     // Generate full code with class names substituted into selectors
@@ -240,7 +241,7 @@ pub fn extract(
     // For vanilla-extract files, if no styles were collected, return early
     if is_vanilla_extract && processed_code.is_empty() {
         return Ok(ExtractOutput {
-            styles: HashSet::new(),
+            styles: FxHashSet::default(),
             code: code.to_string(),
             map: None,
             css_file: None,
@@ -310,8 +311,8 @@ fn extract_class_map_from_code(
     filename: &str,
     partial_code: &str,
     option: &ExtractOption,
-    style_names: &HashSet<String>,
-) -> Result<std::collections::HashMap<String, String>, Box<dyn Error>> {
+    style_names: &FxHashSet<String>,
+) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
     let source_type = SourceType::from_path(filename)?;
     let css_file = if option.single_css {
         format!("{}/devup-ui.css", option.css_dir)
@@ -331,7 +332,7 @@ fn extract_class_map_from_code(
         ..
     } = Parser::new(&allocator, partial_code, source_type).parse();
     if panicked {
-        Ok(std::collections::HashMap::new())
+        Ok(FxHashMap::default())
     } else {
         let mut visitor = DevupVisitor::new(
             &allocator,
@@ -350,7 +351,7 @@ fn extract_class_map_from_code(
 
         // Parse the output code to extract class name assignments
         // Format: const styleName = "className" or const styleName = "className1 className2"
-        let mut class_map = std::collections::HashMap::new();
+        let mut class_map = FxHashMap::default();
         for line in result.code.lines() {
             let line = line.trim();
             if line.starts_with("const ") || line.starts_with("export const ") {
@@ -13315,7 +13316,7 @@ export const card = style({
     #[serial]
     fn test_extract_class_map_from_code_parser_panic() {
         // Test extract_class_map_from_code with invalid code that causes parser panic (covers line 153-154)
-        let mut style_names = HashSet::new();
+        let mut style_names = FxHashSet::default();
         style_names.insert("test".to_string());
 
         let result = extract_class_map_from_code(

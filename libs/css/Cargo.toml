@@ -14,7 +14,7 @@ bimap = { version = "0.6.3" }
 
 [dev-dependencies]
 rstest = "0.26.1"
-serial_test = "3.3.1"
+serial_test = "3.4.0"
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]

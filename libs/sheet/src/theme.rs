@@ -2,6 +2,7 @@ use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write;
 
 /// ColorEntry stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
 #[derive(Debug, Clone, Serialize)]
@@ -428,10 +429,10 @@ impl Theme {
                     Some(theme_name)
                 };
                 if let Some(theme_key) = theme_key {
-                    theme_declaration.push_str(format!(":root[data-theme={theme_key}]{{").as_str());
+                    write!(theme_declaration, ":root[data-theme={theme_key}]{{").unwrap();
                     css_contents.push("color-scheme:dark".to_string());
                 } else {
-                    theme_declaration.push_str(":root{".to_string().as_str());
+                    theme_declaration.push_str(":root{");
                     if !single_theme {
                         css_contents.push("color-scheme:light".to_string());
                     }
@@ -496,23 +497,23 @@ impl Theme {
                         t.font_family
                             .as_ref()
                             .map(|v| format!("font-family:{}", optimize_value(v)))
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                         t.font_size
                             .as_ref()
                             .map(|v| format!("font-size:{}", optimize_value(v)))
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                         t.font_weight
                             .as_ref()
                             .map(|v| format!("font-weight:{}", optimize_value(v)))
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                         t.line_height
                             .as_ref()
                             .map(|v| format!("line-height:{}", optimize_value(v)))
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                         t.letter_spacing
                             .as_ref()
                             .map(|v| format!("letter-spacing:{}", optimize_value(v)))
-                            .unwrap_or("".to_string()),
+                            .unwrap_or_default(),
                     ]
                     .iter()
                     .filter_map(|v| {
@@ -539,7 +540,7 @@ impl Theme {
                 .get(level as usize)
                 .map(|v| format!("(min-width:{v}px)"))
             {
-                css.push_str(format!("@media{media}{{{}}}", css_vec.join("")).as_str());
+                css.push_str(&format!("@media{media}{{{}}}", css_vec.join("")));
             }
         }
         css

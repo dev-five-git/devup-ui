@@ -61,8 +61,9 @@ pub fn css_to_style_literal<'a>(
 
     // Build a combined CSS string with unique placeholders for expressions
     // Use a format that won't conflict with actual CSS values
-    let mut css_parts = Vec::new();
-    let mut expression_map = std::collections::HashMap::new();
+    let mut css_parts = Vec::with_capacity(css.quasis.len() * 2);
+    let mut expression_map =
+        rustc_hash::FxHashMap::with_capacity_and_hasher(css.expressions.len(), Default::default());
 
     for (i, quasi) in css.quasis.iter().enumerate() {
         css_parts.push(quasi.value.raw.to_string());
@@ -485,11 +486,12 @@ pub fn optimize_css_block(css: &str) -> String {
         s2
     };
 
-    let segments: Vec<&str> = trimmed.split(';').collect();
-    for (i, s) in segments.iter().enumerate() {
-        if i > 0 {
+    let mut first_segment = true;
+    for s in trimmed.split(';') {
+        if !first_segment {
             result.push(';');
         }
+        first_segment = false;
         let parts: Vec<&str> = s.split('{').collect();
         let first_part_str = if parts.len() > 1 {
             parts[..parts.len() - 1]

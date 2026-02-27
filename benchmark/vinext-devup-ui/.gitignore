@@ -1,0 +1,29 @@
+# dependencies
+/node_modules
+
+# build output
+/.vinext/
+/.next/
+/dist/
+/out/
+/build/
+
+# devup-ui generated
+/df/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

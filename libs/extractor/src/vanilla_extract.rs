@@ -16,8 +16,10 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
 use oxc_transformer::{TransformOptions, Transformer};
+use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -38,7 +40,7 @@ pub struct StyleEntry {
     /// Whether this style is exported
     pub exported: bool,
     /// Base class references for composition (placeholder IDs like "__style_0__")
-    pub bases: Vec<String>,
+    pub bases: SmallVec<[String; 2]>,
 }
 
 /// Entry for createGlobalTheme() - CSS variables scoped to a selector
@@ -47,7 +49,7 @@ pub struct GlobalThemeEntry {
     /// CSS selector (e.g., ":root")
     pub selector: String,
     /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand-0-0", "blue")]
-    pub css_vars: Vec<(String, String)>,
+    pub css_vars: SmallVec<[(String, String); 8]>,
     /// Serialized JS object with var() references
     pub vars_object_json: String,
     /// Whether this is exported
@@ -58,7 +60,7 @@ pub struct GlobalThemeEntry {
 #[derive(Debug, Clone, Default)]
 pub struct ThemeEntry {
     /// CSS variables: Vec<(var_name, value)> e.g. [("--color-brand", "blue")]
-    pub css_vars: Vec<(String, String)>,
+    pub css_vars: SmallVec<[(String, String); 8]>,
     /// Whether this is exported
     pub exported: bool,
     /// For single-arg createTheme: the vars object JSON with var() references
@@ -74,29 +76,29 @@ pub struct ThemeEntry {
 #[derive(Debug, Default)]
 pub struct CollectedStyles {
     /// style() calls: variable_name -> (json, exported)
-    pub styles: HashMap<String, StyleEntry>,
+    pub styles: FxHashMap<String, StyleEntry>,
     /// globalStyle() calls: selector -> style object JSON
     pub global_styles: Vec<(String, String)>,
     /// keyframes() calls: variable_name -> (json, exported)
-    pub keyframes: HashMap<String, StyleEntry>,
+    pub keyframes: FxHashMap<String, StyleEntry>,
     /// createVar() calls: variable_name -> (CSS variable string, exported)
-    pub vars: HashMap<String, (String, bool)>,
+    pub vars: FxHashMap<String, (String, bool)>,
     /// fontFace() calls: placeholder_id -> (font_face JSON, font-family name, exported)
-    pub font_faces: HashMap<String, (String, String, bool)>,
+    pub font_faces: FxHashMap<String, (String, String, bool)>,
     /// styleVariants() calls: variable_name -> (variants, exported)
-    pub style_variants: HashMap<String, (HashMap<String, StyleVariant>, bool)>,
+    pub style_variants: FxHashMap<String, (FxHashMap<String, StyleVariant>, bool)>,
     /// createContainer() calls: variable_name -> (container name string, exported)
-    pub containers: HashMap<String, (String, bool)>,
+    pub containers: FxHashMap<String, (String, bool)>,
     /// layer() calls: variable_name -> (layer name string, exported)
-    pub layers: HashMap<String, (String, bool)>,
+    pub layers: FxHashMap<String, (String, bool)>,
     /// createGlobalTheme() calls: variable_name -> GlobalThemeEntry
-    pub global_themes: HashMap<String, GlobalThemeEntry>,
+    pub global_themes: FxHashMap<String, GlobalThemeEntry>,
     /// createTheme() calls: variable_name -> ThemeEntry
-    pub themes: HashMap<String, ThemeEntry>,
+    pub themes: FxHashMap<String, ThemeEntry>,
     /// Theme vars from array destructuring: vars_name -> (vars_object_json, exported)
-    pub theme_vars: HashMap<String, (String, bool)>,
+    pub theme_vars: FxHashMap<String, (String, bool)>,
     /// Non-style constant exports: variable_name -> value (as code string)
-    pub constant_exports: HashMap<String, String>,
+    pub constant_exports: FxHashMap<String, String>,
 }
 
 /// Check if a filename is a vanilla-extract style file
@@ -208,7 +210,7 @@ fn extract_theme_vars(
     contract: &JsValue,
     values: &JsValue,
     ctx: &mut Context,
-    css_vars: &mut Vec<(String, String)>,
+    css_vars: &mut SmallVec<[(String, String); 8]>,
     path: &[String],
 ) {
     if let (Some(contract_obj), Some(values_obj)) = (contract.as_object(), values.as_object()) {
@@ -262,7 +264,7 @@ fn transform_theme_to_vars(
     value: &JsValue,
     ctx: &mut Context,
     placeholder_id: &str,
-    css_vars: &mut Vec<(String, String)>,
+    css_vars: &mut SmallVec<[(String, String); 8]>,
     var_counter: &mut usize,
     path: &[String],
 ) -> JsValue {
@@ -528,76 +530,51 @@ fn remap_style_names(
     let file_prefix = format!("f{}", file_num);
     // Build mapping from placeholder ID to original name
     // The order of style() calls matches the order of variable declarations
-    let mut placeholder_to_name: HashMap<String, String> = HashMap::new();
-    let mut font_placeholder_to_name: HashMap<String, String> = HashMap::new();
-    let mut new_styles = HashMap::new();
-    let mut new_keyframes = HashMap::new();
-    let mut new_style_variants = HashMap::new();
-    let mut new_vars = HashMap::new();
-    let mut new_containers = HashMap::new();
-    let mut new_layers = HashMap::new();
-    let mut new_font_faces = HashMap::new();
-    let mut new_global_themes = HashMap::new();
-    let mut new_themes = HashMap::new();
+    let mut placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
+    let mut font_placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
+    let mut new_styles = FxHashMap::default();
+    let mut new_keyframes = FxHashMap::default();
+    let mut new_style_variants = FxHashMap::default();
+    let mut new_vars = FxHashMap::default();
+    let mut new_containers = FxHashMap::default();
+    let mut new_layers = FxHashMap::default();
+    let mut new_font_faces = FxHashMap::default();
+    let mut new_global_themes = FxHashMap::default();
+    let mut new_themes = FxHashMap::default();
     let mut style_idx = 0;
     let mut font_idx = 0;
     let mut global_theme_idx = 0;
     // Track the last processed theme's vars_object_json for ThemeVars handling
     let mut last_theme_vars_json: Option<String> = None;
 
-    // First pass: collect old entries preserving all fields
-    let old_styles: HashMap<String, StyleEntry> = collected.styles.drain().collect();
-    let old_keyframes: HashMap<String, StyleEntry> = collected.keyframes.drain().collect();
-    let old_style_variants: HashMap<String, HashMap<String, StyleVariant>> = collected
-        .style_variants
-        .drain()
-        .map(|(k, v)| (k, v.0))
-        .collect();
-    let old_vars: HashMap<String, String> = collected.vars.drain().map(|(k, v)| (k, v.0)).collect();
-    let old_containers: HashMap<String, String> = collected
-        .containers
-        .drain()
-        .map(|(k, v)| (k, v.0))
-        .collect();
-    let old_layers: HashMap<String, String> =
-        collected.layers.drain().map(|(k, v)| (k, v.0)).collect();
-    // font_faces: placeholder_id -> (json, font_family, exported)
-    let old_font_faces: HashMap<String, (String, String)> = collected
-        .font_faces
-        .drain()
-        .map(|(k, v)| (k, (v.0, v.1)))
-        .collect();
-    // global_themes: placeholder_id -> GlobalThemeEntry (without exported flag for remapping)
-    let old_global_themes: HashMap<String, GlobalThemeEntry> =
-        collected.global_themes.drain().collect();
-    // themes: placeholder_id -> ThemeEntry (without exported flag for remapping)
-    let old_themes: HashMap<String, ThemeEntry> = collected.themes.drain().collect();
+    // First pass: take ownership of old entries (avoids drain+collect overhead)
+    let mut old_styles = std::mem::take(&mut collected.styles);
+    let mut old_keyframes = std::mem::take(&mut collected.keyframes);
+    let mut old_style_variants = std::mem::take(&mut collected.style_variants);
+    let mut old_vars = std::mem::take(&mut collected.vars);
+    let mut old_containers = std::mem::take(&mut collected.containers);
+    let mut old_layers = std::mem::take(&mut collected.layers);
+    let mut old_font_faces = std::mem::take(&mut collected.font_faces);
+    let mut old_global_themes = std::mem::take(&mut collected.global_themes);
+    let mut old_themes = std::mem::take(&mut collected.themes);
 
     for (name, info) in vars {
         match info {
             VarInfo::StyleApi { exported } => {
                 // First check if this is a fontFace (uses __font_N__ placeholder)
                 let font_placeholder = format!("__font_{}__", font_idx);
-                if let Some((json, font_family)) = old_font_faces.get(&font_placeholder) {
-                    font_placeholder_to_name.insert(font_placeholder.clone(), name.clone());
-                    new_font_faces
-                        .insert(name.clone(), (json.clone(), font_family.clone(), *exported));
+                if let Some((json, font_family, _)) = old_font_faces.remove(&font_placeholder) {
+                    font_placeholder_to_name.insert(font_placeholder, name.clone());
+                    new_font_faces.insert(name.clone(), (json, font_family, *exported));
                     font_idx += 1;
                     continue;
                 }
 
                 // Check if this is a createGlobalTheme (uses __global_theme_N__ placeholder)
                 let global_theme_placeholder = format!("__global_theme_{}__", global_theme_idx);
-                if let Some(entry) = old_global_themes.get(&global_theme_placeholder) {
-                    new_global_themes.insert(
-                        name.clone(),
-                        GlobalThemeEntry {
-                            selector: entry.selector.clone(),
-                            css_vars: entry.css_vars.clone(),
-                            vars_object_json: entry.vars_object_json.clone(),
-                            exported: *exported,
-                        },
-                    );
+                if let Some(mut entry) = old_global_themes.remove(&global_theme_placeholder) {
+                    entry.exported = *exported;
+                    new_global_themes.insert(name.clone(), entry);
                     global_theme_idx += 1;
                     continue;
                 }
@@ -605,39 +582,27 @@ fn remap_style_names(
                 let placeholder = format!("__style_{}__", style_idx);
                 placeholder_to_name.insert(placeholder.clone(), name.clone());
 
-                if let Some(entry) = old_styles.get(&placeholder) {
-                    new_styles.insert(
-                        name.clone(),
-                        StyleEntry {
-                            json: entry.json.clone(),
-                            exported: *exported,
-                            bases: entry.bases.clone(),
-                        },
-                    );
+                if let Some(mut entry) = old_styles.remove(&placeholder) {
+                    entry.exported = *exported;
+                    new_styles.insert(name.clone(), entry);
                     style_idx += 1;
-                } else if let Some(entry) = old_keyframes.get(&placeholder) {
-                    new_keyframes.insert(
-                        name.clone(),
-                        StyleEntry {
-                            json: entry.json.clone(),
-                            exported: *exported,
-                            bases: entry.bases.clone(),
-                        },
-                    );
+                } else if let Some(mut entry) = old_keyframes.remove(&placeholder) {
+                    entry.exported = *exported;
+                    new_keyframes.insert(name.clone(), entry);
                     style_idx += 1;
-                } else if let Some(variants) = old_style_variants.get(&placeholder) {
-                    new_style_variants.insert(name.clone(), (variants.clone(), *exported));
+                } else if let Some((variants, _)) = old_style_variants.remove(&placeholder) {
+                    new_style_variants.insert(name.clone(), (variants, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_vars.get(&placeholder) {
-                    new_vars.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_vars.remove(&placeholder) {
+                    new_vars.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_containers.get(&placeholder) {
-                    new_containers.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_containers.remove(&placeholder) {
+                    new_containers.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(value) = old_layers.get(&placeholder) {
-                    new_layers.insert(name.clone(), (value.clone(), *exported));
+                } else if let Some((value, _)) = old_layers.remove(&placeholder) {
+                    new_layers.insert(name.clone(), (value, *exported));
                     style_idx += 1;
-                } else if let Some(entry) = old_themes.get(&placeholder) {
+                } else if let Some(mut entry) = old_themes.remove(&placeholder) {
                     // Track this theme name for the next ThemeVars entry
                     if entry.vars_object_json.is_some() {
                         last_theme_vars_json = Some(name.clone());
@@ -662,16 +627,10 @@ fn remap_style_names(
                             .push((format!(".{}", class_name), vars_json));
                     }
 
-                    new_themes.insert(
-                        name.clone(),
-                        ThemeEntry {
-                            css_vars: entry.css_vars.clone(),
-                            exported: *exported,
-                            vars_object_json: entry.vars_object_json.clone(),
-                            vars_name: None, // Will be set by ThemeVars if present
-                            class_name,
-                        },
-                    );
+                    entry.exported = *exported;
+                    entry.vars_name = None;
+                    entry.class_name = class_name;
+                    new_themes.insert(name.clone(), entry);
                     style_idx += 1;
                 }
             }
@@ -705,30 +664,27 @@ fn remap_style_names(
 
     // Remap base references in styles (for composition)
     for entry in new_styles.values_mut() {
-        entry.bases = entry
-            .bases
-            .iter()
+        let old_bases = std::mem::take(&mut entry.bases);
+        entry.bases = old_bases
+            .into_iter()
             .map(|b| {
-                placeholder_to_name
-                    .get(b)
-                    .cloned()
-                    .unwrap_or_else(|| b.clone())
+                if let Some(name) = placeholder_to_name.get(&b) {
+                    name.clone()
+                } else {
+                    b
+                }
             })
             .collect();
     }
 
     // Replace font placeholders in style JSONs with actual font-family names
     // Build a mapping from placeholder to font-family name
-    let font_family_map: HashMap<String, String> = new_font_faces
+    let font_family_map: FxHashMap<&str, &str> = font_placeholder_to_name
         .iter()
-        .map(|(name, (_, font_family, _))| {
-            // Find the placeholder that maps to this name
-            let placeholder = font_placeholder_to_name
-                .iter()
-                .find(|(_, n)| *n == name)
-                .map(|(p, _)| p.clone())
-                .unwrap_or_default();
-            (placeholder, font_family.clone())
+        .filter_map(|(placeholder, name)| {
+            new_font_faces
+                .get(name)
+                .map(|(_, font_family, _)| (placeholder.as_str(), font_family.as_str()))
         })
         .collect();
 
@@ -793,7 +749,7 @@ fn preprocess_typescript(code: &str, package: &str) -> String {
 
     // Process all import patterns (multiple imports may exist)
     let lines: Vec<&str> = js_code.lines().collect();
-    let mut new_lines = Vec::new();
+    let mut new_lines = Vec::with_capacity(lines.len());
 
     for line in lines {
         let mut matched = false;
@@ -847,7 +803,7 @@ fn register_vanilla_extract_apis(
             {
                 // It's an array - handle composition
                 let len = len as u32;
-                let mut base_classes = Vec::new();
+                let mut base_classes = SmallVec::new();
                 let mut merged_styles = String::from("{");
                 let mut first_style = true;
 
@@ -879,7 +835,7 @@ fn register_vanilla_extract_apis(
                 (merged_styles, base_classes)
             } else {
                 // No length property, just a style object
-                (js_value_to_json(style_obj, ctx), Vec::new())
+                (js_value_to_json(style_obj, ctx), SmallVec::new())
             };
             collector_style.borrow_mut().styles.styles.insert(
                 id.clone(),
@@ -928,7 +884,7 @@ fn register_vanilla_extract_apis(
                 StyleEntry {
                     json,
                     exported: false,
-                    bases: Vec::new(),
+                    bases: SmallVec::new(),
                 },
             );
 
@@ -1047,7 +1003,7 @@ fn register_vanilla_extract_apis(
             if is_single_arg {
                 // Single arg: createTheme({ color: { brand: 'blue' } })
                 // Returns [themeClass, vars] where vars has var() references
-                let mut css_vars = Vec::new();
+                let mut css_vars = SmallVec::new();
                 let mut var_counter = 0usize;
 
                 // Transform values to var() references and collect CSS variables
@@ -1083,7 +1039,7 @@ fn register_vanilla_extract_apis(
             } else {
                 // Two args: createTheme(contract, values)
                 // Returns just the themeClass
-                let mut css_vars = Vec::new();
+                let mut css_vars = SmallVec::new();
                 extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &[]);
 
                 // Store the theme entry
@@ -1152,7 +1108,7 @@ fn register_vanilla_extract_apis(
             let theme_obj = args.get_or_undefined(1);
 
             // Collect CSS variables and build new object with var() references
-            let mut css_vars = Vec::new();
+            let mut css_vars = SmallVec::new();
             let mut var_counter = 0usize;
             let result_obj = transform_theme_to_vars(
                 theme_obj,
@@ -1216,10 +1172,9 @@ fn register_vanilla_extract_apis(
 
 /// Find all style names that are referenced in selectors of other styles
 /// Returns a set of style names that need to be extracted first
-pub fn find_selector_references(collected: &CollectedStyles) -> std::collections::HashSet<String> {
-    let mut referenced = std::collections::HashSet::new();
-    let style_names: std::collections::HashSet<&str> =
-        collected.styles.keys().map(|s| s.as_str()).collect();
+pub fn find_selector_references(collected: &CollectedStyles) -> FxHashSet<String> {
+    let mut referenced = rustc_hash::FxHashSet::default();
+    let style_names: FxHashSet<&str> = collected.styles.keys().map(|s| s.as_str()).collect();
 
     for entry in collected.styles.values() {
         // Check if this style's JSON contains references to other style names
@@ -1241,12 +1196,12 @@ pub fn find_selector_references(collected: &CollectedStyles) -> std::collections
 pub fn collected_styles_to_code_partial(
     collected: &CollectedStyles,
     package: &str,
-    style_names: &std::collections::HashSet<String>,
+    style_names: &FxHashSet<String>,
 ) -> String {
-    let mut code_parts = Vec::new();
+    let mut output = String::new();
 
     if !style_names.is_empty() {
-        code_parts.push(format!("import {{ css }} from '{}'", package));
+        write!(output, "import {{ css }} from '{}'", package).unwrap();
     }
 
     // Generate only the specified styles
@@ -1259,19 +1214,22 @@ pub fn collected_styles_to_code_partial(
 
     for (name, entry) in styles {
         // Generate as non-exported for first pass
-        code_parts.push(format!("const {} = css({})", name, entry.json));
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        write!(output, "const {} = css({})", name, entry.json).unwrap();
     }
 
-    code_parts.join("\n")
+    output
 }
 
 /// Convert collected styles to code with selector references replaced by class names
 pub fn collected_styles_to_code_with_classes(
     collected: &CollectedStyles,
     package: &str,
-    class_map: &HashMap<String, String>,
+    class_map: &FxHashMap<String, String>,
 ) -> String {
-    let mut code_parts = Vec::new();
+    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
 
     // Generate import statement
     let mut imports = Vec::new();
@@ -1300,10 +1258,23 @@ pub fn collected_styles_to_code_with_classes(
     }
 
     // Generate style declarations with selector references replaced
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
+        .collect();
+
+    // Pre-build search/replace pairs to avoid format!() per iteration
+    let replacements: Vec<_> = class_map
+        .iter()
+        .map(|(style_name, class_name)| {
+            (
+                format!("\"{}:", style_name),
+                format!("\"{}:", class_name),
+                format!("\"{} ", style_name),
+                format!("\"{} ", class_name),
+            )
+        })
         .collect();
 
     let mut styles: Vec<_> = collected.styles.iter().collect();
@@ -1314,10 +1285,13 @@ pub fn collected_styles_to_code_with_classes(
 
         // Replace style name references with class names in JSON
         let mut json = entry.json.clone();
-        for (style_name, class_name) in class_map {
-            // Replace patterns like "stylename:" with "classname:"
-            json = json.replace(&format!("\"{}:", style_name), &format!("\"{}:", class_name));
-            json = json.replace(&format!("\"{} ", style_name), &format!("\"{} ", class_name));
+        for (search_colon, replace_colon, search_space, replace_space) in &replacements {
+            if json.contains(search_colon.as_str()) {
+                json = json.replace(search_colon, replace_colon);
+            }
+            if json.contains(search_space.as_str()) {
+                json = json.replace(search_space, replace_space);
+            }
         }
 
         if entry.bases.is_empty() {
@@ -1447,7 +1421,7 @@ fn append_non_style_code(
     }
 
     // Generate styleVariants
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
@@ -1546,7 +1520,7 @@ fn append_non_style_code(
 
 /// Convert collected styles to code that can be processed by existing extract logic
 pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
-    let mut code_parts = Vec::new();
+    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
 
     // Generate import statement
     let mut imports = Vec::new();
@@ -1576,7 +1550,7 @@ pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> S
 
     // Generate style declarations (sorted for deterministic output)
     // First, build a map of name -> json for looking up base styles
-    let style_json_map: HashMap<&str, &str> = collected
+    let style_json_map: FxHashMap<&str, &str> = collected
         .styles
         .iter()
         .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
@@ -1844,8 +1818,8 @@ impl Clone for CollectedStyles {
 fn parse_style_variants(
     variants_obj: &JsValue,
     context: &mut Context,
-) -> HashMap<String, StyleVariant> {
-    let mut result = HashMap::new();
+) -> FxHashMap<String, StyleVariant> {
+    let mut result = FxHashMap::default();
 
     if let Some(obj) = variants_obj.as_object() {
         // Get the object's own property keys
@@ -1908,6 +1882,7 @@ fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smallvec::smallvec;
 
     #[test]
     fn test_is_vanilla_extract_file() {
@@ -2056,7 +2031,7 @@ globalStyle("body", { margin: 0, padding: 0 })"#;
             StyleEntry {
                 json: r#"{"background":"red"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2239,7 +2214,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         // Add composed style with bases
@@ -2248,11 +2223,11 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"color":"red"}"#.to_string(),
                 exported: true,
-                bases: vec!["base".to_string()],
+                bases: smallvec!["base".to_string()],
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> = [
+        let class_map: rustc_hash::FxHashMap<String, String> = [
             ("base".to_string(), "a".to_string()),
             ("composed".to_string(), "b".to_string()),
         ]
@@ -2275,7 +2250,7 @@ export const lightTheme = createTheme(vars, {
             "themeClass".to_string(),
             super::ThemeEntry {
                 class_name: "f0_theme".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: Some(
@@ -2296,7 +2271,7 @@ export const lightTheme = createTheme(vars, {
             "darkTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f1_darkTheme".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "white".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "white".to_string())],
                 exported: true,
                 vars_name: None,
                 vars_object_json: None,
@@ -2315,7 +2290,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"from":{"opacity":"0"},"to":{"opacity":"1"}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2345,7 +2320,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"padding":"16px","margin":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         // Add composed style
@@ -2354,7 +2329,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: r#"{"background":"blue"}"#.to_string(),
                 exported: true,
-                bases: vec!["baseStyle".to_string()],
+                bases: smallvec!["baseStyle".to_string()],
             },
         );
 
@@ -2383,7 +2358,7 @@ export const lightTheme = createTheme(vars, {
         let array = boa_engine::object::builtins::JsArray::new(&mut context);
         let _ = array.push(boa_engine::JsValue::from(1), &mut context);
         let value = boa_engine::JsValue::from(array);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -2473,7 +2448,7 @@ export const lightTheme = createTheme(vars, {
         );
 
         let value = JsValue::from(obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -2531,7 +2506,7 @@ export const lightTheme = createTheme(vars, {
 
         let contract = JsValue::from(contract_obj);
         let values = JsValue::from(values_obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
 
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
 
@@ -2601,7 +2576,7 @@ export const lightTheme = createTheme(vars, {
         let mut context = boa_engine::Context::default();
         let contract = boa_engine::JsValue::from(boa_engine::js_string!("not-a-var"));
         let values = boa_engine::JsValue::from(boa_engine::js_string!("some-value"));
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // No CSS vars should be extracted because contract isn't a var() string
         assert!(css_vars.is_empty());
@@ -2716,7 +2691,7 @@ export const lightTheme = createTheme(vars, {
             "rootVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![("--color-primary".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color-primary".to_string(), "blue".to_string())],
                 vars_object_json: r#"{"color":{"primary":"var(--color-primary)"}}"#.to_string(),
                 exported: true,
             },
@@ -2764,7 +2739,7 @@ export const lightTheme = createTheme(vars, {
             "emptyTheme".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![], // Empty
+                css_vars: smallvec![],
                 vars_object_json: "{}".to_string(),
                 exported: true,
             },
@@ -2775,7 +2750,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2788,7 +2763,7 @@ export const lightTheme = createTheme(vars, {
     fn test_style_variants_without_base() {
         // Test styleVariants without base composition (covers line 1179)
         let mut collected = CollectedStyles::default();
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "small".to_string(),
             super::StyleVariant {
@@ -2823,10 +2798,10 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "variant".to_string(),
             super::StyleVariant {
@@ -2851,7 +2826,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         original
@@ -2862,7 +2837,7 @@ export const lightTheme = createTheme(vars, {
             StyleEntry {
                 json: "{}".to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         original
@@ -2944,7 +2919,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.styles.insert(
@@ -2952,7 +2927,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"color":"blue"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -2964,7 +2939,7 @@ export const box = style({ padding: 8 })"#;
     fn test_collected_styles_to_code_partial_empty() {
         // Test collected_styles_to_code_partial with empty style_names
         let collected = CollectedStyles::default();
-        let empty_set = std::collections::HashSet::new();
+        let empty_set = rustc_hash::FxHashSet::default();
         let code =
             super::collected_styles_to_code_partial(&collected, "@devup-ui/react", &empty_set);
         assert!(code.is_empty());
@@ -2979,7 +2954,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"background":"white"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.styles.insert(
@@ -2987,11 +2962,11 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"selectors":{"parent:hover &":{"color":"blue"}}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> =
+        let class_map: rustc_hash::FxHashMap<String, String> =
             [("parent".to_string(), "a".to_string())]
                 .into_iter()
                 .collect();
@@ -3035,7 +3010,7 @@ export const box = style({ padding: 8 })"#;
         );
         let contract = boa_engine::JsValue::from(contract_obj);
         let values = boa_engine::JsValue::from(values_obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // Should process index keys
         assert!(css_vars.is_empty() || !css_vars.is_empty());
@@ -3054,7 +3029,7 @@ export const box = style({ padding: 8 })"#;
             &mut context,
         );
         let value = boa_engine::JsValue::from(obj);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let result = super::transform_theme_to_vars(
             &value,
@@ -3075,7 +3050,7 @@ export const box = style({ padding: 8 })"#;
         let contract = boa_engine::JsValue::from(boa_engine::js_string!("var(--num)"));
         // Use a number instead of string - will need to_string conversion
         let values = boa_engine::JsValue::from(42);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
         // Should extract the value as string
         assert!(!css_vars.is_empty());
@@ -3089,7 +3064,7 @@ export const box = style({ padding: 8 })"#;
         let mut context = boa_engine::Context::default();
         // Use a number instead of string - will need to_string conversion
         let value = boa_engine::JsValue::from(123);
-        let mut css_vars = Vec::new();
+        let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
         let mut counter = 0usize;
         let _result = super::transform_theme_to_vars(
             &value,
@@ -3158,21 +3133,21 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "theme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_theme".to_string(),
-                css_vars: vec![("--color".to_string(), "blue".to_string())],
+                css_vars: smallvec![("--color".to_string(), "blue".to_string())],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: Some(r#"{"color":"var(--color)"}"#.to_string()),
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("[theme, vars]"));
@@ -3187,21 +3162,21 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "simpleTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_simple".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: Some("vars".to_string()),
                 vars_object_json: None, // No vars object
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("const simpleTheme = \"f0_simple\""));
@@ -3233,7 +3208,7 @@ export const box = style({ padding: 8 })"#;
             "rootTheme".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![
+                css_vars: smallvec![
                     ("--bg".to_string(), "white".to_string()),
                     ("--fg".to_string(), "black".to_string()),
                 ],
@@ -3249,7 +3224,7 @@ export const box = style({ padding: 8 })"#;
                 json: r#"{"0%":{"transform":"scale(1)"},"50%":{"transform":"scale(1.1)"}}"#
                     .to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3271,12 +3246,12 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"borderRadius":"4px","padding":"8px"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
         // Add styleVariants with base
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "primary".to_string(),
             super::StyleVariant {
@@ -3311,11 +3286,11 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"display":"flex"}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
-        let mut variants = std::collections::HashMap::new();
+        let mut variants = rustc_hash::FxHashMap::default();
         variants.insert(
             "sm".to_string(),
             super::StyleVariant {
@@ -3334,7 +3309,7 @@ export const box = style({ padding: 8 })"#;
             .style_variants
             .insert("sizes".to_string(), (variants, true));
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("sizes"));
@@ -3349,14 +3324,14 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected
             .constant_exports
             .insert("CONFIG".to_string(), "{ debug: true }".to_string());
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("export const CONFIG"));
@@ -3370,7 +3345,7 @@ export const box = style({ padding: 8 })"#;
             "partialTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_partial".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: Some("themeVars".to_string()),
                 vars_object_json: None,
@@ -3393,7 +3368,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"padding":"8px"}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3408,11 +3383,11 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"from":{"opacity":"0"}}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
-        let class_map: std::collections::HashMap<String, String> =
+        let class_map: rustc_hash::FxHashMap<String, String> =
             [("box".to_string(), "a".to_string())].into_iter().collect();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
@@ -3431,21 +3406,21 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{}"#.to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.themes.insert(
             "simpleTheme".to_string(),
             super::ThemeEntry {
                 class_name: "f0_simple".to_string(),
-                css_vars: vec![],
+                css_vars: smallvec![],
                 exported: true,
                 vars_name: None,
                 vars_object_json: None,
             },
         );
 
-        let class_map = std::collections::HashMap::new();
+        let class_map = rustc_hash::FxHashMap::default();
         let code =
             super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
         assert!(code.contains("const simpleTheme = \"f0_simple\""));
@@ -3494,7 +3469,7 @@ export const box = style({ padding: 8 })"#;
             "rootVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![
+                css_vars: smallvec![
                     ("--primary".to_string(), "blue".to_string()),
                     ("--secondary".to_string(), "green".to_string()),
                 ],
@@ -3518,7 +3493,7 @@ export const box = style({ padding: 8 })"#;
                 json: r#"{"from":{"transform":"rotate(0)"},"to":{"transform":"rotate(360deg)"}}"#
                     .to_string(),
                 exported: true,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
         collected.keyframes.insert(
@@ -3526,7 +3501,7 @@ export const box = style({ padding: 8 })"#;
             StyleEntry {
                 json: r#"{"0%":{"opacity":"0"}}"#.to_string(),
                 exported: false,
-                bases: Vec::new(),
+                bases: SmallVec::new(),
             },
         );
 
@@ -3616,7 +3591,7 @@ export const box = style({ padding: 8 })"#;
             "themeVars".to_string(),
             super::GlobalThemeEntry {
                 selector: ":root".to_string(),
-                css_vars: vec![("--bg".to_string(), "white".to_string())],
+                css_vars: smallvec![("--bg".to_string(), "white".to_string())],
                 vars_object_json: r#"{"bg":"var(--bg)"}"#.to_string(),
                 exported: true,
             },

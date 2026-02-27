@@ -9,11 +9,12 @@ use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
 use regex_lite::Regex;
+use rustc_hash::FxHashSet;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering::Equal;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::sync::LazyLock;
 
@@ -133,7 +134,7 @@ impl ExtractStyle for StyleSheetCss {
     }
 }
 
-type PropertyMap = BTreeMap<u8, BTreeMap<u8, HashSet<StyleSheetProperty>>>;
+type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
 type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
 
 fn deserialize_btree_map_u8<'de, D>(
@@ -145,7 +146,7 @@ where
     let mut result: BTreeMap<String, PropertyMap> = BTreeMap::new();
     for (key, value) in BTreeMap::<
         String,
-        BTreeMap<String, BTreeMap<String, HashSet<StyleSheetProperty>>>,
+        BTreeMap<String, BTreeMap<String, FxHashSet<StyleSheetProperty>>>,
     >::deserialize(deserializer)?
     {
         let mut tmp_map: PropertyMap = BTreeMap::new();
@@ -294,24 +295,21 @@ impl StyleSheet {
         self.font_faces.remove(file);
         let property_key = if single_css { "" } else { file }.to_string();
 
-        for map in self
-            .properties
-            .entry(property_key.clone())
-            .or_default()
-            .values_mut()
-        {
-            for props in map.values_mut() {
-                props.retain(|prop| {
-                    if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
-                        f != file
-                    } else {
-                        true
-                    }
-                });
-            }
-            // remove empty map
-            if map.iter().all(|(_, v)| v.is_empty()) {
-                map.clear();
+        if let Some(prop_map) = self.properties.get_mut(&property_key) {
+            for map in prop_map.values_mut() {
+                for props in map.values_mut() {
+                    props.retain(|prop| {
+                        if let Some(StyleSelector::Global(_, f)) = prop.selector.as_ref() {
+                            f != file
+                        } else {
+                            true
+                        }
+                    });
+                }
+                // remove empty map
+                if map.iter().all(|(_, v)| v.is_empty()) {
+                    map.clear();
+                }
             }
         }
         if self
@@ -331,7 +329,7 @@ impl StyleSheet {
 
     pub fn update_styles(
         &mut self,
-        styles: &HashSet<ExtractStyleValue>,
+        styles: &FxHashSet<ExtractStyleValue>,
         filename: &str,
         single_css: bool,
     ) -> (bool, bool) {
@@ -479,13 +477,13 @@ impl StyleSheet {
             )
         }
     }
-    fn create_style(&self, map: &BTreeMap<u8, HashSet<StyleSheetProperty>>) -> String {
+    fn create_style(&self, map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>) -> String {
         self.create_style_with_layers(map, &mut BTreeMap::new())
     }
 
     fn create_style_with_layers(
         &self,
-        map: &BTreeMap<u8, HashSet<StyleSheetProperty>>,
+        map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>,
         layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
@@ -551,14 +549,14 @@ impl StyleSheet {
                     let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
                     for prop in non_layered_props {
                         if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map.entry(selector.clone()).or_default().push(prop);
+                            selector_map.entry(selector).or_default().push(prop);
                         }
                     }
                     if let Some(break_point) = break_point {
                         write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
                     }
                     for (selector, props) in selector_map {
-                        current_css.push_str(&selector);
+                        current_css.push_str(selector);
                         current_css.push('{');
                         let mut first = true;
                         for prop in props {
@@ -665,7 +663,7 @@ impl StyleSheet {
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
-            let mut base_styles = BTreeMap::<u8, HashSet<StyleSheetProperty>>::new();
+            let mut base_styles = BTreeMap::<u8, FxHashSet<StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
                 style_orders.extend(map.iter().filter(|(_, v)| !v.is_empty()).map(|(k, _)| *k));
                 if let Some(_base_styles) = map.get(&0) {
@@ -673,7 +671,7 @@ impl StyleSheet {
                         base_styles
                             .entry(*prop.0)
                             .or_default()
-                            .extend(prop.1.clone());
+                            .extend(prop.1.iter().cloned());
                     });
                 }
             });
@@ -682,23 +680,29 @@ impl StyleSheet {
             // base style
 
             let theme_css = self.theme.to_css();
-            let mut layers_vec = Vec::new();
-            if style_orders.remove(&0) {
-                layers_vec.push("b".to_string());
-            }
-            if !theme_css.is_empty() {
-                layers_vec.push("t".to_string());
-            }
-            layers_vec.extend(style_orders.iter().map(|v| format!("o{v}")));
-            if !layers_vec.is_empty() {
+            let has_base = style_orders.remove(&0);
+            let has_theme = !theme_css.is_empty();
+            let has_orders = !style_orders.is_empty();
+            if has_base || has_theme || has_orders {
                 css.push_str("@layer ");
                 let mut first = true;
-                for layer in &layers_vec {
+                if has_base {
+                    css.push('b');
+                    first = false;
+                }
+                if has_theme {
+                    if !first {
+                        css.push(',');
+                    }
+                    css.push('t');
+                    first = false;
+                }
+                for v in &style_orders {
                     if !first {
                         css.push(',');
                     }
                     first = false;
-                    css.push_str(layer);
+                    write!(css, "o{v}").unwrap();
                 }
                 css.push(';');
             }
@@ -2043,7 +2047,7 @@ mod tests {
     #[test]
     fn test_update_styles() {
         let mut sheet = StyleSheet::default();
-        sheet.update_styles(&HashSet::new(), "index.tsx", true);
+        sheet.update_styles(&FxHashSet::default(), "index.tsx", true);
         assert_debug_snapshot!(
             sheet
                 .create_css(Some("index.tsx"), true)
@@ -2063,7 +2067,7 @@ mod tests {
         use extractor::extract_style::extract_style_value::ExtractStyleValue;
 
         let mut sheet = StyleSheet::default();
-        let mut styles = HashSet::new();
+        let mut styles = FxHashSet::default();
         styles.insert(ExtractStyleValue::Typography("$heading".to_string()));
         let (collected, updated) = sheet.update_styles(&styles, "index.tsx", true);
         // Typography doesn't collect or update

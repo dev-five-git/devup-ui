@@ -32,6 +32,8 @@ jobs:
             target/
           key: cargo-benchmark-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
         name: Install bun
 
       - name: Cache bun dependencies
@@ -76,6 +78,8 @@ jobs:
           key: cargo-publish-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
         name: Install bun
 
       - name: Cache bun dependencies

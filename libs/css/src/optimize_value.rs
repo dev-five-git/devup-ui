@@ -43,30 +43,34 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-        let r = c[1].parse::<i32>().unwrap();
-        let g = c[2].parse::<i32>().unwrap();
-        let b = c[3].parse::<i32>().unwrap();
-        let a = c[4].parse::<f32>().unwrap();
-        format!(
-            "#{:02X}{:02X}{:02X}{:02X}",
-            r,
-            g,
-            b,
-            (a * 255.0).round() as i32
-        )
-    });
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    if ret.contains("rgba(") {
+        let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            let a = c[4].parse::<f32>().unwrap();
+            format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                r,
+                g,
+                b,
+                (a * 255.0).round() as i32
+            )
+        });
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
-    let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-        let r = c[1].parse::<i32>().unwrap();
-        let g = c[2].parse::<i32>().unwrap();
-        let b = c[3].parse::<i32>().unwrap();
-        format!("#{r:02X}{g:02X}{b:02X}")
-    });
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    if ret.contains("rgb(") {
+        let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
+            let r = c[1].parse::<i32>().unwrap();
+            let g = c[2].parse::<i32>().unwrap();
+            let b = c[3].parse::<i32>().unwrap();
+            format!("#{r:02X}{g:02X}{b:02X}")
+        });
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
     if ret.contains('#') {
         let replaced =
@@ -89,31 +93,34 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
 
+        let mut lower = ret.to_lowercase();
         for f in ZERO_PERCENT_FUNCTION.iter() {
-            let tmp = ret.to_lowercase();
-            if tmp.contains(f) {
-                let index = tmp.find(f).unwrap() + f.len();
+            if let Some(start) = lower.find(f) {
+                let index = start + f.len();
                 let mut zero_idx = Vec::with_capacity(4);
-                let mut depth = 0;
-                let chars: Vec<char> = tmp.chars().collect();
-                let byte_indices: Vec<usize> = tmp.char_indices().map(|(i, _)| i).collect();
+                let mut depth: i32 = 0;
+                let bytes = lower.as_bytes();
 
-                for (char_idx, &ch) in chars.iter().enumerate().skip(index) {
-                    if ch == '(' {
-                        depth += 1;
-                    } else if ch == ')' {
-                        depth -= 1;
-                    } else if ch == '0'
-                        && (char_idx == 0 || !chars[char_idx - 1].is_ascii_digit())
-                        && (char_idx + 1 >= chars.len() || !chars[char_idx + 1].is_ascii_digit())
-                        && depth == 0
-                    {
-                        zero_idx.push(byte_indices[char_idx]);
+                for i in index..bytes.len() {
+                    match bytes[i] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        b'0' if depth == 0
+                            && (i == 0 || !bytes[i - 1].is_ascii_digit())
+                            && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
+                        {
+                            zero_idx.push(i);
+                        }
+                        _ => {}
                     }
                 }
                 // In-place replacement: replace each '0' with '0%' from back to front
                 for i in zero_idx.iter().rev() {
                     ret.replace_range(*i..*i + 1, "0%");
+                }
+                if !zero_idx.is_empty() {
+                    // Refresh lowercase only when modification occurred
+                    lower = ret.to_lowercase();
                 }
             }
         }
@@ -181,25 +188,35 @@ fn optimize_color(value: &str) -> String {
     let mut ret = value.to_uppercase();
 
     if ret.len() == 6 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] {
-            ret = format!("{}{}{}", ch[0], ch[2], ch[4]);
+        let b = ret.as_bytes();
+        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] {
+            let (c0, c2, c4) = (b[0], b[2], b[4]);
+            ret.clear();
+            ret.push(c0 as char);
+            ret.push(c2 as char);
+            ret.push(c4 as char);
         }
     } else if ret.len() == 8 {
-        let ch = ret.chars().collect::<Vec<char>>();
-        if ch[0] == ch[1] && ch[2] == ch[3] && ch[4] == ch[5] && ch[6] == ch[7] {
-            ret = format!("{}{}{}{}", ch[0], ch[2], ch[4], ch[6]);
-            if ret.ends_with("F") {
-                ret = ret[..ret.len() - 1].to_string();
+        let b = ret.as_bytes();
+        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] && b[6] == b[7] {
+            let (c0, c2, c4, c6) = (b[0], b[2], b[4], b[6]);
+            let has_trailing_f = c6 == b'F';
+            ret.clear();
+            ret.push(c0 as char);
+            ret.push(c2 as char);
+            ret.push(c4 as char);
+            if !has_trailing_f {
+                ret.push(c6 as char);
             }
         } else if ret.ends_with("FF") {
-            ret = ret[..ret.len() - 2].to_string();
+            ret.truncate(ret.len() - 2);
         }
-    } else if ret.len() == 4 && ret.ends_with("F") {
-        ret = ret[..ret.len() - 1].to_string();
+    } else if ret.len() == 4 && ret.ends_with('F') {
+        ret.truncate(ret.len() - 1);
     }
 
-    format!("#{ret}")
+    ret.insert(0, '#');
+    ret
 }
 
 #[cfg(test)]
