@@ -243,24 +243,14 @@ impl<'a> DevupVisitor<'a> {
             Expression::StaticMemberExpression(member) => {
                 if let Expression::Identifier(obj) = &member.object
                     && let Some(ns_map) = self.stylex_namespaces.get(obj.name.as_str())
-                    && let Some(ns_value) = ns_map.get(member.property.name.as_str())
+                    && let Some(StylexNamespaceValue::Static(cn)) =
+                        ns_map.get(member.property.name.as_str())
+                    && !cn.is_empty()
                 {
-                    match ns_value {
-                        StylexNamespaceValue::Static(cn) => {
-                            if cn.is_empty() {
-                                return None;
-                            }
-                            return Some(self.ast.expression_string_literal(
-                                SPAN,
-                                self.ast.atom(cn),
-                                None,
-                            ));
-                        }
-                        StylexNamespaceValue::Dynamic(_) => {
-                            // Dynamic namespaces must be called: styles.bar(h), not styles.bar
-                            return None;
-                        }
-                    }
+                    return Some(
+                        self.ast
+                            .expression_string_literal(SPAN, self.ast.atom(cn), None),
+                    );
                 }
                 None
             }
