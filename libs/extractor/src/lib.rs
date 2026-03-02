@@ -16226,4 +16226,77 @@ const composed = stylex.create({ test: { ...stylex.include(base.empty), color: '
             .unwrap()
         ));
     }
+
+    /// Dynamic namespace with bare expression body (not object): (x) => x
+    /// Covers: extract_style_from_stylex.rs ObjectExpression else branch
+    #[test]
+    #[serial]
+    fn test_stylex_dynamic_bare_expression_body() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => x });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Dynamic namespace with parenthesized non-object body: (x) => (x)
+    /// Covers: extract_style_from_stylex.rs ParenthesizedExpression unwrap + ObjectExpression else
+    #[test]
+    #[serial]
+    fn test_stylex_dynamic_paren_non_object_body() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => (x) });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    /// Include-only namespace with no own styles — class_name_str starts empty
+    /// Covers: visit.rs line 332 (class_name_str = included_class when empty)
+    #[test]
+    #[serial]
+    fn test_stylex_include_only_no_own_styles() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import stylex from '@stylexjs/stylex';
+const base = stylex.create({ root: { color: 'red' } });
+const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                },
+            )
+            .unwrap()
+        ));
+    }
 }

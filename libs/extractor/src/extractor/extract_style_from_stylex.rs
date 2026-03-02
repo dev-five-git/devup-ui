@@ -323,21 +323,22 @@ fn extract_stylex_dynamic_namespace<'a>(
     if !arrow.expression {
         return None;
     }
-    let stmt = arrow.body.statements.first()?;
-    let Statement::ExpressionStatement(expr_stmt) = stmt else {
-        return None;
-    };
-    // Handle both direct ObjectExpression and ParenthesizedExpression wrapping
-    let body_obj = match &expr_stmt.expression {
-        Expression::ObjectExpression(obj) => obj,
-        Expression::ParenthesizedExpression(paren) => {
-            if let Expression::ObjectExpression(obj) = &paren.expression {
-                obj
-            } else {
-                return None;
-            }
+    // Expression arrow body: Oxc always wraps in ExpressionStatement.
+    // Unwrap ParenthesizedExpression since Oxc preserves parens for `(x) => ({...})`.
+    let body_expr = arrow.body.statements.first().and_then(|stmt| {
+        if let Statement::ExpressionStatement(e) = stmt {
+            Some(&e.expression)
+        } else {
+            None
         }
-        _ => return None,
+    })?;
+    let inner = if let Expression::ParenthesizedExpression(paren) = body_expr {
+        &paren.expression
+    } else {
+        body_expr
+    };
+    let Expression::ObjectExpression(body_obj) = inner else {
+        return None;
     };
 
     // 3. Process each property
