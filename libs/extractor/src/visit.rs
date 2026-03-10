@@ -6,6 +6,7 @@ use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
 use crate::extractor::KeyframesExtractResult;
 use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
+use crate::extractor::extract_style_from_stylex::extract_stylex_namespace_styles;
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
@@ -13,8 +14,9 @@ use crate::extractor::{
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::extract_style_from_styled,
 };
-use crate::gen_class_name::gen_class_names;
+use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{modify_prop_object, modify_props};
+use crate::stylex::{StylexDynamicInfo, StylexFunction, StylexNamespaceValue};
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::disassemble_property;
@@ -26,7 +28,7 @@ use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
     Argument, BindingPattern, CallExpression, Expression, ImportDeclaration, ImportOrExportKind,
     JSXAttributeItem, JSXAttributeValue, JSXChild, JSXElement, ObjectPropertyKind, Program,
-    Statement, VariableDeclarator, WithClause,
+    PropertyKey, PropertyKind, Statement, VariableDeclarator, WithClause,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -57,6 +59,21 @@ pub struct DevupVisitor<'a> {
     pub css_files: Vec<String>,
     pub styles: FxHashSet<ExtractStyleValue>,
     styled_import: Option<String>,
+    /// Tracked StyleX default/namespace import name (e.g., `stylex` from `import stylex from '...'`)
+    stylex_import: Option<String>,
+    /// Tracked StyleX named imports (e.g., `create` from `import { create } from '...'`)
+    stylex_named_imports: FxHashMap<String, StylexFunction>,
+    /// Pending StyleX namespace map from the most recent stylex.create() call.
+    /// Set in visit_expression, consumed in visit_variable_declarator.
+    stylex_pending_create: Option<FxHashMap<String, StylexNamespaceValue>>,
+    /// Maps variable names to their namespace→className mappings from stylex.create().
+    /// e.g., "styles" → { "base" → "a b", "active" → "c" }
+    stylex_namespaces: FxHashMap<String, FxHashMap<String, StylexNamespaceValue>>,
+    /// Pending keyframe animation name from most recent stylex.keyframes() call.
+    stylex_pending_keyframe_name: Option<String>,
+    /// Maps variable names to their keyframe animation names.
+    /// e.g., "fadeIn" → "a-a"
+    stylex_keyframe_names: FxHashMap<String, String>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -80,6 +97,222 @@ impl<'a> DevupVisitor<'a> {
             util_imports: FxHashMap::default(),
             split_filename,
             styled_import: None,
+            stylex_import: None,
+            stylex_named_imports: FxHashMap::default(),
+            stylex_pending_create: None,
+            stylex_namespaces: FxHashMap::default(),
+            stylex_pending_keyframe_name: None,
+            stylex_keyframe_names: FxHashMap::default(),
+        }
+    }
+}
+
+impl<'a> DevupVisitor<'a> {
+    /// Check if a callee expression is a `stylex.create(...)` or named `create(...)` call.
+    fn is_stylex_create_call(&self, callee: &Expression) -> bool {
+        // Check namespace/default call: stylex.create(...)
+        if let Some(stylex_name) = &self.stylex_import
+            && let Expression::StaticMemberExpression(member) = callee
+            && let Expression::Identifier(ident) = &member.object
+            && ident.name.as_str() == stylex_name.as_str()
+            && member.property.name.as_str() == "create"
+        {
+            return true;
+        }
+        // Check named import call: create(...)
+        if let Expression::Identifier(ident) = callee
+            && let Some(StylexFunction::Create) = self.stylex_named_imports.get(ident.name.as_str())
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Check if a callee expression is a `stylex.props(...)` or named `props(...)` call.
+    fn is_stylex_props_call(&self, callee: &Expression) -> bool {
+        // Check namespace/default call: stylex.props(...)
+        if let Some(stylex_name) = &self.stylex_import
+            && let Expression::StaticMemberExpression(member) = callee
+            && let Expression::Identifier(ident) = &member.object
+            && ident.name.as_str() == stylex_name.as_str()
+            && member.property.name.as_str() == "props"
+        {
+            return true;
+        }
+        // Check named import call: props(...)
+        if let Expression::Identifier(ident) = callee
+            && let Some(StylexFunction::Props) = self.stylex_named_imports.get(ident.name.as_str())
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Check if a callee is stylex.keyframes() or named keyframes() call.
+    fn is_stylex_keyframes_call(&self, callee: &Expression) -> bool {
+        if let Some(stylex_name) = &self.stylex_import
+            && let Expression::StaticMemberExpression(member) = callee
+            && let Expression::Identifier(ident) = &member.object
+            && ident.name.as_str() == stylex_name.as_str()
+            && member.property.name.as_str() == "keyframes"
+        {
+            return true;
+        }
+        if let Expression::Identifier(ident) = callee
+            && let Some(StylexFunction::Keyframes) =
+                self.stylex_named_imports.get(ident.name.as_str())
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Resolve stylex.props() arguments to className expressions and style properties.
+    /// Returns (class_exprs, style_props) where style_props are CSS variable assignments
+    /// from dynamic namespace calls like `styles.bar(h)`.
+    fn resolve_stylex_props_args(
+        &self,
+        arguments: &mut oxc_allocator::Vec<'a, Argument<'a>>,
+    ) -> (Vec<Expression<'a>>, Vec<ObjectPropertyKind<'a>>) {
+        let mut class_exprs: Vec<Expression<'a>> = vec![];
+        let mut style_props: Vec<ObjectPropertyKind<'a>> = vec![];
+
+        for arg in arguments.iter() {
+            let expr = arg.to_expression();
+            // Check for dynamic namespace call first: styles.bar(h)
+            if let Expression::CallExpression(call) = expr
+                && let Some((class_expr, props)) = self.resolve_stylex_dynamic_call(call)
+            {
+                class_exprs.push(class_expr);
+                style_props.extend(props);
+                continue;
+            }
+            if let Some(class_expr) = self.resolve_stylex_arg(expr) {
+                class_exprs.push(class_expr);
+            }
+        }
+
+        (class_exprs, style_props)
+    }
+
+    /// Resolve a dynamic namespace call like `styles.bar(h)` to (className, style_props).
+    fn resolve_stylex_dynamic_call(
+        &self,
+        call: &CallExpression<'a>,
+    ) -> Option<(Expression<'a>, Vec<ObjectPropertyKind<'a>>)> {
+        if let Expression::StaticMemberExpression(member) = &call.callee
+            && let Expression::Identifier(obj) = &member.object
+            && let Some(ns_map) = self.stylex_namespaces.get(obj.name.as_str())
+            && let Some(StylexNamespaceValue::Dynamic(info)) =
+                ns_map.get(member.property.name.as_str())
+        {
+            let class_expr =
+                self.ast
+                    .expression_string_literal(SPAN, self.ast.atom(&info.class_name), None);
+
+            let mut props = vec![];
+            for (param_idx, var_name) in &info.css_vars {
+                if let Some(arg) = call.arguments.get(*param_idx) {
+                    let arg_expr = arg.to_expression().clone_in(self.ast.allocator);
+                    props.push(self.ast.object_property_kind_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        PropertyKey::StringLiteral(self.ast.alloc_string_literal(
+                            SPAN,
+                            self.ast.atom(var_name),
+                            None,
+                        )),
+                        arg_expr,
+                        false,
+                        false,
+                        false,
+                    ));
+                }
+            }
+
+            Some((class_expr, props))
+        } else {
+            None
+        }
+    }
+
+    /// Resolve a single stylex.props() argument to a className expression.
+    fn resolve_stylex_arg(&self, expr: &Expression<'a>) -> Option<Expression<'a>> {
+        match expr {
+            // styles.base → StaticMemberExpression
+            Expression::StaticMemberExpression(member) => {
+                if let Expression::Identifier(obj) = &member.object
+                    && let Some(ns_map) = self.stylex_namespaces.get(obj.name.as_str())
+                    && let Some(StylexNamespaceValue::Static(cn)) =
+                        ns_map.get(member.property.name.as_str())
+                    && !cn.is_empty()
+                {
+                    return Some(
+                        self.ast
+                            .expression_string_literal(SPAN, self.ast.atom(cn), None),
+                    );
+                }
+                None
+            }
+            // isActive && styles.active → LogicalExpression(And)
+            Expression::LogicalExpression(logical)
+                if logical.operator == oxc_ast::ast::LogicalOperator::And =>
+            {
+                // The right side should be the namespace reference
+                if let Some(class_expr) = self.resolve_stylex_arg(&logical.right) {
+                    // Build: condition ? " className" : ""
+                    let condition = logical.left.clone_in(self.ast.allocator);
+                    Some(self.ast.expression_conditional(
+                        SPAN,
+                        condition,
+                        class_expr,
+                        self.ast.expression_string_literal(SPAN, "", None),
+                    ))
+                } else {
+                    None
+                }
+            }
+            // cond ? styles.a : styles.b → ConditionalExpression
+            Expression::ConditionalExpression(cond) => {
+                let consequent = self.resolve_stylex_arg(&cond.consequent);
+                let alternate = self.resolve_stylex_arg(&cond.alternate);
+                match (consequent, alternate) {
+                    (Some(cons), Some(alt)) => {
+                        let test = cond.test.clone_in(self.ast.allocator);
+                        Some(self.ast.expression_conditional(SPAN, test, cons, alt))
+                    }
+                    (Some(cons), None) => {
+                        let test = cond.test.clone_in(self.ast.allocator);
+                        Some(self.ast.expression_conditional(
+                            SPAN,
+                            test,
+                            cons,
+                            self.ast.expression_string_literal(SPAN, "", None),
+                        ))
+                    }
+                    (None, Some(alt)) => {
+                        let test = cond.test.clone_in(self.ast.allocator);
+                        Some(self.ast.expression_conditional(
+                            SPAN,
+                            self.ast.expression_unary(
+                                SPAN,
+                                oxc_ast::ast::UnaryOperator::LogicalNot,
+                                test,
+                            ),
+                            alt,
+                            self.ast.expression_string_literal(SPAN, "", None),
+                        ))
+                    }
+                    (None, None) => None,
+                }
+            }
+            // false, null, undefined, 0, "" → falsy, skip
+            Expression::BooleanLiteral(b) if !b.value => None,
+            Expression::NullLiteral(_) => None,
+            Expression::NumericLiteral(n) if n.value == 0.0 => None,
+            Expression::StringLiteral(s) if s.value.is_empty() => None,
+            // Anything else we can't resolve → skip
+            _ => None,
         }
     }
 }
@@ -177,6 +410,151 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .extend(result.styles.into_iter().flat_map(|ex| ex.extract()));
                 *it = new_expr;
             }
+        }
+
+        // Handle StyleX: stylex.create({...}) calls
+        if let Expression::CallExpression(call) = it
+            && self.is_stylex_create_call(&call.callee)
+            && call.arguments.len() == 1
+        {
+            let arg = call.arguments[0].to_expression_mut();
+            let namespaces =
+                extract_stylex_namespace_styles(&self.ast, arg, &self.stylex_keyframe_names);
+
+            let mut namespace_map: FxHashMap<String, StylexNamespaceValue> = FxHashMap::default();
+            let mut properties = oxc_allocator::Vec::new_in(self.ast.allocator);
+            for (ns_name, mut styles, css_vars, include_refs) in namespaces {
+                let class_name =
+                    gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
+                self.styles
+                    .extend(styles.into_iter().flat_map(|ex| ex.extract()));
+
+                // Extract className string for props() resolution
+                let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
+                    if let Expression::StringLiteral(s) = expr {
+                        s.value.to_string()
+                    } else {
+                        String::new()
+                    }
+                });
+
+                // Resolve include() references — prepend included classNames
+                for inc_ref in &include_refs {
+                    if let Some(ns) = self.stylex_namespaces.get(&inc_ref.var_name)
+                        && let Some(ns_value) = ns.get(&inc_ref.member_name)
+                    {
+                        let included_class = match ns_value {
+                            StylexNamespaceValue::Static(s) => s.clone(),
+                            StylexNamespaceValue::Dynamic(info) => info.class_name.clone(),
+                        };
+                        if !included_class.is_empty() {
+                            if class_name_str.is_empty() {
+                                class_name_str = included_class;
+                            } else {
+                                class_name_str = format!("{} {}", included_class, class_name_str);
+                            }
+                        }
+                    }
+                }
+
+                let ns_value = if let Some(vars) = css_vars {
+                    StylexNamespaceValue::Dynamic(StylexDynamicInfo {
+                        class_name: class_name_str.clone(),
+                        css_vars: vars,
+                    })
+                } else {
+                    StylexNamespaceValue::Static(class_name_str.clone())
+                };
+                namespace_map.insert(ns_name.clone(), ns_value);
+
+                // If include refs changed the className, use the combined string
+                let value = if !include_refs.is_empty() && !class_name_str.is_empty() {
+                    self.ast
+                        .expression_string_literal(SPAN, self.ast.atom(&class_name_str), None)
+                } else {
+                    class_name.unwrap_or_else(|| {
+                        self.ast
+                            .expression_string_literal(SPAN, self.ast.atom(""), None)
+                    })
+                };
+
+                properties.push(self.ast.object_property_kind_object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StringLiteral(self.ast.alloc_string_literal(
+                        SPAN,
+                        self.ast.atom(&ns_name),
+                        None,
+                    )),
+                    value,
+                    false,
+                    false,
+                    false,
+                ));
+            }
+
+            self.stylex_pending_create = Some(namespace_map);
+            *it = self.ast.expression_object(SPAN, properties);
+        }
+
+        // Handle StyleX: stylex.keyframes({...}) calls
+        if let Expression::CallExpression(call) = it
+            && self.is_stylex_keyframes_call(&call.callee)
+            && call.arguments.len() == 1
+        {
+            let arg = call.arguments[0].to_expression_mut();
+            let KeyframesExtractResult { keyframes } =
+                extract_keyframes_from_expression(&self.ast, arg);
+            let name = keyframes
+                .extract(self.split_filename.as_deref())
+                .to_string();
+            self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
+            self.stylex_pending_keyframe_name = Some(name.clone());
+            *it = self
+                .ast
+                .expression_string_literal(SPAN, self.ast.atom(&name), None);
+        }
+
+        // Handle StyleX: stylex.props(...) calls
+        if let Expression::CallExpression(call) = it
+            && self.is_stylex_props_call(&call.callee)
+        {
+            let (class_exprs, style_props) = self.resolve_stylex_props_args(&mut call.arguments);
+
+            // Build className expression using existing merge utility
+            let class_name_expr = merge_expression_for_class_name(&self.ast, class_exprs)
+                .unwrap_or_else(|| self.ast.expression_string_literal(SPAN, "", None));
+
+            // Build replacement: { className: <expr>, style?: { ... } }
+            let mut props = oxc_allocator::Vec::new_in(self.ast.allocator);
+            props.push(self.ast.object_property_kind_object_property(
+                SPAN,
+                PropertyKind::Init,
+                PropertyKey::StaticIdentifier(self.ast.alloc_identifier_name(SPAN, "className")),
+                class_name_expr,
+                false,
+                false,
+                false,
+            ));
+
+            // Add style property for dynamic CSS variables
+            if !style_props.is_empty() {
+                let style_obj = self.ast.expression_object(
+                    SPAN,
+                    oxc_allocator::Vec::from_iter_in(style_props, self.ast.allocator),
+                );
+                props.push(self.ast.object_property_kind_object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StaticIdentifier(self.ast.alloc_identifier_name(SPAN, "style")),
+                    style_obj,
+                    false,
+                    false,
+                    false,
+                ));
+            }
+
+            *it = self.ast.expression_object(SPAN, props);
         }
 
         if let Expression::CallExpression(call) = it {
@@ -553,6 +931,30 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         walk_variable_declarator(self, it);
+
+        // Phase 4c: Check for destructuring of stylex.create()
+        if self.stylex_pending_create.is_some() && it.id.get_binding_identifier().is_none() {
+            eprintln!(
+                "[stylex] ERROR: Destructuring stylex.create() is not supported. Assign the result to a single variable (e.g., `const styles = stylex.create({{...}})`)."
+            );
+            self.stylex_pending_create.take();
+        }
+
+        // After walking, capture stylex.create() variable binding
+        if let Some(pending) = self.stylex_pending_create.take()
+            && let Some(ident) = it.id.get_binding_identifier()
+        {
+            self.stylex_namespaces
+                .insert(ident.name.to_string(), pending);
+        }
+
+        // Capture stylex.keyframes() variable binding
+        if let Some(name) = self.stylex_pending_keyframe_name.take()
+            && let Some(ident) = it.id.get_binding_identifier()
+        {
+            self.stylex_keyframe_names
+                .insert(ident.name.to_string(), name);
+        }
     }
     fn visit_import_declaration(&mut self, it: &mut ImportDeclaration<'a>) {
         if it.source.value != self.package
@@ -620,6 +1022,36 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             format!("{}.{}", import_namespace_specifier.local, "globalCss"),
                             Rc::new(UtilType::GlobalCss),
                         );
+                    }
+                }
+            }
+        } else if it.source.value == "@stylexjs/stylex" {
+            if let Some(specifiers) = &it.specifiers {
+                for specifier in specifiers {
+                    match specifier {
+                        ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
+                            self.stylex_import = Some(default_spec.local.name.to_string());
+                        }
+                        ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
+                            self.stylex_import = Some(ns_spec.local.name.to_string());
+                        }
+                        ImportSpecifier(named_spec) => {
+                            let imported = named_spec.imported.to_string();
+                            let local = named_spec.local.name.to_string();
+                            let func = match imported.as_str() {
+                                "create" => Some(StylexFunction::Create),
+                                "props" => Some(StylexFunction::Props),
+                                "keyframes" => Some(StylexFunction::Keyframes),
+                                "firstThatWorks" => Some(StylexFunction::FirstThatWorks),
+                                "defineVars" => Some(StylexFunction::DefineVars),
+                                "createTheme" => Some(StylexFunction::CreateTheme),
+                                "include" => Some(StylexFunction::Include),
+                                _ => None,
+                            };
+                            if let Some(func) = func {
+                                self.stylex_named_imports.insert(local, func);
+                            }
+                        }
                     }
                 }
             }
