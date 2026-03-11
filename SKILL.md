@@ -5,11 +5,13 @@ description: |
 
   TRIGGER WHEN:
   - Writing/modifying Devup UI components (Box, Flex, Grid, Text, Button, etc.)
-  - Using styling APIs: css(), styled(), globalCss(), keyframes()
-  - Configuring devup.json theme (colors, typography)
+  - Using styling APIs: css(), globalCss(), keyframes()
+  - Configuring devup.json theme (colors, typography, extends)
   - Setting up build plugins (Vite, Next.js, Webpack, Rsbuild, Bun)
   - Debugging "Cannot run on the runtime" errors
-  - Working with responsive arrays or pseudo-selectors (_hover, _dark, etc.)
+  - Working with responsive arrays, pseudo-selectors (_hover, _dark, etc.)
+  - Using polymorphic `as` prop or `selectors` prop
+  - Working with @devup-ui/components (Button, Input, Select, Toggle, etc.)
 ---
 
 # Devup UI
@@ -18,7 +20,7 @@ Build-time CSS extraction. No runtime JS for styling.
 
 ## Critical: Components Are Compile-Time Only
 
-All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Cannot run on the runtime')`. They are **placeholders** that build plugins transform to `<div className="...">`.
+All `@devup-ui/react` components throw `Error('Cannot run on the runtime')`. They are **placeholders** that build plugins transform to native HTML elements with classNames.
 
 ```tsx
 // BEFORE BUILD (what you write):
@@ -28,23 +30,120 @@ All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Can
 <div className="a b c" />  // + CSS: .a{background:red} .b{padding:16px} .c:hover{background:blue}
 ```
 
+## Components
+
+### @devup-ui/react (Layout Primitives)
+
+All are polymorphic (accept `as` prop). Default element is `<div>` unless noted.
+
+| Component | Default Element | Purpose |
+|-----------|----------------|---------|
+| `Box` | `div` | Base layout primitive, accepts all style props |
+| `Flex` | `div` | Flexbox container (shorthand for `display: flex`) |
+| `Grid` | `div` | CSS Grid container |
+| `VStack` | `div` | Vertical stack (flex column) |
+| `Center` | `div` | Centered content |
+| `Text` | `p` | Text/typography |
+| `Image` | `img` | Image element |
+| `Input` | `input` | Input element |
+| `Button` | `button` | Button element |
+| `ThemeScript` | -- | SSR theme hydration (add to `<head>`) |
+
+### @devup-ui/components (Pre-built UI)
+
+Higher-level components with built-in behavior. These are **runtime components** (not compile-time only).
+
+| Component | Key Props |
+|-----------|-----------|
+| `Button` | `variant` (`primary`/`default`), `size` (`sm`/`md`/`lg`), `loading`, `danger`, `icon`, `colors` |
+| `Checkbox` | `children` (label), `onChange(checked)`, `colors` |
+| `Input` | `error`, `errorMessage`, `allowClear`, `icon`, `typography`, `colors` |
+| `Textarea` | `error`, `errorMessage`, `typography`, `colors` |
+| `Radio` | `variant` (`default`/`button`), `colors` |
+| `RadioGroup` | `options[]`, `direction` (`row`/`column`), `variant`, `value`, `onChange` |
+| `Toggle` | `variant` (`default`/`switch`), `value`, `onChange(boolean)`, `colors` |
+| `Select` | `type` (`default`/`radio`/`checkbox`), `options[]`, `value`, `onChange`, `colors` |
+| `Stepper` | `min`, `max`, `type` (`input`/`text`), `value`, `onValueChange` |
+
+**Select compound:** `SelectTrigger`, `SelectContainer`, `SelectOption`, `SelectDivider`
+**Stepper compound:** `StepperContainer`, `StepperDecreaseButton`, `StepperIncreaseButton`, `StepperInput`
+**Hooks:** `useSelect()`, `useStepper()`
+
+All components accept a `colors` prop object for runtime color customization via CSS variables.
+
 ## Style Prop Syntax
 
-### Shorthands (ALWAYS use these)
+### Shorthand Props (ALWAYS prefer these)
 
-| Short | Full | Short | Full |
-|-------|------|-------|------|
-| `bg` | background | `m`, `mt`, `mr`, `mb`, `ml`, `mx`, `my` | margin-* |
-| `p`, `pt`, `pr`, `pb`, `pl`, `px`, `py` | padding-* | `w`, `h` | width, height |
-| `minW`, `maxW`, `minH`, `maxH` | min/max width/height | `boxSize` | width + height (same value) |
-| `gap` | gap | | |
+**Spacing (unitless number x 4 = px)**
 
-### Spacing Scale (× 4 = px)
+| Shorthand | CSS Property |
+|-----------|-------------|
+| `m`, `mt`, `mr`, `mb`, `ml`, `mx`, `my` | margin-* |
+| `p`, `pt`, `pr`, `pb`, `pl`, `px`, `py` | padding-* |
+
+**Sizing**
+
+| Shorthand | CSS Property |
+|-----------|-------------|
+| `w` | width |
+| `h` | height |
+| `minW`, `maxW` | min-width, max-width |
+| `minH`, `maxH` | min-height, max-height |
+| `boxSize` | width + height (same value) |
+
+**Background**
+
+| Shorthand | CSS Property |
+|-----------|-------------|
+| `bg` | background |
+| `bgColor` | background-color |
+| `bgImage`, `bgImg`, `backgroundImg` | background-image |
+| `bgSize` | background-size |
+| `bgPosition`, `bgPos` | background-position |
+| `bgPositionX`, `bgPosX` | background-position-x |
+| `bgPositionY`, `bgPosY` | background-position-y |
+| `bgRepeat` | background-repeat |
+| `bgAttachment` | background-attachment |
+| `bgClip` | background-clip |
+| `bgOrigin` | background-origin |
+| `bgBlendMode` | background-blend-mode |
+
+**Border**
+
+| Shorthand | CSS Property |
+|-----------|-------------|
+| `borderTopRadius` | border-top-left-radius + border-top-right-radius |
+| `borderBottomRadius` | border-bottom-left-radius + border-bottom-right-radius |
+| `borderLeftRadius` | border-top-left-radius + border-bottom-left-radius |
+| `borderRightRadius` | border-top-right-radius + border-bottom-right-radius |
+
+**Layout & Position**
+
+| Shorthand | CSS Property |
+|-----------|-------------|
+| `flexDir` | flex-direction |
+| `pos` | position |
+| `positioning` | Helper: `"top"`, `"bottom-right"`, etc. (sets edges to 0) |
+| `objectPos` | object-position |
+| `offsetPos` | offset-position |
+| `maskPos` | mask-position |
+| `maskImg` | mask-image |
+
+**Typography**
+
+| Shorthand | Effect |
+|-----------|--------|
+| `typography` | Applies theme typography token (fontFamily, fontSize, fontWeight, lineHeight, letterSpacing) |
+
+All standard CSS properties from `csstype` are also accepted directly (e.g., `display`, `gap`, `opacity`, `transform`, `animation`, etc.).
+
+### Spacing Scale (unitless number x 4 = px)
 
 ```tsx
 <Box p={1} />    // padding: 4px
 <Box p={4} />    // padding: 16px
-<Box p="4" />    // padding: 16px (unitless string also × 4)
+<Box p="4" />    // padding: 16px (unitless string also x 4)
 <Box p="20px" /> // padding: 20px (with unit = exact value)
 ```
 
@@ -65,11 +164,58 @@ All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Can
 <Box
   _hover={{ bg: "blue" }}
   _focus={{ outline: "2px solid blue" }}
+  _focusVisible={{ outlineColor: "$primary" }}
   _active={{ bg: "darkblue" }}
-  _dark={{ bg: "gray.800" }}   // theme variant
+  _disabled={{ opacity: 0.5 }}
   _before={{ content: '""' }}
+  _after={{ content: '""' }}
   _firstChild={{ mt: 0 }}
+  _lastChild={{ mb: 0 }}
+  _placeholder={{ color: "gray" }}
 />
+```
+
+All CSS pseudo-classes and pseudo-elements from `csstype` are supported with `_camelCase` naming.
+
+### Group Selectors
+
+Style children based on parent state:
+
+```tsx
+<Box _groupHover={{ color: "blue" }} />
+<Box _groupFocus={{ outline: "2px solid" }} />
+<Box _groupActive={{ bg: "darkblue" }} />
+```
+
+### Theme Selectors
+
+```tsx
+<Box _themeDark={{ bg: "gray.900" }} />
+<Box _themeLight={{ bg: "white" }} />
+```
+
+### At-Rules (Media, Container, Supports)
+
+```tsx
+// Underscore prefix syntax
+<Box _print={{ display: "none" }} />
+<Box _screen={{ display: "block" }} />
+<Box _media={{ "(min-width: 768px)": { w: "50%" } }} />
+<Box _container={{ "(min-width: 400px)": { p: 4 } }} />
+<Box _supports={{ "(display: grid)": { display: "grid" } }} />
+
+// @ prefix syntax (equivalent)
+<Box {...{ "@media": { "(min-width: 768px)": { w: "50%" } } }} />
+```
+
+### Custom Selectors
+
+```tsx
+<Box selectors={{
+  "&:hover": { color: "red" },
+  "&::before": { content: '">"' },
+  "&:nth-child(2n)": { bg: "gray" },
+}} />
 ```
 
 ### Dynamic Values = CSS Variables
@@ -85,20 +231,49 @@ All `@devup-ui/react` components (`Box`, `Flex`, `Text`, etc.) throw `Error('Can
 <Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
 ```
 
-### Dynamic Values with Custom Components
-
-`css()` only accepts **static values** (extracted at build time). For dynamic values on custom components, use `<Box as={Component}>`:
+### Responsive + Pseudo Combined
 
 ```tsx
-// WRONG - css() cannot handle dynamic values
-const MyComponent = ({ width }) => (
-  <CustomComponent className={css({ w: width })} />  // ERROR: width is dynamic!
-);
+<Box _hover={{ bg: ['red', 'blue'] }} />
+// Alternative syntax:
+<Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
+```
 
-// CORRECT - use Box with `as` prop for dynamic values
-const MyComponent = ({ width }) => (
-  <Box as={CustomComponent} w={width} />  // Works: generates CSS variable
-);
+## Special Props
+
+### `as` (Polymorphic Element)
+
+Changes the rendered HTML element or renders a custom component:
+
+```tsx
+<Box as="section" bg="gray" />         // renders <section>
+<Box as="a" href="/about" />           // renders <a>
+<Box as={MyComponent} bg="red" />      // renders <MyComponent> with extracted styles
+<Box as={b ? "div" : "section"} />     // conditional element type
+```
+
+### `props` (Pass-Through to `as` Component)
+
+When `as` is a custom component, use `props` to pass component-specific props:
+
+```tsx
+<Box as={MotionDiv} w="100%" props={{ animate: { duration: 1 } }} />
+```
+
+### `styleVars` (Manual CSS Variable Injection)
+
+```tsx
+<Box styleVars={{ "--custom-color": dynamicValue }} bg="var(--custom-color)" />
+```
+
+### `styleOrder` (CSS Cascade Priority)
+
+Controls specificity when combining `className` with direct props. **Required** when mixing `css()` classNames with inline style props.
+
+```tsx
+<Box className={cardStyle} bg="$background" styleOrder={1} />
+// Conditional styleOrder
+<Box bg="red" styleOrder={isActive ? 1 : 0} />
 ```
 
 ## Styling APIs
@@ -106,95 +281,138 @@ const MyComponent = ({ width }) => (
 ### css() Returns className String (NOT object)
 
 ```tsx
-import { css, styled, globalCss, keyframes } from "@devup-ui/react";
+import { css, globalCss, keyframes } from "@devup-ui/react";
 import clsx from "clsx";
 
-// css() returns a className STRING - use with className prop
+// css() returns a className STRING
 const cardStyle = css({ bg: "white", p: 4, borderRadius: "8px" });
-<Box className={cardStyle} />  // CORRECT
+<div className={cardStyle} />
 
-// WRONG - css() is NOT an object to spread
-// <Box {...cardStyle} />  // ERROR!
-
-// Combine multiple styles with clsx
+// Combine with clsx
 const baseStyle = css({ p: 4, borderRadius: "8px" });
 const activeStyle = css({ bg: "$primary", color: "white" });
 <Box className={clsx(baseStyle, isActive && activeStyle)} styleOrder={1} />
-
-// styleOrder={1} REQUIRED when mixing className with direct props
-<Box className={cardStyle} bg="$background" styleOrder={1} />
-```
-
-### styled() API
-
-```tsx
-// Styled component (familiar styled-components/Emotion API)
-const Card = styled("div", { bg: "white", p: 4, _hover: { shadow: "lg" } });
 ```
 
 ### globalCss() and keyframes()
 
 ```tsx
-// Global styles
 globalCss({ body: { margin: 0 }, "*": { boxSizing: "border-box" } });
 
-// Keyframes
 const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rotate(360deg)" } });
 <Box animation={`${spin} 1s linear infinite`} />
+```
+
+### Dynamic Values with Custom Components
+
+`css()` only accepts **static values**. For dynamic values on custom components, use `<Box as={Component}>`:
+
+```tsx
+// WRONG - css() cannot handle dynamic values
+<CustomComponent className={css({ w: width })} />
+
+// CORRECT - Box with as prop handles dynamic values via CSS variables
+<Box as={CustomComponent} w={width} />
 ```
 
 ## Theme (devup.json)
 
 ```json
 {
+  "extends": ["./base-theme.json"],
   "theme": {
     "colors": {
-      "default": { "primary": "#0070f3", "text": "#000" },
-      "dark": { "primary": "#3291ff", "text": "#fff" }
+      "default": { "primary": "#0070f3", "text": "#000", "bg": "#fff" },
+      "dark": { "primary": "#3291ff", "text": "#fff", "bg": "#111" }
     },
     "typography": {
-      "heading": { "fontFamily": "Pretendard", "fontSize": "24px", "fontWeight": 700 }
+      "heading": {
+        "fontFamily": "Pretendard",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "lineHeight": 1.3,
+        "letterSpacing": "-0.02em"
+      },
+      "body": [
+        { "fontSize": "14px", "lineHeight": 1.5 },
+        null,
+        { "fontSize": "16px", "lineHeight": 1.6 }
+      ]
     }
   }
 }
 ```
 
-Use colors with `$` prefix: `<Box color="$primary" />`
-Use typography without prefix: `<Box typography="heading" />`
+- **Colors**: Use with `$` prefix in JSX props: `<Box color="$primary" />`
+- **Typography**: Use with `$` prefix: `<Text typography="$heading" />`
+- **extends**: Inherit from base config files (deep merge, last wins)
+- **Responsive typography**: Use arrays with `null` for unchanged breakpoints
 
-Theme API:
+Theme types are auto-generated via module augmentation of `DevupTheme` and `DevupThemeTypography`.
+
+### Theme API
+
 ```tsx
 import { useTheme, setTheme, getTheme, initTheme, ThemeScript } from "@devup-ui/react";
-setTheme("dark");        // switch theme
-const theme = useTheme(); // hook for current theme
-<ThemeScript />          // SSR hydration (add to <head>)
+
+setTheme("dark");             // Switch theme (sets data-theme + localStorage)
+const theme = getTheme();     // Get current theme name
+const theme = useTheme();     // React hook (reactive)
+initTheme();                  // Initialize on startup (auto-detect system preference)
+<ThemeScript />               // SSR hydration script (add to <head>, prevents FOUC)
 ```
 
 ## Build Plugin Setup
 
+### Vite
+
 ```ts
-// vite.config.ts
 import DevupUI from "@devup-ui/vite-plugin";
 export default defineConfig({ plugins: [react(), DevupUI()] });
+```
 
-// next.config.ts
+### Next.js
+
+```ts
 import { DevupUI } from "@devup-ui/next-plugin";
-export default DevupUI({
-  // Next.js config here
-});
+export default DevupUI({ /* Next.js config */ });
+```
 
-// rsbuild.config.ts
+### Rsbuild
+
+```ts
 import DevupUI from "@devup-ui/rsbuild-plugin";
 export default defineConfig({ plugins: [DevupUI()] });
 ```
 
-Options:
-- `singleCss: true` - single CSS file (recommended for Turbopack)
-- `include: ["@devup/hello"]` - process external libraries that use @devup-ui internally
+### Webpack
 
 ```ts
-// When using external library that uses @devup-ui (e.g. @devup/hello)
-DevupUI({ include: ["@devup/hello"] })  // required to extract and merge their styles
+import { DevupUIWebpackPlugin } from "@devup-ui/webpack-plugin";
+// Add to plugins array
+```
+
+### Bun
+
+```ts
+import { plugin } from "@devup-ui/bun-plugin";
+// Auto-registers, always uses singleCss: true
+```
+
+### Plugin Options
+
+```ts
+DevupUI({
+  singleCss: true,           // Single CSS file (recommended for Turbopack)
+  include: ["@devup/hello"],  // Process external libs using @devup-ui
+  prefix: "du",              // Class name prefix (e.g., "du-a" instead of "a")
+  debug: true,               // Enable debug logging
+  importAliases: {           // Redirect imports from other CSS-in-JS libs
+    "@emotion/styled": "styled",        // default: enabled
+    "styled-components": "styled",      // default: enabled
+    "@vanilla-extract/css": true,       // default: enabled
+  },
+})
 ```
 
 ## $color Token Scope
@@ -204,15 +422,15 @@ DevupUI({ include: ["@devup/hello"] })  // required to extract and merge their s
 ```tsx
 // CORRECT - $color in JSX prop
 <Box bg="$primary" />
-<Box bg={{ active: '$primary', inactive: '$gray' }[status]} />  // inline object OK
+<Box bg={{ active: '$primary', inactive: '$gray' }[status]} />
 
 // WRONG - $color in external object (won't be transformed)
-const colors = { active: '$primary' }  // '$primary' stays as string literal
+const colors = { active: '$primary' }
 <Box bg={colors.active} />  // broken!
 
 // CORRECT - var(--color) in external object
 const colors = { active: 'var(--primary)' }
-<Box bg={colors.active} />  // works
+<Box bg={colors.active} />
 ```
 
 ## Inline Variant Pattern (Preferred)
@@ -220,15 +438,15 @@ const colors = { active: 'var(--primary)' }
 Use inline object indexing instead of external config objects:
 
 ```tsx
-// PREFERRED - inline object indexing
+// PREFERRED - inline object indexing (build-time extractable)
 <Box
   h={{ lg: '48px', md: '40px', sm: '32px' }[size]}
   bg={{ primary: '$primary', secondary: '$gray100' }[variant]}
 />
 
-// AVOID - external config object
+// AVOID - external config object (becomes dynamic, uses CSS variables)
 const sizeStyles = { lg: { h: '48px' }, md: { h: '40px' } }
-<Box h={sizeStyles[size].h} />  // unnecessary indirection
+<Box h={sizeStyles[size].h} />
 ```
 
 ## Anti-Patterns (NEVER do)
@@ -241,3 +459,9 @@ const sizeStyles = { lg: { h: '48px' }, md: { h: '40px' } }
 | `$color` in external object | `var(--color)` in external object | $color only transformed in JSX props |
 | No build plugin configured | Configure plugin first | Components throw at runtime without transformation |
 | `as any` on style props | Fix types properly | Type errors indicate real issues |
+| `@ts-ignore` / `@ts-expect-error` | Fix the type issue | Suppression hides real problems |
+| `background="red"` | `bg="red"` | Always use shorthands |
+| `padding={4}` | `p={4}` | Always use shorthands |
+| `width="100%"` | `w="100%"` | Always use shorthands |
+| `styled("div", {...})` | `<Box bg="red" />` | Use Box component with props, not styled() |
+| `stylex.create({...})` | `<Box bg="red" />` | Use Box component with props, not stylex |

@@ -4160,6 +4160,63 @@ import clsx from 'clsx'
             )
             .unwrap()
         ));
+
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Text} from '@devup-ui/core'
+        <Text
+            typography={({
+                lg: "buttonLg",
+                md: "button",
+                sm: "buttonSm",
+                tag: "tag"
+            } as const)[size]}
+        >
+            {children}
+        </Text>
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        // ParenthesizedExpression wrapping object in computed member
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Text} from '@devup-ui/core'
+        <Text
+            typography={({
+                lg: "buttonLg",
+                md: "button",
+                sm: "buttonSm",
+                tag: "tag"
+            })[size]}
+        >
+            {children}
+        </Text>
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]
@@ -4779,6 +4836,66 @@ export default function Card({
             )
             .unwrap()
         ));
+
+        // Array with spread + numeric index (spread captured, element found after spread)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Flex } from "@devup-ui/core";
+<Flex opacity={[...arr, 1][1]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Array with spread + numeric index out of range (etc Some fallback)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Flex } from "@devup-ui/core";
+<Flex opacity={[...arr, 1][5]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Array with spread + dynamic index
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Flex } from "@devup-ui/core";
+<Flex opacity={[...arr, 1][idx]} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
     }
     #[test]
     #[serial]
@@ -4984,6 +5101,26 @@ export default function Card({
                 "test.jsx",
                 r#"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[1]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Object with spread + string literal key not matching (etc Some fallback)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Flex} from '@devup-ui/core'
+        <Flex opacity={{...rest, a:1, b:0.5}["nonexistent"]} />
         "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),

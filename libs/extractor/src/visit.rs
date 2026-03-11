@@ -74,6 +74,10 @@ pub struct DevupVisitor<'a> {
     /// Maps variable names to their keyframe animation names.
     /// e.g., "fadeIn" → "a-a"
     stylex_keyframe_names: FxHashMap<String, String>,
+    /// Pending JSXFragment children from dynamic `as` prop resolution.
+    /// Set in `visit_jsx_element`, consumed in `visit_expression` to replace
+    /// `Expression::JSXElement` with `Expression::JSXFragment`.
+    pending_fragment_children: Option<oxc_allocator::Vec<'a, JSXChild<'a>>>,
 }
 
 impl<'a> DevupVisitor<'a> {
@@ -103,6 +107,7 @@ impl<'a> DevupVisitor<'a> {
             stylex_namespaces: FxHashMap::default(),
             stylex_pending_keyframe_name: None,
             stylex_keyframe_names: FxHashMap::default(),
+            pending_fragment_children: None,
         }
     }
 }
@@ -719,6 +724,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.ast.expression_identifier(SPAN, self.ast.atom(""))
             }
         }
+
+        // Replace JSXElement with JSXFragment when dynamic `as` prop produced an empty name
+        if let Some(children) = self.pending_fragment_children.take() {
+            *it = self.ast.expression_jsx_fragment(
+                SPAN,
+                self.ast.jsx_opening_fragment(SPAN),
+                children,
+                self.ast.jsx_closing_fragment(SPAN),
+            );
+        }
     }
     fn visit_call_expression(&mut self, it: &mut CallExpression<'a>) {
         let jsx = if let Expression::Identifier(ident) = &it.callee {
@@ -1217,27 +1232,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         el.expression.clone_in(self.ast.allocator).into(),
                     ),
                 ));
-                *elem = self.ast.jsx_element(
-                    SPAN,
-                    self.ast.alloc_jsx_opening_element(
-                        SPAN,
-                        self.ast
-                            .jsx_element_name_identifier(SPAN, self.ast.atom("")),
-                        Some(self.ast.alloc_ts_type_parameter_instantiation(
-                            SPAN,
-                            oxc_allocator::Vec::new_in(self.ast.allocator),
-                        )),
-                        oxc_allocator::Vec::new_in(self.ast.allocator),
-                    ),
-                    children,
-                    Some(
-                        self.ast.alloc_jsx_closing_element(
-                            SPAN,
-                            self.ast
-                                .jsx_element_name_identifier(SPAN, self.ast.atom("")),
-                        ),
-                    ),
-                );
+                self.pending_fragment_children = Some(children);
                 None
             } {
                 let ident = self
