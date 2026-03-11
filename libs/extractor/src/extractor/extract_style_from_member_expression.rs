@@ -29,20 +29,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
     // Unwrap type assertions and parenthesized expressions (e.g., `({...} as const)[key]`)
-    loop {
-        let inner = match &mem.object {
-            Expression::TSAsExpression(ts_as) => {
-                Some(ts_as.expression.clone_in(ast_builder.allocator))
-            }
-            Expression::ParenthesizedExpression(p) => {
-                Some(p.expression.clone_in(ast_builder.allocator))
-            }
-            _ => None,
-        };
-        match inner {
-            Some(unwrapped) => mem.object = unwrapped,
-            None => break,
+    while let Some(inner) = match &mem.object {
+        Expression::TSAsExpression(ts_as) => Some(ts_as.expression.clone_in(ast_builder.allocator)),
+        Expression::ParenthesizedExpression(p) => {
+            Some(p.expression.clone_in(ast_builder.allocator))
         }
+        _ => None,
+    } {
+        mem.object = inner;
     }
 
     if let Expression::ArrayExpression(array) = &mut mem.object
