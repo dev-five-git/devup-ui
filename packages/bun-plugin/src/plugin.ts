@@ -105,8 +105,11 @@ plugin({
     )
 
     // Load source files from packages directory (file namespace)
-    build.onLoad({ filter: /.*\.(tsx|ts|jsx|mjs)/ }, ({ path }) =>
-      loadSourceFile(path),
+    build.onLoad(
+      {
+        filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
+      },
+      ({ path }) => loadSourceFile(path),
     )
   },
 })
