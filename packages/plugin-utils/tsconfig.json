@@ -6,6 +6,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
+    "rootDir": "./src",
     "declarationMap": true,
     "removeComments": true,
     "sourceMap": true,
@@ -21,7 +22,6 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "baseUrl": ".",
     "jsx": "react-jsx"
   },
   "include": ["src"],

@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/theme.rs
+expression: css
+---
+":root{--md:0 2px 4px #0000001A}@media(min-width:480px){:root{--md:0 4px 8px #0003}}"

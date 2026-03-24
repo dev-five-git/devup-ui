@@ -89,6 +89,8 @@ export class DevupUIWebpackPlugin {
         this.options.package,
         'CustomColors',
         'DevupThemeTypography',
+        'CustomLength',
+        'CustomShadows',
         'DevupTheme',
       )
 

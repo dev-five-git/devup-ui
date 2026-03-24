@@ -36,6 +36,8 @@ async function writeDataFiles() {
       libPackage,
       'CustomColors',
       'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
       'DevupTheme',
     ),
     'utf-8',

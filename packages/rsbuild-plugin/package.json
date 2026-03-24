@@ -50,6 +50,6 @@
   },
   "devDependencies": {
     "@rsbuild/core": "^1.7",
-    "typescript": "^5.9"
+    "typescript": "^6.0"
   }
 }

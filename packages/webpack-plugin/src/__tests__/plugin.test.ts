@@ -181,6 +181,8 @@ describe('devupUIWebpackPlugin', () => {
         options.package,
         'CustomColors',
         'DevupThemeTypography',
+        'CustomLength',
+        'CustomShadows',
         'DevupTheme',
       )
       if (_options.getThemeInterface)

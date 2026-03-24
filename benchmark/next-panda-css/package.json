@@ -13,11 +13,11 @@
   "dependencies": {
     "react": "^19.2",
     "react-dom": "^19.2",
-    "next": "^16.1"
+    "next": "^16.2"
   },
   "devDependencies": {
-    "@pandacss/dev": "^1.8",
-    "typescript": "^5",
+    "@pandacss/dev": "^1.9",
+    "typescript": "^6",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19"

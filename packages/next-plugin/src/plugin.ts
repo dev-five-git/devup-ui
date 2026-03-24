@@ -107,6 +107,8 @@ export function DevupUI(
       libPackage,
       'CustomColors',
       'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
       'DevupTheme',
     )
     if (themeInterface) {
