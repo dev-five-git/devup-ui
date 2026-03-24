@@ -448,16 +448,8 @@ impl StyleSheet {
         self.theme.typography.keys().for_each(|key| {
             typography_keys.insert(key.clone());
         });
-        for length_theme in self.theme.length.values() {
-            for key in length_theme.keys() {
-                length_keys.insert(key.clone());
-            }
-        }
-        for shadow_theme in self.theme.shadows.values() {
-            for key in shadow_theme.keys() {
-                shadows_keys.insert(key.clone());
-            }
-        }
+        length_keys.extend(self.theme.length.values().flat_map(|t| t.keys().cloned()));
+        shadows_keys.extend(self.theme.shadows.values().flat_map(|t| t.keys().cloned()));
 
         self.theme.colors.keys().for_each(|key| {
             theme_keys.insert(key.clone());

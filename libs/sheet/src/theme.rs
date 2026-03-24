@@ -360,8 +360,7 @@ impl<'de> Deserialize<'de> for TokenValues {
                         Value::Number(n) => result.push(Some(n.to_string())),
                         _ => {
                             return Err(serde::de::Error::custom(format!(
-                                "Invalid token value in array: {:?}",
-                                item
+                                "Invalid token value in array: {item:?}"
                             )));
                         }
                     }
@@ -369,8 +368,7 @@ impl<'de> Deserialize<'de> for TokenValues {
                 Ok(Self(result))
             }
             _ => Err(serde::de::Error::custom(format!(
-                "Token value must be a string, number, or array, got: {:?}",
-                value
+                "Token value must be a string, number, or array, got: {value:?}"
             ))),
         }
     }
@@ -388,11 +386,13 @@ pub type ShadowTheme = BTreeMap<String, TokenValues>;
 /// Convert a JSON number to a length value: `n * 4` + "px".
 fn number_to_length(n: &serde_json::Number) -> String {
     if let Some(i) = n.as_i64() {
-        format!("{}px", i * 4)
+        let v = i * 4;
+        format!("{v}px")
     } else if let Some(f) = n.as_f64() {
         let val = f * 4.0;
         if val.fract() == 0.0 {
-            format!("{}px", val as i64)
+            let v = val as i64;
+            format!("{v}px")
         } else {
             format!("{val}px")
         }
@@ -692,34 +692,29 @@ impl Theme {
         if themes.is_empty() {
             return;
         }
-        let default_key = themes
+        let Some(default_key) = themes
             .keys()
             .find(|k| *k == "default")
             .or_else(|| themes.keys().next())
-            .cloned();
-
-        let Some(default_key) = &default_key else {
+            .cloned()
+        else {
             return;
         };
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sorted_variants.sort_by(|a, b| {
-            if a.0 == default_key {
-                std::cmp::Ordering::Less
-            } else if b.0 == default_key {
-                std::cmp::Ordering::Greater
-            } else {
-                a.0.cmp(b.0)
-            }
+        sorted_variants.sort_by(|a, b| match (a.0 == &default_key, b.0 == &default_key) {
+            (true, _) => std::cmp::Ordering::Less,
+            (_, true) => std::cmp::Ordering::Greater,
+            _ => a.0.cmp(b.0),
         });
 
         for (variant_name, token_theme) in &sorted_variants {
-            let is_default = *variant_name == default_key;
+            let is_default = *variant_name == &default_key;
             let selector = if is_default {
                 ":root".to_string()
             } else {
-                format!(":root[data-theme={}]", variant_name)
+                format!(":root[data-theme={variant_name}]")
             };
 
             // Group variables by breakpoint level
@@ -740,25 +735,20 @@ impl Theme {
                         level_map
                             .entry(idx)
                             .or_default()
-                            .push(format!("--{}:{}", name, optimized));
+                            .push(format!("--{name}:{optimized}"));
                     }
                 }
             }
 
-            for (level, vars) in level_map {
+            for (level, vars) in &level_map {
                 if vars.is_empty() {
                     continue;
                 }
                 let vars_str = vars.join(";");
-                if level == 0 {
-                    write!(css, "{}{{{}}}", selector, vars_str).unwrap();
-                } else if let Some(bp) = breakpoints.get(level) {
-                    write!(
-                        css,
-                        "@media(min-width:{bp}px){{{}{{{}}}}}",
-                        selector, vars_str
-                    )
-                    .unwrap();
+                if *level == 0 {
+                    write!(css, "{selector}{{{vars_str}}}").unwrap();
+                } else if let Some(bp) = breakpoints.get(*level) {
+                    write!(css, "@media(min-width:{bp}px){{{selector}{{{vars_str}}}}}").unwrap();
                 }
             }
         }
