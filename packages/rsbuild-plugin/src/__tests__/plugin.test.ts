@@ -352,6 +352,8 @@ const App = () => <Box></Box>`,
         '@devup-ui/react',
         'CustomColors',
         'DevupThemeTypography',
+        'CustomLength',
+        'CustomShadows',
         'DevupTheme',
       )
       expect(writeFileSpy).toHaveBeenCalledWith(
