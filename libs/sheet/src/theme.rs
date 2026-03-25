@@ -354,22 +354,22 @@ impl<'de> Deserialize<'de> for TokenValues {
             Value::Array(arr) => {
                 let mut result = Vec::with_capacity(arr.len());
                 for item in arr {
-                    match item {
-                        Value::Null => result.push(None),
-                        Value::String(s) => result.push(Some(s.clone())),
-                        Value::Number(n) => result.push(Some(n.to_string())),
+                    result.push(match item {
+                        Value::Null => None,
+                        Value::String(s) => Some(s.clone()),
+                        Value::Number(n) => Some(n.to_string()),
                         _ => {
-                            let msg = format!("Invalid token value: {item:?}");
-                            return Err(serde::de::Error::custom(msg));
+                            return Err(serde::de::Error::custom(format!(
+                                "Invalid token value: {item:?}"
+                            )));
                         }
-                    }
+                    });
                 }
                 Ok(Self(result))
             }
-            _ => {
-                let msg = format!("Expected string, number, or array, got: {value:?}");
-                Err(serde::de::Error::custom(msg))
-            }
+            _ => Err(serde::de::Error::custom(format!(
+                "Expected string, number, or array, got: {value:?}"
+            ))),
         }
     }
 }
@@ -689,14 +689,13 @@ impl Theme {
         if themes.is_empty() {
             return;
         }
-        let Some(default_key) = themes
+        // Safe: themes is non-empty, so at least one key exists
+        let default_key = themes
             .keys()
             .find(|k| *k == "default")
             .or_else(|| themes.keys().next())
             .cloned()
-        else {
-            return;
-        };
+            .unwrap();
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
