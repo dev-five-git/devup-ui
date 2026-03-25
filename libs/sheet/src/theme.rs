@@ -385,20 +385,14 @@ pub type ShadowTheme = BTreeMap<String, TokenValues>;
 
 /// Convert a JSON number to a length value: `n * 4` + "px".
 fn number_to_length(n: &serde_json::Number) -> String {
-    if let Some(i) = n.as_i64() {
-        let v = i * 4;
+    // as_f64() covers both integer and float JSON numbers
+    let val = n.as_f64().unwrap_or(0.0) * 4.0;
+    #[allow(clippy::cast_possible_truncation)]
+    if val.fract() == 0.0 {
+        let v = val as i64;
         format!("{v}px")
-    } else if let Some(f) = n.as_f64() {
-        let val = f * 4.0;
-        #[allow(clippy::cast_possible_truncation)]
-        if val.fract() == 0.0 {
-            let v = val as i64;
-            format!("{v}px")
-        } else {
-            format!("{val}px")
-        }
     } else {
-        n.to_string()
+        format!("{val}px")
     }
 }
 
@@ -726,32 +720,34 @@ impl Theme {
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
-                        // For non-default variants, skip if same as default
-                        if !is_default
-                            && let Some(default_theme) = themes.get(default_key.as_str())
-                            && let Some(default_vals) = default_theme.get(name)
-                            && let Some(Some(default_v)) = default_vals.0.get(idx)
-                            && optimize_value(default_v) == optimized
-                        {
-                            continue;
+                        let is_same_as_default = !is_default
+                            && themes
+                                .get(default_key.as_str())
+                                .and_then(|dt| dt.get(name))
+                                .and_then(|dv| dv.0.get(idx))
+                                .is_some_and(|dval| {
+                                    dval.as_ref()
+                                        .is_some_and(|d| optimize_value(d) == optimized)
+                                });
+                        if !is_same_as_default {
+                            level_map
+                                .entry(idx)
+                                .or_default()
+                                .push(format!("--{name}:{optimized}"));
                         }
-                        level_map
-                            .entry(idx)
-                            .or_default()
-                            .push(format!("--{name}:{optimized}"));
                     }
                 }
             }
 
             for (level, vars) in &level_map {
-                if vars.is_empty() {
-                    continue;
-                }
-                let vars_str = vars.join(";");
-                if *level == 0 {
-                    write!(css, "{selector}{{{vars_str}}}").unwrap();
-                } else if let Some(bp) = breakpoints.get(*level) {
-                    write!(css, "@media(min-width:{bp}px){{{selector}{{{vars_str}}}}}").unwrap();
+                if !vars.is_empty() {
+                    let vars_str = vars.join(";");
+                    if *level == 0 {
+                        write!(css, "{selector}{{{vars_str}}}").unwrap();
+                    } else if let Some(bp) = breakpoints.get(*level) {
+                        write!(css, "@media(min-width:{bp}px){{{selector}{{{vars_str}}}}}")
+                            .unwrap();
+                    }
                 }
             }
         }
@@ -2111,5 +2107,66 @@ mod tests {
 
         let css = theme.to_css();
         assert_debug_snapshot!(css);
+    }
+
+    // ===== Coverage: TokenValues deserialization edge cases =====
+
+    #[test]
+    fn test_token_values_deserialize_number() {
+        // Covers TokenValues::deserialize Number branch (used by shadows)
+        let tv: TokenValues = serde_json::from_str("42").unwrap();
+        assert_eq!(tv.0, vec![Some("42".to_string())]);
+    }
+
+    #[test]
+    fn test_token_values_deserialize_array_with_number() {
+        // Covers array Number branch in TokenValues::deserialize
+        let tv: TokenValues = serde_json::from_str(r#"["a", 10, null]"#).unwrap();
+        assert_eq!(
+            tv.0,
+            vec![Some("a".to_string()), Some("10".to_string()), None]
+        );
+    }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_array_item() {
+        // Covers _ branch inside array match
+        let result: Result<TokenValues, _> = serde_json::from_str(r#"[true]"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_type() {
+        // Covers _ branch at top-level match
+        let result: Result<TokenValues, _> = serde_json::from_str("false");
+        assert!(result.is_err());
+    }
+
+    // ===== Coverage: number_to_length =====
+
+    #[test]
+    fn test_number_to_length_float() {
+        // Covers f64 non-integer branch
+        let n: serde_json::Number = serde_json::from_str("2.5").unwrap();
+        assert_eq!(number_to_length(&n), "10px");
+    }
+
+    #[test]
+    fn test_number_to_length_float_with_fraction() {
+        // Covers f64 branch where result has a fractional part
+        let n: serde_json::Number = serde_json::from_str("1.3").unwrap();
+        let result = number_to_length(&n);
+        assert!(result.ends_with("px"));
+        assert!(result.contains("5.2")); // 1.3 * 4 = 5.2
+    }
+
+    // ===== Coverage: write_themed_css_vars edge cases =====
+
+    #[test]
+    fn test_write_themed_css_vars_empty() {
+        // Covers early return for empty themes
+        let theme = Theme::default();
+        let css = theme.to_css();
+        assert_eq!(css, "");
     }
 }
