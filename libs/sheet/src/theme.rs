@@ -352,24 +352,24 @@ impl<'de> Deserialize<'de> for TokenValues {
             Value::String(s) => Ok(Self(vec![Some(s.clone())])),
             Value::Number(n) => Ok(Self(vec![Some(n.to_string())])),
             Value::Array(arr) => {
-                let mut result = Vec::with_capacity(arr.len());
-                for item in arr {
-                    result.push(match item {
-                        Value::Null => None,
-                        Value::String(s) => Some(s.clone()),
-                        Value::Number(n) => Some(n.to_string()),
-                        _ => {
-                            return Err(serde::de::Error::custom(format!(
-                                "Invalid token value: {item:?}"
-                            )));
+                let result = arr
+                    .iter()
+                    .map(|item| match item {
+                        Value::Null => Ok(None),
+                        Value::String(s) => Ok(Some(s.clone())),
+                        Value::Number(n) => Ok(Some(n.to_string())),
+                        other => {
+                            let msg = format!("Invalid token value: {other:?}");
+                            Err(serde::de::Error::custom(msg))
                         }
-                    });
-                }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self(result))
             }
-            _ => Err(serde::de::Error::custom(format!(
-                "Expected string, number, or array, got: {value:?}"
-            ))),
+            _ => {
+                let msg = format!("Expected string, number, or array, got: {value:?}");
+                Err(serde::de::Error::custom(msg))
+            }
         }
     }
 }
@@ -699,10 +699,14 @@ impl Theme {
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sorted_variants.sort_by(|a, b| match (a.0 == &default_key, b.0 == &default_key) {
-            (true, _) => Ordering::Less,
-            (_, true) => Ordering::Greater,
-            _ => a.0.cmp(b.0),
+        sorted_variants.sort_by(|a, b| {
+            if a.0 == &default_key {
+                Ordering::Less
+            } else if b.0 == &default_key {
+                Ordering::Greater
+            } else {
+                a.0.cmp(b.0)
+            }
         });
 
         for (variant_name, token_theme) in &sorted_variants {
