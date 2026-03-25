@@ -698,10 +698,15 @@ impl Theme {
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sorted_variants.sort_by(|a, b| match (a.0 == &default_key, b.0 == &default_key) {
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            _ => a.0.cmp(b.0),
+        let dk = &default_key;
+        sorted_variants.sort_by(|a, b| {
+            if a.0 == dk {
+                return Ordering::Less;
+            }
+            if b.0 == dk {
+                return Ordering::Greater;
+            }
+            a.0.cmp(b.0)
         });
 
         for (variant_name, token_theme) in &sorted_variants {
