@@ -359,17 +359,17 @@ impl<'de> Deserialize<'de> for TokenValues {
                         Value::String(s) => result.push(Some(s.clone())),
                         Value::Number(n) => result.push(Some(n.to_string())),
                         _ => {
-                            return Err(serde::de::Error::custom(format!(
-                                "Invalid token value in array: {item:?}"
-                            )));
+                            let msg = format!("Invalid token value: {item:?}");
+                            return Err(serde::de::Error::custom(msg));
                         }
                     }
                 }
                 Ok(Self(result))
             }
-            _ => Err(serde::de::Error::custom(format!(
-                "Token value must be a string, number, or array, got: {value:?}"
-            ))),
+            _ => {
+                let msg = format!("Expected string, number, or array, got: {value:?}");
+                Err(serde::de::Error::custom(msg))
+            }
         }
     }
 }
@@ -390,6 +390,7 @@ fn number_to_length(n: &serde_json::Number) -> String {
         format!("{v}px")
     } else if let Some(f) = n.as_f64() {
         let val = f * 4.0;
+        #[allow(clippy::cast_possible_truncation)]
         if val.fract() == 0.0 {
             let v = val as i64;
             format!("{v}px")
@@ -689,6 +690,8 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
+        use std::cmp::Ordering;
+
         if themes.is_empty() {
             return;
         }
@@ -704,8 +707,8 @@ impl Theme {
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
         sorted_variants.sort_by(|a, b| match (a.0 == &default_key, b.0 == &default_key) {
-            (true, _) => std::cmp::Ordering::Less,
-            (_, true) => std::cmp::Ordering::Greater,
+            (true, _) => Ordering::Less,
+            (_, true) => Ordering::Greater,
             _ => a.0.cmp(b.0),
         });
 
