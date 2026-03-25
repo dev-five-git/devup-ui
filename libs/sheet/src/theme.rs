@@ -683,8 +683,6 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
-        use std::cmp::Ordering;
-
         if themes.is_empty() {
             return;
         }
@@ -700,13 +698,9 @@ impl Theme {
         let mut sorted_variants: Vec<_> = themes.iter().collect();
         let dk = &default_key;
         sorted_variants.sort_by(|a, b| {
-            if a.0 == dk {
-                return Ordering::Less;
-            }
-            if b.0 == dk {
-                return Ordering::Greater;
-            }
-            a.0.cmp(b.0)
+            let ad = a.0 == dk;
+            let bd = b.0 == dk;
+            if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
         });
 
         for (variant_name, token_theme) in &sorted_variants {
