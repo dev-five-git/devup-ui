@@ -2172,4 +2172,23 @@ mod tests {
         let css = theme.to_css();
         assert_eq!(css, "");
     }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_object() {
+        // Covers _ branch with Value::Object
+        let result: Result<TokenValues, _> = serde_json::from_str(r#"{"a":1}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_length_css_three_variants_sort_order() {
+        // Covers all 3 sort_by branches: default first, then alphabetical
+        let mut theme = Theme::default();
+        theme.add_length("default", "sm", vec![Some("4px".to_string())]);
+        theme.add_length("dark", "sm", vec![Some("8px".to_string())]);
+        theme.add_length("dim", "sm", vec![Some("6px".to_string())]);
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
 }
