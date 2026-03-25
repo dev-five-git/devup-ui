@@ -1,0 +1,5 @@
+---
+source: libs/sheet/src/theme.rs
+expression: css
+---
+":root{--primary:#000}.typo-heading{font-family:Arial;font-size:16px}:root{--gutterMd:2px}@media(min-width:480px){:root{--gutterMd:4px}}"

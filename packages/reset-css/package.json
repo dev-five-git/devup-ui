@@ -43,7 +43,7 @@
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
-    "typescript": "^5.9"
+    "typescript": "^6.0"
   },
   "peerDependencies": {
     "@devup-ui/react": "workspace:^"

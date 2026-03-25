@@ -45,11 +45,11 @@
   },
   "devDependencies": {
     "rollup-plugin-preserve-directives": "^0.4",
-    "vite": "^7.3",
+    "vite": "^8.0",
     "vite-plugin-dts": "^4.5",
-    "typescript": "^5.9",
+    "typescript": "^6.0",
     "@types/react": "^19.2",
-    "@types/node": "^25.2"
+    "@types/node": "^25.5"
   },
   "peerDependencies": {
     "react": "*",

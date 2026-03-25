@@ -23,11 +23,33 @@ export type ThemeColors = Record<string, Record<string, string>>
 export type ThemeTypography = Record<string, Typography | (Typography | null)[]>
 
 /**
+ * Theme length definition
+ * Each theme variant maps length token names to values
+ * Values can be a single string/number or responsive array
+ */
+export type ThemeLength = Record<
+  string,
+  Record<string, string | number | (string | number | null)[]>
+>
+
+/**
+ * Theme shadows definition
+ * Each theme variant maps shadow token names to values
+ * Values can be a single string or responsive array
+ */
+export type ThemeShadows = Record<
+  string,
+  Record<string, string | (string | null)[]>
+>
+
+/**
  * Theme configuration
  */
 export interface DevupTheme {
   colors?: ThemeColors
   typography?: ThemeTypography
+  length?: ThemeLength
+  shadows?: ThemeShadows
 }
 
 /**

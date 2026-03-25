@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@stylexjs/open-props": "^0.11",
-    "@stylexjs/stylex": "^0.17",
+    "@stylexjs/stylex": "^0.18",
     "bright": "^1.0",
-    "next": "16.1",
+    "next": "16.2",
     "react": "19.2",
     "react-dom": "19.2"
   },
@@ -23,10 +23,10 @@
     "@babel/plugin-syntax-flow": "^7.28",
     "@babel/plugin-syntax-jsx": "^7.28",
     "@babel/plugin-syntax-typescript": "^7.28",
-    "@stylexjs/babel-plugin": "^0.17",
-    "@stylexjs/eslint-plugin": "^0.17",
+    "@stylexjs/babel-plugin": "^0.18",
+    "@stylexjs/eslint-plugin": "^0.18",
     "@stylexjs/nextjs-plugin": "^0.11",
-    "@types/node": "25.2",
+    "@types/node": "25.5",
     "@types/react": "19.2",
     "@types/react-dom": "19.2",
     "@types/react-test-renderer": "^19.1",
@@ -36,6 +36,6 @@
     "react-test-renderer": "^19.2",
     "rimraf": "^6.1",
     "ts_dependency_graph": "^2.1",
-    "typescript": "5.9"
+    "typescript": "6.0"
   }
 }

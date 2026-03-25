@@ -100,6 +100,8 @@ describe('writeDataFiles behavior', () => {
       '@devup-ui/react',
       'CustomColors',
       'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
       'DevupTheme',
     )
 

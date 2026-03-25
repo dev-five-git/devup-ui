@@ -3,7 +3,6 @@
     "types": ["bun"],
     "strict": true,
     "target": "ESNext",
-    "rootDir": "src",
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
@@ -22,7 +21,7 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "baseUrl": ".",
+    "rootDir": "src",
     "jsx": "react-jsx"
   },
   "include": ["src"],

@@ -1,5 +1,5 @@
 ---
 source: libs/sheet/src/lib.rs
-expression: "sheet.create_interface(\"package\", \"ColorInterface\", \"TypographyInterface\",\n\"ThemeInterface\")"
+expression: "sheet.create_interface(\"package\", \"ColorInterface\", \"TypographyInterface\",\n\"LengthInterface\", \"ShadowsInterface\", \"ThemeInterface\")"
 ---
-"import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface ThemeInterface{dark:null}}"
+"import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface LengthInterface{}interface ShadowsInterface{}interface ThemeInterface{dark:null}}"

@@ -757,4 +757,6 @@ Theme {
             ],
         ),
     },
+    length: {},
+    shadows: {},
 }

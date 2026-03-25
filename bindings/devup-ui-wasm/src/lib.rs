@@ -334,6 +334,8 @@ pub fn get_theme_interface(
     package_name: &str,
     color_interface_name: &str,
     typography_interface_name: &str,
+    length_interface_name: &str,
+    shadows_interface_name: &str,
     theme_interface_name: &str,
 ) -> String {
     let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
@@ -341,6 +343,8 @@ pub fn get_theme_interface(
         package_name,
         color_interface_name,
         typography_interface_name,
+        length_interface_name,
+        shadows_interface_name,
         theme_interface_name,
     )
 }
@@ -595,6 +599,8 @@ mod tests {
                 "package",
                 "ColorInterface",
                 "TypographyInterface",
+                "LengthInterface",
+                "ShadowsInterface",
                 "ThemeInterface"
             ),
             ""
@@ -610,9 +616,11 @@ mod tests {
                 "package",
                 "ColorInterface",
                 "TypographyInterface",
+                "LengthInterface",
+                "ShadowsInterface",
                 "ThemeInterface"
             ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface ThemeInterface{dark:null}}"
+            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface LengthInterface{}interface ShadowsInterface{}interface ThemeInterface{dark:null}}"
         );
 
         // test wrong case
@@ -638,9 +646,11 @@ mod tests {
                 "package",
                 "ColorInterface",
                 "TypographyInterface",
+                "LengthInterface",
+                "ShadowsInterface",
                 "ThemeInterface"
             ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null}interface TypographyInterface{[`prim\\`\\`ary`]:null}interface ThemeInterface{dark:null}}"
+            "import \"package\";declare module \"package\"{interface ColorInterface{[`$(primary)`]:null}interface TypographyInterface{[`prim\\`\\`ary`]:null}interface LengthInterface{}interface ShadowsInterface{}interface ThemeInterface{dark:null}}"
         );
     }
 

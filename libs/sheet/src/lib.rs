@@ -431,10 +431,14 @@ impl StyleSheet {
         package_name: &str,
         color_interface_name: &str,
         typography_interface_name: &str,
+        length_interface_name: &str,
+        shadows_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
         let mut color_keys = BTreeSet::new();
         let mut typography_keys = BTreeSet::new();
+        let mut length_keys = BTreeSet::new();
+        let mut shadows_keys = BTreeSet::new();
         let mut theme_keys = BTreeSet::new();
         for color_theme in self.theme.colors.values() {
             color_theme.interface_keys().for_each(|key| {
@@ -444,36 +448,46 @@ impl StyleSheet {
         self.theme.typography.keys().for_each(|key| {
             typography_keys.insert(key.clone());
         });
+        length_keys.extend(self.theme.length.values().flat_map(|t| t.keys().cloned()));
+        shadows_keys.extend(self.theme.shadows.values().flat_map(|t| t.keys().cloned()));
 
         self.theme.colors.keys().for_each(|key| {
             theme_keys.insert(key.clone());
         });
 
-        if color_keys.is_empty() && typography_keys.is_empty() {
+        if color_keys.is_empty()
+            && typography_keys.is_empty()
+            && length_keys.is_empty()
+            && shadows_keys.is_empty()
+        {
             String::new()
         } else {
-            format!(
-                "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
-                package_name,
-                package_name,
-                color_interface_name,
-                color_keys
-                    .into_iter()
+            let dollar_keys = |keys: BTreeSet<String>| {
+                keys.into_iter()
                     .map(|key| format!("{}:null", convert_interface_key(&format!("${key}"))))
                     .collect::<Vec<_>>()
-                    .join(";"),
-                typography_interface_name,
-                typography_keys
-                    .into_iter()
-                    .map(|key| format!("{}:null", convert_interface_key(&key)))
-                    .collect::<Vec<_>>()
-                    .join(";"),
-                theme_interface_name,
-                theme_keys
-                    .into_iter()
+                    .join(";")
+            };
+            let plain_keys = |keys: BTreeSet<String>| {
+                keys.into_iter()
                     .map(|key| format!("{}:null", convert_interface_key(&key)))
                     .collect::<Vec<_>>()
                     .join(";")
+            };
+            format!(
+                "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
+                package_name,
+                package_name,
+                color_interface_name,
+                dollar_keys(color_keys),
+                typography_interface_name,
+                plain_keys(typography_keys),
+                length_interface_name,
+                dollar_keys(length_keys),
+                shadows_interface_name,
+                dollar_keys(shadows_keys),
+                theme_interface_name,
+                plain_keys(theme_keys)
             )
         }
     }
@@ -1860,6 +1874,8 @@ mod tests {
                 "package",
                 "ColorInterface",
                 "TypographyInterface",
+                "LengthInterface",
+                "ShadowsInterface",
                 "ThemeInterface"
             ),
             ""
@@ -1875,6 +1891,8 @@ mod tests {
             "package",
             "ColorInterface",
             "TypographyInterface",
+            "LengthInterface",
+            "ShadowsInterface",
             "ThemeInterface"
         ));
 
@@ -1899,6 +1917,8 @@ mod tests {
             "package",
             "ColorInterface",
             "TypographyInterface",
+            "LengthInterface",
+            "ShadowsInterface",
             "ThemeInterface"
         ));
 
@@ -1924,6 +1944,8 @@ mod tests {
             "package",
             "ColorInterface",
             "TypographyInterface",
+            "LengthInterface",
+            "ShadowsInterface",
             "ThemeInterface"
         ));
 
@@ -1949,6 +1971,8 @@ mod tests {
             "package",
             "ColorInterface",
             "TypographyInterface",
+            "LengthInterface",
+            "ShadowsInterface",
             "ThemeInterface"
         ));
     }

@@ -10,17 +10,17 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@vanilla-extract/css": "^1.18",
-    "next": "^16.1",
+    "@vanilla-extract/css": "^1.20",
+    "next": "^16.2",
     "react": "^19.2",
     "react-dom": "^19.2",
-    "react-icons": "^5.5"
+    "react-icons": "^5.6"
   },
   "devDependencies": {
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
+    "typescript": "^6",
     "@devup-ui/next-plugin": "workspace:^"
   }
 }

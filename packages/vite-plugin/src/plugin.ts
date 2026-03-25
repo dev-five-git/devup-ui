@@ -50,6 +50,8 @@ async function writeDataFiles(
       options.package,
       'CustomColors',
       'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
       'DevupTheme',
     )
 

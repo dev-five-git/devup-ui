@@ -153,6 +153,8 @@ describe('devupUIVitePlugin', () => {
         '@devup-ui/react',
         'CustomColors',
         'DevupThemeTypography',
+        'CustomLength',
+        'CustomShadows',
         'DevupTheme',
       )
       expect(writeFileSpy).toHaveBeenCalledWith(

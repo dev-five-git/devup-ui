@@ -56,4 +56,6 @@ Theme {
             ],
         ),
     },
+    length: {},
+    shadows: {},
 }

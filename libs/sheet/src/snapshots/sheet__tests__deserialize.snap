@@ -34,5 +34,7 @@ StyleSheet {
             1600,
         ],
         typography: {},
+        length: {},
+        shadows: {},
     },
 }

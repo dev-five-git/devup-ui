@@ -334,6 +334,112 @@ impl<'de> Deserialize<'de> for Typographies {
     }
 }
 
+/// Responsive theme token values (shared by length and shadow tokens).
+/// Supports:
+/// - Single string: `"8px"` -> vec![Some("8px")]
+/// - Single number: `4` -> vec![Some("4")]
+/// - Responsive array: `["2px", null, "4px"]` -> vec![Some("2px"), None, Some("4px")]
+#[derive(Serialize, Debug)]
+pub struct TokenValues(pub Vec<Option<String>>);
+
+impl<'de> Deserialize<'de> for TokenValues {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        match &value {
+            Value::String(s) => Ok(Self(vec![Some(s.clone())])),
+            Value::Number(n) => Ok(Self(vec![Some(n.to_string())])),
+            Value::Array(arr) => {
+                let result = arr
+                    .iter()
+                    .map(|item| match item {
+                        Value::Null => Ok(None),
+                        Value::String(s) => Ok(Some(s.clone())),
+                        Value::Number(n) => Ok(Some(n.to_string())),
+                        other => {
+                            let msg = format!("Invalid token value: {other:?}");
+                            Err(serde::de::Error::custom(msg))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Self(result))
+            }
+            other => Err(serde::de::Error::custom(format!(
+                "Expected string, number, or array, got: {other:?}"
+            ))),
+        }
+    }
+}
+
+/// LengthTheme stores a set of named length tokens for one theme variant
+/// e.g., { "gutterMd": ["2px", "4px"], "gutterLg": "16px", "gap": 8 }
+/// Plain numbers are multiplied by 4 and suffixed with "px" (e.g., 8 → "32px").
+pub type LengthTheme = BTreeMap<String, TokenValues>;
+
+/// ShadowTheme stores a set of named shadow tokens for one theme variant
+/// e.g., { "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }
+pub type ShadowTheme = BTreeMap<String, TokenValues>;
+
+/// Convert a JSON number to a length value: `n * 4` + "px".
+fn number_to_length(n: &serde_json::Number) -> String {
+    // as_f64() covers both integer and float JSON numbers
+    let val = n.as_f64().unwrap_or(0.0) * 4.0;
+    #[allow(clippy::cast_possible_truncation)]
+    if val.fract() == 0.0 {
+        let v = val as i64;
+        format!("{v}px")
+    } else {
+        format!("{val}px")
+    }
+}
+
+/// Deserialize a single length token value, converting numbers via `number_to_length`.
+fn deserialize_length_value(value: &Value) -> Result<TokenValues, String> {
+    match value {
+        Value::String(s) => Ok(TokenValues(vec![Some(s.clone())])),
+        Value::Number(n) => Ok(TokenValues(vec![Some(number_to_length(n))])),
+        Value::Array(arr) => {
+            let mut result = Vec::with_capacity(arr.len());
+            for item in arr {
+                match item {
+                    Value::Null => result.push(None),
+                    Value::String(s) => result.push(Some(s.clone())),
+                    Value::Number(n) => result.push(Some(number_to_length(n))),
+                    _ => {
+                        return Err(format!("Invalid length value in array: {item:?}"));
+                    }
+                }
+            }
+            Ok(TokenValues(result))
+        }
+        _ => Err(format!(
+            "Length value must be a string, number, or array, got: {value:?}"
+        )),
+    }
+}
+
+/// Custom deserializer for the `length` field that converts plain numbers to `n*4px`.
+fn deserialize_length_themes<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, LengthTheme>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::deserialize(deserializer)?;
+    let mut result = BTreeMap::new();
+    for (variant, tokens) in raw {
+        let mut theme = BTreeMap::new();
+        for (name, value) in &tokens {
+            let tv = deserialize_length_value(value).map_err(serde::de::Error::custom)?;
+            theme.insert(name.clone(), tv);
+        }
+        result.insert(variant, theme);
+    }
+    Ok(result)
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Theme {
@@ -343,6 +449,10 @@ pub struct Theme {
     pub breakpoints: Vec<u16>,
     #[serde(default)]
     pub typography: BTreeMap<String, Typographies>,
+    #[serde(default, deserialize_with = "deserialize_length_themes")]
+    pub length: BTreeMap<String, LengthTheme>,
+    #[serde(default)]
+    pub shadows: BTreeMap<String, ShadowTheme>,
 }
 
 fn default_breakpoints() -> Vec<u16> {
@@ -355,6 +465,8 @@ impl Default for Theme {
             colors: Default::default(),
             breakpoints: default_breakpoints(),
             typography: BTreeMap::new(),
+            length: BTreeMap::new(),
+            shadows: BTreeMap::new(),
         }
     }
 }
@@ -377,6 +489,20 @@ impl Theme {
 
     pub fn add_typography(&mut self, name: &str, typography: Vec<Option<Typography>>) {
         self.typography.insert(name.to_string(), typography.into());
+    }
+
+    pub fn add_length(&mut self, variant: &str, name: &str, values: Vec<Option<String>>) {
+        self.length
+            .entry(variant.to_string())
+            .or_default()
+            .insert(name.to_string(), TokenValues(values));
+    }
+
+    pub fn add_shadow(&mut self, variant: &str, name: &str, values: Vec<Option<String>>) {
+        self.shadows
+            .entry(variant.to_string())
+            .or_default()
+            .insert(name.to_string(), TokenValues(values));
     }
 
     pub fn get_default_theme(&self) -> Option<String> {
@@ -543,7 +669,85 @@ impl Theme {
                 css.push_str(&format!("@media{media}{{{}}}", css_vec.join("")));
             }
         }
+        // Generate CSS variables for length tokens
+        Self::write_themed_css_vars(&mut css, &self.length, &self.breakpoints);
+        // Generate CSS variables for shadow tokens
+        Self::write_themed_css_vars(&mut css, &self.shadows, &self.breakpoints);
         css
+    }
+
+    /// Shared helper: generates CSS custom properties from themed token maps.
+    /// Used by both length and shadow tokens (and any future token types with the same shape).
+    fn write_themed_css_vars(
+        css: &mut String,
+        themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
+        breakpoints: &[u16],
+    ) {
+        if themes.is_empty() {
+            return;
+        }
+        // Safe: themes is non-empty, so at least one key exists
+        let default_key = themes
+            .keys()
+            .find(|k| *k == "default")
+            .or_else(|| themes.keys().next())
+            .cloned()
+            .unwrap();
+
+        // Sort variants: default first, then alphabetical
+        let mut sorted_variants: Vec<_> = themes.iter().collect();
+        let dk = &default_key;
+        sorted_variants.sort_by(|a, b| {
+            let ad = a.0 == dk;
+            let bd = b.0 == dk;
+            if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
+        });
+
+        for (variant_name, token_theme) in &sorted_variants {
+            let is_default = *variant_name == &default_key;
+            let selector = if is_default {
+                ":root".to_string()
+            } else {
+                format!(":root[data-theme={variant_name}]")
+            };
+
+            // Group variables by breakpoint level
+            let mut level_map = BTreeMap::<usize, Vec<String>>::new();
+            for (name, values) in token_theme.iter() {
+                for (idx, val) in values.0.iter().enumerate() {
+                    if let Some(v) = val {
+                        let optimized = optimize_value(v);
+                        let is_same_as_default = !is_default
+                            && themes
+                                .get(default_key.as_str())
+                                .and_then(|dt| dt.get(name))
+                                .and_then(|dv| dv.0.get(idx))
+                                .is_some_and(|dval| {
+                                    dval.as_ref()
+                                        .is_some_and(|d| optimize_value(d) == optimized)
+                                });
+                        if !is_same_as_default {
+                            level_map
+                                .entry(idx)
+                                .or_default()
+                                .push(format!("--{name}:{optimized}"));
+                        }
+                    }
+                }
+            }
+
+            for (level, vars) in &level_map {
+                if !vars.is_empty() {
+                    let vars_str = vars.join(";");
+                    if *level == 0 {
+                        write!(css, "{selector}{{{vars_str}}}").unwrap();
+                    } else if let Some(bp) = breakpoints.get(*level) {
+                        write!(css, "@media(min-width:{bp}px){{{selector}{{{vars_str}}}}}")
+                            .unwrap();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1522,5 +1726,463 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("cannot start with an array"));
+    }
+
+    // ===== Length token tests =====
+
+    #[test]
+    fn test_length_deserialization_single_string() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gutterMd": "8px"
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_length = theme.length.get("default").unwrap();
+        let gutter = default_length.get("gutterMd").unwrap();
+        assert_eq!(gutter.0.len(), 1);
+        assert_eq!(gutter.0[0], Some("8px".to_string()));
+    }
+
+    #[test]
+    fn test_length_deserialization_single_number() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gap": 4
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_length = theme.length.get("default").unwrap();
+        let gap = default_length.get("gap").unwrap();
+        assert_eq!(gap.0.len(), 1);
+        assert_eq!(gap.0[0], Some("16px".to_string()));
+    }
+
+    #[test]
+    fn test_length_deserialization_responsive_array() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gutterMd": ["2px", "4px"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_length = theme.length.get("default").unwrap();
+        let gutter = default_length.get("gutterMd").unwrap();
+        assert_eq!(gutter.0.len(), 2);
+        assert_eq!(gutter.0[0], Some("2px".to_string()));
+        assert_eq!(gutter.0[1], Some("4px".to_string()));
+    }
+
+    #[test]
+    fn test_length_deserialization_responsive_array_with_nulls() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gutterLg": ["8px", null, null, null, "16px"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_length = theme.length.get("default").unwrap();
+        let gutter = default_length.get("gutterLg").unwrap();
+        assert_eq!(gutter.0.len(), 5);
+        assert_eq!(gutter.0[0], Some("8px".to_string()));
+        assert!(gutter.0[1].is_none());
+        assert!(gutter.0[2].is_none());
+        assert!(gutter.0[3].is_none());
+        assert_eq!(gutter.0[4], Some("16px".to_string()));
+    }
+
+    #[test]
+    fn test_length_deserialization_number_in_array() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gap": [4, null, 8]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_length = theme.length.get("default").unwrap();
+        let gap = default_length.get("gap").unwrap();
+        assert_eq!(gap.0.len(), 3);
+        assert_eq!(gap.0[0], Some("16px".to_string()));
+        assert!(gap.0[1].is_none());
+        assert_eq!(gap.0[2], Some("32px".to_string()));
+    }
+
+    #[test]
+    fn test_length_deserialization_invalid_value() {
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gap": true
+                    }
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_length_deserialization_invalid_array_value() {
+        let result: Result<Theme, _> = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gap": [true]
+                    }
+                }
+            }"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_length_css_generation_single_value() {
+        let mut theme = Theme::default();
+        theme.add_length("default", "gutterMd", vec![Some("8px".to_string())]);
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_generation_responsive() {
+        let mut theme = Theme::default();
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_generation_responsive_with_nulls() {
+        let mut theme = Theme::default();
+        theme.add_length(
+            "default",
+            "gutterLg",
+            vec![
+                Some("8px".to_string()),
+                None,
+                None,
+                None,
+                Some("16px".to_string()),
+            ],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_generation_multiple_tokens() {
+        let mut theme = Theme::default();
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+        theme.add_length(
+            "default",
+            "gutterLg",
+            vec![Some("8px".to_string()), Some("16px".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_generation_with_theme_variants() {
+        let mut theme = Theme::default();
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+        theme.add_length(
+            "dark",
+            "gutterMd",
+            vec![Some("4px".to_string()), Some("8px".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_generation_variant_skips_same_values() {
+        let mut theme = Theme::default();
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+        // Dark variant has same base value as default, different responsive
+        theme.add_length(
+            "dark",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("8px".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_css_with_colors_and_typography() {
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("default", color_theme);
+        theme.add_typography(
+            "heading",
+            vec![Some(Typography::new(
+                Some("Arial".to_string()),
+                Some("16px".to_string()),
+                None,
+                None,
+                None,
+            ))],
+        );
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_deserialization_from_json() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "length": {
+                    "default": {
+                        "gutterMd": ["2px", "4px"],
+                        "gutterLg": "16px",
+                        "gap": 8
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_length_add_length_helper() {
+        let mut theme = Theme::default();
+        theme.add_length("default", "sm", vec![Some("4px".to_string())]);
+        theme.add_length("default", "md", vec![Some("8px".to_string())]);
+
+        let default_length = theme.length.get("default").unwrap();
+        assert_eq!(default_length.len(), 2);
+        assert!(default_length.contains_key("sm"));
+        assert!(default_length.contains_key("md"));
+    }
+
+    // ===== Shadow token tests =====
+
+    #[test]
+    fn test_shadow_deserialization_from_json() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "shadows": {
+                    "default": {
+                        "sm": "0 1px 2px rgba(0,0,0,0.1)",
+                        "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"]
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let default_shadows = theme.shadows.get("default").unwrap();
+        assert_eq!(default_shadows.len(), 2);
+        assert_eq!(
+            default_shadows.get("sm").unwrap().0,
+            vec![Some("0 1px 2px rgba(0,0,0,0.1)".to_string())]
+        );
+        assert_eq!(default_shadows.get("md").unwrap().0.len(), 3);
+    }
+
+    #[test]
+    fn test_shadow_css_generation_single() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "sm",
+            vec![Some("0 1px 2px rgba(0,0,0,.1)".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_shadow_css_generation_responsive() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "md",
+            vec![
+                Some("0 2px 4px rgba(0,0,0,.1)".to_string()),
+                Some("0 4px 8px rgba(0,0,0,.2)".to_string()),
+            ],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_shadow_css_generation_with_theme_variants() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "sm",
+            vec![Some("0 1px 2px rgba(0,0,0,.1)".to_string())],
+        );
+        theme.add_shadow(
+            "dark",
+            "sm",
+            vec![Some("0 1px 2px rgba(255,255,255,.1)".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_shadow_css_with_length_and_colors() {
+        let mut theme = Theme::default();
+        let mut color_theme = ColorTheme::default();
+        color_theme.add_color("primary", "#000");
+        theme.add_color_theme("default", color_theme);
+        theme.add_length(
+            "default",
+            "gutterMd",
+            vec![Some("2px".to_string()), Some("4px".to_string())],
+        );
+        theme.add_shadow(
+            "default",
+            "sm",
+            vec![Some("0 1px 2px rgba(0,0,0,.1)".to_string())],
+        );
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
+    }
+
+    // ===== Coverage: TokenValues deserialization edge cases =====
+
+    #[test]
+    fn test_token_values_deserialize_number() {
+        // Covers TokenValues::deserialize Number branch (used by shadows)
+        let tv: TokenValues = serde_json::from_str("42").unwrap();
+        assert_eq!(tv.0, vec![Some("42".to_string())]);
+    }
+
+    #[test]
+    fn test_token_values_deserialize_array_with_number() {
+        // Covers array Number branch in TokenValues::deserialize
+        let tv: TokenValues = serde_json::from_str(r#"["a", 10, null]"#).unwrap();
+        assert_eq!(
+            tv.0,
+            vec![Some("a".to_string()), Some("10".to_string()), None]
+        );
+    }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_array_item() {
+        // Covers _ branch inside array match
+        let result: Result<TokenValues, _> = serde_json::from_str(r#"[true]"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_type() {
+        // Covers _ branch at top-level match
+        let result: Result<TokenValues, _> = serde_json::from_str("false");
+        assert!(result.is_err());
+    }
+
+    // ===== Coverage: number_to_length =====
+
+    #[test]
+    fn test_number_to_length_float() {
+        // Covers f64 non-integer branch
+        let n: serde_json::Number = serde_json::from_str("2.5").unwrap();
+        assert_eq!(number_to_length(&n), "10px");
+    }
+
+    #[test]
+    fn test_number_to_length_float_with_fraction() {
+        // Covers f64 branch where result has a fractional part
+        let n: serde_json::Number = serde_json::from_str("1.3").unwrap();
+        let result = number_to_length(&n);
+        assert!(result.ends_with("px"));
+        assert!(result.contains("5.2")); // 1.3 * 4 = 5.2
+    }
+
+    // ===== Coverage: write_themed_css_vars edge cases =====
+
+    #[test]
+    fn test_write_themed_css_vars_empty() {
+        // Covers early return for empty themes
+        let theme = Theme::default();
+        let css = theme.to_css();
+        assert_eq!(css, "");
+    }
+
+    #[test]
+    fn test_token_values_deserialize_invalid_object() {
+        // Covers _ branch with Value::Object
+        let result: Result<TokenValues, _> = serde_json::from_str(r#"{"a":1}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_length_css_three_variants_sort_order() {
+        // Covers all 3 sort_by branches: default first, then alphabetical
+        let mut theme = Theme::default();
+        theme.add_length("default", "sm", vec![Some("4px".to_string())]);
+        theme.add_length("dark", "sm", vec![Some("8px".to_string())]);
+        theme.add_length("dim", "sm", vec![Some("6px".to_string())]);
+
+        let css = theme.to_css();
+        assert_debug_snapshot!(css);
     }
 }
