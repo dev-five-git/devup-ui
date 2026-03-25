@@ -366,10 +366,9 @@ impl<'de> Deserialize<'de> for TokenValues {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self(result))
             }
-            _ => {
-                let msg = format!("Expected string, number, or array, got: {value:?}");
-                Err(serde::de::Error::custom(msg))
-            }
+            other => Err(serde::de::Error::custom(format!(
+                "Expected string, number, or array, got: {other:?}"
+            ))),
         }
     }
 }
@@ -699,14 +698,10 @@ impl Theme {
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sorted_variants.sort_by(|a, b| {
-            if a.0 == &default_key {
-                Ordering::Less
-            } else if b.0 == &default_key {
-                Ordering::Greater
-            } else {
-                a.0.cmp(b.0)
-            }
+        sorted_variants.sort_by(|a, b| match (a.0 == &default_key, b.0 == &default_key) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => a.0.cmp(b.0),
         });
 
         for (variant_name, token_theme) in &sorted_variants {
