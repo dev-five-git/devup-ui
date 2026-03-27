@@ -135,6 +135,16 @@ export function Header() {
             className={css({
               textDecoration: 'none',
             })}
+            href="/showcase"
+          >
+            <Menu keyword="showcase">Showcase</Menu>
+          </Link>
+        </Flex>
+        <Flex alignItems="center" px={[null, null, '0', '24px']}>
+          <Link
+            className={css({
+              textDecoration: 'none',
+            })}
             href="/team"
           >
             <Menu keyword="team">Team</Menu>
