@@ -6,8 +6,17 @@ interface ShowcaseCardProps {
 }
 export function ShowcaseCard({ name, image }: ShowcaseCardProps) {
   return (
-    <VStack gap="8px">
-      <Image aspectRatio="1.77" h="100%" src={image} w="100%" />
+    <VStack cursor="pointer" gap="8px" role="group">
+      <Box h="auto" overflow="hidden" w="100%">
+        <Image
+          _groupHover={{ transform: 'scale(1.1)' }}
+          aspectRatio="1.77"
+          h="100%"
+          src={image}
+          transition="transform 0.3s"
+          w="100%"
+        />
+      </Box>
       <Flex alignItems="center" gap="12px">
         <Text
           color="#000"
