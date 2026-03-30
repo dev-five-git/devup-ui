@@ -20,7 +20,7 @@
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:^",
     "@playwright/test": "^1.58.2",
-    "@types/bun": "1.3.9",
+    "@types/bun": "latest",
     "@types/node": "^25.5",
     "bun-test-env-dom": "^1.0.3",
     "eslint": "^9",
