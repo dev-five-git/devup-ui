@@ -147,13 +147,6 @@ jobs:
           file_pattern: "e2e/**/*-snapshots/*.png"
       - name: Run E2E Tests
         run: bun run test:e2e
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./apps/landing/out
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      - uses: actions/deploy-pages@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Build Landing (singleCss)
         run: |
           rm -rf apps/landing/out apps/landing/.next apps/landing/df
@@ -167,6 +160,13 @@ jobs:
           name: playwright-report-singlecss
           path: playwright-report/
           retention-days: 30
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./apps/landing/out
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: actions/deploy-pages@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
