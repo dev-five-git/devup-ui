@@ -12,7 +12,7 @@ extractor = { path = "../extractor" }
 rustc-hash = "2"
 
 [dev-dependencies]
-insta = "1.46.3"
+insta = "1.47.2"
 criterion = { version = "0.8", features = ["html_reports"] }
 rstest = "0.26.1"
 serial_test = "3.4.0"

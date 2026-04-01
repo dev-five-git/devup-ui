@@ -14236,8 +14236,8 @@ export { c as Lib };"#,
         let allocator = Allocator::default();
         let builder = oxc_ast::AstBuilder::new(&allocator);
 
-        let make_cond = || builder.expression_identifier(SPAN, builder.atom("cond"));
-        let make_str = |s| builder.expression_string_literal(SPAN, builder.atom(s), None);
+        let make_cond = || builder.expression_identifier(SPAN, builder.str("cond"));
+        let make_str = |s| builder.expression_string_literal(SPAN, builder.str(s), None);
 
         // (Some, Some) — both branches have classNames
         let result = combine_conditional_class_name(

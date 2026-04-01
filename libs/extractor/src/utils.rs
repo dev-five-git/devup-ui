@@ -238,7 +238,7 @@ pub(super) fn wrap_array_filter<'a>(
     let filter_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
         SPAN,
         array_expr,
-        builder.identifier_name(SPAN, builder.atom("filter")),
+        builder.identifier_name(SPAN, builder.str("filter")),
         false,
     ));
 
@@ -251,7 +251,7 @@ pub(super) fn wrap_array_filter<'a>(
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
         oxc_allocator::Vec::from_iter_in(
             vec![Argument::from(
-                builder.expression_identifier(SPAN, builder.atom("Boolean")),
+                builder.expression_identifier(SPAN, builder.str("Boolean")),
             )],
             builder.allocator,
         ),
@@ -262,7 +262,7 @@ pub(super) fn wrap_array_filter<'a>(
     let join_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
         SPAN,
         filter_call,
-        builder.identifier_name(SPAN, builder.atom("join")),
+        builder.identifier_name(SPAN, builder.str("join")),
         false,
     ));
 
@@ -276,7 +276,7 @@ pub(super) fn wrap_array_filter<'a>(
         oxc_allocator::Vec::from_iter_in(
             vec![Argument::from(builder.expression_string_literal(
                 SPAN,
-                builder.atom(" "),
+                builder.str(" "),
                 None,
             ))],
             builder.allocator,
@@ -526,14 +526,14 @@ mod tests {
                 &allocator,
             ),
             oxc_allocator::Vec::from_iter_in(
-                vec![builder.expression_identifier(SPAN, builder.atom("x"))],
+                vec![builder.expression_identifier(SPAN, builder.str("x"))],
                 &allocator,
             ),
         );
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
 
         // Identifier 등 기타 타입 - None 반환
-        let expr = builder.expression_identifier(SPAN, builder.atom("foo"));
+        let expr = builder.expression_identifier(SPAN, builder.str("foo"));
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
     }
 
@@ -556,10 +556,10 @@ mod tests {
                 if s.starts_with('"') && s.ends_with('"') {
                     // String literal
                     let value = s.trim_matches('"');
-                    builder.expression_string_literal(SPAN, builder.atom(value), None)
+                    builder.expression_string_literal(SPAN, builder.str(value), None)
                 } else {
                     // Identifier
-                    builder.expression_identifier(SPAN, builder.atom(s))
+                    builder.expression_identifier(SPAN, builder.str(s))
                 }
             })
             .collect();

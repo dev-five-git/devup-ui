@@ -155,7 +155,7 @@ pub fn css_to_style_literal<'a>(
                         expression_to_code(&wrap_direct_call(
                             &ast_builder,
                             expr,
-                            &[ast_builder.expression_identifier(SPAN, ast_builder.atom("rest"))],
+                            &[ast_builder.expression_identifier(SPAN, ast_builder.str("rest"))],
                         ))
                     } else {
                         expression_to_code(expr)
@@ -200,7 +200,7 @@ pub fn css_to_style_literal<'a>(
                                     &ast_builder,
                                     expr,
                                     &[ast_builder
-                                        .expression_identifier(SPAN, ast_builder.atom("rest"))],
+                                        .expression_identifier(SPAN, ast_builder.str("rest"))],
                                 ))
                             } else {
                                 expression_to_code(expr)

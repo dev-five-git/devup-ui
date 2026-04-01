@@ -44,10 +44,10 @@ fn gen_style<'a>(
                 PropertyKind::Init,
                 PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                     SPAN,
-                    ast_builder.atom(&variable_name),
+                    ast_builder.str(&variable_name),
                     None,
                 )),
-                ast_builder.expression_identifier(SPAN, ast_builder.atom(&identifier)),
+                ast_builder.expression_identifier(SPAN, ast_builder.str(&identifier)),
                 false,
                 false,
                 false,
@@ -176,7 +176,7 @@ fn gen_style<'a>(
         for (key, value) in tmp_map {
             let v = if value.len() == 1 {
                 // do not create object expression when property is single
-                ast_builder.expression_identifier(SPAN, ast_builder.atom(&value[0].1))
+                ast_builder.expression_identifier(SPAN, ast_builder.str(&value[0].1))
             } else {
                 Expression::ComputedMemberExpression(
                     ast_builder.alloc_computed_member_expression(
@@ -192,10 +192,10 @@ fn gen_style<'a>(
                                             PropertyKind::Init,
                                             ast_builder.property_key_static_identifier(
                                                 SPAN,
-                                                ast_builder.atom(&k),
+                                                ast_builder.str(&k),
                                             ),
                                             ast_builder
-                                                .expression_identifier(SPAN, ast_builder.atom(&v)),
+                                                .expression_identifier(SPAN, ast_builder.str(&v)),
                                             false,
                                             false,
                                             false,
@@ -215,7 +215,7 @@ fn gen_style<'a>(
                 PropertyKind::Init,
                 PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                     SPAN,
-                    ast_builder.atom(&key),
+                    ast_builder.str(&key),
                     None,
                 )),
                 v,

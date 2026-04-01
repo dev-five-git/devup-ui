@@ -442,7 +442,7 @@ pub fn extract_style_from_expression<'a>(
                                 ast_builder.template_element(
                                     SPAN,
                                     TemplateElementValue {
-                                        raw: ast_builder.atom("typo-"),
+                                        raw: ast_builder.str("typo-"),
                                         cooked: None,
                                     },
                                     false,
@@ -451,7 +451,7 @@ pub fn extract_style_from_expression<'a>(
                                 ast_builder.template_element(
                                     SPAN,
                                     TemplateElementValue {
-                                        raw: ast_builder.atom(""),
+                                        raw: ast_builder.str(""),
                                         cooked: None,
                                     },
                                     true,
@@ -492,7 +492,7 @@ pub fn extract_style_from_expression<'a>(
                                             ast_builder.template_element(
                                                 SPAN,
                                                 TemplateElementValue {
-                                                    raw: ast_builder.atom("typo-"),
+                                                    raw: ast_builder.str("typo-"),
                                                     cooked: None,
                                                 },
                                                 false,
@@ -501,7 +501,7 @@ pub fn extract_style_from_expression<'a>(
                                             ast_builder.template_element(
                                                 SPAN,
                                                 TemplateElementValue {
-                                                    raw: ast_builder.atom(""),
+                                                    raw: ast_builder.str(""),
                                                     cooked: None,
                                                 },
                                                 true,
