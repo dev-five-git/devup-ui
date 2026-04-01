@@ -1,0 +1,102 @@
+export const metadata = {
+  title: 'Shadow',
+  alternates: {
+    canonical: '/docs/devup/shadow',
+  },
+}
+
+# Shadow
+
+Devup UI supports responsive shadow tokens for `box-shadow` values. Like typography and length, shadow tokens can be defined as responsive arrays in `devup.json`.
+
+## Defining Shadow Tokens
+
+Define shadow tokens in your `devup.json`:
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "sm": "0 1px 2px rgba(0,0,0,0.05)",
+        "card": [
+          "0 1px 2px rgba(0,0,0,0.1)",
+          null,
+          null,
+          "0 4px 8px rgba(0,0,0,0.1)"
+        ],
+        "modal": [
+          "0 4px 12px rgba(0,0,0,0.15)",
+          null,
+          null,
+          "0 8px 24px rgba(0,0,0,0.15)"
+        ]
+      }
+    }
+  }
+}
+```
+
+Each array index corresponds to a breakpoint. Use `null` to skip a breakpoint and inherit from the previous value.
+
+## Usage
+
+Use shadow tokens with the `$` prefix on `boxShadow`:
+
+```tsx
+<>
+  <Box boxShadow="$card" />
+  <Box boxShadow="$sm" />
+  <Box boxShadow="$modal" />
+</>
+```
+
+Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
+
+## Responsive Array Behavior
+
+When a `$token` appears inside a responsive array, it does **not** expand — the array itself defines the breakpoints:
+
+```tsx
+{
+  /* "$card" stays as a single value at breakpoint index 3 */
+}
+;<Box boxShadow={['none', null, null, '$card']} />
+```
+
+This is the key distinction:
+
+| Syntax                                      | Behavior                            | Classes  |
+| ------------------------------------------- | ----------------------------------- | -------- |
+| `boxShadow="$card"`                         | Expands to all defined breakpoints  | Multiple |
+| `boxShadow={"$card"}`                       | Expands to all defined breakpoints  | Multiple |
+| `boxShadow={["$card"]}`                     | Single value at index 0             | 1        |
+| `boxShadow={["none", null, null, "$card"]}` | `none` at index 0, token at index 3 | 2        |
+
+## Theme Variants
+
+Shadow tokens support theme variants, similar to colors:
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "card": "0 2px 4px rgba(0,0,0,0.1)"
+      },
+      "dark": {
+        "card": "0 2px 4px rgba(0,0,0,0.4)"
+      }
+    }
+  }
+}
+```
+
+## Type Safety
+
+Shadow tokens are fully type-safe. TypeScript will autocomplete available tokens when you type `$`:
+
+```tsx
+// Autocomplete shows: $sm, $card, $modal, etc.
+<Box boxShadow="$" />
+```

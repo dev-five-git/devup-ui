@@ -7,7 +7,7 @@ export const metadata = {
 
 # devup.json
 
-The `devup.json` file is the configuration file for your Devup UI theme. Create it at the root of your project to define colors, typography, and other design tokens.
+The `devup.json` file is the configuration file for your Devup UI theme. Create it at the root of your project to define colors, typography, length, shadow, and other design tokens.
 
 ## Basic Structure
 
@@ -18,7 +18,13 @@ The `devup.json` file is the configuration file for your Devup UI theme. Create 
       "default": {},
       "dark": {}
     },
-    "typography": {}
+    "typography": {},
+    "length": {
+      "default": {}
+    },
+    "shadow": {
+      "default": {}
+    }
   }
 }
 ```
@@ -155,6 +161,53 @@ Typography properties:
 
 See [Typography](/docs/devup/typography) for more details.
 
+## Length Configuration
+
+Define responsive length tokens for spacing, sizing, and other CSS length properties:
+
+```json
+{
+  "theme": {
+    "length": {
+      "default": {
+        "containerX": ["16px", null, "32px", null, "64px"],
+        "gutter": ["8px", null, "16px"]
+      }
+    }
+  }
+}
+```
+
+Length tokens use responsive arrays just like typography. Use `null` to skip breakpoints and inherit from the previous value.
+
+See [Length](/docs/devup/length) for more details.
+
+## Shadow Configuration
+
+Define responsive shadow tokens for box-shadow values:
+
+```json
+{
+  "theme": {
+    "shadow": {
+      "default": {
+        "card": [
+          "0 1px 2px rgba(0,0,0,0.1)",
+          null,
+          null,
+          "0 4px 8px rgba(0,0,0,0.1)"
+        ],
+        "sm": "0 1px 2px rgba(0,0,0,0.05)"
+      }
+    }
+  }
+}
+```
+
+Shadow tokens also support responsive arrays. Non-array values define a single shadow for all breakpoints.
+
+See [Shadow](/docs/devup/shadow) for more details.
+
 ## Usage in Components
 
 ### Colors
@@ -168,6 +221,18 @@ See [Typography](/docs/devup/typography) for more details.
 ```tsx
 const headingExample = <Text typography="$h1">Heading</Text>
 const bodyExample = <Text typography="$body">Body text</Text>
+```
+
+### Length
+
+```tsx
+<Box gap="$gutter" px="$containerX" />
+```
+
+### Shadow
+
+```tsx
+<Box boxShadow="$card" />
 ```
 
 ## File Location
@@ -215,7 +280,7 @@ module.exports = withDevupUI({
 
 When your project builds, Devup UI automatically generates TypeScript types from your `devup.json`. This enables:
 
-- Autocomplete for color and typography tokens
+- Autocomplete for color, typography, length, and shadow tokens
 - Type errors for invalid tokens
 - Consistent usage across your codebase
 
@@ -227,6 +292,6 @@ Changes to `devup.json` trigger hot reload during development. You can:
 
 1. Add new color tokens
 2. Modify existing values
-3. Add typography styles
+3. Add typography, length, or shadow styles
 
 And see changes immediately without restarting the dev server.

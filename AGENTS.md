@@ -36,7 +36,7 @@ devup-ui/
 | Add CSS property | `libs/css/src/constant.rs` | Property mappings |
 | Add pseudo selector | `packages/react/src/types/props/selector/` | TypeScript types |
 | Modify extraction | `libs/extractor/src/lib.rs` | Core logic + tests |
-| Theme system | `libs/sheet/src/theme.rs` | Color/typography |
+| Theme system | `libs/sheet/src/theme.rs` | Color/typography/length/shadow |
 | Plugin behavior | `packages/*-plugin/src/plugin.ts` | All follow same pattern |
 | Component API | `packages/react/src/components/` | Box, Flex, Text... |
 | WASM exports | `bindings/devup-ui-wasm/src/lib.rs` | JS-exposed functions |
@@ -49,7 +49,7 @@ devup-ui/
 |--------|------|-------|------|
 | extractor | `lib.rs` | 9,094 | Main extraction + tests |
 | sheet | `lib.rs` | 1,821 | CSS output generation |
-| theme | `theme.rs` | 1,526 | Color/typography system |
+| theme | `theme.rs` | 1,526 | Color/typography/length/shadow system |
 | css_utils | `css_utils.rs` | 1,239 | Template literal parsing |
 | visit | `visit.rs` | 669 | AST visitor pattern |
 
@@ -105,10 +105,18 @@ All React components throw `Error('Cannot run on the runtime')` - they're compil
 {
   "theme": {
     "colors": { "default": {...}, "dark": {...} },
-    "typography": { "heading": {...} }
+    "typography": { "heading": {...} },
+    "length": { "default": { "containerX": ["1px", null, "2px"] } },
+    "shadow": { "default": { "card": ["0 1px 2px #0003", null, null, "0 4px 8px #0003"] } }
   }
 }
 ```
+
+### Length & Shadow Tokens
+- Defined responsively like typography (arrays with `null` for skipped breakpoints)
+- Used with `$` prefix: `<Box w="$containerX" />`, `<Box boxShadow="$card" />`
+- `"$token"` and `{"$token"}` both expand to multiple breakpoint classes
+- `{["$token"]}` inside a responsive array stays single class (array defines breakpoints)
 
 ### Plugin Pattern
 All plugins wrap bundler config:

@@ -1,0 +1,111 @@
+export const metadata = {
+  title: 'Length',
+  alternates: {
+    canonical: '/docs/devup/length',
+  },
+}
+
+# Length
+
+Devup UI supports responsive length tokens for spacing, sizing, border-radius, and other CSS length properties. Like typography, length tokens can be defined as responsive arrays in `devup.json`.
+
+## Defining Length Tokens
+
+Define length tokens in your `devup.json`:
+
+```json
+{
+  "theme": {
+    "length": {
+      "default": {
+        "containerX": ["16px", null, "32px", null, "64px"],
+        "gutter": ["8px", null, "16px"],
+        "borderRadiusMd": ["8px", null, "16px"]
+      }
+    }
+  }
+}
+```
+
+Each array index corresponds to a breakpoint. Use `null` to skip a breakpoint and inherit from the previous value.
+
+## Usage
+
+Use length tokens with the `$` prefix on any length-accepting prop:
+
+```tsx
+<>
+  <Box px="$containerX" />
+  <Box gap="$gutter" />
+  <Box borderRadius="$borderRadiusMd" />
+  <Box px="$containerX" />
+</>
+```
+
+Both `"$token"` and `{"$token"}` expand the responsive token into multiple breakpoint-level classes.
+
+## Responsive Array Behavior
+
+When a `$token` appears inside a responsive array, it does **not** expand — the array itself defines the breakpoints:
+
+```tsx
+{
+  /* "$containerX" stays as a single value at breakpoint index 2 */
+}
+;<Box px={['8px', null, '$containerX']} />
+```
+
+This is the key distinction:
+
+| Syntax                              | Behavior                           | Classes  |
+| ----------------------------------- | ---------------------------------- | -------- |
+| `px="$containerX"`                  | Expands to all defined breakpoints | Multiple |
+| `px={"$containerX"}`                | Expands to all defined breakpoints | Multiple |
+| `px={["$containerX"]}`              | Single value at index 0            | 1        |
+| `px={["8px", null, "$containerX"]}` | `8px` at index 0, token at index 2 | 2        |
+
+## Theme Variants
+
+Length tokens support theme variants, similar to colors:
+
+```json
+{
+  "theme": {
+    "length": {
+      "default": {
+        "containerX": ["16px", null, "32px"]
+      },
+      "compact": {
+        "containerX": ["8px", null, "16px"]
+      }
+    }
+  }
+}
+```
+
+## Non-Responsive Tokens
+
+For a single value across all breakpoints, use a simple string:
+
+```json
+{
+  "theme": {
+    "length": {
+      "default": {
+        "borderRadiusSm": "4px",
+        "borderRadiusMd": "8px",
+        "borderRadiusLg": "16px"
+      }
+    }
+  }
+}
+```
+
+## Type Safety
+
+Length tokens are fully type-safe. TypeScript will autocomplete available tokens when you type `$`:
+
+```tsx
+// Autocomplete shows: $containerX, $gutter, $borderRadiusMd, etc.
+<Box px="$" />
+```
