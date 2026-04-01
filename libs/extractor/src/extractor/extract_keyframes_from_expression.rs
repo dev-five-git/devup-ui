@@ -3,7 +3,7 @@ use crate::{
     extract_style::{extract_keyframes::ExtractKeyframes, extract_style_value::ExtractStyleValue},
     extractor::{
         ExtractResult, KeyframesExtractResult,
-        extract_style_from_expression::extract_style_from_expression,
+        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
     utils::get_string_by_property_key,
 };
@@ -23,8 +23,14 @@ pub fn extract_keyframes_from_expression<'a>(
             if let ObjectPropertyKind::ObjectProperty(o) = p
                 && let Some(name) = get_string_by_property_key(&o.key)
             {
-                let ExtractResult { styles, .. } =
-                    extract_style_from_expression(ast_builder, None, &mut o.value, 0, &None);
+                let ExtractResult { styles, .. } = extract_style_from_expression(
+                    ast_builder,
+                    None,
+                    &mut o.value,
+                    0,
+                    &None,
+                    LiteralHandling::ExpandResponsiveThemeToken,
+                );
 
                 let mut styles = styles
                     .into_iter()

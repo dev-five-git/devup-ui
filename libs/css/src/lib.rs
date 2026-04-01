@@ -9,6 +9,7 @@ pub mod optimize_value;
 pub mod rm_css_comment;
 mod selector_separator;
 pub mod style_selector;
+pub mod theme_tokens;
 pub mod utils;
 
 use std::collections::BTreeMap;

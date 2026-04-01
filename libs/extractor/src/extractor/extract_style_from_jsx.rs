@@ -1,5 +1,6 @@
 use crate::extractor::{
-    ExtractResult, extract_style_from_expression::extract_style_from_expression,
+    ExtractResult,
+    extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
 };
 use oxc_allocator::CloneIn;
 use oxc_ast::{
@@ -12,7 +13,7 @@ pub fn extract_style_from_jsx<'a>(
     name: &str,
     value: &mut JSXAttributeValue<'a>,
 ) -> ExtractResult<'a> {
-    match value {
+    let expression = match value {
         JSXAttributeValue::ExpressionContainer(expression) => expression
             .expression
             .as_expression()
@@ -21,9 +22,18 @@ pub fn extract_style_from_jsx<'a>(
             literal.clone_in(ast_builder.allocator),
         )),
         _ => None,
-    }
-    .map(|mut expression| {
-        extract_style_from_expression(ast_builder, Some(name), &mut expression, 0, &None)
-    })
-    .unwrap_or_default()
+    };
+
+    expression
+        .map(|mut expression| {
+            extract_style_from_expression(
+                ast_builder,
+                Some(name),
+                &mut expression,
+                0,
+                &None,
+                LiteralHandling::ExpandResponsiveThemeToken,
+            )
+        })
+        .unwrap_or_default()
 }

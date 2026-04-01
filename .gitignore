@@ -20,3 +20,4 @@ storybook-static
 .sisyphus
 test-results
 playwright-report
+.omc

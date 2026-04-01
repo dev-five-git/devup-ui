@@ -6,12 +6,13 @@ description: |
   TRIGGER WHEN:
   - Writing/modifying Devup UI components (Box, Flex, Grid, Text, Button, etc.)
   - Using styling APIs: css(), globalCss(), keyframes()
-  - Configuring devup.json theme (colors, typography, extends)
+  - Configuring devup.json theme (colors, typography, length, shadow, extends)
   - Setting up build plugins (Vite, Next.js, Webpack, Rsbuild, Bun)
   - Debugging "Cannot run on the runtime" errors
   - Working with responsive arrays, pseudo-selectors (_hover, _dark, etc.)
   - Using polymorphic `as` prop or `selectors` prop
   - Working with @devup-ui/components (Button, Input, Select, Toggle, etc.)
+  - Using responsive length tokens ($containerX, $gutter) or shadow tokens ($card, $sm)
 ---
 
 # Devup UI
@@ -338,6 +339,18 @@ const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rot
         null,
         { "fontSize": "16px", "lineHeight": 1.6 }
       ]
+    },
+    "length": {
+      "default": {
+        "containerX": ["16px", null, "32px"],
+        "gutter": ["8px", null, "16px"]
+      }
+    },
+    "shadow": {
+      "default": {
+        "card": ["0 1px 2px #0003", null, null, "0 4px 8px #0003"],
+        "sm": "0 1px 2px rgba(0,0,0,0.05)"
+      }
     }
   }
 }
@@ -345,8 +358,23 @@ const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rot
 
 - **Colors**: Use with `$` prefix in JSX props: `<Box color="$primary" />`
 - **Typography**: Use with `$` prefix: `<Text typography="$heading" />`
+- **Length**: Responsive length tokens: `<Box px="$containerX" />`, `<Flex gap="$gutter" />`
+- **Shadow**: Responsive shadow tokens: `<Box boxShadow="$card" />`
 - **extends**: Inherit from base config files (deep merge, last wins)
-- **Responsive typography**: Use arrays with `null` for unchanged breakpoints
+- **Responsive typography/length/shadow**: Use arrays with `null` for unchanged breakpoints
+
+### Length & Shadow Token Behavior
+
+Length and shadow tokens support responsive arrays like typography. The key distinction is how `$token` behaves depending on syntax:
+
+| Syntax | Behavior | Classes |
+|--------|----------|---------|
+| `px="$containerX"` | Expands to all defined breakpoints | Multiple |
+| `px={"$containerX"}` | Expands to all defined breakpoints | Multiple |
+| `px={["$containerX"]}` | Single value at index 0 only | 1 |
+| `px={["8px", null, "$containerX"]}` | `8px` at index 0, token at index 2 | 2 |
+
+Both `"$token"` and `{"$token"}` expand the responsive token. Only `{["$token"]}` inside a responsive array keeps it as a single class — because the array itself defines the breakpoint levels.
 
 Theme types are auto-generated via module augmentation of `DevupTheme` and `DevupThemeTypography`.
 
@@ -415,20 +443,22 @@ DevupUI({
 })
 ```
 
-## $color Token Scope
+## $token Scope
 
-`$color` tokens only work in **JSX props**. Use `var(--color)` in external objects.
+`$token` values (colors, length, shadow) only work in **JSX props**. Use `var(--token)` in external objects.
 
 ```tsx
-// CORRECT - $color in JSX prop
+// CORRECT - $token in JSX prop
 <Box bg="$primary" />
+<Box px="$containerX" />
+<Box boxShadow="$card" />
 <Box bg={{ active: '$primary', inactive: '$gray' }[status]} />
 
-// WRONG - $color in external object (won't be transformed)
+// WRONG - $token in external object (won't be transformed)
 const colors = { active: '$primary' }
 <Box bg={colors.active} />  // broken!
 
-// CORRECT - var(--color) in external object
+// CORRECT - var(--token) in external object
 const colors = { active: 'var(--primary)' }
 <Box bg={colors.active} />
 ```

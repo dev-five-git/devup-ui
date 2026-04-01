@@ -22,7 +22,7 @@ impl<'a> AsVisitor<'a> {
 }
 
 fn change_element_name<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, element_name: &str) {
-    let element_name = ast.jsx_element_name_identifier(SPAN, ast.atom(element_name));
+    let element_name = ast.jsx_element_name_identifier(SPAN, ast.str(element_name));
     element.opening_element.name = element_name.clone_in(ast.allocator);
     if let Some(el) = &mut element.closing_element {
         el.name = element_name;

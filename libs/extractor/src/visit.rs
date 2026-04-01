@@ -10,7 +10,7 @@ use crate::extractor::extract_style_from_stylex::extract_stylex_namespace_styles
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
-    extract_style_from_expression::extract_style_from_expression,
+    extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::extract_style_from_styled,
 };
@@ -213,7 +213,7 @@ impl<'a> DevupVisitor<'a> {
         {
             let class_expr =
                 self.ast
-                    .expression_string_literal(SPAN, self.ast.atom(&info.class_name), None);
+                    .expression_string_literal(SPAN, self.ast.str(&info.class_name), None);
 
             let mut props = vec![];
             for (param_idx, var_name) in &info.css_vars {
@@ -224,7 +224,7 @@ impl<'a> DevupVisitor<'a> {
                         PropertyKind::Init,
                         PropertyKey::StringLiteral(self.ast.alloc_string_literal(
                             SPAN,
-                            self.ast.atom(var_name),
+                            self.ast.str(var_name),
                             None,
                         )),
                         arg_expr,
@@ -254,7 +254,7 @@ impl<'a> DevupVisitor<'a> {
                 {
                     return Some(
                         self.ast
-                            .expression_string_literal(SPAN, self.ast.atom(cn), None),
+                            .expression_string_literal(SPAN, self.ast.str(cn), None),
                     );
                 }
                 None
@@ -352,7 +352,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.ast.alloc_import_declaration::<Option<WithClause>>(
                             SPAN,
                             None,
-                            self.ast.string_literal(SPAN, self.ast.atom(css_file), None),
+                            self.ast.string_literal(SPAN, self.ast.str(css_file), None),
                             None,
                             None,
                             ImportOrExportKind::Value,
@@ -475,11 +475,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 // If include refs changed the className, use the combined string
                 let value = if !include_refs.is_empty() && !class_name_str.is_empty() {
                     self.ast
-                        .expression_string_literal(SPAN, self.ast.atom(&class_name_str), None)
+                        .expression_string_literal(SPAN, self.ast.str(&class_name_str), None)
                 } else {
                     class_name.unwrap_or_else(|| {
                         self.ast
-                            .expression_string_literal(SPAN, self.ast.atom(""), None)
+                            .expression_string_literal(SPAN, self.ast.str(""), None)
                     })
                 };
 
@@ -488,7 +488,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     PropertyKind::Init,
                     PropertyKey::StringLiteral(self.ast.alloc_string_literal(
                         SPAN,
-                        self.ast.atom(&ns_name),
+                        self.ast.str(&ns_name),
                         None,
                     )),
                     value,
@@ -517,7 +517,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             self.stylex_pending_keyframe_name = Some(name.clone());
             *it = self
                 .ast
-                .expression_string_literal(SPAN, self.ast.atom(&name), None);
+                .expression_string_literal(SPAN, self.ast.str(&name), None);
         }
 
         // Handle StyleX: stylex.props(...) calls
@@ -580,10 +580,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     *it = match util_type.as_ref() {
                         UtilType::Css | UtilType::Keyframes => {
                             self.ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                                .expression_string_literal(SPAN, self.ast.str(""), None)
                         }
                         UtilType::GlobalCss => {
-                            self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                            self.ast.expression_identifier(SPAN, self.ast.str(""))
                         }
                     };
                 } else {
@@ -603,11 +603,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             0,
                             &None,
+                            LiteralHandling::ExpandResponsiveThemeToken,
                         );
 
                         if styles.is_empty() {
                             self.ast
-                                .expression_string_literal(SPAN, self.ast.atom(""), None)
+                                .expression_string_literal(SPAN, self.ast.str(""), None)
                         } else {
                             // css can not reachable
                             let class_name = gen_class_names(
@@ -624,7 +625,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 cls
                             } else {
                                 self.ast
-                                    .expression_string_literal(SPAN, self.ast.atom(""), None)
+                                    .expression_string_literal(SPAN, self.ast.str(""), None)
                             }
                         }
                     } else if let UtilType::Keyframes = r {
@@ -643,7 +644,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             .to_string();
                         self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                         self.ast
-                            .expression_string_literal(SPAN, self.ast.atom(&name), None)
+                            .expression_string_literal(SPAN, self.ast.str(&name), None)
                     } else {
                         // global
                         let GlobalExtractResult {
@@ -665,7 +666,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                             ex.extract()
                         }));
-                        self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                        self.ast.expression_identifier(SPAN, self.ast.str(""))
                     }
                 }
             }
@@ -698,7 +699,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     cls
                 } else {
                     self.ast
-                        .expression_string_literal(SPAN, self.ast.atom(""), None)
+                        .expression_string_literal(SPAN, self.ast.str(""), None)
                 }
                 // already set style order
             } else if let UtilType::Keyframes = r {
@@ -711,7 +712,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                 self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                 self.ast
-                    .expression_string_literal(SPAN, self.ast.atom(&name), None)
+                    .expression_string_literal(SPAN, self.ast.str(&name), None)
             } else {
                 let optimized_css = optimize_css_block(&css_str);
                 if !optimized_css.is_empty() {
@@ -721,7 +722,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     });
                     self.styles.insert(css);
                 }
-                self.ast.expression_identifier(SPAN, self.ast.atom(""))
+                self.ast.expression_identifier(SPAN, self.ast.str(""))
             }
         }
 
@@ -786,7 +787,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
 
                 let mut tag =
                     self.ast
-                        .expression_string_literal(SPAN, self.ast.atom(kind.to_tag()), None);
+                        .expression_string_literal(SPAN, self.ast.str(kind.to_tag()), None);
                 let mut props_styles = vec![];
                 let ExtractResult {
                     styles,
@@ -800,6 +801,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     it.arguments[1].to_expression_mut(),
                     0,
                     &None,
+                    LiteralHandling::ExpandResponsiveThemeToken,
                 );
                 props_styles.extend(styles);
 
@@ -1135,6 +1137,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut spread.argument,
                         0,
                         &None,
+                        LiteralHandling::ExpandResponsiveThemeToken,
                     );
                     if !styles.is_empty() {
                         props_styles.extend(styles.into_iter().rev());
@@ -1237,7 +1240,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             } {
                 let ident = self
                     .ast
-                    .jsx_element_name_identifier(SPAN, self.ast.atom(tag));
+                    .jsx_element_name_identifier(SPAN, self.ast.str(tag));
 
                 elem.opening_element.name = ident.clone_in(self.ast.allocator);
                 if let Some(el) = &mut elem.closing_element {

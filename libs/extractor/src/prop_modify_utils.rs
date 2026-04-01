@@ -337,7 +337,7 @@ pub fn get_class_name_expression<'a>(
                             ast_builder.alloc_static_member_expression(
                                 SPAN,
                                 ex.clone_in(ast_builder.allocator),
-                                ast_builder.identifier_name(SPAN, ast_builder.atom("className")),
+                                ast_builder.identifier_name(SPAN, ast_builder.str("className")),
                                 true,
                             ),
                         ),
@@ -459,12 +459,12 @@ fn rebuild_template_literal_with_mapping<'a>(
         let replaced = replace_classes_in_string(raw, class_mapping);
         let cooked = quasi.value.cooked.as_ref().map(|c| {
             let replaced_cooked = replace_classes_in_string(c.as_str(), class_mapping);
-            ast_builder.atom(&replaced_cooked)
+            ast_builder.str(&replaced_cooked)
         });
         ast_builder.template_element(
             quasi.span,
             TemplateElementValue {
-                raw: ast_builder.atom(&replaced),
+                raw: ast_builder.str(&replaced),
                 cooked,
             },
             quasi.tail,
@@ -507,7 +507,7 @@ fn rebuild_expression_with_mapping<'a>(
     match expr {
         Expression::StringLiteral(lit) => {
             let replaced = replace_classes_in_string(lit.value.as_str(), class_mapping);
-            ast_builder.expression_string_literal(SPAN, ast_builder.atom(&replaced), None)
+            ast_builder.expression_string_literal(SPAN, ast_builder.str(&replaced), None)
         }
         Expression::ConditionalExpression(cond) => {
             let consequent =
@@ -623,7 +623,7 @@ pub fn get_style_expression<'a>(
                     Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
                         SPAN,
                         ex.clone_in(ast_builder.allocator),
-                        ast_builder.identifier_name(SPAN, ast_builder.atom("style")),
+                        ast_builder.identifier_name(SPAN, ast_builder.str("style")),
                         true,
                     ))
                 })
@@ -713,7 +713,7 @@ fn merge_string_expressions<'a>(
     if other_expressions.is_empty() {
         return Some(ast_builder.expression_string_literal(
             SPAN,
-            ast_builder.atom(string_literals.join("").trim()),
+            ast_builder.str(string_literals.join("").trim()),
             None,
         ));
     }
@@ -724,7 +724,7 @@ fn merge_string_expressions<'a>(
             ast_builder.template_element(
                 SPAN,
                 TemplateElementValue {
-                    raw: ast_builder.atom(s),
+                    raw: ast_builder.str(s),
                     cooked: None,
                 },
                 tail,
@@ -794,7 +794,7 @@ pub fn convert_style_vars<'a>(
                                         ast_builder.template_element(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.atom("--"),
+                                                raw: ast_builder.str("--"),
                                                 cooked: None,
                                             },
                                             false,
@@ -803,7 +803,7 @@ pub fn convert_style_vars<'a>(
                                         ast_builder.template_element(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.atom(""),
+                                                raw: ast_builder.str(""),
                                                 cooked: None,
                                             },
                                             true,
@@ -830,7 +830,7 @@ pub fn convert_style_vars<'a>(
                     if !name.starts_with("--") {
                         p.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                             SPAN,
-                            ast_builder.atom(&format!("--{name}")),
+                            ast_builder.str(&format!("--{name}")),
                             None,
                         ));
                     }

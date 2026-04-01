@@ -14236,8 +14236,8 @@ export { c as Lib };"#,
         let allocator = Allocator::default();
         let builder = oxc_ast::AstBuilder::new(&allocator);
 
-        let make_cond = || builder.expression_identifier(SPAN, builder.atom("cond"));
-        let make_str = |s| builder.expression_string_literal(SPAN, builder.atom(s), None);
+        let make_cond = || builder.expression_identifier(SPAN, builder.str("cond"));
+        let make_str = |s| builder.expression_string_literal(SPAN, builder.str(s), None);
 
         // (Some, Some) — both branches have classNames
         let result = combine_conditional_class_name(
@@ -16532,6 +16532,186 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/react'
         <Box boxShadow="$md" bg="$primary" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_responsive_length_token_literal_vs_array() {
+        use css::theme_tokens::set_theme_token_levels;
+
+        let mut length = BTreeMap::new();
+        length.insert("containerX".to_string(), vec![0, 2]);
+        set_theme_token_levels(length, BTreeMap::new());
+
+        // String literal: w="$containerX" → expands to multiple breakpoint classes
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box w="$containerX" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Expression: w={"$containerX"} → also expands (same as string literal)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box w={"$containerX"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Array with single element: w={["$containerX"]} → single class, base value only
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box w={["$containerX"]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Mixed array: w={["1px", null, "$containerX"]} → token inside array stays single per slot
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box w={["1px", null, "$containerX"]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_responsive_shadow_token_literal_vs_array() {
+        use css::theme_tokens::set_theme_token_levels;
+
+        let mut shadow = BTreeMap::new();
+        shadow.insert("card".to_string(), vec![0, 3]);
+        set_theme_token_levels(BTreeMap::new(), shadow);
+
+        // String literal: boxShadow="$card" → expands to multiple breakpoint classes
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box boxShadow="$card" />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Expression: boxShadow={"$card"} → also expands (same as string literal)
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box boxShadow={"$card"} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Array with single element: boxShadow={["$card"]} → single class, base value only
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box boxShadow={["$card"]} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Mixed array: boxShadow={["none", null, null, "$card"]} → token inside array stays single per slot
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+        <Box boxShadow={["none", null, null, "$card"]} />
         "#,
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),

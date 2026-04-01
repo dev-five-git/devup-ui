@@ -144,6 +144,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                                     selector: decomposed.selector,
                                     style_order: None,
                                     layer: None,
+                                    theme_token_resolution: Default::default(),
                                 },
                             )));
                         }
@@ -194,6 +195,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                         selector: None,
                         style_order: None,
                         layer: None,
+                        theme_token_resolution: Default::default(),
                     },
                 )));
                 continue;
@@ -215,6 +217,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                                 selector: decomposed.selector,
                                 style_order: None,
                                 layer: None,
+                                theme_token_resolution: Default::default(),
                             },
                         )));
                     }
@@ -236,6 +239,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                                 selector: None,
                                 style_order: None,
                                 layer: None,
+                                theme_token_resolution: Default::default(),
                             },
                         )));
                     }
@@ -260,6 +264,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                         selector: None,
                         style_order: None,
                         layer: None,
+                        theme_token_resolution: Default::default(),
                     },
                 )));
                 continue;
@@ -284,6 +289,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                     selector: None,
                     style_order: None,
                     layer: None,
+                    theme_token_resolution: Default::default(),
                 },
             )));
         }
@@ -386,6 +392,7 @@ fn extract_stylex_dynamic_namespace<'a>(
                         selector: None,
                         style_order: None,
                         layer: None,
+                        theme_token_resolution: Default::default(),
                     },
                 )));
                 continue;
@@ -403,6 +410,7 @@ fn extract_stylex_dynamic_namespace<'a>(
                     selector: None,
                     style_order: None,
                     layer: None,
+                    theme_token_resolution: Default::default(),
                 },
             )));
         }

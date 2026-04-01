@@ -382,6 +382,15 @@ pub type LengthTheme = BTreeMap<String, TokenValues>;
 /// e.g., { "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }
 pub type ShadowTheme = BTreeMap<String, TokenValues>;
 
+fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
+    themes
+        .keys()
+        .find(|k| *k == "default")
+        .or_else(|| themes.keys().find(|k| *k == "light"))
+        .or_else(|| themes.keys().next())
+        .map(String::as_str)
+}
+
 /// Convert a JSON number to a length value: `n * 4` + "px".
 fn number_to_length(n: &serde_json::Number) -> String {
     // as_f64() covers both integer and float JSON numbers
@@ -451,7 +460,7 @@ pub struct Theme {
     pub typography: BTreeMap<String, Typographies>,
     #[serde(default, deserialize_with = "deserialize_length_themes")]
     pub length: BTreeMap<String, LengthTheme>,
-    #[serde(default)]
+    #[serde(default, alias = "shadow")]
     pub shadows: BTreeMap<String, ShadowTheme>,
 }
 
@@ -506,16 +515,63 @@ impl Theme {
     }
 
     pub fn get_default_theme(&self) -> Option<String> {
-        self.colors
-            .keys()
-            .find(|k| *k == "default")
-            .or_else(|| {
-                self.colors
-                    .keys()
-                    .find(|k| *k == "light")
-                    .or_else(|| self.colors.keys().next())
-            })
-            .cloned()
+        default_variant_key(&self.colors).map(str::to_string)
+    }
+
+    pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
+        self.length.values().flat_map(|theme| theme.iter()).fold(
+            BTreeMap::<String, Vec<u8>>::new(),
+            |mut acc, (name, values)| {
+                let entry = acc.entry(name.clone()).or_default();
+                for (idx, value) in values.0.iter().enumerate() {
+                    if value.is_some()
+                        && let Ok(level) = u8::try_from(idx)
+                        && !entry.contains(&level)
+                    {
+                        entry.push(level);
+                    }
+                }
+                acc
+            },
+        )
+    }
+
+    pub fn get_shadow_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
+        self.shadows.values().flat_map(|theme| theme.iter()).fold(
+            BTreeMap::<String, Vec<u8>>::new(),
+            |mut acc, (name, values)| {
+                let entry = acc.entry(name.clone()).or_default();
+                for (idx, value) in values.0.iter().enumerate() {
+                    if value.is_some()
+                        && let Ok(level) = u8::try_from(idx)
+                        && !entry.contains(&level)
+                    {
+                        entry.push(level);
+                    }
+                }
+                acc
+            },
+        )
+    }
+
+    pub fn get_default_length_value(&self, token: &str) -> Option<&str> {
+        let default_key = default_variant_key(&self.length)?;
+        self.length
+            .get(default_key)?
+            .get(token)?
+            .0
+            .first()?
+            .as_deref()
+    }
+
+    pub fn get_default_shadow_value(&self, token: &str) -> Option<&str> {
+        let default_key = default_variant_key(&self.shadows)?;
+        self.shadows
+            .get(default_key)?
+            .get(token)?
+            .0
+            .first()?
+            .as_deref()
     }
 
     pub fn to_css(&self) -> String {
@@ -2184,5 +2240,72 @@ mod tests {
 
         let css = theme.to_css();
         assert_debug_snapshot!(css);
+    }
+
+    #[test]
+    fn test_shadow_alias_deserializes_to_shadows() {
+        let theme: Theme = serde_json::from_str(
+            r#"{
+                "shadow": {
+                    "light": {
+                        "card": ["0 1px 2px #0003", null, "0 4px 8px #0003"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let shadow = theme.shadows.get("light").unwrap().get("card").unwrap();
+        assert_eq!(
+            shadow.0,
+            vec![
+                Some("0 1px 2px #0003".to_string()),
+                None,
+                Some("0 4px 8px #0003".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_get_shadow_token_levels() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "sm",
+            vec![
+                Some("0 1px 2px rgba(0,0,0,.1)".to_string()),
+                None,
+                Some("0 2px 4px rgba(0,0,0,.2)".to_string()),
+            ],
+        );
+        theme.add_shadow(
+            "default",
+            "md",
+            vec![Some("0 4px 8px rgba(0,0,0,.1)".to_string())],
+        );
+
+        let levels = theme.get_shadow_token_levels();
+        assert_eq!(levels.get("sm").unwrap(), &vec![0u8, 2]);
+        assert_eq!(levels.get("md").unwrap(), &vec![0u8]);
+    }
+
+    #[test]
+    fn test_get_default_shadow_value() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "card",
+            vec![Some("0 1px 2px #0003".to_string()), None],
+        );
+
+        assert_eq!(
+            theme.get_default_shadow_value("card"),
+            Some("0 1px 2px #0003")
+        );
+        assert_eq!(theme.get_default_shadow_value("nonexistent"), None);
+
+        // No shadows at all
+        let empty = Theme::default();
+        assert_eq!(empty.get_default_shadow_value("card"), None);
     }
 }

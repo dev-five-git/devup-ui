@@ -5,7 +5,10 @@ use crate::{
     component::ExportVariableKind,
     css_utils::css_to_style_literal,
     extract_style::extract_style_value::ExtractStyleValue,
-    extractor::{ExtractResult, extract_style_from_expression::extract_style_from_expression},
+    extractor::{
+        ExtractResult,
+        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+    },
     gen_class_name::gen_class_names,
     gen_style::gen_styles,
     utils::{merge_object_expressions, wrap_array_filter},
@@ -90,7 +93,7 @@ pub fn extract_style_from_styled<'a>(
             styles: props_styles,
             tag: Some(ast_builder.expression_string_literal(
                 SPAN,
-                ast_builder.atom(&tag_name),
+                ast_builder.str(&tag_name),
                 None,
             )),
             style_order: None,
@@ -124,6 +127,7 @@ pub fn extract_style_from_styled<'a>(
             },
             0,
             &None,
+            LiteralHandling::ExpandResponsiveThemeToken,
         );
         if let Some(default_class_name) = default_class_name {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
@@ -196,7 +200,7 @@ fn create_styled_component<'a>(
                                 SPAN,
                                 ast_builder.binding_pattern_binding_identifier(
                                     SPAN,
-                                    ast_builder.atom("rest"),
+                                    ast_builder.str("rest"),
                                 ),
                             ),
                         ),
@@ -222,20 +226,20 @@ fn create_styled_component<'a>(
                     SPAN,
                     ast_builder.alloc_jsx_opening_element(
                         SPAN,
-                        ast_builder.jsx_element_name_identifier(SPAN, ast_builder.atom(tag_name)),
+                        ast_builder.jsx_element_name_identifier(SPAN, ast_builder.str(tag_name)),
                         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
                         oxc_allocator::Vec::from_iter_in(
                             vec![
                                     ast_builder.jsx_attribute_item_spread_attribute(
                                         SPAN,
                                         ast_builder
-                                            .expression_identifier(SPAN, ast_builder.atom("rest")),
+                                            .expression_identifier(SPAN, ast_builder.str("rest")),
                                     ),
                                     ast_builder.jsx_attribute_item_attribute(
                                         SPAN,
                                         ast_builder.jsx_attribute_name_identifier(
                                             SPAN,
-                                            ast_builder.atom("className"),
+                                            ast_builder.str("className"),
                                         ),
                                         Some(
                                             ast_builder.jsx_attribute_value_expression_container(
@@ -251,7 +255,7 @@ fn create_styled_component<'a>(
                                                                 ),
                                                                 ast_builder.expression_identifier(
                                                                     SPAN,
-                                                                    ast_builder.atom("className"),
+                                                                    ast_builder.str("className"),
                                                                 ),
                                                             ],
                                                         )
@@ -260,7 +264,7 @@ fn create_styled_component<'a>(
                                                     .unwrap_or_else(|| {
                                                         ast_builder.expression_identifier(
                                                             SPAN,
-                                                            ast_builder.atom("className"),
+                                                            ast_builder.str("className"),
                                                         )
                                                     })
                                                     .into(),
@@ -271,7 +275,7 @@ fn create_styled_component<'a>(
                                         SPAN,
                                         ast_builder.jsx_attribute_name_identifier(
                                             SPAN,
-                                            ast_builder.atom("style"),
+                                            ast_builder.str("style"),
                                         ),
                                         Some(
                                             ast_builder.jsx_attribute_value_expression_container(
@@ -287,7 +291,7 @@ fn create_styled_component<'a>(
                                                                 ),
                                                                 ast_builder.expression_identifier(
                                                                     SPAN,
-                                                                    ast_builder.atom("style"),
+                                                                    ast_builder.str("style"),
                                                                 ),
                                                             ],
                                                         )
@@ -296,7 +300,7 @@ fn create_styled_component<'a>(
                                                     .unwrap_or_else(|| {
                                                         ast_builder.expression_identifier(
                                                             SPAN,
-                                                            ast_builder.atom("style"),
+                                                            ast_builder.str("style"),
                                                         )
                                                     })
                                                     .into(),

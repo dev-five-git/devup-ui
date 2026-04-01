@@ -37,7 +37,7 @@ fn gen_class_name<'a>(
                     PropertyKind::Init,
                     PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
                         SPAN,
-                        ast_builder.atom(key),
+                        ast_builder.str(key),
                         None,
                     )),
                     merge_expression_for_class_name(
@@ -74,7 +74,7 @@ fn gen_class_name<'a>(
                 st.set_style_order(style_order);
             }
             st.extract(filename).map(|style| {
-                let v = ast_builder.atom(&match style {
+                let v = ast_builder.str(&match style {
                     StyleProperty::ClassName(cls) => cls,
                     StyleProperty::Variable { class_name, .. } => class_name,
                 });
@@ -134,7 +134,7 @@ fn gen_class_name<'a>(
                                         PropertyKey::StringLiteral(
                                             ast_builder.alloc_string_literal(
                                                 SPAN,
-                                                ast_builder.atom(key),
+                                                ast_builder.str(key),
                                                 None,
                                             ),
                                         ),
@@ -184,7 +184,7 @@ pub fn merge_expression_for_class_name<'a>(
             for idx in 0..unknown_expr.len() + 1 {
                 let tail = idx == unknown_expr.len();
                 let t = TemplateElementValue {
-                    raw: ast_builder.atom(if idx == 0 {
+                    raw: ast_builder.str(if idx == 0 {
                         if class_name.is_empty() {
                             ""
                         } else {
@@ -210,6 +210,6 @@ pub fn merge_expression_for_class_name<'a>(
     } else if class_name.is_empty() {
         None
     } else {
-        Some(ast_builder.expression_string_literal(SPAN, ast_builder.atom(&class_name), None))
+        Some(ast_builder.expression_string_literal(SPAN, ast_builder.str(&class_name), None))
     }
 }

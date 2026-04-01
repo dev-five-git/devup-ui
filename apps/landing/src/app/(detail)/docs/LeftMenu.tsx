@@ -123,6 +123,14 @@ export function LeftMenu() {
             children: 'Typography',
           },
           {
+            to: '/docs/devup/length',
+            children: 'Length',
+          },
+          {
+            to: '/docs/devup/shadow',
+            children: 'Shadow',
+          },
+          {
             to: '/docs/devup/breakpoints',
             children: 'Breakpoints',
           },

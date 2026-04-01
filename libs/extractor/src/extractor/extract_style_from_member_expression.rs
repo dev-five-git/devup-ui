@@ -2,7 +2,9 @@ use crate::{
     ExtractStyleProp,
     extractor::{
         ExtractResult,
-        extract_style_from_expression::{dynamic_style, extract_style_from_expression},
+        extract_style_from_expression::{
+            LiteralHandling, dynamic_style, extract_style_from_expression,
+        },
     },
     utils::{
         get_number_by_literal_expression, get_string_by_literal_expression,
@@ -53,7 +55,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 } else if idx as f64 == num
                     && let Some(p) = p.as_expression_mut()
                 {
-                    return extract_style_from_expression(ast_builder, name, p, level, selector);
+                    return extract_style_from_expression(
+                        ast_builder,
+                        name,
+                        p,
+                        level,
+                        selector,
+                        LiteralHandling::ExpandResponsiveThemeToken,
+                    );
                 }
             }
             return ExtractResult {
@@ -106,7 +115,15 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 map.insert(
                     idx.to_string(),
                     Box::new(ExtractStyleProp::StaticArray(
-                        extract_style_from_expression(ast_builder, name, p, level, selector).styles,
+                        extract_style_from_expression(
+                            ast_builder,
+                            name,
+                            p,
+                            level,
+                            selector,
+                            LiteralHandling::ExpandResponsiveThemeToken,
+                        )
+                        .styles,
                     )),
                 );
             }
@@ -134,6 +151,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                 &mut o.value,
                                 level,
                                 selector,
+                                LiteralHandling::ExpandResponsiveThemeToken,
                             )
                             .styles,
                             ..ExtractResult::default()
@@ -176,6 +194,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                             &mut o.value,
                             level,
                             selector,
+                            LiteralHandling::ExpandResponsiveThemeToken,
                         )
                         .styles,
                     )),
