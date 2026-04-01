@@ -2265,4 +2265,47 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_get_shadow_token_levels() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "sm",
+            vec![
+                Some("0 1px 2px rgba(0,0,0,.1)".to_string()),
+                None,
+                Some("0 2px 4px rgba(0,0,0,.2)".to_string()),
+            ],
+        );
+        theme.add_shadow(
+            "default",
+            "md",
+            vec![Some("0 4px 8px rgba(0,0,0,.1)".to_string())],
+        );
+
+        let levels = theme.get_shadow_token_levels();
+        assert_eq!(levels.get("sm").unwrap(), &vec![0u8, 2]);
+        assert_eq!(levels.get("md").unwrap(), &vec![0u8]);
+    }
+
+    #[test]
+    fn test_get_default_shadow_value() {
+        let mut theme = Theme::default();
+        theme.add_shadow(
+            "default",
+            "card",
+            vec![Some("0 1px 2px #0003".to_string()), None],
+        );
+
+        assert_eq!(
+            theme.get_default_shadow_value("card"),
+            Some("0 1px 2px #0003")
+        );
+        assert_eq!(theme.get_default_shadow_value("nonexistent"), None);
+
+        // No shadows at all
+        let empty = Theme::default();
+        assert_eq!(empty.get_default_shadow_value("card"), None);
+    }
 }

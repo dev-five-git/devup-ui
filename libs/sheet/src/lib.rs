@@ -377,12 +377,13 @@ impl StyleSheet {
                                 st.style_order(),
                                 if !single_css { Some(filename) } else { None },
                             )
-                        } else if let Some(StyleProperty::ClassName(cls)) =
-                            style.extract(if !single_css { Some(filename) } else { None })
-                        {
-                            cls
                         } else {
-                            continue;
+                            match st.extract(if !single_css { Some(filename) } else { None }) {
+                                StyleProperty::ClassName(cls)
+                                | StyleProperty::Variable {
+                                    class_name: cls, ..
+                                } => cls,
+                            }
                         };
 
                     if self.add_property_with_layer(
@@ -2359,5 +2360,57 @@ mod tests {
         let css = sheet.create_css(None, false);
         assert!(css.contains("width:1px"));
         assert!(!css.contains("width:2px"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_first_value_without_dollar_prefix_uses_raw_value() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+
+        let mut styles = FxHashSet::default();
+        // FirstValue resolution but value has no $ prefix — should use the raw value as-is
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("width", "100px", 0, None)
+                .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
+        ));
+
+        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        assert!(collected);
+
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("width:100px"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_first_value_box_shadow_resolves_shadow_token() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r#"{
+                "shadow": {
+                    "default": {
+                        "card": ["0 1px 2px #0003", null, "0 4px 8px #0003"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+
+        let mut styles = FxHashSet::default();
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("box-shadow", "$card", 0, None)
+                .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
+        ));
+
+        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        assert!(collected);
+
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("box-shadow:0 1px 2px #0003"));
     }
 }
