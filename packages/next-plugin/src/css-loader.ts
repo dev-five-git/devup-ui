@@ -14,7 +14,7 @@ import type { RawLoaderDefinitionFunction } from 'webpack'
 export interface DevupUICssLoaderOptions {
   // turbo
   watch: boolean
-  coordinatorPortFile?: string | null
+  coordinatorPortFile?: string
   sheetFile: string
   classMapFile: string
   fileMapFile: string
@@ -28,8 +28,6 @@ export interface DevupUICssLoaderOptions {
 let init = false
 let cachedPort: number | null = null
 const keepAliveAgent = new Agent({ keepAlive: true })
-const COORDINATOR_STARTUP_RETRIES = 200
-const COORDINATOR_STARTUP_RETRY_DELAY_MS = 50
 
 function readCoordinatorPort(portFile: string): number {
   if (cachedPort !== null) return cachedPort
@@ -100,10 +98,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       const tryFetch = (retries: number) => {
         if (!existsSync(coordinatorPortFile)) {
           if (retries > 0) {
-            setTimeout(
-              () => tryFetch(retries - 1),
-              COORDINATOR_STARTUP_RETRY_DELAY_MS,
-            )
+            setTimeout(() => tryFetch(retries - 1), 50)
             return
           }
           callback(new Error('Coordinator port file not found'))
@@ -125,7 +120,7 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
           callback(error as Error)
         }
       }
-      tryFetch(COORDINATOR_STARTUP_RETRIES)
+      tryFetch(20)
       return
     }
 

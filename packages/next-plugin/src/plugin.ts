@@ -55,7 +55,6 @@ export function DevupUI(
     config ??= {}
     config.turbopack ??= {}
     config.turbopack.rules ??= {}
-    const watch = process.env.NODE_ENV === 'development'
     const {
       package: libPackage = '@devup-ui/react',
       distDir = 'df',
@@ -123,37 +122,30 @@ export function DevupUI(
     // create devup-ui.css file
     writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
 
-    let activeCoordinatorPortFile: string | null = null
-    if (watch) {
-      // Delete stale port file from previous session so loaders don't connect
-      // to a dead coordinator port. The new coordinator writes a fresh port
-      // file once it starts listening.
-      try {
-        unlinkSync(coordinatorPortFile)
-      } catch {
-        // Port file doesn't exist (first run) — safe to ignore
-      }
-
-      const coordinator = startCoordinator({
-        package: libPackage,
-        cssDir,
-        singleCss,
-        sheetFile,
-        classMapFile,
-        fileMapFile,
-        importAliases: importAliases as unknown as Record<
-          string,
-          string | null
-        >,
-        coordinatorPortFile,
-      })
-
-      // Cleanup on exit
-      process.on('exit', () => {
-        coordinator.close()
-      })
-      activeCoordinatorPortFile = coordinatorPortFile
+    // Delete stale port file from previous session so loaders don't connect
+    // to a dead coordinator port. The new coordinator writes a fresh port file
+    // once it starts listening.
+    try {
+      unlinkSync(coordinatorPortFile)
+    } catch {
+      // Port file doesn't exist (first run) — safe to ignore
     }
+
+    const coordinator = startCoordinator({
+      package: libPackage,
+      cssDir,
+      singleCss,
+      sheetFile,
+      classMapFile,
+      fileMapFile,
+      importAliases: importAliases as unknown as Record<string, string | null>,
+      coordinatorPortFile,
+    })
+
+    // Cleanup on exit
+    process.on('exit', () => {
+      coordinator.close()
+    })
     const defaultSheet = JSON.parse(exportSheet())
     const defaultClassMap = JSON.parse(exportClassMap())
     const defaultFileMap = JSON.parse(exportFileMap())
@@ -172,7 +164,8 @@ export function DevupUI(
         {
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
-            watch,
+            watch: process.env.NODE_ENV === 'development',
+            coordinatorPortFile,
             sheetFile,
             classMapFile,
             fileMapFile,
@@ -181,9 +174,6 @@ export function DevupUI(
             defaultClassMap,
             defaultFileMap,
             theme,
-            ...(activeCoordinatorPortFile
-              ? { coordinatorPortFile: activeCoordinatorPortFile }
-              : {}),
           },
         },
       ],
@@ -194,6 +184,7 @@ export function DevupUI(
             options: {
               package: libPackage,
               cssDir,
+              coordinatorPortFile,
               sheetFile,
               classMapFile,
               fileMapFile,
@@ -201,14 +192,11 @@ export function DevupUI(
               defaultSheet,
               defaultClassMap,
               defaultFileMap,
-              watch,
+              watch: process.env.NODE_ENV === 'development',
               singleCss,
               // for turbopack, load theme is required on loader
               theme,
               importAliases: importAliases as unknown as Record<string, string>,
-              ...(activeCoordinatorPortFile
-                ? { coordinatorPortFile: activeCoordinatorPortFile }
-                : {}),
             },
           },
         ],

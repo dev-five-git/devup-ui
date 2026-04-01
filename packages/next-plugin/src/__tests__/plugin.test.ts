@@ -185,6 +185,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -210,6 +211,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -267,6 +269,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -304,6 +307,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -357,6 +361,7 @@ describe('DevupUINextPlugin', () => {
                 loader: '@devup-ui/next-plugin/css-loader',
                 options: {
                   watch: false,
+                  coordinatorPortFile: join('df', 'coordinator.port'),
                   sheetFile: join('df', 'sheet.json'),
                   classMapFile: join('df', 'classMap.json'),
                   fileMapFile: join('df', 'fileMap.json'),
@@ -394,6 +399,7 @@ describe('DevupUINextPlugin', () => {
                   options: {
                     package: '@devup-ui/react',
                     cssDir: resolve('df', 'devup-ui'),
+                    coordinatorPortFile: join('df', 'coordinator.port'),
                     sheetFile: join('df', 'sheet.json'),
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
@@ -431,7 +437,7 @@ describe('DevupUINextPlugin', () => {
         '*',
       )
     })
-    it('should not start coordinator in production mode', () => {
+    it('should start coordinator even in production mode', () => {
       ;(process.env as any).NODE_ENV = 'production'
       process.env.TURBOPACK = '1'
       existsSyncSpy
@@ -445,7 +451,20 @@ describe('DevupUINextPlugin', () => {
           rules: expect.any(Object),
         },
       })
-      expect(startCoordinatorSpy).not.toHaveBeenCalled()
+      expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        package: '@devup-ui/react',
+        cssDir: resolve('df', 'devup-ui'),
+        singleCss: false,
+        sheetFile: join('df', 'sheet.json'),
+        classMapFile: join('df', 'classMap.json'),
+        fileMapFile: join('df', 'fileMap.json'),
+        importAliases: {
+          '@emotion/styled': 'styled',
+          '@vanilla-extract/css': null,
+          'styled-components': 'styled',
+        },
+        coordinatorPortFile: join('df', 'coordinator.port'),
+      })
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
@@ -567,8 +586,8 @@ describe('DevupUINextPlugin', () => {
       expect(importFileMapSpy).toHaveBeenCalledWith(prevFileMap)
       expect(registerThemeSpy).toHaveBeenCalledWith({})
 
-      // In non-dev mode, coordinator is not started, so no port file cleanup
-      expect(unlinkSyncSpy).not.toHaveBeenCalled()
+      // Verify stale port file was deleted before starting coordinator
+      expect(unlinkSyncSpy).toHaveBeenCalledWith(join('df', 'coordinator.port'))
     })
     it('should handle missing state files gracefully on first run', () => {
       process.env.TURBOPACK = '1'

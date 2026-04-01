@@ -49,7 +49,6 @@ export interface DevupTheme {
   colors?: ThemeColors
   typography?: ThemeTypography
   length?: ThemeLength
-  shadow?: ThemeShadows
   shadows?: ThemeShadows
 }
 
