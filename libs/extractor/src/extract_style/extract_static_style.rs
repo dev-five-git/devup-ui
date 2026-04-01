@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter};
+
 use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
     optimize_value::optimize_value,
@@ -12,7 +14,14 @@ use crate::{
     utils::{convert_value, gcd},
 };
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, Ord, PartialOrd, Default)]
+pub enum ThemeTokenResolution {
+    #[default]
+    CssVariable,
+    FirstValue,
+}
+
+#[derive(PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct ExtractStaticStyle {
     /// property
     pub property: String,
@@ -26,6 +35,21 @@ pub struct ExtractStaticStyle {
     pub style_order: Option<u8>,
     /// CSS layer name (from vanilla-extract layer())
     pub layer: Option<String>,
+    /// How theme tokens should be resolved when converting to CSS.
+    pub theme_token_resolution: ThemeTokenResolution,
+}
+
+impl Debug for ExtractStaticStyle {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExtractStaticStyle")
+            .field("property", &self.property)
+            .field("value", &self.value)
+            .field("level", &self.level)
+            .field("selector", &self.selector)
+            .field("style_order", &self.style_order)
+            .field("layer", &self.layer)
+            .finish()
+    }
 }
 
 impl ExtractStaticStyle {
@@ -55,6 +79,7 @@ impl ExtractStaticStyle {
             selector: selector.map(optimize_selector),
             style_order: None,
             layer: None,
+            theme_token_resolution: ThemeTokenResolution::CssVariable,
         }
     }
 
@@ -88,7 +113,13 @@ impl ExtractStaticStyle {
             selector,
             style_order: Some(0),
             layer: None,
+            theme_token_resolution: ThemeTokenResolution::CssVariable,
         }
+    }
+
+    pub fn with_theme_token_resolution(mut self, resolution: ThemeTokenResolution) -> Self {
+        self.theme_token_resolution = resolution;
+        self
     }
 
     /// Get the layer name
@@ -114,6 +145,10 @@ impl ExtractStaticStyle {
 
     pub fn style_order(&self) -> Option<u8> {
         self.style_order
+    }
+
+    pub fn theme_token_resolution(&self) -> ThemeTokenResolution {
+        self.theme_token_resolution
     }
 }
 

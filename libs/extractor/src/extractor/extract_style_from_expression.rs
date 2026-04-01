@@ -2,7 +2,8 @@ use crate::{
     ExtractStyleProp,
     css_utils::{css_to_style, css_to_style_literal},
     extract_style::{
-        extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+        extract_dynamic_style::ExtractDynamicStyle,
+        extract_static_style::{ExtractStaticStyle, ThemeTokenResolution},
         extract_style_value::ExtractStyleValue,
     },
     extractor::{
@@ -15,7 +16,8 @@ use crate::{
 };
 use css::{
     add_selector_params, disassemble_property, get_enum_property_map, get_enum_property_value,
-    is_special_property::is_special_property, style_selector::StyleSelector, utils::to_kebab_case,
+    is_special_property::is_special_property, style_selector::StyleSelector,
+    theme_tokens::get_responsive_theme_token, utils::to_kebab_case,
 };
 use oxc_allocator::CloneIn;
 use oxc_ast::{
@@ -29,12 +31,47 @@ use oxc_span::SPAN;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiteralHandling {
+    ExpandResponsiveThemeToken,
+    KeepSingleClass,
+}
+
+fn create_static_styles<'a>(
+    name: &str,
+    value: &str,
+    levels: &[u8],
+    selector: &Option<StyleSelector>,
+    resolution: ThemeTokenResolution,
+) -> Vec<ExtractStyleProp<'a>> {
+    let mut styles = Vec::new();
+
+    for &level in levels {
+        if let Some(map) = get_enum_property_value(name, value) {
+            styles.extend(map.into_iter().map(|(k, v)| {
+                ExtractStyleProp::Static(ExtractStyleValue::Static(
+                    ExtractStaticStyle::new(&k, &v, level, selector.clone())
+                        .with_theme_token_resolution(resolution),
+                ))
+            }));
+        } else {
+            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
+                ExtractStaticStyle::new(name, value, level, selector.clone())
+                    .with_theme_token_resolution(resolution),
+            )));
+        }
+    }
+
+    styles
+}
+
 pub fn extract_style_from_expression<'a>(
     ast_builder: &AstBuilder<'a>,
     name: Option<&str>,
     expression: &mut Expression<'a>,
     level: u8,
     selector: &Option<StyleSelector>,
+    literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
     let mut typo = false;
 
@@ -72,6 +109,7 @@ pub fn extract_style_from_expression<'a>(
                                             &mut prop.value,
                                             0,
                                             &None,
+                                            LiteralHandling::ExpandResponsiveThemeToken,
                                         );
                                         props_styles.extend(styles);
                                         tag = _tag.or(tag);
@@ -91,6 +129,7 @@ pub fn extract_style_from_expression<'a>(
                                 &mut prop.argument,
                                 0,
                                 &None,
+                                LiteralHandling::ExpandResponsiveThemeToken,
                             );
                             props_styles.extend(styles);
                             tag = _tag.or(tag);
@@ -119,6 +158,7 @@ pub fn extract_style_from_expression<'a>(
                             &mut conditional.consequent,
                             level,
                             &None,
+                            literal_handling,
                         )
                         .styles,
                     ))),
@@ -129,6 +169,7 @@ pub fn extract_style_from_expression<'a>(
                             &mut conditional.alternate,
                             level,
                             selector,
+                            literal_handling,
                         )
                         .styles,
                     ))),
@@ -143,6 +184,7 @@ pub fn extract_style_from_expression<'a>(
                 &mut parenthesized.expression,
                 level,
                 &None,
+                literal_handling,
             ),
             Expression::TemplateLiteral(tmp) => ExtractResult {
                 styles: css_to_style_literal(tmp, level, selector)
@@ -227,6 +269,7 @@ pub fn extract_style_from_expression<'a>(
                                 &mut o.value,
                                 level,
                                 &Some(StyleSelector::Selector(sel)),
+                                literal_handling,
                             )
                             .styles,
                         );
@@ -265,6 +308,7 @@ pub fn extract_style_from_expression<'a>(
                             &mut o.value,
                             level,
                             &Some(at_selector),
+                            literal_handling,
                         )
                         .styles,
                     );
@@ -287,6 +331,7 @@ pub fn extract_style_from_expression<'a>(
                 } else {
                     new_selector.into()
                 }),
+                literal_handling,
             );
         }
         typo = name == "typography";
@@ -299,19 +344,43 @@ pub fn extract_style_from_expression<'a>(
                         value.to_string(),
                     ))]
                 } else {
-                    // Create a new ExtractStaticStyle
-                    if let Some(map) = get_enum_property_value(name, &value) {
-                        map.into_iter()
-                            .map(|(k, v)| {
-                                ExtractStyleProp::Static(ExtractStyleValue::Static(
-                                    ExtractStaticStyle::new(&k, &v, level, selector.clone()),
-                                ))
-                            })
-                            .collect()
+                    if matches!(
+                        literal_handling,
+                        LiteralHandling::ExpandResponsiveThemeToken
+                    ) {
+                        if let Some(levels) = get_responsive_theme_token(&value) {
+                            create_static_styles(
+                                name,
+                                &value,
+                                &levels,
+                                selector,
+                                ThemeTokenResolution::CssVariable,
+                            )
+                        } else {
+                            create_static_styles(
+                                name,
+                                &value,
+                                &[level],
+                                selector,
+                                ThemeTokenResolution::CssVariable,
+                            )
+                        }
+                    } else if get_responsive_theme_token(&value).is_some() {
+                        create_static_styles(
+                            name,
+                            &value,
+                            &[level],
+                            selector,
+                            ThemeTokenResolution::FirstValue,
+                        )
                     } else {
-                        vec![ExtractStyleProp::Static(ExtractStyleValue::Static(
-                            ExtractStaticStyle::new(name, &value, level, selector.clone()),
-                        ))]
+                        create_static_styles(
+                            name,
+                            &value,
+                            &[level],
+                            selector,
+                            ThemeTokenResolution::CssVariable,
+                        )
                     }
                 },
                 ..ExtractResult::default()
@@ -359,6 +428,7 @@ pub fn extract_style_from_expression<'a>(
                 &mut exp.expression,
                 level,
                 selector,
+                literal_handling,
             ),
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
@@ -470,6 +540,7 @@ pub fn extract_style_from_expression<'a>(
                         &mut logical.right,
                         level,
                         selector,
+                        literal_handling,
                     )
                     .styles,
                 )));
@@ -515,6 +586,7 @@ pub fn extract_style_from_expression<'a>(
                                     &mut logical.left,
                                     level,
                                     selector,
+                                    literal_handling,
                                 )
                                 .styles,
                             ))),
@@ -530,6 +602,7 @@ pub fn extract_style_from_expression<'a>(
                 &mut parenthesized.expression,
                 level,
                 selector,
+                literal_handling,
             ),
             Expression::ArrayExpression(array) => {
                 let mut props = vec![];
@@ -543,6 +616,7 @@ pub fn extract_style_from_expression<'a>(
                                 element,
                                 idx as u8,
                                 selector,
+                                LiteralHandling::KeepSingleClass,
                             )
                             .styles,
                         );
@@ -564,6 +638,7 @@ pub fn extract_style_from_expression<'a>(
                         &mut conditional.consequent,
                         level,
                         selector,
+                        literal_handling,
                     )
                 } else {
                     ExtractResult {
@@ -576,6 +651,7 @@ pub fn extract_style_from_expression<'a>(
                                     &mut conditional.consequent,
                                     level,
                                     selector,
+                                    literal_handling,
                                 )
                                 .styles,
                             ))),
@@ -586,6 +662,7 @@ pub fn extract_style_from_expression<'a>(
                                     &mut conditional.alternate,
                                     level,
                                     selector,
+                                    literal_handling,
                                 )
                                 .styles,
                             ))),
@@ -639,6 +716,7 @@ pub fn extract_style_from_expression<'a>(
                                     &mut o.value,
                                     level,
                                     &selector,
+                                    literal_handling,
                                 )
                                 .styles,
                             );

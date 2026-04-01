@@ -2,10 +2,12 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{
-    merge_selector,
+    merge_selector, sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector},
+    theme_tokens::set_theme_token_levels,
 };
 use extractor::extract_style::ExtractStyleProperty;
+use extractor::extract_style::extract_static_style::ThemeTokenResolution;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
 use regex_lite::Regex;
@@ -324,6 +326,10 @@ impl StyleSheet {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
+        set_theme_token_levels(
+            theme.get_length_token_levels(),
+            theme.get_shadow_token_levels(),
+        );
         self.theme = theme;
     }
 
@@ -338,19 +344,57 @@ impl StyleSheet {
         for style in styles.iter() {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    if let Some(StyleProperty::ClassName(cls)) =
-                        style.extract(if !single_css { Some(filename) } else { None })
-                        && self.add_property_with_layer(
-                            &cls,
-                            st.property(),
-                            st.level(),
-                            st.value(),
-                            st.selector(),
-                            st.style_order(),
-                            if !single_css { Some(filename) } else { None },
-                            st.layer(),
-                        )
-                    {
+                    let resolved_value =
+                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
+                            if let Some(token) = st.value().strip_prefix('$') {
+                                match st.property() {
+                                    "box-shadow" => self
+                                        .theme
+                                        .get_default_shadow_value(token)
+                                        .map(str::to_string)
+                                        .unwrap_or_else(|| st.value().to_string()),
+                                    _ => self
+                                        .theme
+                                        .get_default_length_value(token)
+                                        .map(str::to_string)
+                                        .unwrap_or_else(|| st.value().to_string()),
+                                }
+                            } else {
+                                st.value().to_string()
+                            }
+                        } else {
+                            st.value().to_string()
+                        };
+
+                    let class_name =
+                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
+                            let selector = st.selector().map(ToString::to_string);
+                            sheet_to_classname(
+                                st.property(),
+                                st.level(),
+                                Some(&resolved_value),
+                                selector.as_deref(),
+                                st.style_order(),
+                                if !single_css { Some(filename) } else { None },
+                            )
+                        } else if let Some(StyleProperty::ClassName(cls)) =
+                            style.extract(if !single_css { Some(filename) } else { None })
+                        {
+                            cls
+                        } else {
+                            continue;
+                        };
+
+                    if self.add_property_with_layer(
+                        &class_name,
+                        st.property(),
+                        st.level(),
+                        &resolved_value,
+                        st.selector(),
+                        st.style_order(),
+                        if !single_css { Some(filename) } else { None },
+                        st.layer(),
+                    ) {
                         collected = true;
                         if st.style_order() == Some(0) {
                             updated_base_style = true;
@@ -850,10 +894,16 @@ mod tests {
     use crate::theme::{ColorTheme, Typography};
 
     use super::*;
+    use css::{class_map::reset_class_map, file_map::reset_file_map};
+    use extractor::extract_style::extract_static_style::{
+        ExtractStaticStyle, ThemeTokenResolution,
+    };
     use extractor::{ExtractOption, extract};
     use insta::assert_debug_snapshot;
 
     use rstest::rstest;
+    use rustc_hash::FxHashSet;
+    use serial_test::serial;
 
     #[rstest]
     #[case("1px", "1px")]
@@ -2069,7 +2119,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_update_styles() {
+        reset_class_map();
+        reset_file_map();
         let mut sheet = StyleSheet::default();
         sheet.update_styles(&FxHashSet::default(), "index.tsx", true);
         assert_debug_snapshot!(
@@ -2274,5 +2327,37 @@ mod tests {
         assert!(css.contains("opacity:0;transform:scale(0.5)"));
         assert!(css.contains("opacity:1;transform:scale(1)"));
         assert_debug_snapshot!(css.split("*/").nth(1).unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn test_first_value_theme_token_resolution_uses_base_value_only() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        let theme: Theme = serde_json::from_str(
+            r#"{
+                "length": {
+                    "default": {
+                        "containerX": ["1px", null, "2px"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        sheet.set_theme(theme);
+
+        let mut styles = FxHashSet::default();
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("width", "$containerX", 0, None)
+                .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
+        ));
+
+        let (collected, _) = sheet.update_styles(&styles, "test.tsx", true);
+        assert!(collected);
+
+        let css = sheet.create_css(None, false);
+        assert!(css.contains("width:1px"));
+        assert!(!css.contains("width:2px"));
     }
 }

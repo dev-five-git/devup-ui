@@ -8,7 +8,8 @@ use crate::{
         extract_style_value::ExtractStyleValue,
     },
     extractor::{
-        GlobalExtractResult, extract_style_from_expression::extract_style_from_expression,
+        GlobalExtractResult,
+        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
     utils::{get_string_by_literal_expression, get_string_by_property_key},
 };
@@ -166,6 +167,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     },
                                     file.to_string(),
                                 )),
+                                LiteralHandling::ExpandResponsiveThemeToken,
                             );
 
                             // Filter out @layer property from styles and set layer on remaining styles

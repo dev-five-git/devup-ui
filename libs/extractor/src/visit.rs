@@ -10,7 +10,7 @@ use crate::extractor::extract_style_from_stylex::extract_stylex_namespace_styles
 use crate::extractor::{
     ExtractResult, GlobalExtractResult,
     extract_global_style_from_expression::extract_global_style_from_expression,
-    extract_style_from_expression::extract_style_from_expression,
+    extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     extract_style_from_jsx::extract_style_from_jsx,
     extract_style_from_styled::extract_style_from_styled,
 };
@@ -603,6 +603,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             0,
                             &None,
+                            LiteralHandling::ExpandResponsiveThemeToken,
                         );
 
                         if styles.is_empty() {
@@ -800,6 +801,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     it.arguments[1].to_expression_mut(),
                     0,
                     &None,
+                    LiteralHandling::ExpandResponsiveThemeToken,
                 );
                 props_styles.extend(styles);
 
@@ -1135,6 +1137,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut spread.argument,
                         0,
                         &None,
+                        LiteralHandling::ExpandResponsiveThemeToken,
                     );
                     if !styles.is_empty() {
                         props_styles.extend(styles.into_iter().rev());

@@ -25,7 +25,7 @@ export interface DevupUILoaderOptions {
   themeFile: string
   watch: boolean
   singleCss: boolean
-  coordinatorPortFile?: string
+  coordinatorPortFile?: string | null
   // turbo
   theme?: object
   defaultSheet: object
@@ -37,6 +37,15 @@ let init = false
 
 let cachedPort: number | null = null
 const keepAliveAgent = new Agent({ keepAlive: true })
+const COORDINATOR_STARTUP_RETRIES = 200
+const COORDINATOR_STARTUP_RETRY_DELAY_MS = 50
+
+function getFileNumFromCssFile(cssFile: string): number | null {
+  if (cssFile.endsWith('devup-ui.css')) return null
+  const part = cssFile.split('devup-ui-')[1]
+  if (!part) return null
+  return parseInt(part.split('.')[0])
+}
 
 function readCoordinatorPort(portFile: string): number {
   if (cachedPort !== null) return cachedPort
@@ -110,7 +119,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const tryCoordinator = (retries: number) => {
         if (!existsSync(coordinatorPortFile)) {
           if (retries > 0) {
-            setTimeout(() => tryCoordinator(retries - 1), 50)
+            setTimeout(
+              () => tryCoordinator(retries - 1),
+              COORDINATOR_STARTUP_RETRY_DELAY_MS,
+            )
             return
           }
           // Port file never appeared — fall through to error
@@ -133,7 +145,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           callback(error as Error)
         }
       }
-      tryCoordinator(20) // 20 retries × 50ms = 1s max wait
+      // Turbopack can invoke loaders before the coordinator finishes writing its
+      // port file, especially during production builds. Give it enough time to
+      // start instead of failing the whole build on a short race window.
+      tryCoordinator(COORDINATOR_STARTUP_RETRIES)
       return
     }
 
@@ -181,23 +196,33 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         importAliases,
       )
       const sourceMap = map ? JSON.parse(map) : null
-      if (updatedBaseStyle && watch) {
-        // update base style
+      if (updatedBaseStyle) {
         promises.push(
           writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
         )
       }
-      if (cssFile && watch) {
-        // don't write file when build
+      if (cssFile) {
+        const fileNum = getFileNumFromCssFile(cssFile)
         promises.push(
           writeFile(
             join(cssDir, basename(cssFile!)),
-            `/* ${this.resourcePath} ${Date.now()} */`,
+            getCss(fileNum, true),
+            'utf-8',
           ),
           writeFile(sheetFile, exportSheet()),
           writeFile(classMapFile, exportClassMap()),
           writeFile(fileMapFile, exportFileMap()),
         )
+
+        if (!singleCss && !updatedBaseStyle) {
+          promises.push(
+            writeFile(
+              join(cssDir, 'devup-ui.css'),
+              getCss(null, false),
+              'utf-8',
+            ),
+          )
+        }
       }
       Promise.all(promises)
         .catch(console.error)

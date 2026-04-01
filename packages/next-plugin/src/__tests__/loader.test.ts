@@ -183,10 +183,11 @@ describe('devupUILoader', () => {
       'utf-8',
     )
 
-    // Verify cssFile && watch branch (lines 100-111)
+    // Verify cssFile branch — now writes actual CSS content
     expect(writeFileSpy).toHaveBeenCalledWith(
       join('cssDir', 'devup-ui-1.css'),
-      '/* watch-init.tsx 0 */',
+      'base-css',
+      'utf-8',
     )
     expect(writeFileSpy).toHaveBeenCalledWith('sheetFile', 'sheet')
     expect(writeFileSpy).toHaveBeenCalledWith('classMapFile', 'classMap')
@@ -346,7 +347,7 @@ describe('devupUILoader', () => {
       css: 'css',
       free: mock(),
       map: undefined,
-      cssFile: 'cssFile',
+      cssFile: 'devup-ui-1.css',
       updatedBaseStyle: false,
       [Symbol.dispose]: mock(),
     })
@@ -356,12 +357,12 @@ describe('devupUILoader', () => {
     })
   })
 
-  it('should not write css files in build mode even with cssFile', async () => {
+  it('should write css files in build mode when cssFile is returned', async () => {
     const asyncCallback = mock()
     const t = {
       getOptions: () => ({
         package: 'package',
-        cssDir: 'cssFile',
+        cssDir: 'cssDir',
         watch: false,
         singleCss: true,
         defaultClassMap: {},
@@ -372,12 +373,16 @@ describe('devupUILoader', () => {
       resourcePath: 'index.tsx',
       addDependency: mock(),
     }
+    getCssSpy.mockReturnValue('generated-css')
+    exportSheetSpy.mockReturnValue('sheet')
+    exportClassMapSpy.mockReturnValue('classMap')
+    exportFileMapSpy.mockReturnValue('fileMap')
     codeExtractSpy.mockReturnValue({
       code: 'code',
       css: 'css',
       free: mock(),
       map: '{}',
-      cssFile: 'cssFile',
+      cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
       [Symbol.dispose]: mock(),
     })
@@ -386,8 +391,17 @@ describe('devupUILoader', () => {
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
     })
-    // In build mode (watch=false), no CSS files should be written
-    expect(writeFileSpy).not.toHaveBeenCalled()
+    // CSS files are now written in build mode too
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('cssDir', 'devup-ui.css'),
+      'generated-css',
+      'utf-8',
+    )
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('cssDir', 'devup-ui-1.css'),
+      'generated-css',
+      'utf-8',
+    )
   })
 
   describe('coordinator mode', () => {
@@ -644,16 +658,16 @@ describe('devupUILoader', () => {
 
       devupUILoader.bind(t as any)(Buffer.from('code'), 'fallback.tsx')
 
-      // Retries 20 times × 50ms = 1s max, then calls back with error
+      // Retries 200 times × 50ms = 10s max, then calls back with error
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
           new Error('Coordinator port file not found'),
         )
-      }, 3000)
+      }, 15000)
 
       // WASM should NOT be used — coordinator mode does not fall back
       expect(codeExtractSpy).not.toHaveBeenCalled()
-    })
+    }, 20000)
 
     it('should retry and succeed when coordinatorPortFile appears after delay', async () => {
       // First few calls: port file doesn't exist, then it appears

@@ -5,7 +5,10 @@ use crate::{
     component::ExportVariableKind,
     css_utils::css_to_style_literal,
     extract_style::extract_style_value::ExtractStyleValue,
-    extractor::{ExtractResult, extract_style_from_expression::extract_style_from_expression},
+    extractor::{
+        ExtractResult,
+        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+    },
     gen_class_name::gen_class_names,
     gen_style::gen_styles,
     utils::{merge_object_expressions, wrap_array_filter},
@@ -124,6 +127,7 @@ pub fn extract_style_from_styled<'a>(
             },
             0,
             &None,
+            LiteralHandling::ExpandResponsiveThemeToken,
         );
         if let Some(default_class_name) = default_class_name {
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));

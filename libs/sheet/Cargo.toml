@@ -15,6 +15,7 @@ rustc-hash = "2"
 insta = "1.46.3"
 criterion = { version = "0.8", features = ["html_reports"] }
 rstest = "0.26.1"
+serial_test = "3.4.0"
 
 [[bench]]
 name = "my_benchmark"

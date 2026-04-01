@@ -348,7 +348,7 @@ describe('devupUICssLoader', () => {
     })
 
     expect(error.message).toBe('Coordinator port file not found')
-  })
+  }, 15000)
 
   it('should error when coordinator returns non-200 status', async () => {
     const server = http.createServer((_req, res) => {
