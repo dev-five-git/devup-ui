@@ -389,7 +389,7 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.68",
+      "version": "1.0.69",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
