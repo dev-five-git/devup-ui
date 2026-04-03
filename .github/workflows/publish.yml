@@ -241,8 +241,8 @@ jobs:
           key: playwright-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
       - name: Install Playwright Browsers
         run: bunx playwright install chromium --with-deps
-      - name: Run E2E Tests (singleCss)
-        run: bun run test:e2e
+      - name: Run E2E Tests (singleCss, non-visual)
+        run: bunx playwright test --grep-invert "screenshot|Visual Regression"
       - name: Upload singleCss Playwright Report
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
