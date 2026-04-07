@@ -675,26 +675,33 @@ impl Theme {
         for ty in self.typography.iter() {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
+                    let resolve = |v: &str| -> String {
+                        if let Some(token) = v.strip_prefix('$') {
+                            format!("var(--{})", token)
+                        } else {
+                            optimize_value(v)
+                        }
+                    };
                     let css_content = [
                         t.font_family
                             .as_ref()
-                            .map(|v| format!("font-family:{}", optimize_value(v)))
+                            .map(|v| format!("font-family:{}", resolve(v)))
                             .unwrap_or_default(),
                         t.font_size
                             .as_ref()
-                            .map(|v| format!("font-size:{}", optimize_value(v)))
+                            .map(|v| format!("font-size:{}", resolve(v)))
                             .unwrap_or_default(),
                         t.font_weight
                             .as_ref()
-                            .map(|v| format!("font-weight:{}", optimize_value(v)))
+                            .map(|v| format!("font-weight:{}", resolve(v)))
                             .unwrap_or_default(),
                         t.line_height
                             .as_ref()
-                            .map(|v| format!("line-height:{}", optimize_value(v)))
+                            .map(|v| format!("line-height:{}", resolve(v)))
                             .unwrap_or_default(),
                         t.letter_spacing
                             .as_ref()
-                            .map(|v| format!("letter-spacing:{}", optimize_value(v)))
+                            .map(|v| format!("letter-spacing:{}", resolve(v)))
                             .unwrap_or_default(),
                     ]
                     .iter()
@@ -1378,6 +1385,71 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("cannot start with an array"));
+    }
+
+    #[test]
+    fn test_typography_variable_reference() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "body": {
+                        "fontSize": "$text",
+                        "lineHeight": "$leading",
+                        "fontWeight": 400
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let css = theme.to_css();
+        assert!(
+            css.contains("font-size:var(--text)"),
+            "Expected font-size:var(--text), got: {}",
+            css
+        );
+        assert!(
+            css.contains("line-height:var(--leading)"),
+            "Expected line-height:var(--leading), got: {}",
+            css
+        );
+        assert!(css.contains("font-weight:400"));
+    }
+
+    #[test]
+    fn test_typography_variable_reference_responsive() {
+        let theme: Theme = serde_json::from_str(
+            r##"{
+                "typography": {
+                    "heading": [
+                        {
+                            "fontSize": "$textSm",
+                            "fontWeight": 700
+                        },
+                        null,
+                        null,
+                        null,
+                        {
+                            "fontSize": "$textLg",
+                            "fontWeight": 700
+                        }
+                    ]
+                }
+            }"##,
+        )
+        .unwrap();
+
+        let css = theme.to_css();
+        assert!(
+            css.contains("font-size:var(--textSm)"),
+            "Expected font-size:var(--textSm), got: {}",
+            css
+        );
+        assert!(
+            css.contains("font-size:var(--textLg)"),
+            "Expected font-size:var(--textLg), got: {}",
+            css
+        );
     }
 
     #[test]
