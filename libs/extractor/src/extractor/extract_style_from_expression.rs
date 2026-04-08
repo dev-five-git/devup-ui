@@ -397,31 +397,46 @@ pub fn extract_style_from_expression<'a>(
     } else {
         match expression {
             Expression::UnaryExpression(un) => ExtractResult {
+                // `name` is None only when this was reached through the `_xxx`
+                // selector recursion (see line 324). In that case the value
+                // cannot be statically extracted as a dynamic style because
+                // the pseudo-selector has no CSS property slot to bind a
+                // CSS variable to, so we return an empty result and let the
+                // caller drop the attribute (see issue with `_hover={var}`).
                 styles: if un.operator == UnaryOperator::Void {
                     vec![]
-                } else {
+                } else if let Some(name) = name {
                     vec![dynamic_style(
                         ast_builder,
-                        name.unwrap(),
+                        name,
                         expression,
                         level,
                         selector,
                     )]
+                } else {
+                    vec![]
                 },
                 ..ExtractResult::default()
             },
             Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
-            | Expression::CallExpression(_) => ExtractResult {
-                styles: vec![dynamic_style(
-                    ast_builder,
-                    name.unwrap(),
-                    expression,
-                    level,
-                    selector,
-                )],
-                ..ExtractResult::default()
-            },
+            | Expression::CallExpression(_) => {
+                if let Some(name) = name {
+                    ExtractResult {
+                        styles: vec![dynamic_style(
+                            ast_builder,
+                            name,
+                            expression,
+                            level,
+                            selector,
+                        )],
+                        ..ExtractResult::default()
+                    }
+                } else {
+                    // See comment on UnaryExpression arm above.
+                    ExtractResult::default()
+                }
+            }
             Expression::TSAsExpression(exp) => extract_style_from_expression(
                 ast_builder,
                 name,
@@ -434,6 +449,11 @@ pub fn extract_style_from_expression<'a>(
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
             Expression::TemplateLiteral(_) => ExtractResult {
+                // `typo == true` implies `name == Some("typography")` (set at
+                // line 337 inside an `if let Some(name) = name` block), so the
+                // typo branch is safe. The non-typo branch must handle the
+                // `name.is_none()` case (pseudo-selector recursion) by
+                // returning empty styles.
                 styles: if typo {
                     vec![ExtractStyleProp::Expression {
                         expression: ast_builder.expression_template_literal(
@@ -463,22 +483,30 @@ pub fn extract_style_from_expression<'a>(
                         ),
                         styles: vec![],
                     }]
-                } else {
+                } else if let Some(name) = name {
                     vec![dynamic_style(
                         ast_builder,
-                        name.unwrap(),
+                        name,
                         expression,
                         level,
                         selector,
                     )]
+                } else {
+                    vec![]
                 },
                 ..ExtractResult::default()
             },
             Expression::Identifier(identifier) => {
+                // When `name` is `None` we are inside a pseudo-selector
+                // recursion (e.g. `_hover={someIdentifier}`). In that case
+                // the identifier is a black box (it may come from another
+                // module) and we cannot statically extract a style from it,
+                // so we skip extraction gracefully instead of panicking. The
+                // pseudo-selector attribute will be stripped by the visitor
+                // like any other non-extracted style prop.
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
-                } else {
-                    let name = name.unwrap();
+                } else if let Some(name) = name {
                     if typo {
                         ExtractResult {
                             styles: vec![ExtractStyleProp::Expression {
@@ -530,6 +558,8 @@ pub fn extract_style_from_expression<'a>(
                             ..ExtractResult::default()
                         }
                     }
+                } else {
+                    ExtractResult::default()
                 }
             }
             Expression::LogicalExpression(logical) => {

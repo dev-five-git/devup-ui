@@ -117,6 +117,17 @@ describe('devupUIVitePlugin', () => {
     }
   })
 
+  it('should include default editor packages in vite config', () => {
+    const plugin = DevupUI({})
+    const config = (plugin as any).config()
+
+    expect(config.optimizeDeps.exclude).toEqual([
+      '@devup-ui/components',
+      '@devup-editor/react',
+    ])
+    expect(config.ssr.noExternal).toEqual([/@devup-ui/, /@devup-editor/])
+  })
+
   it.each(
     createTestMatrix({
       watch: [true, false],
@@ -264,6 +275,12 @@ describe('devupUIVitePlugin', () => {
         await (plugin as any).transform(
           'code',
           'node_modules/@devup-ui/hello/index.tsx',
+        ),
+      ).toEqual({ code: 'code' })
+      expect(
+        await (plugin as any).transform(
+          'code',
+          'node_modules/@devup-editor/react/index.tsx',
         ),
       ).toEqual({ code: 'code' })
 

@@ -16724,4 +16724,142 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
             .unwrap()
         ));
     }
+
+    #[test]
+    #[serial]
+    fn extract_pseudo_selector_with_non_literal_value_graceful() {
+        // Minimal regression tests for the panic that ERROR.tsx surfaced.
+        //
+        // When a pseudo-selector prop (`_hover`, `_active`, `_focus`, ...)
+        // receives anything other than an inline object literal, the
+        // extractor used to `unwrap()` a None prop-name inside the
+        // `_xxx` selector recursion path and panic. The fix is to return
+        // an empty ExtractResult from the non-literal branches of
+        // `extract_style_from_expression` and
+        // `extract_style_from_member_expression` when `name` is `None`.
+        //
+        // Each case below must:
+        //   1. NOT panic (used to panic before the fix)
+        //   2. Return Ok from `extract()`
+        //   3. Drop the un-extractable pseudo-selector attribute from the
+        //      generated code (no class, no runtime style — devup-ui is
+        //      fully static, so there is no runtime fallback to fall back
+        //      to)
+        let cases: &[(&str, &str)] = &[
+            (
+                "identifier",
+                r#"import {Box} from '@devup-ui/react'
+const hoverStyle = { opacity: 1 };
+export const A = () => <Box _hover={hoverStyle} />;
+"#,
+            ),
+            (
+                "call expression",
+                r#"import {Box} from '@devup-ui/react'
+declare const getHover: () => object;
+export const A = () => <Box _hover={getHover()} />;
+"#,
+            ),
+            (
+                "member expression",
+                r#"import {Box} from '@devup-ui/react'
+declare const styles: { hover: object };
+export const A = () => <Box _hover={styles.hover} />;
+"#,
+            ),
+            (
+                "binary expression",
+                r#"import {Box} from '@devup-ui/react'
+declare const a: any; declare const b: any;
+export const A = () => <Box _hover={a || b} />;
+"#,
+            ),
+            (
+                "template literal",
+                r#"import {Box} from '@devup-ui/react'
+declare const x: string;
+export const A = () => <Box _hover={`${x}`} />;
+"#,
+            ),
+            (
+                "unary expression",
+                r#"import {Box} from '@devup-ui/react'
+declare const v: any;
+export const A = () => <Box _hover={!v} />;
+"#,
+            ),
+            (
+                "computed member expression (array index)",
+                r#"import {Box} from '@devup-ui/react'
+declare const arr: any[];
+export const A = () => <Box _hover={arr[0]} />;
+"#,
+            ),
+        ];
+
+        for (label, src) in cases {
+            reset_class_map();
+            reset_file_map();
+            let result = std::panic::catch_unwind(|| {
+                extract(
+                    "test.tsx",
+                    src,
+                    ExtractOption {
+                        package: "@devup-ui/react".to_string(),
+                        css_dir: "@devup-ui/react".to_string(),
+                        single_css: true,
+                        import_main_css: false,
+                        import_aliases: HashMap::new(),
+                    },
+                )
+            });
+            match result {
+                Ok(Ok(output)) => {
+                    println!(
+                        "[OK] {label}: extract succeeded, {} styles",
+                        output.styles.len()
+                    );
+                }
+                Ok(Err(e)) => {
+                    panic!("[FAIL] {label}: extract returned Err: {e}");
+                }
+                Err(panic_payload) => {
+                    let msg = panic_payload
+                        .downcast_ref::<&'static str>()
+                        .map(|s| (*s).to_string())
+                        .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "<non-string panic>".to_string());
+                    panic!("[FAIL] {label}: extract panicked: {msg}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn extract_pseudo_selector_with_identifier_snapshot() {
+        // Snapshot-locks the current behavior for the minimal ERROR.tsx
+        // reduction so future refactors can't silently regress either
+        // direction (re-introducing the panic, or over-eagerly turning the
+        // `_hover={ident}` attribute into something surprising).
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/react'
+const hoverStyle = { opacity: 1 };
+export const A = () => <Box _hover={hoverStyle} bg="red" />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new(),
+                },
+            )
+            .unwrap()
+        ));
+    }
 }

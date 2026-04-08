@@ -213,19 +213,19 @@ describe('devupUIWebpackPlugin', () => {
         {
           input: ['lib'],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui|lib)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '(node_modules(?!.*(@devup-ui|@devup-editor|lib)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: [],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '(node_modules(?!.*(@devup-ui|@devup-editor)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
         {
           input: ['lib', 'lib2'],
           output: new RegExp(
-            '(node_modules(?!.*(@devup-ui|lib|lib2)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
+            '(node_modules(?!.*(@devup-ui|@devup-editor|lib|lib2)([\\/\\\\.]|$)))|(.mdx.[tj]sx?$)',
           ),
         },
       ],

@@ -30,7 +30,7 @@ export function createNodeModulesExcludeRegex(
   include: string[],
   extraExcludes?: string,
 ): RegExp {
-  const base = `node_modules(?!.*(${['@devup-ui', ...include]
+  const base = `node_modules(?!.*(${['@devup-ui', '@devup-editor', ...include]
     .join('|')
     .replaceAll('/', '[\\/\\\\_]')})([\\/\\\\.]|$))`
   return new RegExp(extraExcludes ? `(${base})|(${extraExcludes})` : base)

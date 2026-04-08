@@ -121,10 +121,10 @@ export function DevupUI({
         },
         define,
         optimizeDeps: {
-          exclude: [...include, '@devup-ui/components'],
+          exclude: [...include, '@devup-ui/components', '@devup-editor/react'],
         },
         ssr: {
-          noExternal: [...include, /@devup-ui/],
+          noExternal: [...include, /@devup-ui/, /@devup-editor/],
         },
       }
       if (extractCss) {

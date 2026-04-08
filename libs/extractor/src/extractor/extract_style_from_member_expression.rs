@@ -65,13 +65,17 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     );
                 }
             }
+            // If `name` is None (pseudo-selector recursion) we cannot emit a
+            // dynamic_style because there is no CSS property slot to bind to.
+            // Fall back to an empty result in that case.
             return ExtractResult {
                 props: None,
                 styles: etc
-                    .map(|etc| {
+                    .zip(name)
+                    .map(|(etc, name)| {
                         vec![dynamic_style(
                             ast_builder,
-                            name.unwrap(),
+                            name,
                             &Expression::ComputedMemberExpression(
                                 ast_builder.alloc_computed_member_expression(
                                     SPAN,
@@ -94,23 +98,27 @@ pub(super) fn extract_style_from_member_expression<'a>(
         let mut map = BTreeMap::new();
         for (idx, p) in array.elements.iter_mut().enumerate() {
             if let ArrayExpressionElement::SpreadElement(sp) = p {
-                map.insert(
-                    idx.to_string(),
-                    Box::new(dynamic_style(
-                        ast_builder,
-                        name.unwrap(),
-                        &Expression::ComputedMemberExpression(
-                            ast_builder.alloc_computed_member_expression(
-                                SPAN,
-                                sp.argument.clone_in(ast_builder.allocator),
-                                mem_expression.clone_in(ast_builder.allocator),
-                                false,
+                // Skip spread elements entirely when `name` is None — we
+                // can't synthesize a dynamic style without a prop name.
+                if let Some(name) = name {
+                    map.insert(
+                        idx.to_string(),
+                        Box::new(dynamic_style(
+                            ast_builder,
+                            name,
+                            &Expression::ComputedMemberExpression(
+                                ast_builder.alloc_computed_member_expression(
+                                    SPAN,
+                                    sp.argument.clone_in(ast_builder.allocator),
+                                    mem_expression.clone_in(ast_builder.allocator),
+                                    false,
+                                ),
                             ),
-                        ),
-                        level,
-                        &selector.clone(),
-                    )),
-                );
+                            level,
+                            &selector.clone(),
+                        )),
+                    );
+                }
             } else if let Some(p) = p.as_expression_mut() {
                 map.insert(
                     idx.to_string(),
@@ -162,11 +170,10 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 }
             }
 
-            match etc {
-                None => return ExtractResult::default(),
-                Some(etc) => ret.push(dynamic_style(
+            match (etc, name) {
+                (Some(etc), Some(name)) => ret.push(dynamic_style(
                     ast_builder,
-                    name.unwrap(),
+                    name,
                     &Expression::ComputedMemberExpression(
                         ast_builder.alloc_computed_member_expression(
                             SPAN,
@@ -178,6 +185,9 @@ pub(super) fn extract_style_from_member_expression<'a>(
                     level,
                     selector,
                 )),
+                // No spread fallback, or no prop name (pseudo-selector
+                // recursion): return empty instead of panicking.
+                _ => return ExtractResult::default(),
             }
         }
 
@@ -205,10 +215,14 @@ pub(super) fn extract_style_from_member_expression<'a>(
             expression: mem_expression.clone_in(ast_builder.allocator),
             map,
         });
-    } else if let Expression::Identifier(_) = &mut mem.object {
+    } else if let Expression::Identifier(_) = &mut mem.object
+        && let Some(name) = name
+    {
+        // When `name` is None we are in a pseudo-selector recursion and
+        // cannot emit a dynamic_style — skip gracefully.
         ret.push(dynamic_style(
             ast_builder,
-            name.unwrap(),
+            name,
             &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
                 SPAN,
                 mem.object.clone_in(ast_builder.allocator),

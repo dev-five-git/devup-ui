@@ -240,7 +240,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
                       .join('|')
                       .replaceAll(
                         '/',
@@ -292,7 +292,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
                       .join('|')
                       .replaceAll(
                         '/',
@@ -384,7 +384,7 @@ describe('DevupUINextPlugin', () => {
               condition: {
                 not: {
                   path: new RegExp(
-                    `(node_modules(?!.*(${['@devup-ui']
+                    `(node_modules(?!.*(${['@devup-ui', '@devup-editor']
                       .join('|')
                       .replaceAll(
                         '/',

@@ -1,0 +1,20 @@
+---
+source: libs/extractor/src/lib.rs
+assertion_line: 16905
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import {Box} from '@devup-ui/react'\nconst hoverStyle = { opacity: 1 };\nexport const A = () => <Box _hover={hoverStyle} bg=\"red\" />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new(),\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst hoverStyle = { opacity: 1 };\nexport const A = () => <div className=\"a\" />;\n",
+}
