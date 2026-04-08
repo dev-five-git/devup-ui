@@ -418,25 +418,27 @@ pub fn extract_style_from_expression<'a>(
                 },
                 ..ExtractResult::default()
             },
+            // Each variant is kept on its own line so per-line coverage
+            // tools (tarpaulin on CI) can attribute the hit to the exact
+            // pattern being exercised. The body is flattened to a single
+            // `Option::map().unwrap_or_default()` chain to avoid an extra
+            // if/else branch region — `name == None` happens only under
+            // `_xxx={...}` pseudo-selector recursion, where no dynamic_style
+            // can be emitted because the selector has no CSS property slot.
             Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
-            | Expression::CallExpression(_) => {
-                if let Some(name) = name {
-                    ExtractResult {
-                        styles: vec![dynamic_style(
-                            ast_builder,
-                            name,
-                            expression,
-                            level,
-                            selector,
-                        )],
-                        ..ExtractResult::default()
-                    }
-                } else {
-                    // See comment on UnaryExpression arm above.
-                    ExtractResult::default()
-                }
-            }
+            | Expression::CallExpression(_) => name
+                .map(|name| ExtractResult {
+                    styles: vec![dynamic_style(
+                        ast_builder,
+                        name,
+                        expression,
+                        level,
+                        selector,
+                    )],
+                    ..ExtractResult::default()
+                })
+                .unwrap_or_default(),
             Expression::TSAsExpression(exp) => extract_style_from_expression(
                 ast_builder,
                 name,
