@@ -43,6 +43,7 @@ describe('createNodeModulesExcludeRegex', () => {
     const regex = createNodeModulesExcludeRegex([])
     expect(regex.test('node_modules/@devup-ui/react/index.js')).toBe(false)
     expect(regex.test('node_modules/@devup-ui/components/index.js')).toBe(false)
+    expect(regex.test('node_modules/@devup-editor/react/index.js')).toBe(false)
   })
 
   it('should NOT match included packages', () => {
