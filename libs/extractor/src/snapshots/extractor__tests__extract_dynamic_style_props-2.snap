@@ -1,18 +1,19 @@
 ---
 source: libs/extractor/src/lib.rs
-expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box padding={Math.abs(5)} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false\n}).unwrap())"
+assertion_line: 969
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr#\"import { Box } from \"@devup-ui/core\";\n<Box bg={left + right} />;\n\"#,\nExtractOption\n{\n    package: \"@devup-ui/core\".to_string(), css_dir:\n    \"@devup-ui/core\".to_string(), single_css: true, import_main_css: false,\n    import_aliases: HashMap::new()\n}).unwrap())"
 ---
 ToBTreeSet {
     styles: {
         Dynamic(
             ExtractDynamicStyle {
-                property: "padding",
+                property: "background",
                 level: 0,
-                identifier: "Math.abs(5)",
+                identifier: "left+right",
                 selector: None,
                 style_order: None,
             },
         ),
     },
-    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" style={{ \"--b\": Math.abs(5) }} />;\n",
+    code: "import \"@devup-ui/core/devup-ui.css\";\n<div className=\"a\" style={{ \"--b\": left+right }} />;\n",
 }

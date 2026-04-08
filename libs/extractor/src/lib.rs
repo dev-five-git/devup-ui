@@ -1407,6 +1407,25 @@ import clsx from 'clsx'
             extract(
                 "test.tsx",
                 r#"import { Box } from "@devup-ui/core";
+<Box bg={left + right} />;
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import { Box } from "@devup-ui/core";
 <Box padding={Math.abs(5)} />;
 "#,
                 ExtractOption {
@@ -16856,7 +16875,7 @@ export const A = () => <Box _hover={hoverStyle} bg="red" />;
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: HashMap::new(),
+                    import_aliases: HashMap::new()
                 },
             )
             .unwrap()
