@@ -10699,6 +10699,32 @@ const margin = 5;
 
     #[test]
     #[serial]
+    fn test_dynamic_value_with_important() {
+        reset_class_map();
+        reset_file_map();
+        // !important in a template literal should be stripped from the runtime
+        // value and placed on the CSS property declaration instead.
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+const color = "red";
+<Box bg={`${color} !important`} />
+"#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: false,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_media_query_selectors() {
         // Test _print media query selector
         reset_class_map();

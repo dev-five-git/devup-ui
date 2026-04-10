@@ -412,7 +412,11 @@ impl StyleSheet {
                             &class_name,
                             dy.property(),
                             dy.level(),
-                            &format!("var({})", variable_name),
+                            &if dy.important() {
+                                format!("var({}) !important", variable_name)
+                            } else {
+                                format!("var({})", variable_name)
+                            },
                             dy.selector(),
                             dy.style_order(),
                             if !single_css { Some(filename) } else { None },
@@ -2412,5 +2416,68 @@ mod tests {
 
         let css = sheet.create_css(None, false);
         assert!(css.contains("box-shadow:0 1px 2px #0003"));
+    }
+
+    #[test]
+    fn test_important_in_css_via_add_property() {
+        // Verify that !important in the value is preserved in the final CSS output
+        let mut sheet = StyleSheet::default();
+        sheet.add_property(
+            "test",
+            "background",
+            0,
+            "var(--a) !important",
+            None,
+            None,
+            None,
+        );
+        let css = sheet.create_css(None, false);
+        let css_body = css.split("*/").nth(1).unwrap();
+        assert!(
+            css_body.contains("background:var(--a) !important"),
+            "CSS should contain !important. Got: {css_body}",
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_dynamic_style_important_full_pipeline() {
+        // Full pipeline: extract JSX with `${color} !important` → sheet → CSS
+        // Verifies !important ends up on the CSS property, not in the style attribute
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+
+        let output = extract(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/core'
+const color = "red";
+<Box bg={`${color} !important`} />
+"#,
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+
+        let (collected, _) = sheet.update_styles(&output.styles, "test.tsx", true);
+        assert!(collected);
+
+        let css = sheet.create_css(None, false);
+        let css_body = css.split("*/").nth(1).unwrap();
+        assert!(
+            css_body.contains("!important"),
+            "CSS output should contain !important for dynamic styles. Got: {css_body}",
+        );
+        // Verify the code has clean style value (no !important in the variable)
+        assert!(
+            !output.code.contains("!important"),
+            "Generated code should NOT contain !important in style vars. Got: {}",
+            output.code,
+        );
     }
 }
