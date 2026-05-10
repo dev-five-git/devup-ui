@@ -44,21 +44,15 @@ describe('getFileNumByFilename', () => {
   })
 
   it('should return null for path/to/devup-ui.css with deployment query', () => {
-    expect(
-      getFileNumByFilename('/path/to/devup-ui.css?dpl=abc'),
-    ).toBeNull()
+    expect(getFileNumByFilename('/path/to/devup-ui.css?dpl=abc')).toBeNull()
   })
 
   it('should still extract fileNum when extra queries follow it', () => {
-    expect(
-      getFileNumByFilename('devup-ui.css?fileNum=5&dpl=abc'),
-    ).toBe(5)
+    expect(getFileNumByFilename('devup-ui.css?fileNum=5&dpl=abc')).toBe(5)
   })
 
   it('should still extract fileNum when extra queries precede it', () => {
-    expect(
-      getFileNumByFilename('devup-ui.css?dpl=abc&fileNum=7'),
-    ).toBe(7)
+    expect(getFileNumByFilename('devup-ui.css?dpl=abc&fileNum=7')).toBe(7)
   })
 
   it('should extract file number from devup-ui-5.css with query', () => {
