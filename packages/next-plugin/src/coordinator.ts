@@ -2,6 +2,7 @@ import { unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
+import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   exportClassMap,
@@ -19,11 +20,6 @@ export interface CoordinatorOptions {
   fileMapFile: string
   importAliases: Record<string, string | null>
   coordinatorPortFile: string
-}
-
-function getFileNumFromCssFile(cssFile: string): number | null {
-  if (cssFile.endsWith('devup-ui.css')) return null
-  return parseInt(cssFile.split('devup-ui-')[1].split('.')[0])
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -161,7 +157,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         }
 
         if (result.cssFile) {
-          const fileNum = getFileNumFromCssFile(result.cssFile)
+          const fileNum = getFileNumByFilename(result.cssFile)
           promises.push(
             new Promise<void>((resolve, reject) =>
               writeFile(

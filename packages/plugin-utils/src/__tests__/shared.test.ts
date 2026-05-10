@@ -30,6 +30,38 @@ describe('getFileNumByFilename', () => {
   it('should return null for path/to/devup-ui.css (no number, no query)', () => {
     expect(getFileNumByFilename('path/to/devup-ui.css')).toBeNull()
   })
+
+  // Regression: when Next.js `assetPrefix` is set, Turbopack appends extra
+  // query parameters (e.g. `?dpl=DEPLOYMENT_ID`) to module URLs. The base
+  // CSS file must still be detected correctly, otherwise `@layer b` styles
+  // are dropped from the build output.
+  it('should return null for devup-ui.css with non-fileNum query (?dpl=...)', () => {
+    expect(getFileNumByFilename('devup-ui.css?dpl=abc')).toBeNull()
+  })
+
+  it('should return null for devup-ui.css with version query (?v=...)', () => {
+    expect(getFileNumByFilename('devup-ui.css?v=12345')).toBeNull()
+  })
+
+  it('should return null for path/to/devup-ui.css with deployment query', () => {
+    expect(getFileNumByFilename('/path/to/devup-ui.css?dpl=abc')).toBeNull()
+  })
+
+  it('should still extract fileNum when extra queries follow it', () => {
+    expect(getFileNumByFilename('devup-ui.css?fileNum=5&dpl=abc')).toBe(5)
+  })
+
+  it('should still extract fileNum when extra queries precede it', () => {
+    expect(getFileNumByFilename('devup-ui.css?dpl=abc&fileNum=7')).toBe(7)
+  })
+
+  it('should extract file number from devup-ui-5.css with query', () => {
+    expect(getFileNumByFilename('devup-ui-5.css?dpl=abc')).toBe(5)
+  })
+
+  it('should return null for unrelated css filename', () => {
+    expect(getFileNumByFilename('something-else.css')).toBeNull()
+  })
 })
 
 describe('createNodeModulesExcludeRegex', () => {

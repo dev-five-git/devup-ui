@@ -490,7 +490,7 @@ fn replace_classes_in_string(s: &str, class_mapping: &FxHashMap<String, String>)
     let mut result = s.to_string();
     // Sort by length descending to avoid partial replacements (e.g., "text-3xl" before "text-3")
     let mut sorted_classes: Vec<_> = class_mapping.iter().collect();
-    sorted_classes.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    sorted_classes.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
 
     for (tailwind_class, generated_class) in sorted_classes {
         result = result.replace(tailwind_class, generated_class);
