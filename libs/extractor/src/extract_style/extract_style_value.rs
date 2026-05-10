@@ -32,10 +32,8 @@ impl ExtractStyleValue {
     }
     pub fn set_style_order(&mut self, order: u8) {
         match self {
-            ExtractStyleValue::Static(style) => {
-                if style.style_order.is_none() {
-                    style.style_order = Some(order);
-                }
+            ExtractStyleValue::Static(style) if style.style_order.is_none() => {
+                style.style_order = Some(order);
             }
             ExtractStyleValue::Dynamic(style) => {
                 style.style_order = Some(order);
