@@ -11,7 +11,7 @@
   "dependencies": {
     "react": "^19.2",
     "react-dom": "^19.2",
-    "vinext": "^0.0.34",
+    "vinext": "^0.0.49",
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
@@ -19,7 +19,7 @@
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-rsc": "^0.5.21",
+    "@vitejs/plugin-rsc": "^0.5.26",
     "react-server-dom-webpack": "^19.2",
     "typescript": "^6",
     "vite": "^8.0"
