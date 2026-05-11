@@ -86,11 +86,10 @@ describe('getDevupDefine', () => {
 
 describe('writeDataFiles behavior', () => {
   it('should register theme from devup.json when it exists', async () => {
-    existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
     readFileSpy.mockResolvedValue('{"theme": {"colors": {"primary": "#000"}}}')
     getThemeInterfaceSpy.mockReturnValue('interface CustomColors {}')
 
-    // Simulate writeDataFiles behavior
+    // Simulate writeDataFiles behavior without exporting private plugin helpers.
     const content = '{"theme": {"colors": {"primary": "#000"}}}'
     const parsed = JSON.parse(content)
     registerThemeSpy(parsed?.['theme'] ?? {})
@@ -101,7 +100,6 @@ describe('writeDataFiles behavior', () => {
   })
 
   it('should write theme.d.ts when interfaceCode is returned', async () => {
-    existsSyncSpy.mockImplementation((path: string) => path === 'devup.json')
     getThemeInterfaceSpy.mockReturnValue('interface CustomColors {}')
 
     const interfaceCode = getThemeInterfaceSpy(
@@ -127,7 +125,7 @@ describe('writeDataFiles behavior', () => {
   it('should register empty theme when devup.json does not exist', async () => {
     existsSyncSpy.mockReturnValue(false)
 
-    // Simulate the else branch
+    // Simulate the missing config branch.
     const content = undefined
     if (!content) {
       registerThemeSpy({})
@@ -164,7 +162,7 @@ describe('writeDataFiles behavior', () => {
   it('should create css directory when it does not exist', async () => {
     existsSyncSpy.mockReturnValue(false)
 
-    // Simulate the Promise.all behavior
+    // Simulate the directory creation branch without exposing internals.
     if (!existsSyncSpy('df/devup-ui')) {
       await mkdirSpy('df/devup-ui', { recursive: true })
     }
