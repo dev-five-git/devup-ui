@@ -326,7 +326,6 @@ describe('devupUILoader', () => {
 
   it('should handle error in watch mode', async () => {
     const asyncCallback = mock()
-    const consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {})
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -355,7 +354,46 @@ describe('devupUILoader', () => {
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
     })
-    consoleErrorSpy.mockRestore()
+  })
+
+  it('should propagate css write failures in watch mode', async () => {
+    const asyncCallback = mock()
+    const writeError = new Error('write failed')
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssDir',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        themeFile: 'themeFile',
+        watch: true,
+        singleCss: true,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'write-error.tsx',
+      addDependency: mock(),
+    }
+    writeFileSpy.mockRejectedValueOnce(writeError)
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: mock(),
+      map: '{}',
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      'write-error.tsx',
+    )
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(writeError)
+    })
+    expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
   })
 
   it('should use correct relative css path', async () => {

@@ -259,6 +259,40 @@ describe('devupUILoader', () => {
     expect(asyncCallback).toHaveBeenCalledWith(new Error('error'))
   })
 
+  it('should propagate css write failures', async () => {
+    const asyncCallback = mock()
+    const writeError = new Error('write failed')
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        watch: true,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    writeFileSpy.mockRejectedValueOnce(writeError)
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: '{}',
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
+      }),
+    )
+
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(writeError)
+    })
+    expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
+  })
+
   it('should load with date now on watch', async () => {
     const asyncCallback = mock()
     const t = createLoaderContext(

@@ -38,6 +38,10 @@ let init = false
 let cachedPort: number | null = null
 const keepAliveAgent = new Agent({ keepAlive: true })
 
+function toLoaderError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
 function readCoordinatorPort(portFile: string): number {
   if (cachedPort !== null) return cachedPort
   cachedPort = parseInt(readFileSync(portFile, 'utf-8').trim())
@@ -75,7 +79,7 @@ function coordinatorExtract(
           const sourceMap = data.map ? JSON.parse(data.map) : null
           callback(null, data.code, sourceMap)
         } catch (e) {
-          callback(e instanceof Error ? e : new Error(String(e)))
+          callback(toLoaderError(e))
         }
       })
     },
@@ -130,7 +134,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             callback(null, content, sourceMap as Parameters<typeof callback>[2])
           })
         } catch (error) {
-          callback(error as Error)
+          callback(toLoaderError(error))
         }
       }
       tryCoordinator(20) // 20 retries × 50ms = 1s max wait
@@ -199,13 +203,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(fileMapFile, exportFileMap()),
         )
       }
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(null, code, sourceMap))
+      Promise.all(promises).then(
+        () => callback(null, code, sourceMap),
+        (error) => callback(toLoaderError(error)),
+      )
     } catch (error) {
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(error as Error))
+      callback(toLoaderError(error))
     }
     return
   }

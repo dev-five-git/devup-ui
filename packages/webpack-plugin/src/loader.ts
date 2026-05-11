@@ -21,6 +21,10 @@ export interface DevupUILoaderOptions {
   importAliases?: Record<string, string | null>
 }
 
+function toLoaderError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
     const {
@@ -83,11 +87,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           )
         }
       }
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(null, code, sourceMap))
+      Promise.all(promises).then(
+        () => callback(null, code, sourceMap),
+        (error) => callback(toLoaderError(error)),
+      )
     } catch (error) {
-      callback(error as Error)
+      callback(toLoaderError(error))
     }
     return
   }
