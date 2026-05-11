@@ -1,6 +1,9 @@
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
+  DEFAULT_THEME_INTERFACE_NAMES,
+  type DevupThemeInterfaceNames,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from './shared'

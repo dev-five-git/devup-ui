@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 
 import {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
@@ -86,12 +87,7 @@ export class DevupUIWebpackPlugin {
 
       registerTheme(theme)
       const interfaceCode = getThemeInterface(
-        this.options.package,
-        'CustomColors',
-        'DevupThemeTypography',
-        'CustomLength',
-        'CustomShadows',
-        'DevupTheme',
+        ...createThemeInterfaceArgs(this.options.package),
       )
 
       if (interfaceCode) {

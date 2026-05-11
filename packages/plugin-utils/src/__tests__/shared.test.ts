@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test'
 
 import {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
+  DEFAULT_THEME_INTERFACE_NAMES,
   type DevupUIBasePluginOptions,
   getFileNumByFilename,
 } from '../shared'
@@ -101,6 +103,35 @@ describe('createNodeModulesExcludeRegex', () => {
     const regex = createNodeModulesExcludeRegex([])
     expect(regex.test('node_modules/some-package/index.js')).toBe(true)
     expect(regex.test('node_modules/@devup-ui/react/index.js')).toBe(false)
+  })
+})
+
+describe('createThemeInterfaceArgs', () => {
+  it('should return the default theme interface names in wasm argument order', () => {
+    expect(createThemeInterfaceArgs('@devup-ui/react')).toEqual([
+      '@devup-ui/react',
+      'CustomColors',
+      'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
+      'DevupTheme',
+    ])
+  })
+
+  it('should allow overriding interface names', () => {
+    expect(
+      createThemeInterfaceArgs('@scope/ui', {
+        ...DEFAULT_THEME_INTERFACE_NAMES,
+        color: 'Colors',
+      }),
+    ).toEqual([
+      '@scope/ui',
+      'Colors',
+      'DevupThemeTypography',
+      'CustomLength',
+      'CustomShadows',
+      'DevupTheme',
+    ])
   })
 })
 

@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -47,12 +48,7 @@ async function writeDataFiles(
 
     registerTheme(theme)
     const interfaceCode = getThemeInterface(
-      options.package,
-      'CustomColors',
-      'DevupThemeTypography',
-      'CustomLength',
-      'CustomShadows',
-      'DevupTheme',
+      ...createThemeInterfaceArgs(options.package),
     )
 
     if (interfaceCode) {
