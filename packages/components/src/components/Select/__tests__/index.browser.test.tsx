@@ -223,8 +223,11 @@ describe('Select', () => {
   })
 
   it('should have undefined gap when type is not right', () => {
-    // @ts-expect-error - test for wrong type
-    const { container } = render(<Select type="no-type">{children}</Select>)
+    const invalidTypeProps = {
+      type: 'no-type',
+      children,
+    } as unknown as React.ComponentProps<typeof Select>
+    const { container } = render(<Select {...invalidTypeProps} />)
     const selectToggle = container.querySelector('[aria-label="Select toggle"]')
     fireEvent.click(selectToggle!)
     const option2 = container.querySelector('[data-value="Option 2"]')

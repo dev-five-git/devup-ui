@@ -14,6 +14,13 @@ import {
 
 import { createThemeStore } from '../theme-store'
 
+type ThemeStore = ReturnType<typeof createThemeStore>
+type ThemeValue = Parameters<ThemeStore['set']>[0]
+
+const darkTheme = 'dark' as unknown as ThemeValue
+const lightTheme = 'light' as unknown as ThemeValue
+const systemTheme = 'system' as unknown as ThemeValue
+
 beforeAll(() => {
   document.documentElement.removeAttribute('data-theme')
 })
@@ -39,12 +46,12 @@ describe('themeStore', () => {
     expect(themeStore.set).toEqual(expect.any(Function))
     expect(themeStore.subscribe).toEqual(expect.any(Function))
     expect(themeStore.get()).toBeNull()
-    expect(themeStore.set('dark' as any)).toBeUndefined()
+    expect(themeStore.set(darkTheme)).toBeUndefined()
     // subscribe returns an unsubscribe function, which returns boolean when called
     const unsubscribe = themeStore.subscribe(() => {})
     expect(typeof unsubscribe).toBe('function')
     themeStore.subscribe(() => {})
-    expect(themeStore.set('dark' as any)).toBeUndefined()
+    expect(themeStore.set(darkTheme)).toBeUndefined()
   })
 
   it('should call subscriber when theme changes via set', () => {
@@ -56,10 +63,10 @@ describe('themeStore', () => {
     // First call is from subscribe itself (reads current data-theme)
     expect(callback).toHaveBeenCalledTimes(1)
 
-    themeStore.set('light' as any)
+    themeStore.set(lightTheme)
     expect(callback).toHaveBeenCalledTimes(2)
     expect(callback).toHaveBeenLastCalledWith('light')
-    expect(themeStore.get()).toBe('light' as any)
+    expect(themeStore.get()).toBe(lightTheme)
   })
 
   it('should unsubscribe correctly', () => {
@@ -71,10 +78,10 @@ describe('themeStore', () => {
 
     // Unsubscribe
     const result = unsubscribe()
-    expect(result).toBe(true as any)
+    expect(result).toBe(true)
 
     // Should not be called after unsubscribe
-    themeStore.set('dark' as any)
+    themeStore.set(darkTheme)
     expect(callback).toHaveBeenCalledTimes(1)
   })
 
@@ -104,7 +111,7 @@ describe('themeStore', () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
 
     expect(callback).toHaveBeenCalledWith('dark')
-    expect(themeStore.get()).toBe('dark' as any)
+    expect(themeStore.get()).toBe(darkTheme)
   })
 
   it('should handle multiple subscribers', () => {
@@ -115,7 +122,7 @@ describe('themeStore', () => {
     themeStore.subscribe(callback1)
     themeStore.subscribe(callback2)
 
-    themeStore.set('light' as any)
+    themeStore.set(lightTheme)
 
     expect(callback1).toHaveBeenLastCalledWith('light')
     expect(callback2).toHaveBeenLastCalledWith('light')
@@ -132,6 +139,6 @@ describe('themeStore', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(themeStore.get()).toBe('system' as any)
+    expect(themeStore.get()).toBe(systemTheme)
   })
 })

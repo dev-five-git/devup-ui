@@ -15,6 +15,55 @@ import {
 
 import { DevupUI } from '../plugin'
 
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+interface ViteConfig {
+  build?: {
+    rollupOptions?: {
+      output?: {
+        manualChunks?: (id: string, code: string) => string | undefined
+      }
+    }
+  }
+  optimizeDeps?: { exclude?: string[] }
+  ssr?: { noExternal?: RegExp[] }
+  define?: Record<string, string>
+}
+
+interface ViteTestPlugin {
+  name: string
+  enforce: 'pre'
+  apply: () => boolean
+  config: () => ViteConfig
+  configResolved: () => Promise<void>
+  watchChange: (id: string) => Promise<void>
+  load: (id: string) => string | undefined
+  transform: (code: string, id: string) => Promise<{ code: string } | undefined>
+  generateBundle: (
+    options: object,
+    bundle: Record<string, { source: string; name: string }>,
+  ) => Promise<void>
+  resolveId: (source: string, importer?: string) => string | undefined
+}
+
+function createCodeExtractResult(
+  overrides: Partial<CodeExtractResult> = {},
+): CodeExtractResult {
+  return {
+    css: 'css code',
+    code: 'code',
+    cssFile: 'devup-ui.css',
+    map: undefined,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+    ...overrides,
+  } as unknown as CodeExtractResult
+}
+
+function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
+  return DevupUI(options) as unknown as ViteTestPlugin
+}
+
 const { join, resolve, relative: originalRelative } = nodePath
 
 let existsSyncSpy: ReturnType<typeof spyOn>
@@ -38,15 +87,9 @@ beforeEach(() => {
   relativeSpy = spyOn(nodePath, 'relative').mockImplementation(
     (from: string, to: string) => originalRelative(from, to),
   )
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
-    css: 'css code',
-    code: 'code',
-    cssFile: 'devup-ui.css',
-    map: undefined,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as any)
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+    createCodeExtractResult(),
+  )
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('css code')
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue('default')
   getThemeInterfaceSpy = spyOn(wasm, 'getThemeInterface').mockReturnValue(
@@ -76,7 +119,7 @@ describe('devupUIVitePlugin', () => {
   console.error = mock()
 
   it('should apply default options', () => {
-    const plugin = DevupUI({})
+    const plugin = createPlugin({})
     expect(plugin).toEqual({
       name: 'devup-ui',
       config: expect.any(Function),
@@ -89,7 +132,7 @@ describe('devupUIVitePlugin', () => {
       configResolved: expect.any(Function),
       resolveId: expect.any(Function),
     })
-    expect((plugin as any).apply()).toBe(true)
+    expect(plugin.apply()).toBe(true)
   })
 
   it.each(
@@ -98,28 +141,28 @@ describe('devupUIVitePlugin', () => {
       extractCss: [true, false],
     }),
   )('should apply options', async (options) => {
-    const plugin = DevupUI(options)
+    const plugin = createPlugin(options)
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
-        (plugin as any)
+        plugin
           .config()
-          .build.rollupOptions.output.manualChunks('devup-ui.css', 'code'),
+          .build?.rollupOptions?.output?.manualChunks?.('devup-ui.css', 'code'),
       ).toEqual('devup-ui.css')
 
       expect(
-        (plugin as any)
+        plugin
           .config()
-          .build.rollupOptions.output.manualChunks('other.css', 'code'),
+          .build?.rollupOptions?.output?.manualChunks?.('other.css', 'code'),
       ).toEqual(undefined)
     } else {
-      expect((plugin as any).config().build).toBeUndefined()
+      expect(plugin.config().build).toBeUndefined()
     }
   })
 
   it('should include default editor packages in vite config', () => {
-    const plugin = DevupUI({})
-    const config = (plugin as any).config()
+    const plugin = createPlugin({})
+    const config = plugin.config()
 
     expect(config.optimizeDeps.exclude).toEqual([
       '@devup-ui/components',
@@ -155,8 +198,8 @@ describe('devupUIVitePlugin', () => {
       if (path === join('df', 'fileMap.json')) return options.existsFileMapFile
       return false
     })
-    const plugin = DevupUI({ singleCss: options.singleCss })
-    await (plugin as any).configResolved()
+    const plugin = createPlugin({ singleCss: options.singleCss })
+    await plugin.configResolved()
     if (options.existsDevupFile) {
       expect(readFileSpy).toHaveBeenCalledWith('devup.json', 'utf-8')
       expect(registerThemeSpy).toHaveBeenCalledWith({})
@@ -177,7 +220,7 @@ describe('devupUIVitePlugin', () => {
       expect(registerThemeSpy).toHaveBeenCalledWith({})
     }
 
-    const config = (plugin as any).config()
+    const config = plugin.config()
     if (options.getDefaultTheme) {
       expect(config.define).toEqual({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(
@@ -196,8 +239,8 @@ describe('devupUIVitePlugin', () => {
     readFileSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    const plugin = DevupUI({})
-    await (plugin as any).configResolved()
+    const plugin = createPlugin({})
+    await plugin.configResolved()
     expect(registerThemeSpy).toHaveBeenCalledWith({})
     expect(writeFileSpy).toHaveBeenCalledWith(
       join('df', '.gitignore'),
@@ -211,15 +254,15 @@ describe('devupUIVitePlugin', () => {
     getThemeInterfaceSpy.mockReturnValue('interface code')
     existsSyncSpy.mockReturnValue(true)
     readFileSpy.mockResolvedValueOnce(JSON.stringify({ theme: 'theme' }))
-    const plugin = DevupUI({})
-    await (plugin as any).watchChange('devup.json')
+    const plugin = createPlugin({})
+    await plugin.watchChange('devup.json')
     expect(writeFileSpy).toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
       'interface code',
       'utf-8',
     )
 
-    await (plugin as any).watchChange('wrong')
+    await plugin.watchChange('wrong')
   })
 
   it('should print error when watch change error', async () => {
@@ -229,16 +272,16 @@ describe('devupUIVitePlugin', () => {
     mkdirSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    const plugin = DevupUI({})
-    await (plugin as any).watchChange('devup.json')
+    const plugin = createPlugin({})
+    await plugin.watchChange('devup.json')
     expect(console.error).toHaveBeenCalledWith(expect.any(Error))
   })
 
   it('should load', () => {
     getCssSpy.mockReturnValue('css code')
-    const plugin = DevupUI({})
-    expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
-    expect((plugin as any).load('devup-ui-10.css')).toEqual(expect.any(String))
+    const plugin = createPlugin({})
+    expect(plugin.load('devup-ui.css')).toEqual(expect.any(String))
+    expect(plugin.load('devup-ui-10.css')).toEqual(expect.any(String))
   })
 
   it.each(
@@ -248,51 +291,49 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should transform', async (options) => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue({
-      css: 'css code',
-      code: 'code',
-      cssFile: 'devup-ui.css',
-      map: undefined,
-      updatedBaseStyle: options.updatedBaseStyle,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-
-    const plugin = DevupUI(options)
-
-    expect(await (plugin as any).transform('code', 'devup-ui.wrong')).toEqual(
-      undefined,
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        css: 'css code',
+        code: 'code',
+        cssFile: 'devup-ui.css',
+        map: undefined,
+        updatedBaseStyle: options.updatedBaseStyle,
+      }),
     )
-    expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
+
+    const plugin = createPlugin(options)
+
+    expect(await plugin.transform('code', 'devup-ui.wrong')).toEqual(undefined)
+    expect(await plugin.transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'code' } : undefined,
     )
 
     if (options.extractCss) {
       expect(
-        await (plugin as any).transform('code', 'node_modules/test/index.tsx'),
+        await plugin.transform('code', 'node_modules/test/index.tsx'),
       ).toEqual(undefined)
       expect(
-        await (plugin as any).transform(
+        await plugin.transform(
           'code',
           'node_modules/@devup-ui/hello/index.tsx',
         ),
       ).toEqual({ code: 'code' })
       expect(
-        await (plugin as any).transform(
+        await plugin.transform(
           'code',
           'node_modules/@devup-editor/react/index.tsx',
         ),
       ).toEqual({ code: 'code' })
 
-      codeExtractSpy.mockReturnValue({
-        css: 'css code test next',
-        code: 'code',
-        cssFile: 'devup-ui.css',
-        map: undefined,
-        updatedBaseStyle: options.updatedBaseStyle,
-        free: mock(),
-        [Symbol.dispose]: mock(),
-      })
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({
+          css: 'css code test next',
+          code: 'code',
+          cssFile: 'devup-ui.css',
+          map: undefined,
+          updatedBaseStyle: options.updatedBaseStyle,
+        }),
+      )
       expect(writeFileSpy).toHaveBeenCalledWith(
         join(resolve('df', 'devup-ui'), 'devup-ui.css'),
         expect.stringMatching(
@@ -301,26 +342,24 @@ describe('devupUIVitePlugin', () => {
         'utf-8',
       )
       expect(
-        await (plugin as any).transform(
+        await plugin.transform(
           'code',
           'node_modules/@devup-ui/hello/index.tsx',
         ),
       ).toEqual({ code: 'code' })
     }
-    expect(await (plugin as any).load('devup-ui.css')).toEqual(
-      expect.any(String),
-    )
+    expect(await plugin.load('devup-ui.css')).toEqual(expect.any(String))
 
-    codeExtractSpy.mockReturnValue({
-      css: 'long css code',
-      code: 'long code',
-      cssFile: 'devup-ui.css',
-      map: undefined,
-      updatedBaseStyle: options.updatedBaseStyle,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    expect(await (plugin as any).transform('code', 'devup-ui.tsx')).toEqual(
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        css: 'long css code',
+        code: 'long code',
+        cssFile: 'devup-ui.css',
+        map: undefined,
+        updatedBaseStyle: options.updatedBaseStyle,
+      }),
+    )
+    expect(await plugin.transform('code', 'devup-ui.tsx')).toEqual(
       options.extractCss ? { code: 'long code' } : undefined,
     )
   })
@@ -331,12 +370,15 @@ describe('devupUIVitePlugin', () => {
     }),
   )('should generateBundle', async (options) => {
     getCssSpy.mockReturnValue('css code test')
-    const plugin = DevupUI({ extractCss: options.extractCss, singleCss: true })
-    const bundle = {
+    const plugin = createPlugin({
+      extractCss: options.extractCss,
+      singleCss: true,
+    })
+    const bundle: Record<string, { source: string; name: string }> = {
       'devup-ui.css': { source: 'css code', name: 'devup-ui.css' },
-    } as any
-    ;(plugin as any).load('devup-ui.css')
-    await (plugin as any).generateBundle({}, bundle)
+    }
+    plugin.load('devup-ui.css')
+    await plugin.generateBundle({}, bundle)
     if (options.extractCss) {
       expect(bundle['devup-ui.css'].source).toEqual('css code test')
     } else {
@@ -347,34 +389,32 @@ describe('devupUIVitePlugin', () => {
   it('should resolveId', () => {
     getCssSpy.mockReturnValue('css code')
     {
-      const plugin = DevupUI({})
+      const plugin = createPlugin({})
       expect(
-        (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
+        plugin.resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
       ).toEqual(expect.any(String))
 
-      expect(
-        (plugin as any).resolveId('other.css', 'df/devup-ui/devup-ui.css'),
-      ).toEqual(undefined)
+      expect(plugin.resolveId('other.css', 'df/devup-ui/devup-ui.css')).toEqual(
+        undefined,
+      )
     }
 
     {
-      const plugin = DevupUI({
+      const plugin = createPlugin({
         cssDir: '',
       })
-      expect((plugin as any).resolveId('devup-ui.css')).toEqual(
-        expect.any(String),
-      )
+      expect(plugin.resolveId('devup-ui.css')).toEqual(expect.any(String))
     }
   })
 
   it('should resolve id with cssMap', () => {
     getCssSpy.mockReturnValue('css code')
-    const plugin = DevupUI({})
-    expect((plugin as any).load('devup-ui.css')).toEqual(expect.any(String))
-    expect((plugin as any).load('other.css')).toEqual(undefined)
+    const plugin = createPlugin({})
+    expect(plugin.load('devup-ui.css')).toEqual(expect.any(String))
+    expect(plugin.load('other.css')).toEqual(undefined)
 
     expect(
-      (plugin as any).resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
+      plugin.resolveId('devup-ui.css', 'df/devup-ui/devup-ui.css'),
     ).toEqual(expect.any(String))
   })
 
@@ -382,8 +422,8 @@ describe('devupUIVitePlugin', () => {
     readFileSpy.mockResolvedValueOnce(JSON.stringify({}))
     getThemeInterfaceSpy.mockReturnValue('')
     existsSyncSpy.mockReturnValue(true)
-    const plugin = DevupUI({})
-    await (plugin as any).configResolved()
+    const plugin = createPlugin({})
+    await plugin.configResolved()
     expect(writeFileSpy).not.toHaveBeenCalledWith(
       join('df', 'theme.d.ts'),
       expect.any(String),
@@ -393,18 +433,18 @@ describe('devupUIVitePlugin', () => {
 
   it('sholud add relative path to css file', async () => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue({
-      css: 'css code',
-      code: 'code',
-      cssFile: 'devup-ui.css',
-      map: undefined,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    const plugin = DevupUI({})
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        css: 'css code',
+        code: 'code',
+        cssFile: 'devup-ui.css',
+        map: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    const plugin = createPlugin({})
     relativeSpy.mockReturnValue('./df/devup-ui/devup-ui.css')
-    await (plugin as any).transform('code', 'foo.tsx')
+    await plugin.transform('code', 'foo.tsx')
 
     expect(codeExtractSpy).toHaveBeenCalledWith(
       'foo.tsx',
@@ -422,7 +462,7 @@ describe('devupUIVitePlugin', () => {
     )
 
     relativeSpy.mockReturnValue('df/devup-ui/devup-ui.css')
-    await (plugin as any).transform('code', 'foo.tsx')
+    await plugin.transform('code', 'foo.tsx')
     expect(codeExtractSpy).toHaveBeenCalledWith(
       'foo.tsx',
       'code',
@@ -441,24 +481,24 @@ describe('devupUIVitePlugin', () => {
 
   it('should not create css file when cssFile is empty', async () => {
     getCssSpy.mockReturnValue('css code')
-    codeExtractSpy.mockReturnValue({
-      css: 'css code',
-      code: 'code',
-      cssFile: '',
-      map: undefined,
-      updatedBaseStyle: false,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
-    const plugin = DevupUI({})
-    await (plugin as any).transform('code', 'foo.tsx')
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        css: 'css code',
+        code: 'code',
+        cssFile: '',
+        map: undefined,
+        updatedBaseStyle: false,
+      }),
+    )
+    const plugin = createPlugin({})
+    await plugin.transform('code', 'foo.tsx')
     expect(writeFileSpy).not.toHaveBeenCalled()
   })
 
   it('should not generate bundle when css file is not found', async () => {
-    const plugin = DevupUI({})
-    const bundle = {} as any
-    await (plugin as any).generateBundle({}, bundle)
+    const plugin = createPlugin({})
+    const bundle = {}
+    await plugin.generateBundle({}, bundle)
     expect(bundle).toEqual({})
   })
 

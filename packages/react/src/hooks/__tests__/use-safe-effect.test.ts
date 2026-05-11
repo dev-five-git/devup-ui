@@ -11,8 +11,10 @@ describe('useSafeEffect', () => {
   })
 
   it('should return useEffect when window is undefined (server)', async () => {
-    // @ts-expect-error - intentionally setting window to undefined
-    globalThis.window = undefined
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: undefined,
+    })
     Loader.registry.delete(require.resolve('../use-safe-effect'))
 
     const { useSafeEffect } = await import('../use-safe-effect')
@@ -20,8 +22,10 @@ describe('useSafeEffect', () => {
   })
 
   it('should return useLayoutEffect when window is defined (client)', async () => {
-    // @ts-expect-error - intentionally setting window to object
-    globalThis.window = {}
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {},
+    })
     Loader.registry.delete(require.resolve('../use-safe-effect'))
 
     const { useSafeEffect } = await import('../use-safe-effect')

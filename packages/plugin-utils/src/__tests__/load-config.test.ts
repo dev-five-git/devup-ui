@@ -19,7 +19,7 @@ describe('deepMerge', () => {
   it('should merge two flat objects', () => {
     const base = { a: 1, b: 2 }
     const override = { b: 3, c: 4 }
-    expect(deepMerge(base, override) as any).toEqual({ a: 1, b: 3, c: 4 })
+    expect(deepMerge(base, override)).toEqual({ a: 1, b: 3, c: 4 })
   })
 
   it('should deep merge nested objects', () => {

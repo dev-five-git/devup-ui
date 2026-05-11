@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs'
 import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -13,8 +14,48 @@ import {
   mock,
   spyOn,
 } from 'bun:test'
+import type { Compiler } from 'webpack'
 
 import { DevupUIWebpackPlugin } from '../plugin'
+
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+interface MockCompiler {
+  options: {
+    module: { rules: unknown[] }
+    plugins: unknown[]
+  }
+  webpack: { DefinePlugin: ReturnType<typeof mock> }
+  hooks: {
+    watchRun: { tapPromise: ReturnType<typeof mock> }
+    beforeRun: { tapPromise: ReturnType<typeof mock> }
+    done: { tapPromise: ReturnType<typeof mock> }
+    afterCompile: { tap: ReturnType<typeof mock> }
+  }
+}
+
+function createCodeExtractResult(
+  contents: string,
+  overrides: Partial<CodeExtractResult> = {},
+): CodeExtractResult {
+  return {
+    css: '',
+    code: contents,
+    cssFile: '',
+    map: undefined,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+    ...overrides,
+  } as unknown as CodeExtractResult
+}
+
+function createStats(mtimeMs: number): Stats {
+  return { mtimeMs } as unknown as Stats
+}
+
+function asCompiler(compiler: MockCompiler): Compiler {
+  return compiler as unknown as Compiler
+}
 
 let codeExtractSpy: ReturnType<typeof spyOn>
 let getCssSpy: ReturnType<typeof spyOn>
@@ -38,16 +79,7 @@ let writeFileSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
-    (_path: string, contents: string) =>
-      ({
-        css: '',
-        code: contents,
-        cssFile: '',
-        map: undefined,
-        updatedBaseStyle: false,
-        free: mock(),
-        [Symbol.dispose]: mock(),
-      }) as any,
+    (_path: string, contents: string) => createCodeExtractResult(contents),
   )
   getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('')
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue(undefined)
@@ -68,7 +100,7 @@ beforeEach(() => {
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
   mkdirSpy = spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined)
   readFileSpy = spyOn(fsPromises, 'readFile').mockResolvedValue('{}')
-  statSpy = spyOn(fsPromises, 'stat').mockResolvedValue({ mtimeMs: 0 } as any)
+  statSpy = spyOn(fsPromises, 'stat').mockResolvedValue(createStats(0))
   writeFileSpy = spyOn(fsPromises, 'writeFile').mockResolvedValue(undefined)
 })
 
@@ -94,7 +126,7 @@ afterEach(() => {
   writeFileSpy.mockRestore()
 })
 
-function createCompiler() {
+function createCompiler(): MockCompiler {
   return {
     options: {
       module: {
@@ -119,7 +151,7 @@ function createCompiler() {
         tap: mock(),
       },
     },
-  } as any
+  }
 }
 
 describe('devupUIWebpackPlugin', () => {
@@ -237,7 +269,7 @@ describe('devupUIWebpackPlugin', () => {
     existsSyncSpy.mockReturnValue(false)
 
     const compiler = createCompiler()
-    await plugin.apply(compiler)
+    await plugin.apply(asCompiler(compiler))
     expect(compiler.options.module.rules.length).toBe(2)
 
     expect(compiler.options.module.rules[0].exclude).toEqual(
@@ -254,7 +286,7 @@ describe('devupUIWebpackPlugin', () => {
 
     const compiler = createCompiler()
 
-    await plugin.apply(compiler)
+    await plugin.apply(asCompiler(compiler))
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
   })
 
@@ -266,11 +298,9 @@ describe('devupUIWebpackPlugin', () => {
     readFileSyncSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    statSpy.mockReturnValue({
-      mtimeMs: 1,
-    } as any)
+    statSpy.mockReturnValue(createStats(1))
     existsSyncSpy.mockReturnValue(true)
-    plugin.apply(compiler as any)
+    plugin.apply(asCompiler(compiler))
     await compiler.hooks.watchRun.tapPromise.mock.calls[0][1]()
     expect(importSheetSpy).toHaveBeenCalledWith({})
     expect(importClassMapSpy).toHaveBeenCalledWith({})
@@ -306,12 +336,8 @@ describe('devupUIWebpackPlugin', () => {
       return false
     })
     getDefaultThemeSpy.mockReturnValue('defaultTheme')
-    statSpy.mockResolvedValueOnce({
-      mtimeMs: 1,
-    } as any)
-    statSpy.mockResolvedValueOnce({
-      mtimeMs: 2,
-    } as any)
+    statSpy.mockResolvedValueOnce(createStats(1))
+    statSpy.mockResolvedValueOnce(createStats(2))
     readFileSyncSpy.mockImplementation((path: string) => {
       if (
         path === join(plugin.options.distDir, 'sheet.json') &&
@@ -331,7 +357,7 @@ describe('devupUIWebpackPlugin', () => {
       return '{}'
     })
 
-    plugin.apply(compiler)
+    plugin.apply(asCompiler(compiler))
 
     if (options.existsDistDir)
       expect(mkdirSyncSpy).not.toHaveBeenCalledWith(plugin.options.distDir, {
@@ -423,7 +449,7 @@ describe('devupUIWebpackPlugin', () => {
     const plugin = new DevupUIWebpackPlugin({ prefix: 'my-prefix' })
     const compiler = createCompiler()
     existsSyncSpy.mockReturnValue(false)
-    plugin.apply(compiler)
+    plugin.apply(asCompiler(compiler))
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })

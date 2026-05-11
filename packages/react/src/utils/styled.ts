@@ -36,4 +36,4 @@ export const styled: Styled = new Proxy(Function.prototype, {
       throw new Error('Cannot run on the runtime')
     }
   },
-}) as any
+}) as unknown as Styled

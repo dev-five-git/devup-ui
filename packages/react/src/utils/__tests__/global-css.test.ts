@@ -7,9 +7,9 @@ describe('globalCss', () => {
     expect(() => globalCss`virtual-css`).toThrowError(
       'Cannot run on the runtime',
     )
-    expect(() => globalCss('class name' as any)).toThrowError(
-      'Cannot run on the runtime',
-    )
+    expect(() =>
+      globalCss('class name' as unknown as Parameters<typeof globalCss>[0]),
+    ).toThrowError('Cannot run on the runtime')
     expect(() => globalCss()).toThrowError('Cannot run on the runtime')
   })
 })

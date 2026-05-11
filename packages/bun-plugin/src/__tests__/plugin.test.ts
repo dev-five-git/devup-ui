@@ -26,6 +26,20 @@ let setDebugSpy: ReturnType<typeof spyOn>
 let hasDevupUISpy: ReturnType<typeof spyOn>
 let codeExtractSpy: ReturnType<typeof spyOn>
 
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+
+function createCodeExtractResult(): CodeExtractResult {
+  return {
+    code: 'code',
+    css: '',
+    cssFile: null,
+    map: null,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+  } as unknown as CodeExtractResult
+}
+
 beforeEach(() => {
   getDefaultThemeSpy = spyOn(wasm, 'getDefaultTheme').mockReturnValue('default')
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
@@ -38,15 +52,9 @@ beforeEach(() => {
   consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {})
   setDebugSpy = spyOn(wasm, 'setDebug').mockReturnValue(undefined)
   hasDevupUISpy = spyOn(wasm, 'hasDevupUI').mockReturnValue(false)
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
-    code: 'code',
-    css: '',
-    cssFile: null,
-    map: null,
-    updatedBaseStyle: false,
-    free: mock(),
-    [Symbol.dispose]: mock(),
-  } as any)
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+    createCodeExtractResult(),
+  )
 })
 
 afterEach(() => {

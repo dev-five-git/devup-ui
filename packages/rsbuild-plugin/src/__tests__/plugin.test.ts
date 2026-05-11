@@ -15,6 +15,42 @@ import {
 
 import { DevupUI } from '../plugin'
 
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+type RsbuildPlugin = ReturnType<typeof DevupUI>
+type RsbuildSetupContext = Parameters<RsbuildPlugin['setup']>[0]
+
+function createCodeExtractResult(
+  overrides: Partial<CodeExtractResult> = {},
+): CodeExtractResult {
+  return {
+    code: '<div></div>',
+    css: '',
+    cssFile: 'devup-ui.css',
+    map: undefined,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+    ...overrides,
+  } as unknown as CodeExtractResult
+}
+
+function createSetupContext(
+  overrides: Partial<RsbuildSetupContext> = {},
+): RsbuildSetupContext {
+  return {
+    transform: mock(),
+    modifyRsbuildConfig: mock(),
+    renderChunk: mock(),
+    generateBundle: mock(),
+    closeBundle: mock(),
+    resolve: mock(),
+    load: mock(),
+    watchChange: mock(),
+    resolveId: mock(),
+    ...overrides,
+  } as unknown as RsbuildSetupContext
+}
+
 let existsSyncSpy: ReturnType<typeof spyOn>
 let writeFileSyncSpy: ReturnType<typeof spyOn>
 let mkdirSpy: ReturnType<typeof spyOn>
@@ -72,10 +108,12 @@ describe('DevupUIRsbuildPlugin', () => {
 
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
     expect(transform).toHaveBeenCalled()
   })
 
@@ -91,10 +129,12 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
   })
 
   it('should write data files without theme', async () => {
@@ -109,10 +149,12 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
     expect(writeFileSyncSpy).not.toHaveBeenCalled()
   })
 
@@ -129,10 +171,12 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
     expect(console.error).toHaveBeenCalledWith('error')
     console.error = originalConsoleError
   })
@@ -144,9 +188,11 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = mock()
-    await plugin.setup({
-      transform,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+      }),
+    )
     expect(transform).not.toHaveBeenCalled()
   })
 
@@ -171,10 +217,12 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
@@ -199,10 +247,12 @@ describe('DevupUIRsbuildPlugin', () => {
     expect(plugin.setup).toBeDefined()
     const transform = mock()
     const modifyRsbuildConfig = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig,
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig,
+      }),
+    )
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
@@ -216,11 +266,13 @@ describe('DevupUIRsbuildPlugin', () => {
         code: ``,
       }),
     ).toBe('')
-    codeExtractSpy.mockReturnValue({
-      code: '<div></div>',
-      css: '',
-      css_file: 'devup-ui.css',
-    } as any)
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div></div>',
+        css: '',
+        cssFile: 'devup-ui.css',
+      }),
+    )
     await expect(
       transform.mock.calls[1][1]({
         code: `import { Box } from '@devup-ui/react'
@@ -253,10 +305,12 @@ const App = () => <Box></Box>`,
     expect(plugin).toBeDefined()
     expect(plugin.setup).toBeDefined()
     const transform = mock()
-    await plugin.setup({
-      transform,
-      modifyRsbuildConfig: mock(),
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform,
+        modifyRsbuildConfig: mock(),
+      }),
+    )
     expect(transform).toHaveBeenCalled()
     expect(transform).toHaveBeenCalledWith(
       {
@@ -264,15 +318,15 @@ const App = () => <Box></Box>`,
       },
       expect.any(Function),
     )
-    codeExtractSpy.mockReturnValue({
-      code: '<div></div>',
-      css: '.devup-ui-1 { color: red; }',
-      cssFile: 'devup-ui.css',
-      map: undefined,
-      updatedBaseStyle: options.updatedBaseStyle,
-      free: mock(),
-      [Symbol.dispose]: mock(),
-    })
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: '<div></div>',
+        css: '.devup-ui-1 { color: red; }',
+        cssFile: 'devup-ui.css',
+        map: undefined,
+        updatedBaseStyle: options.updatedBaseStyle,
+      }),
+    )
     const ret = await transform.mock.calls[1][1]({
       code: `import { Box } from '@devup-ui/react'
 const App = () => <Box></Box>`,
@@ -334,17 +388,7 @@ const App = () => <Box></Box>`,
       return false
     })
     const plugin = DevupUI({ singleCss: options.singleCss })
-    await (plugin as any).setup({
-      transform: mock(),
-      renderChunk: mock(),
-      generateBundle: mock(),
-      closeBundle: mock(),
-      resolve: mock(),
-      load: mock(),
-      modifyRsbuildConfig: mock(),
-      watchChange: mock(),
-      resolveId: mock(),
-    } as any)
+    await plugin.setup(createSetupContext())
     if (options.existsDevupFile) {
       expect(readFileSpy).toHaveBeenCalledWith('devup.json', 'utf-8')
       expect(registerThemeSpy).toHaveBeenCalledWith({})
@@ -366,17 +410,7 @@ const App = () => <Box></Box>`,
     }
 
     const modifyRsbuildConfig = mock()
-    await (plugin as any).setup({
-      transform: mock(),
-      renderChunk: mock(),
-      generateBundle: mock(),
-      closeBundle: mock(),
-      resolve: mock(),
-      modifyRsbuildConfig,
-      load: mock(),
-      watchChange: mock(),
-      resolveId: mock(),
-    } as any)
+    await plugin.setup(createSetupContext({ modifyRsbuildConfig }))
     if (options.getDefaultTheme) {
       expect(modifyRsbuildConfig).toHaveBeenCalledWith(expect.any(Function))
       const config = {
@@ -412,10 +446,12 @@ const App = () => <Box></Box>`,
 
   it('should call setPrefix when prefix option is provided', async () => {
     const plugin = DevupUI({ prefix: 'my-prefix' })
-    await plugin.setup({
-      transform: mock(),
-      modifyRsbuildConfig: mock(),
-    } as any)
+    await plugin.setup(
+      createSetupContext({
+        transform: mock(),
+        modifyRsbuildConfig: mock(),
+      }),
+    )
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
 })

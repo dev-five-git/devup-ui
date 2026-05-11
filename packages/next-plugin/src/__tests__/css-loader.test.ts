@@ -15,6 +15,8 @@ import {
 
 import devupUICssLoader, { resetInit } from '../css-loader'
 
+type CssLoaderThis = ThisParameterType<typeof devupUICssLoader>
+
 let getCssSpy: ReturnType<typeof spyOn>
 let registerThemeSpy: ReturnType<typeof spyOn>
 let importSheetSpy: ReturnType<typeof spyOn>
@@ -75,7 +77,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       resourcePath: 'devup-ui.css',
       getOptions: () => ({ ...defaultOptions, watch: false }),
-    } as any)(Buffer.from('data'), '')
+    } as unknown as CssLoaderThis)(Buffer.from('data'), '')
     expect(callback).toHaveBeenCalledWith(
       null,
       Buffer.from('data'),
@@ -97,7 +99,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ ...defaultOptions, watch: true }),
       resourcePath: 'devup-ui.css',
-    } as any)(Buffer.from('data'), '')
+    } as unknown as CssLoaderThis)(Buffer.from('data'), '')
     expect(callback).toHaveBeenCalledTimes(1)
     expect(getCssSpy).toHaveBeenCalledTimes(1)
     getCssSpy.mockClear()
@@ -106,7 +108,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ ...defaultOptions, watch: true }),
       resourcePath: 'devup-ui.css',
-    } as any)(Buffer.from('data'), '')
+    } as unknown as CssLoaderThis)(Buffer.from('data'), '')
 
     expect(getCssSpy).toHaveBeenCalledTimes(1)
 
@@ -117,7 +119,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ ...defaultOptions, watch: true }),
       resourcePath: 'devup-ui-10.css',
-    } as any)(Buffer.from(''), '')
+    } as unknown as CssLoaderThis)(Buffer.from(''), '')
 
     expect(getCssSpy).toHaveBeenCalledTimes(1)
   })
@@ -133,7 +135,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ ...defaultOptions, watch: true }),
       resourcePath: 'devup-ui.css',
-    } as any)(Buffer.from('data'), '')
+    } as unknown as CssLoaderThis)(Buffer.from('data'), '')
 
     // Should read files from disk
     expect(existsSyncSpy).toHaveBeenCalledTimes(4)
@@ -155,7 +157,7 @@ describe('devupUICssLoader', () => {
       addContextDependency,
       getOptions: () => ({ ...defaultOptions, watch: true }),
       resourcePath: 'devup-ui.css',
-    } as any)(Buffer.from('data'), '')
+    } as unknown as CssLoaderThis)(Buffer.from('data'), '')
 
     // Should call registerTheme with empty object when theme is missing
     expect(registerThemeSpy).toHaveBeenCalledWith({})
@@ -190,7 +192,11 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: portFile,
         }),
         resourcePath: 'devup-ui-1.css',
-      } as any)(Buffer.from('stale content'), 'existing-map', 'meta')
+      } as unknown as CssLoaderThis)(
+        Buffer.from('stale content'),
+        'existing-map',
+        'meta',
+      )
     })
 
     expect(result).toBe('.a{color:red}')
@@ -235,7 +241,7 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: portFile,
         }),
         resourcePath: 'devup-ui.css',
-      } as any)(Buffer.from('stale'), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from('stale'), '', '')
     })
 
     expect(result).toBe('.full{display:flex}')
@@ -278,7 +284,11 @@ describe('devupUICssLoader', () => {
         }),
         // Turbopack embeds query in resourcePath
         resourcePath: '/path/to/df/devup-ui/devup-ui.css?fileNum=79',
-      } as any)(Buffer.from('stale content'), 'existing-map', 'meta')
+      } as unknown as CssLoaderThis)(
+        Buffer.from('stale content'),
+        'existing-map',
+        'meta',
+      )
     })
 
     expect(result).toBe('.file79{color:blue}')
@@ -320,7 +330,7 @@ describe('devupUICssLoader', () => {
         // resourcePath without query, query in separate property
         resourcePath: '/path/to/df/devup-ui/devup-ui.css',
         resourceQuery: '?fileNum=3',
-      } as any)(Buffer.from('stale'), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from('stale'), '', '')
     })
 
     expect(result).toBe('.file3{color:green}')
@@ -344,7 +354,7 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: 'nonexistent.port',
         }),
         resourcePath: 'devup-ui.css',
-      } as any)(Buffer.from(''), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
     expect(error.message).toBe('Coordinator port file not found')
@@ -376,7 +386,7 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: portFile,
         }),
         resourcePath: 'devup-ui.css',
-      } as any)(Buffer.from(''), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
     expect(error.message).toBe('Coordinator CSS error: 500')
@@ -404,7 +414,7 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: portFile,
         }),
         resourcePath: 'devup-ui.css',
-      } as any)(Buffer.from(''), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
     expect(error.message).toBe('EACCES: permission denied')
@@ -431,7 +441,7 @@ describe('devupUICssLoader', () => {
           coordinatorPortFile: portFile,
         }),
         resourcePath: 'devup-ui.css',
-      } as any)(Buffer.from(''), '', '')
+      } as unknown as CssLoaderThis)(Buffer.from(''), '', '')
     })
 
     expect(error).toBeInstanceOf(Error)
