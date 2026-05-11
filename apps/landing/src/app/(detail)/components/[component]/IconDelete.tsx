@@ -3,6 +3,7 @@ import { css } from '@devup-ui/react'
 export default function IconDelete() {
   return (
     <svg
+      aria-hidden="true"
       className={css({ transform: 'scale(0.75)' })}
       fill="currentColor"
       height="24"

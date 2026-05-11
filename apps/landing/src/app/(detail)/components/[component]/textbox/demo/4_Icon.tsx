@@ -3,6 +3,7 @@ import { Input } from '@devup-ui/components'
 function SearchIcon() {
   return (
     <svg
+      aria-hidden="true"
       fill="none"
       height="20"
       viewBox="0 0 20 20"

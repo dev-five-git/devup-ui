@@ -77,8 +77,7 @@ export function globalCss(strings?: TemplateStringsArray): void
 export function globalCss(): void
 
 export function globalCss(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  strings?:
+  _strings?:
     | TemplateStringsArray
     | (GlobalCssProps | AdditionalGlobalCssProps)
     | Record<

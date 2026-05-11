@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useReducer } from 'react'
 
-import { MenuItemProps } from './MenuItem'
+import type { MenuItemProps } from './MenuItem'
 
 export function OpenMenuItem({
   children,
@@ -52,10 +52,12 @@ export function OpenMenuItem({
         <Flex gap="8px">
           <Box borderRight="1px solid var(--border, #E0E0E0)" w="10px" />
           <VStack flex="1" gap="4px">
-            {subMenu.map(({ children, to }, idx) => {
+            {subMenu.map(({ children, to }) => {
               const selected = to ? path.startsWith(to) : false
+              const key = to ?? String(children)
               const inner = (
                 <Flex
+                  key={key}
                   _hover={{
                     bg: '$menuHover',
                   }}
@@ -81,7 +83,7 @@ export function OpenMenuItem({
 
               return to ? (
                 <Link
-                  key={idx}
+                  key={key}
                   className={css({
                     textDecoration: 'none',
                   })}
@@ -90,7 +92,7 @@ export function OpenMenuItem({
                   {inner}
                 </Link>
               ) : (
-                <Fragment key={idx}>{inner}</Fragment>
+                <Fragment key={key}>{inner}</Fragment>
               )
             })}
           </VStack>

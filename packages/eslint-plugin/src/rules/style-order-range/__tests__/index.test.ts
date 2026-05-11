@@ -265,7 +265,9 @@ describe('style-order-range rule', () => {
         ],
       },
       {
-        code: 'import { css } from "@devup-ui/react";\ncss({styleOrder: `${someVariable}`})',
+        code:
+          'import { css } from "@devup-ui/react";\ncss({styleOrder: `$' +
+          '{someVariable}`})',
         filename: 'src/app/page.tsx',
         errors: [
           {

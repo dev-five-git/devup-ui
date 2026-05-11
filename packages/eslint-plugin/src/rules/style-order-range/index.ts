@@ -12,7 +12,7 @@ const createRule = ESLintUtils.RuleCreator(
     `https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/${name}`,
 )
 
-function checkStyleOrderRange<T extends RuleContext<string, any[]>>(
+function checkStyleOrderRange<T extends RuleContext<string, []>>(
   expression: TSESTree.Expression,
   context: T,
 ) {
@@ -23,7 +23,7 @@ function checkStyleOrderRange<T extends RuleContext<string, any[]>>(
       value = expression.value
     } else if (typeof expression.value === 'string') {
       const parsed = parseInt(expression.value, 10)
-      if (!isNaN(parsed)) {
+      if (!Number.isNaN(parsed)) {
         value = parsed
       }
     }
@@ -54,7 +54,7 @@ function checkStyleOrderRange<T extends RuleContext<string, any[]>>(
       return
     } else {
       value = parseInt(expression.quasis[0].value.raw, 10)
-      if (isNaN(value)) {
+      if (Number.isNaN(value)) {
         // error report
         context.report({
           node: expression,

@@ -1,4 +1,4 @@
-import { css, DevupThemeTypography } from '@devup-ui/react'
+import { css, type DevupThemeTypography } from '@devup-ui/react'
 import { describe, expect, it } from 'bun:test'
 import { render } from 'bun-test-env-dom'
 
@@ -132,6 +132,7 @@ describe('Button', () => {
         data-testid="button"
         icon={
           <svg
+            aria-hidden="true"
             className={css({ color: '$white' })}
             fill="none"
             height="24"

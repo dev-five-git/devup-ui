@@ -1,9 +1,8 @@
 'use client'
 
 import { Box } from '@devup-ui/react'
-import { useRef } from 'react'
-import { useCallback, useState } from 'react'
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 interface BenchBoxProps {
   children: ReactNode
