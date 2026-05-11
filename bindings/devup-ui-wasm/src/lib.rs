@@ -5,11 +5,16 @@ use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
+
+fn js_error(message: impl Display) -> JsValue {
+    js_sys::Error::new(&message.to_string()).into()
+}
 
 #[wasm_bindgen]
 pub struct Output {
@@ -159,8 +164,7 @@ pub fn import_sheet_internal(sheet: StyleSheet) {
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
     import_sheet_internal(sheet);
     Ok(())
 }
@@ -173,7 +177,7 @@ pub fn export_sheet_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "exportSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_sheet() -> Result<String, JsValue> {
-    export_sheet_internal().map_err(|e| JsValue::from_str(&e))
+    export_sheet_internal().map_err(js_error)
 }
 
 /// Internal function to export class map as JSON string (testable without JsValue)
@@ -184,17 +188,14 @@ pub fn export_class_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(
-        serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?,
-    );
+    set_class_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_class_map() -> Result<String, JsValue> {
-    export_class_map_internal().map_err(|e| JsValue::from_str(&e))
+    export_class_map_internal().map_err(js_error)
 }
 
 /// Internal function to export file map as JSON string (testable without JsValue)
@@ -205,17 +206,14 @@ pub fn export_file_map_internal() -> Result<String, String> {
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_file_map(
-        serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?,
-    );
+    set_file_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_file_map() -> Result<String, JsValue> {
-    export_file_map_internal().map_err(|e| JsValue::from_str(&e))
+    export_file_map_internal().map_err(js_error)
 }
 
 /// Internal function to extract code (testable without JsValue)
@@ -270,7 +268,7 @@ pub fn code_extract(
     // Deserialize import_aliases from JsValue
     // Format: { "package": "namedExport" } or { "package": null } for named exports
     let aliases: HashMap<String, Option<String>> =
-        serde_wasm_bindgen::from_value(import_aliases).unwrap_or_default();
+        serde_wasm_bindgen::from_value(import_aliases).map_err(js_error)?;
 
     // Convert to ImportAlias enum
     let import_aliases: HashMap<String, ImportAlias> = aliases
@@ -294,7 +292,7 @@ pub fn code_extract(
         import_main_css_in_css,
         import_aliases,
     )
-    .map_err(|e| JsValue::from_str(&e))
+    .map_err(js_error)
 }
 
 /// Internal function to register theme (testable without JsValue)
@@ -305,8 +303,8 @@ pub fn register_theme_internal(theme: sheet::theme::Theme) {
 #[wasm_bindgen(js_name = "registerTheme")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    let theme: sheet::theme::Theme = serde_wasm_bindgen::from_value(theme_object)
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
+    let theme: sheet::theme::Theme =
+        serde_wasm_bindgen::from_value(theme_object).map_err(js_error)?;
     register_theme_internal(theme);
     Ok(())
 }
