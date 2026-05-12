@@ -20,6 +20,16 @@ fn make_option() -> ExtractOption {
     }
 }
 
+fn make_vanilla_option() -> ExtractOption {
+    ExtractOption {
+        package: "@devup-ui/react".to_string(),
+        css_dir: "@devup-ui/react".to_string(),
+        single_css: true,
+        import_main_css: false,
+        import_aliases: HashMap::new(),
+    }
+}
+
 fn reset_state() {
     reset_class_map();
     reset_file_map();
@@ -73,6 +83,16 @@ const a = <Flex direction="column" gap={4}>
   <Box placeSelf="center" placeItems="center" placeContent="center" />
 </Flex>"#;
 
+const TAILWIND_INPUT: &str = r#"import {Box} from '@devup-ui/react'
+const a = <Box className="flex flex-col gap-4 p-4 m-2 bg-red-500 text-white hover:bg-blue-500 focus:outline-none active:scale-95 disabled:opacity-50 md:flex-row lg:grid lg:grid-cols-3 xl:gap-8 rounded-lg shadow-lg border border-gray-200 w-full h-screen overflow-hidden items-center justify-between" />"#;
+
+const VANILLA_INPUT: &str = r"import { style } from '@devup-ui/react'
+const base = style({ padding: 12, borderRadius: 4 })
+const interactive = style({ cursor: 'pointer', transition: 'all 0.2s' })
+export const button = style([base, interactive, { background: 'blue', color: 'white' }])
+export const danger = style([button, { background: 'red', color: 'white' }])
+export const ghost = style([base, { background: 'transparent', color: 'blue' }])";
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("extract_small", |b| {
         b.iter(|| {
@@ -97,6 +117,30 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             reset_state();
             extract(black_box("test.tsx"), black_box(LARGE_INPUT), make_option()).unwrap()
+        });
+    });
+
+    c.bench_function("extract_tailwind_dense", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("tailwind.tsx"),
+                black_box(TAILWIND_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_vanilla_placeholders", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("styles.css.ts"),
+                black_box(VANILLA_INPUT),
+                make_vanilla_option(),
+            )
+            .unwrap()
         });
     });
 }

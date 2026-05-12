@@ -2,6 +2,7 @@ use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 
 /// `ColorEntry` stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
 #[derive(Debug, Clone, Serialize)]
@@ -737,13 +738,9 @@ impl Theme {
         for (level, css_vec) in level_map {
             if level == 0 {
                 css.push_str(&css_vec);
-            } else if let Some(media) = self
-                .breakpoints
-                .get(level as usize)
-                .map(|v| format!("(min-width:{v}px)"))
-            {
-                css.push_str("@media");
-                css.push_str(&media);
+            } else if let Some(bp) = self.breakpoints.get(level as usize) {
+                write!(css, "@media(min-width:{bp}px)")
+                    .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
                 css.push('{');
                 css.push_str(&css_vec);
                 css.push('}');
@@ -830,9 +827,8 @@ impl Theme {
                         css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
-                        css.push_str("@media(min-width:");
-                        css.push_str(&bp.to_string());
-                        css.push_str("px){");
+                        write!(css, "@media(min-width:{bp}px){{")
+                            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
                         css.push_str(&selector);
                         css.push('{');
                         css.push_str(vars);

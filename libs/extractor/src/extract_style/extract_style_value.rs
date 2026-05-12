@@ -24,7 +24,10 @@ impl ExtractStyleValue {
             ExtractStyleValue::Dynamic(style) => Some(style.extract(filename)),
             ExtractStyleValue::Keyframes(keyframes) => Some(keyframes.extract(filename)),
             ExtractStyleValue::Typography(typo) => {
-                Some(StyleProperty::ClassName(format!("typo-{typo}")))
+                let mut class_name = String::with_capacity("typo-".len() + typo.len());
+                class_name.push_str("typo-");
+                class_name.push_str(typo);
+                Some(StyleProperty::ClassName(class_name))
             }
             ExtractStyleValue::Css(_)
             | ExtractStyleValue::Import(_)

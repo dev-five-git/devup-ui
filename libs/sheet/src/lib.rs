@@ -28,6 +28,9 @@ macro_rules! push_fmt {
 
 trait ExtractStyle {
     fn extract(&self) -> String;
+    fn write_extract(&self, css: &mut String) {
+        css.push_str(&self.extract());
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
@@ -80,12 +83,20 @@ impl Ord for StyleSheetProperty {
 
 impl ExtractStyle for StyleSheetProperty {
     fn extract(&self) -> String {
-        format!(
-            "{}{{{}:{}}}",
-            merge_selector(&self.class_name, self.selector.as_ref()),
-            self.property,
-            convert_theme_variable_value(&self.value)
-        )
+        let mut css = String::with_capacity(
+            self.class_name.len() + self.property.len() + self.value.len() + 4,
+        );
+        self.write_extract(&mut css);
+        css
+    }
+
+    fn write_extract(&self, css: &mut String) {
+        css.push_str(&merge_selector(&self.class_name, self.selector.as_ref()));
+        css.push('{');
+        css.push_str(&self.property);
+        css.push(':');
+        css.push_str(&convert_theme_variable_value(&self.value));
+        css.push('}');
     }
 }
 
@@ -142,6 +153,10 @@ pub struct StyleSheetCss {
 impl ExtractStyle for StyleSheetCss {
     fn extract(&self) -> String {
         self.css.clone()
+    }
+
+    fn write_extract(&self, css: &mut String) {
+        css.push_str(&self.css);
     }
 }
 
@@ -664,7 +679,7 @@ impl StyleSheet {
                     push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
                 }
                 for prop in sorted_props {
-                    current_css.push_str(&prop.extract());
+                    prop.write_extract(&mut current_css);
                 }
                 if break_point.is_some() {
                     current_css.push('}');
@@ -699,7 +714,7 @@ impl StyleSheet {
                         }
                     }
                     for prop in props {
-                        current_css.push_str(&prop.extract());
+                        prop.write_extract(&mut current_css);
                     }
                     match kind {
                         AtRuleKind::Media => current_css.push('}'),
@@ -713,7 +728,7 @@ impl StyleSheet {
                         push_fmt!(&mut current_css, " {query}{{");
                     }
                     for prop in props {
-                        current_css.push_str(&prop.extract());
+                        prop.write_extract(&mut current_css);
                     }
                     current_css.push('}');
                 }

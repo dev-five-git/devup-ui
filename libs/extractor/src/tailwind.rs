@@ -1232,9 +1232,10 @@ fn is_valid_tailwind_value(value: &str) -> bool {
 
 /// Parse a className string into a list of `ExtractStyleValue`
 pub fn parse_tailwind_to_styles(class_str: &str, filename: Option<&str>) -> Vec<ExtractStyleValue> {
-    let mut styles = Vec::new();
+    let classes = class_str.split_whitespace();
+    let mut styles = Vec::with_capacity(classes.clone().count());
 
-    for class in class_str.split_whitespace() {
+    for class in classes {
         if let Some(parsed) = parse_single_class(class) {
             let static_style = parsed.to_static_style();
             styles.push(ExtractStyleValue::Static(static_style));

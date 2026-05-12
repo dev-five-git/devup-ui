@@ -18,8 +18,7 @@ pub fn gen_class_names<'a>(
         style_props
             .iter_mut()
             .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
-            .rev()
-            .collect(),
+            .rev(),
     )
 }
 
@@ -32,11 +31,13 @@ fn gen_class_name<'a>(
     match style_prop {
         ExtractStyleProp::Enum { map, condition } => {
             let properties = map.iter_mut().filter_map(|(key, value)| {
-                let class_names = value
-                    .iter_mut()
-                    .filter_map(|v| gen_class_name(ast_builder, v, style_order, filename))
-                    .collect::<Vec<_>>();
-                merge_expression_for_class_name(ast_builder, class_names).map(|class_name| {
+                merge_expression_for_class_name(
+                    ast_builder,
+                    value
+                        .iter_mut()
+                        .filter_map(|v| gen_class_name(ast_builder, v, style_order, filename)),
+                )
+                .map(|class_name| {
                     ast_builder.object_property_kind_object_property(
                         SPAN,
                         PropertyKind::Init,
@@ -83,8 +84,7 @@ fn gen_class_name<'a>(
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
             res.iter_mut()
-                .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
-                .collect(),
+                .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename)),
         ),
         ExtractStyleProp::Conditional {
             condition,
@@ -160,7 +160,7 @@ fn gen_class_name<'a>(
 
 pub fn merge_expression_for_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
-    expressions: Vec<Expression<'a>>,
+    expressions: impl IntoIterator<Item = Expression<'a>>,
 ) -> Option<Expression<'a>> {
     let mut unknown_expr = vec![];
     let mut class_name = String::new();
