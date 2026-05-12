@@ -531,14 +531,12 @@ fn rebuild_expression_with_mapping<'a>(
 
 /// Extract all class name strings from a template literal, including from conditional expressions
 fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLiteral) -> String {
-    let mut classes = Vec::new();
+    let mut classes = String::new();
 
     // Extract from quasis (static parts of template literal)
     for quasi in &template.quasis {
         let raw = quasi.value.raw.as_str();
-        if !raw.trim().is_empty() {
-            classes.push(raw.trim().to_string());
-        }
+        push_class_segment(&mut classes, raw.trim());
     }
 
     // Extract from expressions (dynamic parts)
@@ -546,18 +544,26 @@ fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLi
         extract_classes_from_expression(expr, &mut classes);
     }
 
-    classes.join(" ")
+    classes
+}
+
+fn push_class_segment(classes: &mut String, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+    if !classes.is_empty() {
+        classes.push(' ');
+    }
+    classes.push_str(value);
 }
 
 /// Recursively extract class name strings from an expression
-fn extract_classes_from_expression(expr: &Expression, classes: &mut Vec<String>) {
+fn extract_classes_from_expression(expr: &Expression, classes: &mut String) {
     match expr {
         // Direct string literal: 'text-red-500'
         Expression::StringLiteral(lit) => {
             let value = lit.value.as_str().trim();
-            if !value.is_empty() {
-                classes.push(value.to_string());
-            }
+            push_class_segment(classes, value);
         }
         // Ternary/conditional: cond ? 'text-red' : 'text-blue'
         Expression::ConditionalExpression(cond) => {
@@ -576,9 +582,7 @@ fn extract_classes_from_expression(expr: &Expression, classes: &mut Vec<String>)
         // Template literal inside expression
         Expression::TemplateLiteral(inner_template) => {
             let inner_classes = extract_all_classes_from_template_literal(inner_template);
-            if !inner_classes.is_empty() {
-                classes.push(inner_classes);
-            }
+            push_class_segment(classes, &inner_classes);
         }
         // Other expressions (variables, function calls, etc.) - skip, can't extract statically
         _ => {}

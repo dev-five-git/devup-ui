@@ -19,7 +19,7 @@ static GLOBAL_FILE_MAP: LazyLock<Mutex<BiHashMap<String, usize>>> =
     LazyLock::new(|| Mutex::new(BiHashMap::new()));
 
 #[inline]
-fn with_file_map<F, R>(f: F) -> R
+pub fn with_file_map<F, R>(f: F) -> R
 where
     F: FnOnce(&BiHashMap<String, usize>) -> R,
 {

@@ -1,5 +1,5 @@
-use css::class_map::{get_class_map, set_class_map};
-use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
+use css::class_map::{set_class_map, with_class_map};
+use css::file_map::{set_file_map, with_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use rustc_hash::FxHashSet;
@@ -212,7 +212,7 @@ pub fn export_sheet() -> Result<String, JsValue> {
 
 /// Internal function to export class map as JSON string (testable without `JsValue`)
 pub fn export_class_map_internal() -> Result<String, String> {
-    serde_json::to_string(&get_class_map()).map_err(|e| e.to_string())
+    with_class_map(serde_json::to_string).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
@@ -230,7 +230,7 @@ pub fn export_class_map() -> Result<String, JsValue> {
 
 /// Internal function to export file map as JSON string (testable without `JsValue`)
 pub fn export_file_map_internal() -> Result<String, String> {
-    serde_json::to_string(&get_file_map()).map_err(|e| e.to_string())
+    with_file_map(serde_json::to_string).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
@@ -349,10 +349,16 @@ pub fn get_default_theme() -> Result<Option<String>, JsValue> {
 #[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
     Ok(with_style_sheet(|sheet| {
-        sheet.create_css(
-            file_num.map(get_filename_by_file_num).as_deref(),
-            import_main_css,
-        )
+        if let Some(file_num) = file_num {
+            with_file_map(|map| {
+                sheet.create_css(
+                    map.get_by_right(&file_num).map(String::as_str),
+                    import_main_css,
+                )
+            })
+        } else {
+            sheet.create_css(None, import_main_css)
+        }
     }))
 }
 

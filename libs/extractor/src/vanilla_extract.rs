@@ -687,23 +687,10 @@ fn remap_style_names(
         })
         .collect();
 
-    // Replace __font_N__ placeholders in style JSON with font-family names
+    // Replace placeholders in a single pass per style JSON.
+    // This is needed for font-family references and selectors like `${parent}:hover &`.
     for entry in new_styles.values_mut() {
-        for (placeholder, font_family) in &font_family_map {
-            if entry.json.contains(placeholder) {
-                entry.json = entry.json.replace(placeholder, font_family);
-            }
-        }
-    }
-
-    // Replace __style_N__ placeholders in style JSON with variable names
-    // This is needed for selectors that reference other styles like `${parent}:hover &`
-    for entry in new_styles.values_mut() {
-        for (placeholder, var_name) in &placeholder_to_name {
-            if entry.json.contains(placeholder) {
-                entry.json = entry.json.replace(placeholder, var_name);
-            }
-        }
+        replace_placeholders_in_json(&mut entry.json, &font_family_map, &placeholder_to_name);
     }
 
     collected.styles = new_styles;
@@ -715,6 +702,45 @@ fn remap_style_names(
     collected.font_faces = new_font_faces;
     collected.global_themes = new_global_themes;
     collected.themes = new_themes;
+}
+
+fn replace_placeholders_in_json(
+    json: &mut String,
+    font_family_map: &FxHashMap<&str, &str>,
+    placeholder_to_name: &FxHashMap<String, String>,
+) {
+    let source = json.as_str();
+    let mut search_start = 0;
+    let mut last_copied = 0;
+    let mut output = None::<String>;
+
+    while let Some(relative_start) = source[search_start..].find("__") {
+        let start = search_start + relative_start;
+        let Some(relative_end) = source[start + 2..].find("__") else {
+            break;
+        };
+        let end = start + 2 + relative_end + 2;
+        let placeholder = &source[start..end];
+        let replacement = font_family_map
+            .get(placeholder)
+            .copied()
+            .or_else(|| placeholder_to_name.get(placeholder).map(String::as_str));
+
+        if let Some(replacement) = replacement {
+            let output = output.get_or_insert_with(|| String::with_capacity(source.len()));
+            output.push_str(&source[last_copied..start]);
+            output.push_str(replacement);
+            last_copied = end;
+            search_start = end;
+        } else {
+            search_start = start + 2;
+        }
+    }
+
+    if let Some(mut output) = output {
+        output.push_str(&source[last_copied..]);
+        *json = output;
+    }
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer and replace imports

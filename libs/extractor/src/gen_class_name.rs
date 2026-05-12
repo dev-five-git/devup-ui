@@ -162,19 +162,24 @@ pub fn merge_expression_for_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
     expressions: Vec<Expression<'a>>,
 ) -> Option<Expression<'a>> {
-    let mut class_names = vec![];
     let mut unknown_expr = vec![];
+    let mut class_name = String::new();
     for expr in expressions {
         if let Expression::StringLiteral(str) = &expr {
-            class_names.push(str.value.trim().to_string());
+            let value = str.value.trim();
+            if !value.is_empty() {
+                if !class_name.is_empty() {
+                    class_name.push(' ');
+                }
+                class_name.push_str(value);
+            }
         } else {
             unknown_expr.push(expr);
         }
     }
-    if unknown_expr.is_empty() && class_names.is_empty() {
+    if unknown_expr.is_empty() && class_name.is_empty() {
         return None;
     }
-    let mut class_name = class_names.join(" ");
     if !unknown_expr.is_empty() {
         if class_name.is_empty() && unknown_expr.len() == 1 {
             Some(unknown_expr.remove(0))

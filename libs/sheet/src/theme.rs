@@ -609,8 +609,7 @@ impl Theme {
                 None
             };
             for (theme_name, theme_properties) in entries {
-                let mut css_contents = vec![];
-                let mut css_color_contents = vec![];
+                let mut theme_contents = String::new();
                 let theme_key = if *theme_name == *default_theme_key {
                     None
                 } else {
@@ -620,11 +619,11 @@ impl Theme {
                     theme_declaration.push_str(":root[data-theme=");
                     theme_declaration.push_str(theme_key);
                     theme_declaration.push_str("]{");
-                    css_contents.push("color-scheme:dark".to_string());
+                    push_css_declaration(&mut theme_contents, "color-scheme:dark");
                 } else {
                     theme_declaration.push_str(":root{");
                     if !single_theme {
-                        css_contents.push("color-scheme:light".to_string());
+                        push_css_declaration(&mut theme_contents, "color-scheme:light");
                     }
                 }
                 for (prop, value) in theme_properties.css_entries() {
@@ -642,7 +641,7 @@ impl Theme {
                                     })
                                 })
                         {
-                            css_color_contents.push(format!("--{prop}:{default_value}"));
+                            push_css_variable(&mut theme_contents, prop, &default_value);
                         }
                     } else {
                         let other_theme_value =
@@ -659,29 +658,29 @@ impl Theme {
                                 })
                             });
                         // default theme
-                        css_color_contents.push(format!(
-                            "--{prop}:{}",
-                            if let Some(other_theme_value) = other_theme_value {
-                                format!("light-dark({optimized_value},{other_theme_value})")
-                            } else {
-                                optimized_value
-                            }
-                        ));
+                        if !theme_contents.is_empty() {
+                            theme_contents.push(';');
+                        }
+                        theme_contents.push_str("--");
+                        theme_contents.push_str(prop);
+                        theme_contents.push(':');
+                        if let Some(other_theme_value) = other_theme_value {
+                            theme_contents.push_str("light-dark(");
+                            theme_contents.push_str(&optimized_value);
+                            theme_contents.push(',');
+                            theme_contents.push_str(&other_theme_value);
+                            theme_contents.push(')');
+                        } else {
+                            theme_contents.push_str(&optimized_value);
+                        }
                     }
                 }
-                let mut first_content = true;
-                for content in css_contents.iter().chain(css_color_contents.iter()) {
-                    if !first_content {
-                        theme_declaration.push(';');
-                    }
-                    first_content = false;
-                    theme_declaration.push_str(content);
-                }
+                theme_declaration.push_str(&theme_contents);
                 theme_declaration.push('}');
             }
         }
         let mut css = theme_declaration;
-        let mut level_map = BTreeMap::<u8, Vec<String>>::new();
+        let mut level_map = BTreeMap::<u8, String>::new();
         for ty in &self.typography {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
@@ -725,19 +724,19 @@ impl Theme {
                     );
 
                     if !css_content.is_empty() {
-                        level_map
-                            .entry(idx as u8)
-                            .or_default()
-                            .push(format!(".typo-{}{{{}}}", ty.0, css_content));
+                        let level_css = level_map.entry(idx as u8).or_default();
+                        level_css.push_str(".typo-");
+                        level_css.push_str(ty.0);
+                        level_css.push('{');
+                        level_css.push_str(&css_content);
+                        level_css.push('}');
                     }
                 }
             }
         }
         for (level, css_vec) in level_map {
             if level == 0 {
-                for item in &css_vec {
-                    css.push_str(item);
-                }
+                css.push_str(&css_vec);
             } else if let Some(media) = self
                 .breakpoints
                 .get(level as usize)
@@ -746,9 +745,7 @@ impl Theme {
                 css.push_str("@media");
                 css.push_str(&media);
                 css.push('{');
-                for item in &css_vec {
-                    css.push_str(item);
-                }
+                css.push_str(&css_vec);
                 css.push('}');
             }
         }
@@ -796,8 +793,8 @@ impl Theme {
                 format!(":root[data-theme={variant_name}]")
             };
 
-            // Group variables by breakpoint level
-            let mut level_map = BTreeMap::<usize, Vec<String>>::new();
+            // Group variables by breakpoint level without allocating one String per variable.
+            let mut level_map = BTreeMap::<usize, String>::new();
             for (name, values) in *token_theme {
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
@@ -812,10 +809,14 @@ impl Theme {
                                         .is_some_and(|d| optimize_value(d) == optimized)
                                 });
                         if !is_same_as_default {
-                            level_map
-                                .entry(idx)
-                                .or_default()
-                                .push(format!("--{name}:{optimized}"));
+                            let vars = level_map.entry(idx).or_default();
+                            if !vars.is_empty() {
+                                vars.push(';');
+                            }
+                            vars.push_str("--");
+                            vars.push_str(name);
+                            vars.push(':');
+                            vars.push_str(&optimized);
                         }
                     }
                 }
@@ -823,11 +824,10 @@ impl Theme {
 
             for (level, vars) in &level_map {
                 if !vars.is_empty() {
-                    let vars_str = vars.join(";");
                     if *level == 0 {
                         css.push_str(&selector);
                         css.push('{');
-                        css.push_str(&vars_str);
+                        css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
                         css.push_str("@media(min-width:");
@@ -835,7 +835,7 @@ impl Theme {
                         css.push_str("px){");
                         css.push_str(&selector);
                         css.push('{');
-                        css.push_str(&vars_str);
+                        css.push_str(vars);
                         css.push_str("}}");
                     }
                 }
@@ -863,6 +863,23 @@ fn push_typography_property(
     css_content.push_str(property);
     css_content.push(':');
     css_content.push_str(&resolve(value));
+}
+
+fn push_css_declaration(css_content: &mut String, declaration: &str) {
+    if !css_content.is_empty() {
+        css_content.push(';');
+    }
+    css_content.push_str(declaration);
+}
+
+fn push_css_variable(css_content: &mut String, name: &str, value: &str) {
+    if !css_content.is_empty() {
+        css_content.push(';');
+    }
+    css_content.push_str("--");
+    css_content.push_str(name);
+    css_content.push(':');
+    css_content.push_str(value);
 }
 
 #[cfg(test)]
