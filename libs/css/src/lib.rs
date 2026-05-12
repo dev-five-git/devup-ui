@@ -358,20 +358,13 @@ pub fn sheet_to_classname(
                 num_to_nm_base(len)
             }
         });
-        if filename.is_some() {
-            if let Some(file_num) = file_num {
-                let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
-                result.push_str(&prefix);
-                result.push_str(&num_to_nm_base(file_num));
-                result.push('-');
-                result.push_str(&clas_num);
-                result
-            } else {
-                let mut result = String::with_capacity(prefix.len() + clas_num.len());
-                result.push_str(&prefix);
-                result.push_str(&clas_num);
-                result
-            }
+        if let Some(file_num) = file_num {
+            let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
+            result.push_str(&prefix);
+            result.push_str(&num_to_nm_base(file_num));
+            result.push('-');
+            result.push_str(&clas_num);
+            result
         } else {
             let mut result = String::with_capacity(prefix.len() + clas_num.len());
             result.push_str(&prefix);

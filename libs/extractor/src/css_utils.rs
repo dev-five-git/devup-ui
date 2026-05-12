@@ -1436,4 +1436,18 @@ mod tests {
             assert_eq!(result, expected_sorted);
         }
     }
+
+    #[rstest]
+    #[case("  hello", "hello")]
+    #[case("\t\nhello", "hello")]
+    #[case("  hello  ", "hello")]
+    #[case("hello  ", "hello")]
+    #[case("hello", "hello")]
+    #[case("", "")]
+    #[case("   ", "")]
+    fn test_trim_string_in_place(#[case] input: &str, #[case] expected: &str) {
+        let mut value = input.to_string();
+        trim_string_in_place(&mut value);
+        assert_eq!(value, expected);
+    }
 }

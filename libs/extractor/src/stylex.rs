@@ -249,16 +249,14 @@ fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
         Some(format!("&{}", pseudos.join("")))
     };
 
-    if at_rules.is_empty() {
-        pseudo_str.map(StyleSelector::Selector)
-    } else if let Some((kind, query)) = at_rules.last() {
+    if let Some((kind, query)) = at_rules.last() {
         Some(StyleSelector::At {
             kind: *kind,
             query: query.to_string(),
             selector: pseudo_str,
         })
     } else {
-        None
+        pseudo_str.map(StyleSelector::Selector)
     }
 }
 

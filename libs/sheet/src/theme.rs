@@ -760,10 +760,6 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
-        if themes.is_empty() {
-            return;
-        }
-        // Safe: themes is non-empty, so at least one key exists
         let Some(default_key) = themes
             .keys()
             .find(|k| *k == "default")
@@ -2436,5 +2432,66 @@ mod tests {
         // No shadows at all
         let empty = Theme::default();
         assert_eq!(empty.get_default_shadow_value("card"), None);
+    }
+
+    // ===== Coverage: push_typography_property edge cases =====
+
+    #[test]
+    fn test_push_typography_property_none_value() {
+        // Covers early return when value is None
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", None, &|v| v.to_string());
+        assert_eq!(css, "");
+    }
+
+    #[test]
+    fn test_push_typography_property_empty_value() {
+        // Covers early return when trimmed value is empty
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some(""), &|v| v.to_string());
+        assert_eq!(css, "");
+
+        // Whitespace-only also returns early
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some("   "), &|v| v.to_string());
+        assert_eq!(css, "");
+    }
+
+    #[test]
+    fn test_push_typography_property_appends_separator() {
+        // Empty css → no leading semicolon
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some("Arial"), &|v| v.to_string());
+        assert_eq!(css, "font-family:Arial");
+
+        // Non-empty css → prepends ';' before declaration
+        push_typography_property(&mut css, "font-size", Some("16px"), &|v| v.to_string());
+        assert_eq!(css, "font-family:Arial;font-size:16px");
+    }
+
+    // ===== Coverage: push_css_declaration / push_css_variable separators =====
+
+    #[test]
+    fn test_push_css_declaration_separator() {
+        let mut css = String::new();
+        push_css_declaration(&mut css, "color-scheme:light");
+        // First call → no separator
+        assert_eq!(css, "color-scheme:light");
+
+        // Second call on non-empty buffer → prepends ';'
+        push_css_declaration(&mut css, "color:red");
+        assert_eq!(css, "color-scheme:light;color:red");
+    }
+
+    #[test]
+    fn test_push_css_variable_separator() {
+        let mut css = String::new();
+        push_css_variable(&mut css, "primary", "#000");
+        // First call → no separator
+        assert_eq!(css, "--primary:#000");
+
+        // Second call → prepends ';'
+        push_css_variable(&mut css, "secondary", "#fff");
+        assert_eq!(css, "--primary:#000;--secondary:#fff");
     }
 }

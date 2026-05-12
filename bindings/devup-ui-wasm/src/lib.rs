@@ -32,6 +32,7 @@ where
     f(&mut guard)
 }
 
+#[cfg(not(tarpaulin_include))]
 fn js_error(message: impl Display) -> JsValue {
     js_sys::Error::new(&message.to_string()).into()
 }

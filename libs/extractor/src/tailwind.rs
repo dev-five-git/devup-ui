@@ -1187,10 +1187,8 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     }
 
     // Numeric values (including decimals like 0.5, 1.5)
-    let Some(first_char) = value.chars().next() else {
-        return false;
-    };
-    if first_char.is_ascii_digit() {
+    // Safe: `value.is_empty()` returns early above, so `value` has at least one char.
+    if value.starts_with(|c: char| c.is_ascii_digit()) {
         return true;
     }
 

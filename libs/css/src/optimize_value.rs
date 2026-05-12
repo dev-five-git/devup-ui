@@ -322,6 +322,12 @@ mod tests {
     #[case("translate(0px) scale(0deg)", "translate(0) scale(0)")]
     #[case("translate(-0px) scale(-0deg)", "translate(0) scale(0)")]
     #[case("translate(-10px) scale(-10deg)", "translate(-10px) scale(-10deg)")]
+    // rgba/rgb fallback paths when channel parsing fails
+    // i32 overflow for r/g/b (> i32::MAX = 2_147_483_647) → falls back to original
+    #[case("rgba(2147483648,0,0,0.5)", "rgba(2147483648,0,0,.5)")]
+    #[case("rgb(2147483648,0,0)", "rgb(2147483648,0,0)")]
+    // f32 parse failure for alpha (".") → falls back to original
+    #[case("rgba(255,0,0,.)", "rgba(255,0,0,.)")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }

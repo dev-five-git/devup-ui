@@ -177,43 +177,44 @@ pub fn merge_expression_for_class_name<'a>(
             unknown_expr.push(expr);
         }
     }
-    if unknown_expr.is_empty() && class_name.is_empty() {
-        return None;
+    if unknown_expr.is_empty() {
+        if class_name.is_empty() {
+            return None;
+        }
+        return Some(ast_builder.expression_string_literal(
+            SPAN,
+            ast_builder.str(&class_name),
+            None,
+        ));
     }
-    if !unknown_expr.is_empty() {
-        if class_name.is_empty() && unknown_expr.len() == 1 {
-            Some(unknown_expr.remove(0))
-        } else {
-            let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
-            for idx in 0..=unknown_expr.len() {
-                let tail = idx == unknown_expr.len();
-                let t = TemplateElementValue {
-                    raw: ast_builder.str(if idx == 0 {
-                        if class_name.is_empty() {
-                            ""
-                        } else {
-                            class_name.push(' ');
-                            class_name.as_str()
-                        }
-                    } else if tail {
+    if class_name.is_empty() && unknown_expr.len() == 1 {
+        Some(unknown_expr.remove(0))
+    } else {
+        let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
+        for idx in 0..=unknown_expr.len() {
+            let tail = idx == unknown_expr.len();
+            let t = TemplateElementValue {
+                raw: ast_builder.str(if idx == 0 {
+                    if class_name.is_empty() {
                         ""
                     } else {
-                        " "
-                    }),
-                    cooked: None,
-                };
-                qu.push(ast_builder.template_element(SPAN, t, tail, false));
-            }
-
-            Some(ast_builder.expression_template_literal(
-                SPAN,
-                qu,
-                oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
-            ))
+                        class_name.push(' ');
+                        class_name.as_str()
+                    }
+                } else if tail {
+                    ""
+                } else {
+                    " "
+                }),
+                cooked: None,
+            };
+            qu.push(ast_builder.template_element(SPAN, t, tail, false));
         }
-    } else if class_name.is_empty() {
-        None
-    } else {
-        Some(ast_builder.expression_string_literal(SPAN, ast_builder.str(&class_name), None))
+
+        Some(ast_builder.expression_template_literal(
+            SPAN,
+            qu,
+            oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
+        ))
     }
 }

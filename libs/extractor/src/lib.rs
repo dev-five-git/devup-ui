@@ -6204,6 +6204,27 @@ import {Button} from '@devup/ui'
             )
             .unwrap()
         ));
+
+        // Computed selector key whose `key.name()` is None must be skipped.
+        // Mixed with a valid selector to ensure extraction still proceeds.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box selectors={{ [dynamic]: { color: 'red' }, "&:focus": { color: 'blue' } }} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
     }
 
     #[test]

@@ -21,16 +21,9 @@ use std::sync::LazyLock;
 
 macro_rules! push_fmt {
     ($target:expr, $($arg:tt)*) => {{
-        std::fmt::Write::write_fmt($target, format_args!($($arg)*))
-            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+        // `std::fmt::Write::write_fmt` on `&mut String` is infallible; discard result.
+        let _ = std::fmt::Write::write_fmt($target, format_args!($($arg)*));
     }};
-}
-
-trait ExtractStyle {
-    fn extract(&self) -> String;
-    fn write_extract(&self, css: &mut String) {
-        css.push_str(&self.extract());
-    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
@@ -81,15 +74,7 @@ impl Ord for StyleSheetProperty {
     }
 }
 
-impl ExtractStyle for StyleSheetProperty {
-    fn extract(&self) -> String {
-        let mut css = String::with_capacity(
-            self.class_name.len() + self.property.len() + self.value.len() + 4,
-        );
-        self.write_extract(&mut css);
-        css
-    }
-
+impl StyleSheetProperty {
     fn write_extract(&self, css: &mut String) {
         css.push_str(&merge_selector(&self.class_name, self.selector.as_ref()));
         css.push('{');
@@ -148,16 +133,6 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Ord, PartialOrd)]
 pub struct StyleSheetCss {
     pub css: String,
-}
-
-impl ExtractStyle for StyleSheetCss {
-    fn extract(&self) -> String {
-        self.css.clone()
-    }
-
-    fn write_extract(&self, css: &mut String) {
-        css.push_str(&self.css);
-    }
 }
 
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
@@ -2064,6 +2039,37 @@ mod tests {
             "ShadowsInterface",
             "ThemeInterface"
         ));
+
+        // Multiple typography keys + multiple color themes exercise the
+        // `plain_keys` semicolon separator (joins 2+ entries).
+        let mut sheet = StyleSheet::default();
+        let mut theme = Theme::default();
+        let mut light_theme = ColorTheme::default();
+        light_theme.add_color("primary", "#000");
+        let mut dark_theme = ColorTheme::default();
+        dark_theme.add_color("primary", "#fff");
+        theme.add_color_theme("default", light_theme);
+        theme.add_color_theme("dark", dark_theme);
+        let make_typography = || {
+            Typography::new(
+                Some("Arial".to_string()),
+                Some("16px".to_string()),
+                Some("400".to_string()),
+                Some("1.5".to_string()),
+                Some("0.5".to_string()),
+            )
+        };
+        theme.add_typography("heading", vec![Some(make_typography())]);
+        theme.add_typography("body", vec![Some(make_typography())]);
+        sheet.set_theme(theme);
+        assert_debug_snapshot!(sheet.create_interface(
+            "package",
+            "ColorInterface",
+            "TypographyInterface",
+            "LengthInterface",
+            "ShadowsInterface",
+            "ThemeInterface"
+        ));
     }
 
     #[test]
@@ -2299,14 +2305,30 @@ mod tests {
     }
 
     #[test]
-    fn test_stylesheet_css_extract() {
+    fn test_stylesheet_css_struct() {
         let css_entry = StyleSheetCss {
             css: "div{display:flex}".to_string(),
         };
-        assert_eq!(css_entry.extract(), "div{display:flex}");
+        assert_eq!(css_entry.css, "div{display:flex}");
 
         let empty = StyleSheetCss { css: String::new() };
-        assert_eq!(empty.extract(), "");
+        assert_eq!(empty.css, "");
+    }
+
+    #[test]
+    fn test_stylesheet_property_ord_no_selectors() {
+        // Both sides without selectors: branches on property then value.
+        let make = |property: &str, value: &str| StyleSheetProperty {
+            class_name: "a".to_string(),
+            property: property.to_string(),
+            value: value.to_string(),
+            selector: None,
+            layer: None,
+        };
+        assert_eq!(make("color", "red").cmp(&make("color", "red")), Equal);
+        assert!(make("color", "red") < make("color", "white"));
+        assert!(make("color", "red") < make("display", "block"));
+        assert!(make("display", "block") > make("color", "white"));
     }
 
     #[test]
