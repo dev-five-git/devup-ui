@@ -17,6 +17,7 @@ pub enum ExtractStyleValue {
 }
 
 impl ExtractStyleValue {
+    #[must_use]
     pub fn extract(&self, filename: Option<&str>) -> Option<StyleProperty> {
         match self {
             ExtractStyleValue::Static(style) => Some(style.extract(filename)),
@@ -30,7 +31,7 @@ impl ExtractStyleValue {
             | ExtractStyleValue::FontFace(_) => None,
         }
     }
-    pub fn set_style_order(&mut self, order: u8) {
+    pub const fn set_style_order(&mut self, order: u8) {
         match self {
             ExtractStyleValue::Static(style) if style.style_order.is_none() => {
                 style.style_order = Some(order);
@@ -84,14 +85,14 @@ mod tests {
         assert!(matches!(extracted, Some(StyleProperty::ClassName(_))));
 
         let value = ExtractStyleValue::Css(ExtractCss {
-            css: "".to_string(),
-            file: "".to_string(),
+            css: String::new(),
+            file: String::new(),
         });
         assert!(value.extract(None).is_none());
 
         let value = ExtractStyleValue::Import(ExtractImport {
-            url: "".to_string(),
-            file: "".to_string(),
+            url: String::new(),
+            file: String::new(),
         });
         assert!(value.extract(None).is_none());
     }

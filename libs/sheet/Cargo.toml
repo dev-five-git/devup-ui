@@ -2,6 +2,14 @@
 name = "sheet"
 version = "0.1.0"
 edition = "2024"
+description = "CSS sheet generation and theme system for Devup UI"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+keywords = ["css", "theme", "stylesheet", "react", "devup-ui"]
+categories = ["development-tools", "wasm", "web-programming"]
+
+[lints]
+workspace = true
 
 [dependencies]
 css = { path = "../css" }

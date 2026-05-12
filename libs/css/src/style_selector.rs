@@ -6,8 +6,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    constant::SELECTOR_ORDER_MAP, selector_separator::SelectorSeparator, to_kebab_case,
-    utils::to_camel_case,
+    constant::SELECTOR_ORDER_MAP,
+    selector_separator::SelectorSeparator,
+    to_kebab_case,
+    utils::{collapse_whitespace, to_camel_case},
 };
 
 #[derive(
@@ -57,12 +59,9 @@ pub enum StyleSelector {
 }
 
 fn optimize_selector_string(selector: &str) -> String {
-    selector
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .replace(", ", ",")
+    collapse_whitespace(selector)
 }
+#[must_use]
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
         StyleSelector::At {
@@ -118,16 +117,18 @@ impl Ord for StyleSelector {
                     order_cmp
                 }
             }
-            (StyleSelector::At { .. }, StyleSelector::Selector(_)) => Ordering::Greater,
-            (StyleSelector::Selector(_), StyleSelector::At { .. }) => Ordering::Less,
             (StyleSelector::Global(a, _), StyleSelector::Global(b, _)) => {
                 if a == b {
                     return Ordering::Equal;
                 }
-                match (a.contains(":"), b.contains(":")) {
+                match (a.contains(':'), b.contains(':')) {
                     (true, true) => {
-                        let a_order = format!(":{}", a.split(":").nth(1).unwrap());
-                        let b_order = format!(":{}", b.split(":").nth(1).unwrap());
+                        let a_order = a
+                            .split_once(':')
+                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
+                        let b_order = b
+                            .split_once(':')
+                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
                         let mut a_order_value = 0;
                         let mut b_order_value = 0;
                         for (order, order_value) in SELECTOR_ORDER_MAP.iter() {
@@ -149,21 +150,19 @@ impl Ord for StyleSelector {
                     (false, false) => a.cmp(b),
                 }
             }
-            (StyleSelector::Global(_, _), _) => Ordering::Less,
-            (_, StyleSelector::Global(_, _)) => Ordering::Greater,
+            (StyleSelector::At { .. }, StyleSelector::Selector(_))
+            | (_, StyleSelector::Global(_, _)) => Ordering::Greater,
+            (StyleSelector::Selector(_), StyleSelector::At { .. })
+            | (StyleSelector::Global(_, _), _) => Ordering::Less,
         }
     }
 }
 
 impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
-        let value = value
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .replace(", ", ",");
-        if value.contains("&") {
-            StyleSelector::Selector(value.to_string())
+        let value = collapse_whitespace(value);
+        if value.contains('&') {
+            StyleSelector::Selector(value)
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
             StyleSelector::Selector(format!(
@@ -178,7 +177,7 @@ impl From<&str> for StyleSelector {
         } else if matches!(value.as_str(), "print" | "screen" | "speech" | "all") {
             StyleSelector::At {
                 kind: AtRuleKind::Media,
-                query: value.to_string(),
+                query: value,
                 selector: None,
             }
         } else {
@@ -196,7 +195,7 @@ impl From<&str> for StyleSelector {
 impl From<[&str; 2]> for StyleSelector {
     fn from(value: [&str; 2]) -> Self {
         let post = if value[1].contains("&:") {
-            to_kebab_case(value[1].split(":").last().unwrap())
+            to_kebab_case(value[1].rsplit_once(':').map_or(value[1], |(_, post)| post))
         } else {
             to_kebab_case(value[1])
         };
@@ -230,7 +229,7 @@ impl From<(&StyleSelector, &str)> for StyleSelector {
 impl Display for StyleSelector {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            StyleSelector::Selector(value) => f.write_str(value),
+            StyleSelector::Selector(value) | StyleSelector::Global(value, _) => f.write_str(value),
             StyleSelector::At {
                 kind,
                 query,
@@ -246,7 +245,6 @@ impl Display for StyleSelector {
                 }
                 Ok(())
             }
-            StyleSelector::Global(value, _) => f.write_str(value),
         }
     }
 }
@@ -526,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "internal error: entered unreachable code")]
     fn test_at_rule_kind_from_str_unknown() {
         let _ = AtRuleKind::from("unknown");
     }

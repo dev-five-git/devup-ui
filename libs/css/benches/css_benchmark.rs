@@ -30,7 +30,7 @@ fn bench_sheet_to_classname(c: &mut Criterion) {
                 black_box(None),
                 black_box(None),
             )
-        })
+        });
     });
 
     group.bench_function("with_selector", |b| {
@@ -44,7 +44,7 @@ fn bench_sheet_to_classname(c: &mut Criterion) {
                 black_box(None),
                 black_box(None),
             )
-        })
+        });
     });
 
     group.bench_function("with_filename", |b| {
@@ -58,7 +58,7 @@ fn bench_sheet_to_classname(c: &mut Criterion) {
                 black_box(None),
                 black_box(Some("test.tsx")),
             )
-        })
+        });
     });
 
     group.bench_function("all_params", |b| {
@@ -72,7 +72,7 @@ fn bench_sheet_to_classname(c: &mut Criterion) {
                 black_box(Some(1)),
                 black_box(Some("test.tsx")),
             )
-        })
+        });
     });
 
     group.bench_function("multiple_sequential", |b| {
@@ -88,7 +88,7 @@ fn bench_sheet_to_classname(c: &mut Criterion) {
             sheet_to_classname("width", 0, Some("100%"), None, None, None);
             sheet_to_classname("height", 0, Some("50vh"), None, None, None);
             sheet_to_classname("border-radius", 0, Some("8px"), None, None, None);
-        })
+        });
     });
 
     group.finish();
@@ -98,29 +98,29 @@ fn bench_optimize_value(c: &mut Criterion) {
     let mut group = c.benchmark_group("optimize_value");
 
     group.bench_function("simple_keyword", |b| {
-        b.iter(|| optimize_value(black_box("red")))
+        b.iter(|| optimize_value(black_box("red")));
     });
 
     group.bench_function("simple_px", |b| {
-        b.iter(|| optimize_value(black_box("14px")))
+        b.iter(|| optimize_value(black_box("14px")));
     });
 
     group.bench_function("zero_unit", |b| b.iter(|| optimize_value(black_box("0px"))));
 
     group.bench_function("rgba_color", |b| {
-        b.iter(|| optimize_value(black_box("rgba(255, 0, 0, 0.5)")))
+        b.iter(|| optimize_value(black_box("rgba(255, 0, 0, 0.5)")));
     });
 
     group.bench_function("translate", |b| {
-        b.iter(|| optimize_value(black_box("translate(10px, 0px)")))
+        b.iter(|| optimize_value(black_box("translate(10px, 0px)")));
     });
 
     group.bench_function("complex_multi", |b| {
-        b.iter(|| optimize_value(black_box("0px 0px 10px rgba(0,0,0,0.1)")))
+        b.iter(|| optimize_value(black_box("0px 0px 10px rgba(0,0,0,0.1)")));
     });
 
     group.bench_function("theme_var", |b| {
-        b.iter(|| optimize_value(black_box("$primary")))
+        b.iter(|| optimize_value(black_box("$primary")));
     });
 
     group.finish();
@@ -130,23 +130,23 @@ fn bench_to_kebab_case(c: &mut Criterion) {
     let mut group = c.benchmark_group("to_kebab_case");
 
     group.bench_function("backgroundColor", |b| {
-        b.iter(|| to_kebab_case(black_box("backgroundColor")))
+        b.iter(|| to_kebab_case(black_box("backgroundColor")));
     });
 
     group.bench_function("borderRadius", |b| {
-        b.iter(|| to_kebab_case(black_box("borderRadius")))
+        b.iter(|| to_kebab_case(black_box("borderRadius")));
     });
 
     group.bench_function("justifyContent", |b| {
-        b.iter(|| to_kebab_case(black_box("justifyContent")))
+        b.iter(|| to_kebab_case(black_box("justifyContent")));
     });
 
     group.bench_function("WebkitTransform", |b| {
-        b.iter(|| to_kebab_case(black_box("WebkitTransform")))
+        b.iter(|| to_kebab_case(black_box("WebkitTransform")));
     });
 
     group.bench_function("simple_color", |b| {
-        b.iter(|| to_kebab_case(black_box("color")))
+        b.iter(|| to_kebab_case(black_box("color")));
     });
 
     group.finish();
@@ -156,15 +156,15 @@ fn bench_merge_selector(c: &mut Criterion) {
     let mut group = c.benchmark_group("merge_selector");
 
     group.bench_function("no_selector", |b| {
-        b.iter(|| merge_selector(black_box("a"), black_box(None)))
+        b.iter(|| merge_selector(black_box("a"), black_box(None)));
     });
 
     group.bench_function("hover", |b| {
-        b.iter(|| merge_selector(black_box("a"), black_box(Some(&"hover".into()))))
+        b.iter(|| merge_selector(black_box("a"), black_box(Some(&"hover".into()))));
     });
 
     group.bench_function("theme_dark", |b| {
-        b.iter(|| merge_selector(black_box("a"), black_box(Some(&"theme-dark".into()))))
+        b.iter(|| merge_selector(black_box("a"), black_box(Some(&"theme-dark".into()))));
     });
 
     group.finish();

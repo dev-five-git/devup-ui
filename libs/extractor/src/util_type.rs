@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UtilType {
     Css,
     GlobalCss,
@@ -37,7 +37,7 @@ mod tests {
     #[case("globalCss".to_string(), Ok(UtilType::GlobalCss))]
     #[case("keyframes".to_string(), Ok(UtilType::Keyframes))]
     #[case("unknown".to_string(), Err("unknown".to_string()))]
-    #[case("".to_string(), Err("".to_string()))]
+    #[case(String::new(), Err(String::new()))]
     fn test_util_type_try_from(#[case] input: String, #[case] expected: Result<UtilType, String>) {
         assert_eq!(UtilType::try_from(input), expected);
     }

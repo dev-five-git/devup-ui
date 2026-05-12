@@ -3,10 +3,13 @@ use regex_lite::Regex;
 use std::hint::black_box;
 use std::sync::LazyLock;
 
-static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\w+").unwrap());
+static VAR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\$\w+")
+        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `\\$\\w+`: {err}"))
+});
 
 fn convert_theme_variable_value_a(value: &str) -> String {
-    if value.contains("$") {
+    if value.contains('$') {
         VAR_RE
             .replace_all(value, |caps: &regex_lite::Captures| {
                 format!("var(--{})", &caps[0][1..])
@@ -32,7 +35,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             convert_theme_variable_value_a(black_box("red"));
             convert_theme_variable_value_a(black_box("solid 2px red"));
             convert_theme_variable_value_a(black_box("solid 2px $primary"));
-        })
+        });
     });
 
     c.bench_function("convert_theme_variable_value_b", |b| {
@@ -41,7 +44,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             convert_theme_variable_value_b(black_box("red"));
             convert_theme_variable_value_b(black_box("solid 2px red"));
             convert_theme_variable_value_b(black_box("solid 2px $primary"));
-        })
+        });
     });
 }
 

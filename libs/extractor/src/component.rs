@@ -6,7 +6,7 @@ use crate::extract_style::{
 };
 
 /// devup-ui export variable kind
-#[derive(Debug, PartialEq, Clone, EnumIter, Display)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumIter, Display)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -21,7 +21,7 @@ pub enum ExportVariableKind {
 
 impl ExportVariableKind {
     /// Convert the kind to a tag
-    pub fn to_tag(&self) -> &str {
+    pub const fn to_tag(&self) -> &str {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack

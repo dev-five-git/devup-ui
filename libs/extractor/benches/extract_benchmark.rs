@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::collections::HashMap;
 use std::hint::black_box;
@@ -76,7 +78,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             reset_state();
             extract(black_box("test.tsx"), black_box(SMALL_INPUT), make_option()).unwrap()
-        })
+        });
     });
 
     c.bench_function("extract_medium", |b| {
@@ -88,14 +90,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 make_option(),
             )
             .unwrap()
-        })
+        });
     });
 
     c.bench_function("extract_large", |b| {
         b.iter(|| {
             reset_state();
             extract(black_box("test.tsx"), black_box(LARGE_INPUT), make_option()).unwrap()
-        })
+        });
     });
 }
 

@@ -30,7 +30,10 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        f(&GLOBAL_FILE_MAP.lock().unwrap())
+        let guard = GLOBAL_FILE_MAP
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&guard)
     }
 }
 
@@ -46,13 +49,16 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        f(&mut GLOBAL_FILE_MAP.lock().unwrap())
+        let mut guard = GLOBAL_FILE_MAP
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&mut guard)
     }
 }
 
 /// for test
 pub fn reset_file_map() {
-    with_file_map_mut(|map| map.clear());
+    with_file_map_mut(BiHashMap::clear);
 }
 
 pub fn set_file_map(new_map: BiHashMap<String, usize>) {
@@ -60,24 +66,28 @@ pub fn set_file_map(new_map: BiHashMap<String, usize>) {
 }
 
 pub fn get_file_map() -> BiHashMap<String, usize> {
-    with_file_map(|map| map.clone())
+    with_file_map(Clone::clone)
 }
 
 #[inline]
+#[must_use]
 pub fn get_file_num_by_filename(filename: &str) -> usize {
     with_file_map_mut(|map| {
-        let len = map.len();
-        if !map.contains_left(filename) {
-            map.insert(filename.to_string(), len);
+        if let Some(&file_num) = map.get_by_left(filename) {
+            file_num
+        } else {
+            let file_num = map.len();
+            map.insert(filename.to_string(), file_num);
+            file_num
         }
-        *map.get_by_left(filename).unwrap()
     })
 }
 
+#[must_use]
 pub fn get_filename_by_file_num(file_num: usize) -> String {
     with_file_map(|map| {
         map.get_by_right(&file_num)
-            .map(|s| s.as_str())
+            .map(String::as_str)
             .unwrap_or_default()
             .to_string()
     })

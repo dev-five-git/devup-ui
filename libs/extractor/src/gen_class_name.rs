@@ -31,27 +31,26 @@ fn gen_class_name<'a>(
 ) -> Option<Expression<'a>> {
     match style_prop {
         ExtractStyleProp::Enum { map, condition } => {
-            let properties = map.iter_mut().map(|(key, value)| {
-                ast_builder.object_property_kind_object_property(
-                    SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+            let properties = map.iter_mut().filter_map(|(key, value)| {
+                let class_names = value
+                    .iter_mut()
+                    .filter_map(|v| gen_class_name(ast_builder, v, style_order, filename))
+                    .collect::<Vec<_>>();
+                merge_expression_for_class_name(ast_builder, class_names).map(|class_name| {
+                    ast_builder.object_property_kind_object_property(
                         SPAN,
-                        ast_builder.str(key),
-                        None,
-                    )),
-                    merge_expression_for_class_name(
-                        ast_builder,
-                        value
-                            .iter_mut()
-                            .map(|v| gen_class_name(ast_builder, v, style_order, filename).unwrap())
-                            .collect::<Vec<_>>(),
+                        PropertyKind::Init,
+                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            SPAN,
+                            ast_builder.str(key),
+                            None,
+                        )),
+                        class_name,
+                        false,
+                        false,
+                        false,
                     )
-                    .unwrap(),
-                    false,
-                    false,
-                    false,
-                )
+                })
             });
             let obj = ast_builder.expression_object(
                 SPAN,
@@ -167,7 +166,7 @@ pub fn merge_expression_for_class_name<'a>(
     let mut unknown_expr = vec![];
     for expr in expressions {
         if let Expression::StringLiteral(str) = &expr {
-            class_names.push(str.value.trim().to_string())
+            class_names.push(str.value.trim().to_string());
         } else {
             unknown_expr.push(expr);
         }
@@ -181,7 +180,7 @@ pub fn merge_expression_for_class_name<'a>(
             Some(unknown_expr.remove(0))
         } else {
             let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
-            for idx in 0..unknown_expr.len() + 1 {
+            for idx in 0..=unknown_expr.len() {
                 let tail = idx == unknown_expr.len();
                 let t = TemplateElementValue {
                     raw: ast_builder.str(if idx == 0 {

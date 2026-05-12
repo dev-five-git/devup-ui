@@ -49,10 +49,11 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 return ExtractResult::default();
             }
             let mut etc = None;
+            let selected_index = (num.fract() == 0.0).then_some(num as usize);
             for (idx, p) in array.elements.iter_mut().enumerate() {
                 if let ArrayExpressionElement::SpreadElement(sp) = p {
                     etc = Some(sp.argument.clone_in(ast_builder.allocator));
-                } else if idx as f64 == num
+                } else if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
                     return extract_style_from_expression(
@@ -147,7 +148,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
         let mut map = BTreeMap::new();
         if let Some(k) = get_string_by_literal_expression(mem_expression) {
             let mut etc = None;
-            for p in obj.properties.iter_mut() {
+            for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
                     if let Some(property_name) = get_string_by_property_key(&o.key)
                         && property_name == k
@@ -191,7 +192,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             }
         }
 
-        for p in obj.properties.iter_mut() {
+        for p in &mut obj.properties {
             if let ObjectPropertyKind::ObjectProperty(o) = p
                 && let Some(property_name) = get_string_by_property_key(&o.key)
             {
@@ -231,7 +232,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             )),
             level,
             selector,
-        ))
+        ));
     }
 
     ExtractResult {

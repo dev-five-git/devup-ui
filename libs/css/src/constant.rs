@@ -4,6 +4,11 @@ use phf::{phf_map, phf_set};
 use regex_lite::Regex;
 use std::sync::LazyLock;
 
+fn compile_regex(pattern: &str) -> Regex {
+    Regex::new(pattern)
+        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
+}
+
 pub(super) static SELECTOR_ORDER_MAP: LazyLock<HashMap<String, u8>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     for (idx, selector) in [
@@ -161,43 +166,40 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
     "tan(",
 };
 
-pub(super) static F_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s*,\s*").unwrap());
+pub(super) static F_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\s*,\s*"));
 pub(super) static CSS_FUNCTION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z-]+(\(.*\))").unwrap());
-pub(super) static CHECK_QUOTES_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[()\s]").unwrap());
+    LazyLock::new(|| compile_regex(r"^[a-zA-Z-]+(\(.*\))"));
+pub(super) static CHECK_QUOTES_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"[()\s]"));
 
 pub(super) static CSS_COMMENT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap());
+    LazyLock::new(|| compile_regex(r"/\*[\s\S]*?\*/"));
 
-pub(super) static F_DOT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\b|,)0\.(\d+)").unwrap());
+pub(super) static F_DOT_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"(\b|,)0\.(\d+)"));
 pub(super) static DOT_ZERO_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\b|,)-?0\.0+([^\d])").unwrap());
+    LazyLock::new(|| compile_regex(r"(\b|,)-?0\.0+([^\d])"));
 
-pub(super) static COLOR_HASH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"#([0-9a-zA-Z]+)").unwrap());
+pub(super) static COLOR_HASH: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"#([0-9a-zA-Z]+)"));
 pub(super) static INNER_TRIM_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\(\s*([^)]*?)\s*\)").unwrap());
+    LazyLock::new(|| compile_regex(r"\(\s*([^)]*?)\s*\)"));
 
 pub(super) static RM_MINUS_ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)").unwrap()
+    compile_regex(r"-0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg|\)|,)")
 });
 
 pub(super) static NUM_TRIM_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
-        .unwrap()
+    compile_regex(r"(\d(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)?)\s+(\d)")
 });
 pub(super) static ZERO_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)")
-        .unwrap()
+    compile_regex(
+        r"(\b|,|\(|^|\s)-?0(px|em|rem|vh|vw|%|dvh|dvw|vmax|vmin|mm|cm|in|pt|pc|lh|ic|deg)",
+    )
 });
 
 pub(super) static F_RGBA_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)").unwrap());
+    LazyLock::new(|| compile_regex(r"rgba\((\d+),(\d+),(\d+),(\d*\.?\d*)\)"));
 
 pub(super) static F_RGB_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"rgb\((\d+),(\d+),(\d+)\)").unwrap());
+    LazyLock::new(|| compile_regex(r"rgb\((\d+),(\d+),(\d+)\)"));
 
 pub(super) static N_BASE_ARRAY: [char; 27] = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',

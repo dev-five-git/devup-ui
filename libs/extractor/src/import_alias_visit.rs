@@ -13,7 +13,6 @@ use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::collections::HashMap;
-use std::fmt::Write;
 
 /// Transform source code by rewriting aliased imports to the target package
 ///
@@ -79,7 +78,7 @@ fn generate_transformed_import(
 ) -> String {
     let specifiers = match &import_decl.specifiers {
         Some(specs) => specs,
-        None => return format!("import '{}';", package),
+        None => return format!("import '{package}';"),
     };
 
     match alias {
@@ -111,10 +110,10 @@ fn generate_transformed_import(
                 }
             }) {
                 let local_name = default_spec.local.name.as_str();
-                if local_name == named_export {
-                    parts.push_str(named_export);
-                } else {
-                    write!(parts, "{} as {}", named_export, local_name).unwrap();
+                parts.push_str(named_export);
+                if local_name != named_export {
+                    parts.push_str(" as ");
+                    parts.push_str(local_name);
                 }
             }
 
@@ -126,15 +125,15 @@ fn generate_transformed_import(
                     }
                     let imported = spec.imported.to_string();
                     let local = spec.local.name.as_str();
-                    if imported == local {
-                        parts.push_str(&imported);
-                    } else {
-                        write!(parts, "{} as {}", imported, local).unwrap();
+                    parts.push_str(&imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
                     }
                 }
             }
 
-            format!("import {{ {} }} from '{}';", parts, package)
+            format!("import {{ {parts} }} from '{package}';")
         }
         ImportAlias::NamedToNamed => {
             // Just change the source, keep specifiers as-is
@@ -164,7 +163,8 @@ fn generate_transformed_import(
                     None
                 }
             }) {
-                write!(parts, "default as {}", default_spec.local.name.as_str()).unwrap();
+                parts.push_str("default as ");
+                parts.push_str(default_spec.local.name.as_str());
             }
 
             // Handle named specifiers
@@ -175,15 +175,15 @@ fn generate_transformed_import(
                     }
                     let imported = spec.imported.to_string();
                     let local = spec.local.name.as_str();
-                    if imported == local {
-                        parts.push_str(&imported);
-                    } else {
-                        write!(parts, "{} as {}", imported, local).unwrap();
+                    parts.push_str(&imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
                     }
                 }
             }
 
-            format!("import {{ {} }} from '{}';", parts, package)
+            format!("import {{ {parts} }} from '{package}';")
         }
     }
 }
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn test_default_to_named_same_name() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled from '@emotion/styled'"#,
+            r"import styled from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn test_default_to_named_different_name() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styledA from '@emotion/styled'"#,
+            r"import styledA from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn test_named_to_named() {
         assert_snapshot!(transform_import_aliases(
-            r#"import { style, globalStyle } from '@vanilla-extract/css'"#,
+            r"import { style, globalStyle } from '@vanilla-extract/css'",
             "test.tsx",
             "@devup-ui/react",
             &vanilla_extract_alias()
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn test_no_matching_alias() {
         assert_snapshot!(transform_import_aliases(
-            r#"import { useState } from 'react'"#,
+            r"import { useState } from 'react'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn test_empty_aliases() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled from '@emotion/styled'"#,
+            r"import styled from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &HashMap::new()
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn test_styled_components() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled from 'styled-components'"#,
+            r"import styled from 'styled-components'",
             "test.tsx",
             "@devup-ui/react",
             &styled_components_alias()
@@ -296,8 +296,8 @@ mod tests {
     #[test]
     fn test_css_ts_file_vanilla_extract() {
         assert_snapshot!(transform_import_aliases(
-            r#"import { style } from '@vanilla-extract/css'
-export const container = style({ background: 'red' })"#,
+            r"import { style } from '@vanilla-extract/css'
+export const container = style({ background: 'red' })",
             "styles.css.ts",
             "@devup-ui/react",
             &vanilla_extract_alias()
@@ -307,9 +307,9 @@ export const container = style({ background: 'red' })"#,
     #[test]
     fn test_multiple_imports_same_file() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled from '@emotion/styled'
+            r"import styled from '@emotion/styled'
 import { style } from '@vanilla-extract/css'
-import { useState } from 'react'"#,
+import { useState } from 'react'",
             "test.tsx",
             "@devup-ui/react",
             &combined_aliases()
@@ -319,12 +319,12 @@ import { useState } from 'react'"#,
     #[test]
     fn test_preserves_code_after_import() {
         assert_snapshot!(transform_import_aliases(
-            r#"import { style } from '@vanilla-extract/css'
+            r"import { style } from '@vanilla-extract/css'
 
 export const button = style({
     background: 'blue',
     padding: '8px',
-});"#,
+});",
             "test.css.ts",
             "@devup-ui/react",
             &vanilla_extract_alias()
@@ -334,7 +334,7 @@ export const button = style({
     #[test]
     fn test_named_import_with_alias() {
         assert_snapshot!(transform_import_aliases(
-            r#"import { style as myStyle } from '@vanilla-extract/css'"#,
+            r"import { style as myStyle } from '@vanilla-extract/css'",
             "test.tsx",
             "@devup-ui/react",
             &vanilla_extract_alias()
@@ -344,7 +344,7 @@ export const button = style({
     #[test]
     fn test_side_effect_import_no_specifiers() {
         assert_snapshot!(transform_import_aliases(
-            r#"import '@emotion/styled'"#,
+            r"import '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -354,8 +354,8 @@ export const button = style({
     #[test]
     fn test_alias_in_comment_not_transformed() {
         assert_snapshot!(transform_import_aliases(
-            r#"// This uses @emotion/styled but doesn't import it
-const x = 1;"#,
+            r"// This uses @emotion/styled but doesn't import it
+const x = 1;",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -365,7 +365,7 @@ const x = 1;"#,
     #[test]
     fn test_default_to_named_with_additional_named_imports() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled, { css, keyframes } from '@emotion/styled'"#,
+            r"import styled, { css, keyframes } from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -375,7 +375,7 @@ const x = 1;"#,
     #[test]
     fn test_default_to_named_with_aliased_named_import() {
         assert_snapshot!(transform_import_aliases(
-            r#"import styled, { css as emotionCss } from '@emotion/styled'"#,
+            r"import styled, { css as emotionCss } from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -385,7 +385,7 @@ const x = 1;"#,
     #[test]
     fn test_default_to_named_namespace_import() {
         assert_snapshot!(transform_import_aliases(
-            r#"import * as Emotion from '@emotion/styled'"#,
+            r"import * as Emotion from '@emotion/styled'",
             "test.tsx",
             "@devup-ui/react",
             &emotion_alias()
@@ -395,7 +395,7 @@ const x = 1;"#,
     #[test]
     fn test_named_to_named_with_default_specifier() {
         assert_snapshot!(transform_import_aliases(
-            r#"import vanillaDefault, { style } from '@vanilla-extract/css'"#,
+            r"import vanillaDefault, { style } from '@vanilla-extract/css'",
             "test.tsx",
             "@devup-ui/react",
             &vanilla_extract_alias()
@@ -405,7 +405,7 @@ const x = 1;"#,
     #[test]
     fn test_named_to_named_namespace_import() {
         assert_snapshot!(transform_import_aliases(
-            r#"import * as VE from '@vanilla-extract/css'"#,
+            r"import * as VE from '@vanilla-extract/css'",
             "test.tsx",
             "@devup-ui/react",
             &vanilla_extract_alias()

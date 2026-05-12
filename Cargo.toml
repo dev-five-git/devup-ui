@@ -2,6 +2,53 @@
 resolver = "2"
 members = ["libs/extractor", "bindings/devup-ui-wasm", "libs/sheet", "libs/css"]
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+
+[workspace.lints.rustdoc]
+bare_urls = "deny"
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+expect_used = "deny"
+unwrap_used = "deny"
+# Explicitly excluded from strict groups because they are noisy or conflict with
+# this workspace's public API, Oxc AST-builder ergonomics, WASM boundary shape,
+# or transitive dependency graph. Everything else in all/cargo/nursery/pedantic
+# is denied workspace-wide.
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+default_trait_access = "allow"
+from_iter_instead_of_collect = "allow"
+implicit_hasher = "allow"
+inline_always = "allow"
+fallible_impl_from = "allow"
+manual_let_else = "allow"
+missing_errors_doc = "allow"
+missing_fields_in_debug = "allow"
+missing_panics_doc = "allow"
+match_same_arms = "deny"
+must_use_candidate = "allow"
+needless_for_each = "allow"
+needless_pass_by_value = "allow"
+multiple_crate_versions = "allow"
+option_if_let_else = "allow"
+range_plus_one = "deny"
+ref_option = "allow"
+redundant_closure_for_method_calls = "deny"
+redundant_else = "deny"
+redundant_pub_crate = "allow"
+return_self_not_must_use = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+use_self = "allow"
+used_underscore_binding = "allow"
+
 [profile.release]
 # Optimize for small code size (critical for WASM binary)
 opt-level = "s"

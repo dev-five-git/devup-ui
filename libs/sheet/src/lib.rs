@@ -17,8 +17,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering::Equal;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
 use std::sync::LazyLock;
+
+macro_rules! push_fmt {
+    ($target:expr, $($arg:tt)*) => {{
+        std::fmt::Write::write_fmt($target, format_args!($($arg)*))
+            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+    }};
+}
 
 trait ExtractStyle {
     fn extract(&self) -> String;
@@ -35,7 +41,7 @@ pub struct StyleSheetProperty {
     pub value: String,
     #[serde(rename = "s")]
     pub selector: Option<StyleSelector>,
-    /// CSS layer name (from vanilla-extract layer())
+    /// CSS layer name (from vanilla-extract `layer()`)
     #[serde(rename = "l", skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
 }
@@ -83,9 +89,14 @@ impl ExtractStyle for StyleSheetProperty {
     }
 }
 
-static VAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$[\w.]+").unwrap());
+fn compile_regex(pattern: &str) -> Regex {
+    Regex::new(pattern)
+        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
+}
+
+static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$[\w.]+"));
 static INTERFACE_KEY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$").unwrap());
+    LazyLock::new(|| compile_regex(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$"));
 
 /// Cached header string — computed once from compile-time included package.json
 static HEADER: LazyLock<String> = LazyLock::new(|| {
@@ -94,12 +105,10 @@ static HEADER: LazyLock<String> = LazyLock::new(|| {
         version = include_str!("../../../bindings/devup-ui-wasm/package.json")
             .lines()
             .find(|line| line.contains("\"version\""))
-            .unwrap()
-            .split(":")
-            .nth(1)
-            .unwrap()
+            .and_then(|line| line.split(':').nth(1))
+            .unwrap_or("\"unknown\"")
             .trim()
-            .replace("\"", ""),
+            .replace('"', ""),
     )
 });
 
@@ -107,7 +116,7 @@ fn convert_interface_key(key: &str) -> String {
     if INTERFACE_KEY_RE.is_match(key) {
         key.to_string()
     } else {
-        format!("[`{}`]", key.replace("`", "\\`"))
+        format!("[`{}`]", key.replace('`', "\\`"))
     }
 }
 
@@ -153,9 +162,9 @@ where
     {
         let mut tmp_map: PropertyMap = BTreeMap::new();
 
-        for (key, value) in value.into_iter() {
+        for (key, value) in value {
             let mut inner_tmp_map = BTreeMap::new();
-            for (key, value) in value.into_iter() {
+            for (key, value) in value {
                 inner_tmp_map.insert(key.parse().map_err(Error::custom)?, value);
             }
             tmp_map.insert(key.parse().map_err(Error::custom)?, inner_tmp_map);
@@ -237,7 +246,7 @@ impl StyleSheet {
                 property: property.to_string(),
                 value: value.to_string(),
                 selector: selector.cloned(),
-                layer: layer.map(|s| s.to_string()),
+                layer: layer.map(ToString::to_string),
             })
     }
 
@@ -341,7 +350,7 @@ impl StyleSheet {
     ) -> (bool, bool) {
         let mut collected = false;
         let mut updated_base_style = false;
-        for style in styles.iter() {
+        for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
                     let resolved_value =
@@ -351,13 +360,11 @@ impl StyleSheet {
                                     "box-shadow" => self
                                         .theme
                                         .get_default_shadow_value(token)
-                                        .map(str::to_string)
-                                        .unwrap_or_else(|| st.value().to_string()),
+                                        .map_or_else(|| st.value().to_string(), str::to_string),
                                     _ => self
                                         .theme
                                         .get_default_length_value(token)
-                                        .map(str::to_string)
-                                        .unwrap_or_else(|| st.value().to_string()),
+                                        .map_or_else(|| st.value().to_string(), str::to_string),
                                 }
                             } else {
                                 st.value().to_string()
@@ -375,10 +382,10 @@ impl StyleSheet {
                                 Some(&resolved_value),
                                 selector.as_deref(),
                                 st.style_order(),
-                                if !single_css { Some(filename) } else { None },
+                                if single_css { None } else { Some(filename) },
                             )
                         } else {
-                            match st.extract(if !single_css { Some(filename) } else { None }) {
+                            match st.extract(if single_css { None } else { Some(filename) }) {
                                 StyleProperty::ClassName(cls)
                                 | StyleProperty::Variable {
                                     class_name: cls, ..
@@ -393,7 +400,7 @@ impl StyleSheet {
                         &resolved_value,
                         st.selector(),
                         st.style_order(),
-                        if !single_css { Some(filename) } else { None },
+                        if single_css { None } else { Some(filename) },
                         st.layer(),
                     ) {
                         collected = true;
@@ -407,19 +414,19 @@ impl StyleSheet {
                         class_name,
                         variable_name,
                         ..
-                    }) = style.extract(if !single_css { Some(filename) } else { None })
+                    }) = style.extract(if single_css { None } else { Some(filename) })
                         && self.add_property(
                             &class_name,
                             dy.property(),
                             dy.level(),
                             &if dy.important() {
-                                format!("var({}) !important", variable_name)
+                                format!("var({variable_name}) !important")
                             } else {
-                                format!("var({})", variable_name)
+                                format!("var({variable_name})")
                             },
                             dy.selector(),
                             dy.style_order(),
-                            if !single_css { Some(filename) } else { None },
+                            if single_css { None } else { Some(filename) },
                         )
                     {
                         collected = true;
@@ -432,7 +439,7 @@ impl StyleSheet {
                 ExtractStyleValue::Keyframes(keyframes) => {
                     if self.add_keyframes(
                         &keyframes
-                            .extract(if !single_css { Some(filename) } else { None })
+                            .extract(if single_css { None } else { Some(filename) })
                             .to_string(),
                         keyframes
                             .keyframes
@@ -452,7 +459,7 @@ impl StyleSheet {
                                 )
                             })
                             .collect(),
-                        if !single_css { Some(filename) } else { None },
+                        if single_css { None } else { Some(filename) },
                     ) {
                         collected = true;
                     }
@@ -475,6 +482,7 @@ impl StyleSheet {
         (collected, updated_base_style)
     }
 
+    #[must_use]
     pub fn create_interface(
         &self,
         package_name: &str,
@@ -512,16 +520,26 @@ impl StyleSheet {
             String::new()
         } else {
             let dollar_keys = |keys: BTreeSet<String>| {
-                keys.into_iter()
-                    .map(|key| format!("{}:null", convert_interface_key(&format!("${key}"))))
-                    .collect::<Vec<_>>()
-                    .join(";")
+                let mut contents = String::new();
+                for key in keys {
+                    if !contents.is_empty() {
+                        contents.push(';');
+                    }
+                    contents.push_str(&convert_interface_key(&format!("${key}")));
+                    contents.push_str(":null");
+                }
+                contents
             };
             let plain_keys = |keys: BTreeSet<String>| {
-                keys.into_iter()
-                    .map(|key| format!("{}:null", convert_interface_key(&key)))
-                    .collect::<Vec<_>>()
-                    .join(";")
+                let mut contents = String::new();
+                for key in keys {
+                    if !contents.is_empty() {
+                        contents.push(';');
+                    }
+                    contents.push_str(&convert_interface_key(&key));
+                    contents.push_str(":null");
+                }
+                contents
             };
             format!(
                 "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
@@ -550,9 +568,9 @@ impl StyleSheet {
         layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
-        let prop_count: usize = map.values().map(|s| s.len()).sum();
+        let prop_count: usize = map.values().map(FxHashSet::len).sum();
         let mut current_css = String::with_capacity(prop_count * 64);
-        for (level, props) in map.iter() {
+        for (level, props) in map {
             let (mut global_props, rest): (Vec<_>, Vec<_>) = props
                 .iter()
                 .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
@@ -583,8 +601,10 @@ impl StyleSheet {
                         .iter()
                         .enumerate()
                         .find(|(idx, _)| (*idx as u8) == *level)
-                        .map(|(_, bp)| *bp)
-                        .unwrap_or_else(|| self.theme.breakpoints.last().cloned().unwrap_or(0)),
+                        .map_or_else(
+                            || self.theme.breakpoints.last().copied().unwrap_or(0),
+                            |(_, bp)| *bp,
+                        ),
                 )
             };
 
@@ -616,7 +636,7 @@ impl StyleSheet {
                         }
                     }
                     if let Some(break_point) = break_point {
-                        write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
+                        push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
                     }
                     for (selector, props) in selector_map {
                         current_css.push_str(selector);
@@ -641,7 +661,7 @@ impl StyleSheet {
 
             if !sorted_props.is_empty() {
                 if let Some(break_point) = break_point {
-                    write!(current_css, "@media(min-width:{break_point}px){{").unwrap();
+                    push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
                 }
                 for prop in sorted_props {
                     current_css.push_str(&prop.extract());
@@ -654,32 +674,28 @@ impl StyleSheet {
                 if let Some(break_point) = break_point {
                     match kind {
                         AtRuleKind::Media => {
-                            write!(
-                                current_css,
+                            push_fmt!(
+                                &mut current_css,
                                 "@media(min-width:{break_point}px)and {query}{{"
-                            )
-                            .unwrap();
+                            );
                         }
                         AtRuleKind::Supports => {
-                            write!(
-                                current_css,
+                            push_fmt!(
+                                &mut current_css,
                                 "@media(min-width:{break_point}px){{@supports{query}{{"
-                            )
-                            .unwrap();
+                            );
                         }
                         AtRuleKind::Container => {
-                            write!(
-                                current_css,
+                            push_fmt!(
+                                &mut current_css,
                                 "@media(min-width:{break_point}px){{@container{query}{{"
-                            )
-                            .unwrap();
+                            );
                         }
                         AtRuleKind::Layer => {
-                            write!(
-                                current_css,
+                            push_fmt!(
+                                &mut current_css,
                                 "@media(min-width:{break_point}px){{@layer {query}{{"
-                            )
-                            .unwrap();
+                            );
                         }
                     }
                     for prop in props {
@@ -690,11 +706,11 @@ impl StyleSheet {
                         _ => current_css.push_str("}}"),
                     }
                 } else {
-                    write!(current_css, "@{kind}").unwrap();
+                    push_fmt!(&mut current_css, "@{kind}");
                     if query.starts_with('(') {
-                        write!(current_css, "{query}{{").unwrap();
+                        push_fmt!(&mut current_css, "{query}{{");
                     } else {
-                        write!(current_css, " {query}{{").unwrap();
+                        push_fmt!(&mut current_css, " {query}{{");
                     }
                     for prop in props {
                         current_css.push_str(&prop.extract());
@@ -707,18 +723,19 @@ impl StyleSheet {
     }
 
     #[inline]
-    fn create_header(&self) -> &'static str {
+    fn create_header() -> &'static str {
         &HEADER
     }
 
+    #[must_use]
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
-        css.push_str(self.create_header());
+        css.push_str(Self::create_header());
         for import in self.imports.values().flatten() {
             if import.starts_with('"') {
-                write!(css, "@import {import};").unwrap();
+                push_fmt!(&mut css, "@import {import};");
             } else {
-                write!(css, "@import \"{import}\";").unwrap();
+                push_fmt!(&mut css, "@import \"{import}\";");
             }
         }
 
@@ -748,11 +765,12 @@ impl StyleSheet {
             let has_orders = !style_orders.is_empty();
             if has_base || has_theme || has_orders {
                 css.push_str("@layer ");
-                let mut first = true;
-                if has_base {
+                let mut first = if has_base {
                     css.push('b');
-                    first = false;
-                }
+                    false
+                } else {
+                    true
+                };
                 if has_theme {
                     if !first {
                         css.push(',');
@@ -765,31 +783,31 @@ impl StyleSheet {
                         css.push(',');
                     }
                     first = false;
-                    write!(css, "o{v}").unwrap();
+                    push_fmt!(&mut css, "o{v}");
                 }
                 css.push(';');
             }
             if !theme_css.is_empty() {
-                write!(css, "@layer t{{{theme_css}}}").unwrap();
+                push_fmt!(&mut css, "@layer t{{{theme_css}}}");
             }
-            for (_, font_faces) in self.font_faces.iter() {
-                for font_face in font_faces.iter() {
+            for font_faces in self.font_faces.values() {
+                for font_face in font_faces {
                     css.push_str("@font-face{");
                     let mut first = true;
-                    for (key, value) in font_face.iter() {
+                    for (key, value) in font_face {
                         if !first {
                             css.push(';');
                         }
                         first = false;
-                        write!(css, "{key}:{value}").unwrap();
+                        push_fmt!(&mut css, "{key}:{value}");
                     }
                     css.push('}');
                 }
             }
 
             // global css
-            for (_, _css) in self.css.iter() {
-                for _css in _css.iter() {
+            for _css in self.css.values() {
+                for _css in _css {
                     css.push_str(&_css.css);
                 }
             }
@@ -799,7 +817,7 @@ impl StyleSheet {
                 BTreeMap::new();
             let base_css = self.create_style_with_layers(&base_styles, &mut layered_styles);
             if !base_css.is_empty() {
-                write!(css, "@layer b{{{base_css}}}").unwrap();
+                push_fmt!(&mut css, "@layer b{{{base_css}}}");
             }
 
             // Generate @layer declarations and wrapped styles for custom layers
@@ -827,7 +845,7 @@ impl StyleSheet {
                             .push((property, value));
                     }
 
-                    write!(css, "@layer {layer_name}{{").unwrap();
+                    push_fmt!(&mut css, "@layer {layer_name}{{");
                     for (selector, props) in selector_map {
                         css.push_str(&selector);
                         css.push('{');
@@ -837,7 +855,7 @@ impl StyleSheet {
                                 css.push(';');
                             }
                             first = false;
-                            write!(css, "{p}:{v}").unwrap();
+                            push_fmt!(&mut css, "{p}:{v}");
                         }
                         css.push('}');
                     }
@@ -854,16 +872,16 @@ impl StyleSheet {
 
         if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
             for (name, map) in keyframes {
-                write!(css, "@keyframes {name}{{").unwrap();
-                for (key, props) in map.iter() {
-                    write!(css, "{key}{{").unwrap();
+                push_fmt!(&mut css, "@keyframes {name}{{");
+                for (key, props) in map {
+                    push_fmt!(&mut css, "{key}{{");
                     let mut first = true;
-                    for (k, v) in props.iter() {
+                    for (k, v) in props {
                         if !first {
                             css.push(';');
                         }
                         first = false;
-                        write!(css, "{k}:{v}").unwrap();
+                        push_fmt!(&mut css, "{k}:{v}");
                     }
                     css.push('}');
                 }
@@ -873,7 +891,7 @@ impl StyleSheet {
 
         // order
         if let Some(maps) = self.properties.get(filename.unwrap_or_default()) {
-            for (style_order, map) in maps.iter() {
+            for (style_order, map) in maps {
                 if *style_order == 0 {
                     // base style was created in global css
                     continue;
@@ -885,7 +903,7 @@ impl StyleSheet {
                     if *style_order == 255 {
                         css.push_str(&current_css);
                     } else {
-                        write!(css, "@layer o{style_order}{{{current_css}}}").unwrap();
+                        push_fmt!(&mut css, "@layer o{style_order}{{{current_css}}}");
                     }
                 }
             }
@@ -895,6 +913,7 @@ impl StyleSheet {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use crate::theme::{ColorTheme, Typography};
 
@@ -2037,27 +2056,11 @@ mod tests {
         let mut sheet = StyleSheet::default();
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
-        let mut from_props = BTreeSet::new();
-        from_props.insert(StyleSheetProperty {
-            class_name: String::from("test"),
-            property: String::from("opacity"),
-            value: String::from("0"),
-            selector: None,
-            layer: None,
-        });
         keyframes.insert(
             String::from("from"),
             vec![(String::from("opacity"), String::from("0"))],
         );
 
-        let mut to_props = BTreeSet::new();
-        to_props.insert(StyleSheetProperty {
-            class_name: String::from("test"),
-            property: String::from("opacity"),
-            value: String::from("1"),
-            selector: None,
-            layer: None,
-        });
         keyframes.insert(
             String::from("to"),
             vec![(String::from("opacity"), String::from("1"))],
@@ -2068,27 +2071,11 @@ mod tests {
         assert_debug_snapshot!(past.split("*/").nth(1).unwrap());
 
         let mut keyframes: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-        let mut from_props = BTreeSet::new();
-        from_props.insert(StyleSheetProperty {
-            class_name: String::from("test"),
-            property: String::from("opacity"),
-            value: String::from("0"),
-            selector: None,
-            layer: None,
-        });
         keyframes.insert(
             String::from("from"),
             vec![(String::from("opacity"), String::from("0"))],
         );
 
-        let mut to_props = BTreeSet::new();
-        to_props.insert(StyleSheetProperty {
-            class_name: String::from("test"),
-            property: String::from("opacity"),
-            value: String::from("1"),
-            selector: None,
-            layer: None,
-        });
         keyframes.insert(
             String::from("to"),
             vec![(String::from("opacity"), String::from("1"))],

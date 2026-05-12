@@ -33,7 +33,7 @@ pub struct ExtractStaticStyle {
     pub selector: Option<StyleSelector>,
     /// None is inf, 0 is first, 1 is second, etc
     pub style_order: Option<u8>,
-    /// CSS layer name (from vanilla-extract layer())
+    /// CSS layer name (from vanilla-extract `layer()`)
     pub layer: Option<String>,
     /// How theme tokens should be resolved when converting to CSS.
     pub theme_token_resolution: ThemeTokenResolution,
@@ -53,16 +53,14 @@ impl Debug for ExtractStaticStyle {
 }
 
 impl ExtractStaticStyle {
-    /// create a new ExtractStaticStyle
+    /// create a new `ExtractStaticStyle`
     pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
             value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                if property == "aspect-ratio" && value.contains("/") {
-                    if let [Ok(a), Ok(b)] = value
-                        .split('/')
-                        .map(|v| v.trim().parse::<u32>())
-                        .collect::<Vec<_>>()[..]
-                    {
+                if property == "aspect-ratio" && value.contains('/') {
+                    if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
+                        Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
+                    }) {
                         let gcd = gcd(a, b);
                         format!("{}/{}", a / gcd, b / gcd)
                     } else {
@@ -83,7 +81,8 @@ impl ExtractStaticStyle {
         }
     }
 
-    /// create a new ExtractStaticStyle with layer
+    /// create a new `ExtractStaticStyle` with layer
+    #[must_use]
     pub fn new_with_layer(
         property: &str,
         value: &str,
@@ -96,6 +95,7 @@ impl ExtractStaticStyle {
         style
     }
 
+    #[must_use]
     pub fn new_basic(
         property: &str,
         value: &str,
@@ -117,37 +117,45 @@ impl ExtractStaticStyle {
         }
     }
 
-    pub fn with_theme_token_resolution(mut self, resolution: ThemeTokenResolution) -> Self {
+    #[must_use]
+    pub const fn with_theme_token_resolution(mut self, resolution: ThemeTokenResolution) -> Self {
         self.theme_token_resolution = resolution;
         self
     }
 
     /// Get the layer name
+    #[must_use]
     pub fn layer(&self) -> Option<&str> {
         self.layer.as_deref()
     }
 
-    pub fn property(&self) -> &str {
+    #[must_use]
+    pub const fn property(&self) -> &str {
         self.property.as_str()
     }
 
-    pub fn value(&self) -> &str {
+    #[must_use]
+    pub const fn value(&self) -> &str {
         self.value.as_str()
     }
 
-    pub fn level(&self) -> u8 {
+    #[must_use]
+    pub const fn level(&self) -> u8 {
         self.level
     }
 
-    pub fn selector(&self) -> Option<&StyleSelector> {
+    #[must_use]
+    pub const fn selector(&self) -> Option<&StyleSelector> {
         self.selector.as_ref()
     }
 
-    pub fn style_order(&self) -> Option<u8> {
+    #[must_use]
+    pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }
 
-    pub fn theme_token_resolution(&self) -> ThemeTokenResolution {
+    #[must_use]
+    pub const fn theme_token_resolution(&self) -> ThemeTokenResolution {
         self.theme_token_resolution
     }
 }
@@ -156,7 +164,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let s = self.selector.clone().map(|s| s.to_string());
         let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
-            self.value.to_string()
+            self.value.clone()
         } else {
             convert_value(&self.value)
         });

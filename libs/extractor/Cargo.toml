@@ -2,6 +2,14 @@
 name = "extractor"
 version = "0.1.0"
 edition = "2024"
+description = "Static style extraction engine for Devup UI"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+keywords = ["css", "extractor", "jsx", "react", "devup-ui"]
+categories = ["development-tools", "wasm", "web-programming"]
+
+[lints]
+workspace = true
 
 [dependencies]
 oxc_parser = "0.129.0"

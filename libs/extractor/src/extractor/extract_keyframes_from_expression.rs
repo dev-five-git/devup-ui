@@ -19,7 +19,7 @@ pub fn extract_keyframes_from_expression<'a>(
     let mut keyframes = ExtractKeyframes::default();
 
     if let Expression::ObjectExpression(obj) = expression {
-        for p in obj.properties.iter_mut() {
+        for p in &mut obj.properties {
             if let ObjectPropertyKind::ObjectProperty(o) = p
                 && let Some(name) = get_string_by_property_key(&o.key)
             {

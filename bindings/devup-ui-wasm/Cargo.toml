@@ -7,6 +7,8 @@ description = "Devup UI WASM bindings"
 license = "Apache-2.0"
 repository = "https://github.com/dev-five-git/devup-ui"
 documentation = "https://devup-ui.com"
+keywords = ["css", "wasm", "react", "devup-ui"]
+categories = ["development-tools", "wasm", "web-programming"]
 
 [lib]
 crate-type = ["cdylib"]
@@ -38,8 +40,8 @@ serial_test = "3.4.0"
 insta = "1.47.2"
 rstest = "0.26.1"
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+[lints]
+workspace = true
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]

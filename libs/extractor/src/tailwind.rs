@@ -1,7 +1,7 @@
 //! Tailwind CSS class parser for devup-ui extraction
 //!
 //! This module parses Tailwind CSS class strings and converts them to
-//! ExtractStyleValue objects for integration with the devup-ui extraction system.
+//! `ExtractStyleValue` objects for integration with the devup-ui extraction system.
 
 // The nested if-let pattern is intentional for readability in parsing code.
 // Using if-let chains would make the code harder to read and modify.
@@ -98,7 +98,7 @@ pub enum TailwindVariant {
 }
 
 impl TailwindVariant {
-    /// Convert variant to StyleSelector
+    /// Convert variant to `StyleSelector`
     pub fn to_selector(self) -> StyleSelector {
         match self {
             TailwindVariant::Hover => StyleSelector::Selector("&:hover".to_string()),
@@ -291,7 +291,7 @@ impl TailwindVariant {
 }
 
 /// Parsed Tailwind class with all components
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TailwindClass {
     /// Responsive level (0=base, 1=sm, 2=md, 3=lg, 4=xl, 5=2xl)
     pub responsive: u8,
@@ -306,7 +306,7 @@ pub struct TailwindClass {
 }
 
 impl TailwindClass {
-    /// Convert to ExtractStaticStyle
+    /// Convert to `ExtractStaticStyle`
     pub fn to_static_style(&self) -> ExtractStaticStyle {
         // For transform property, negative is already incorporated into the value
         // (e.g., translateX(-1rem)), so don't add prefix again
@@ -346,7 +346,7 @@ impl TailwindClass {
                     } else {
                         // Combine selectors
                         selector_str =
-                            format!("{}{}", selector_str.replace(" &", ""), s.replace("&", ""));
+                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
                         if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
                             selector_str.push_str(" &");
                         }
@@ -853,8 +853,7 @@ static EASE_SCALE: phf::Map<&'static str, &'static str> = phf_map! {
 /// Check if a string contains Tailwind classes
 pub fn has_tailwind_classes(class_str: &str) -> bool {
     // Simple heuristic: if it looks like a Tailwind class pattern
-    let parts: Vec<&str> = class_str.split_whitespace().collect();
-    for part in parts {
+    for part in class_str.split_whitespace() {
         if is_likely_tailwind_class(part) {
             return true;
         }
@@ -1188,7 +1187,9 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     }
 
     // Numeric values (including decimals like 0.5, 1.5)
-    let first_char = value.chars().next().unwrap();
+    let Some(first_char) = value.chars().next() else {
+        return false;
+    };
     if first_char.is_ascii_digit() {
         return true;
     }
@@ -1217,11 +1218,10 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     }
 
     // Fraction values (1/2, 1/3, 2/3, etc.)
-    if value.contains('/') {
-        let parts: Vec<&str> = value.split('/').collect();
-        if parts.len() == 2
-            && parts[0].chars().all(|c| c.is_ascii_digit())
-            && parts[1].chars().all(|c| c.is_ascii_digit())
+    if let Some((numerator, denominator)) = value.split_once('/') {
+        if !denominator.contains('/')
+            && numerator.chars().all(|c| c.is_ascii_digit())
+            && denominator.chars().all(|c| c.is_ascii_digit())
         {
             return true;
         }
@@ -1230,7 +1230,7 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     false
 }
 
-/// Parse a className string into a list of ExtractStyleValue
+/// Parse a className string into a list of `ExtractStyleValue`
 pub fn parse_tailwind_to_styles(class_str: &str, filename: Option<&str>) -> Vec<ExtractStyleValue> {
     let mut styles = Vec::new();
 
@@ -1429,36 +1429,36 @@ fn parse_arbitrary_value(class: &str) -> Option<(String, String)> {
         "leading-" => Some(("line-height".to_string(), value)),
         "duration-" => Some(("transition-duration".to_string(), value)),
         "delay-" => Some(("transition-delay".to_string(), value)),
-        "scale-" => Some(("transform".to_string(), format!("scale({})", value))),
-        "rotate-" => Some(("transform".to_string(), format!("rotate({})", value))),
-        "translate-x-" => Some(("transform".to_string(), format!("translateX({})", value))),
-        "translate-y-" => Some(("transform".to_string(), format!("translateY({})", value))),
-        "skew-x-" => Some(("transform".to_string(), format!("skewX({})", value))),
-        "skew-y-" => Some(("transform".to_string(), format!("skewY({})", value))),
+        "scale-" => Some(("transform".to_string(), format!("scale({value})"))),
+        "rotate-" => Some(("transform".to_string(), format!("rotate({value})"))),
+        "translate-x-" => Some(("transform".to_string(), format!("translateX({value})"))),
+        "translate-y-" => Some(("transform".to_string(), format!("translateY({value})"))),
+        "skew-x-" => Some(("transform".to_string(), format!("skewX({value})"))),
+        "skew-y-" => Some(("transform".to_string(), format!("skewY({value})"))),
         "aspect-" => Some(("aspect-ratio".to_string(), value)),
         "columns-" => Some(("columns".to_string(), value)),
         "grid-cols-" => Some((
             "grid-template-columns".to_string(),
-            format!("repeat({}, minmax(0, 1fr))", value),
+            format!("repeat({value}, minmax(0, 1fr))"),
         )),
         "grid-rows-" => Some((
             "grid-template-rows".to_string(),
-            format!("repeat({}, minmax(0, 1fr))", value),
+            format!("repeat({value}, minmax(0, 1fr))"),
         )),
         "col-span-" => Some((
             "grid-column".to_string(),
-            format!("span {} / span {}", value, value),
+            format!("span {value} / span {value}"),
         )),
         "row-span-" => Some((
             "grid-row".to_string(),
-            format!("span {} / span {}", value, value),
+            format!("span {value} / span {value}"),
         )),
         "basis-" => Some(("flex-basis".to_string(), value)),
-        "blur-" => Some(("filter".to_string(), format!("blur({})", value))),
-        "brightness-" => Some(("filter".to_string(), format!("brightness({})", value))),
-        "contrast-" => Some(("filter".to_string(), format!("contrast({})", value))),
-        "saturate-" => Some(("filter".to_string(), format!("saturate({})", value))),
-        "backdrop-blur-" => Some(("backdrop-filter".to_string(), format!("blur({})", value))),
+        "blur-" => Some(("filter".to_string(), format!("blur({value})"))),
+        "brightness-" => Some(("filter".to_string(), format!("brightness({value})"))),
+        "contrast-" => Some(("filter".to_string(), format!("contrast({value})"))),
+        "saturate-" => Some(("filter".to_string(), format!("saturate({value})"))),
+        "backdrop-blur-" => Some(("backdrop-filter".to_string(), format!("blur({value})"))),
         _ => None,
     }
 }
@@ -1868,7 +1868,7 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
                 if let Ok(n) = rest.parse::<u32>() {
                     return Some((
                         "grid-template-columns".to_string(),
-                        format!("repeat({}, minmax(0, 1fr))", n),
+                        format!("repeat({n}, minmax(0, 1fr))"),
                     ));
                 }
             }
@@ -1878,7 +1878,7 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
                 if let Ok(n) = rest.parse::<u32>() {
                     return Some((
                         "grid-template-rows".to_string(),
-                        format!("repeat({}, minmax(0, 1fr))", n),
+                        format!("repeat({n}, minmax(0, 1fr))"),
                     ));
                 }
             }
@@ -1886,10 +1886,7 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
             // Col span
             if let Some(rest) = class.strip_prefix("col-span-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some((
-                        "grid-column".to_string(),
-                        format!("span {} / span {}", n, n),
-                    ));
+                    return Some(("grid-column".to_string(), format!("span {n} / span {n}")));
                 }
             }
 
@@ -1906,7 +1903,7 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
             // Row span
             if let Some(rest) = class.strip_prefix("row-span-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some(("grid-row".to_string(), format!("span {} / span {}", n, n)));
+                    return Some(("grid-row".to_string(), format!("span {n} / span {n}")));
                 }
             }
 
@@ -2458,7 +2455,7 @@ fn parse_background_utility(class: &str) -> Option<(String, String)> {
             };
             return Some((
                 "background-image".to_string(),
-                format!("linear-gradient({}, var(--tw-gradient-stops))", direction),
+                format!("linear-gradient({direction}, var(--tw-gradient-stops))"),
             ));
         }
     }
@@ -2765,7 +2762,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "3xl" => "64px".to_string(),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("blur({})", value)));
+        return Some(("filter".to_string(), format!("blur({value})")));
     }
     if class == "blur" {
         return Some(("filter".to_string(), "blur(8px)".to_string()));
@@ -2787,7 +2784,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "200" => "2".to_string(),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("brightness({})", value)));
+        return Some(("filter".to_string(), format!("brightness({value})")));
     }
 
     // Contrast
@@ -2802,7 +2799,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "200" => "2".to_string(),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("contrast({})", value)));
+        return Some(("filter".to_string(), format!("contrast({value})")));
     }
 
     // Drop shadow
@@ -2845,7 +2842,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "180" => "180deg".to_string(),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("hue-rotate({})", value)));
+        return Some(("filter".to_string(), format!("hue-rotate({value})")));
     }
 
     // Invert
@@ -2866,7 +2863,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "200" => "2".to_string(),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("saturate({})", value)));
+        return Some(("filter".to_string(), format!("saturate({value})")));
     }
 
     // Sepia
@@ -2889,7 +2886,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "3xl" => "64px".to_string(),
             _ => return None,
         };
-        return Some(("backdrop-filter".to_string(), format!("blur({})", value)));
+        return Some(("backdrop-filter".to_string(), format!("blur({value})")));
     }
     if class == "backdrop-blur" {
         return Some(("backdrop-filter".to_string(), "blur(8px)".to_string()));
@@ -2912,7 +2909,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
         };
         return Some((
             "backdrop-filter".to_string(),
-            format!("brightness({})", value),
+            format!("brightness({value})"),
         ));
     }
 
@@ -2927,10 +2924,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "200" => "2".to_string(),
             _ => return None,
         };
-        return Some((
-            "backdrop-filter".to_string(),
-            format!("contrast({})", value),
-        ));
+        return Some(("backdrop-filter".to_string(), format!("contrast({value})")));
     }
 
     if class == "backdrop-grayscale" {
@@ -2949,7 +2943,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
 
     if let Some(rest) = class.strip_prefix("backdrop-opacity-") {
         if let Some(&value) = OPACITY_SCALE.get(rest) {
-            return Some(("backdrop-filter".to_string(), format!("opacity({})", value)));
+            return Some(("backdrop-filter".to_string(), format!("opacity({value})")));
         }
     }
 
@@ -2962,10 +2956,7 @@ fn parse_filter_utility(class: &str) -> Option<(String, String)> {
             "200" => "2".to_string(),
             _ => return None,
         };
-        return Some((
-            "backdrop-filter".to_string(),
-            format!("saturate({})", value),
-        ));
+        return Some(("backdrop-filter".to_string(), format!("saturate({value})")));
     }
 
     if class == "backdrop-sepia" {
@@ -3048,15 +3039,15 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
     // Scale
     if let Some(rest) = class.strip_prefix("scale-x-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scaleX({})", value)));
+        return Some(("transform".to_string(), format!("scaleX({value})")));
     }
     if let Some(rest) = class.strip_prefix("scale-y-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scaleY({})", value)));
+        return Some(("transform".to_string(), format!("scaleY({value})")));
     }
     if let Some(rest) = class.strip_prefix("scale-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scale({})", value)));
+        return Some(("transform".to_string(), format!("scale({value})")));
     }
 
     // Rotate
@@ -3076,7 +3067,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
         let neg_prefix = if is_negative { "-" } else { "" };
         return Some((
             "transform".to_string(),
-            format!("rotate({}{})", neg_prefix, value),
+            format!("rotate({neg_prefix}{value})"),
         ));
     }
 
@@ -3086,7 +3077,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
             let neg_prefix = if is_negative { "-" } else { "" };
             return Some((
                 "transform".to_string(),
-                format!("translateX({}{})", neg_prefix, value),
+                format!("translateX({neg_prefix}{value})"),
             ));
         }
     }
@@ -3095,7 +3086,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
             let neg_prefix = if is_negative { "-" } else { "" };
             return Some((
                 "transform".to_string(),
-                format!("translateY({}{})", neg_prefix, value),
+                format!("translateY({neg_prefix}{value})"),
             ));
         }
     }
@@ -3114,7 +3105,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
         let neg_prefix = if is_negative { "-" } else { "" };
         return Some((
             "transform".to_string(),
-            format!("skewX({}{})", neg_prefix, value),
+            format!("skewX({neg_prefix}{value})"),
         ));
     }
     if let Some(rest) = class.strip_prefix("skew-y-") {
@@ -3130,7 +3121,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
         let neg_prefix = if is_negative { "-" } else { "" };
         return Some((
             "transform".to_string(),
-            format!("skewY({}{})", neg_prefix, value),
+            format!("skewY({neg_prefix}{value})"),
         ));
     }
 
@@ -3157,7 +3148,7 @@ fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, St
 /// Parse scale value (50 -> 0.5, 100 -> 1, 150 -> 1.5)
 fn parse_scale_value(s: &str) -> Option<f64> {
     let n: u32 = s.parse().ok()?;
-    Some(n as f64 / 100.0)
+    Some(f64::from(n) / 100.0)
 }
 
 /// Parse interactivity utilities (cursor, pointer-events, resize, etc.)
@@ -3342,6 +3333,7 @@ fn parse_accessibility_utility(class: &str) -> Option<(String, String)> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use css::class_map::reset_class_map;
@@ -4004,7 +3996,7 @@ mod tests {
             assert_eq!(kind, css::style_selector::AtRuleKind::Media);
             assert_eq!(query, expected_query);
         } else {
-            panic!("Expected At selector for {:?}", variant);
+            panic!("Expected At selector for {variant:?}");
         }
     }
 
