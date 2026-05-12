@@ -312,6 +312,32 @@ describe('devupUIVitePlugin', () => {
     expect(result).toEqual([])
   })
 
+  it('should skip hot update for unrelated files', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    const invalidateModule = mock()
+    const send = mock()
+    const plugin = createPlugin({})
+
+    const result = await plugin.handleHotUpdate({
+      file: 'other.json',
+      server: {
+        moduleGraph: { invalidateModule },
+        ws: { send },
+      },
+      modules: [],
+      timestamp: 1,
+    })
+
+    expect(result).toBeUndefined()
+    expect(writeFileSpy).not.toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      expect.any(String),
+      'utf-8',
+    )
+    expect(invalidateModule).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('should print error when watch change error', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')

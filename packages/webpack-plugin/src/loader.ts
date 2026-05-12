@@ -25,11 +25,11 @@ function toLoaderError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-function parseSourceMap(sourceMap: string | undefined): object | null {
+function parseSourceMap(sourceMap: string | undefined): string | null {
   if (!sourceMap) return null
 
-  const parsed: unknown = JSON.parse(sourceMap)
-  return typeof parsed === 'object' && parsed !== null ? parsed : null
+  JSON.parse(sourceMap)
+  return sourceMap
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =

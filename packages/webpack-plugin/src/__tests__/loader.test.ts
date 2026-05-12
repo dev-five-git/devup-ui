@@ -187,7 +187,7 @@ describe('devupUILoader', () => {
       )
     }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',

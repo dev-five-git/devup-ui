@@ -71,11 +71,11 @@ function parseCoordinatorResponse(content: string): CoordinatorResponse {
   }
 }
 
-function parseSourceMap(sourceMap: string | undefined): object | null {
+function parseSourceMap(sourceMap: string | undefined): string | null {
   if (!sourceMap) return null
 
-  const parsed: unknown = JSON.parse(sourceMap)
-  return typeof parsed === 'object' && parsed !== null ? parsed : null
+  JSON.parse(sourceMap)
+  return sourceMap
 }
 
 function coordinatorExtract(
@@ -84,7 +84,7 @@ function coordinatorExtract(
   callback: (
     err: Error | null,
     content?: string,
-    sourceMap?: object | null,
+    sourceMap?: string | null,
   ) => void,
 ): void {
   const req = request(

@@ -19,7 +19,7 @@ import {
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
-import type { PluginOption, UserConfig } from 'vite'
+import type { ModuleNode, PluginOption, UserConfig } from 'vite'
 
 export interface DevupUIPluginOptions {
   package: string
@@ -171,7 +171,7 @@ export function DevupUI({
         singleCss,
       })
 
-      const invalidatedModules = new Set()
+      const invalidatedModules = new Set<ModuleNode>()
       for (const mod of modules) {
         server.moduleGraph.invalidateModule(
           mod,

@@ -31,18 +31,17 @@ function checkUselessTailingNulls<T extends RuleContext<string, []>>(
   const lastElement = node.elements[node.elements.length - 1]
   if (!lastElement || (node.elements.length === nullCount && !firstElement))
     return
+  const removeStart =
+    node.elements.length > nullCount && previousElement
+      ? previousElement.range[1]
+      : firstElement?.range[0]
+  if (removeStart === undefined) return
 
   context.report({
     node,
     messageId: 'uselessTailingNulls',
     fix(fixer) {
-      return fixer.removeRange([
-        node.elements.length > nullCount && previousElement
-          ? previousElement.range[1]
-          : firstElement.range[0],
-
-        lastElement.range[1],
-      ])
+      return fixer.removeRange([removeStart, lastElement.range[1]])
     },
   })
 }
