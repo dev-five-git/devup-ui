@@ -35,15 +35,18 @@ export default function HomePage() {
         <Box>hello</Box>
       </Box>
       <Typography color="$text">text</Typography>
-      <Box color={enabled ? 'green' : 'blue'} fontSize={[32]} pr="20px">
+      <Box
+        sx={{ color: enabled ? 'green' : 'blue', fontSize: [32], pr: '20px' }}
+      >
         hello
       </Box>
-      <Box fontSize={[12, 32]}>hello</Box>
+      <Box sx={{ fontSize: [12, 32] }}>hello</Box>
       <button
         onClick={() => {
           setColor('blue')
           setEnabled((prev) => !prev)
         }}
+        type="button"
       >
         Change
       </button>

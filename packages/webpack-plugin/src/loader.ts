@@ -21,6 +21,17 @@ export interface DevupUILoaderOptions {
   importAliases?: Record<string, string | null>
 }
 
+function toLoaderError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function parseSourceMap(sourceMap: string | undefined): string | null {
+  if (!sourceMap) return null
+
+  JSON.parse(sourceMap)
+  return sourceMap
+}
+
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
   function (source) {
     const {
@@ -35,6 +46,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     } = this.getOptions()
     const callback = this.async()
     const id = this.resourcePath
+
+    if (watch) {
+      this.addDependency(sheetFile)
+      this.addDependency(classMapFile)
+      this.addDependency(fileMapFile)
+    }
 
     try {
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
@@ -58,7 +75,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
-      const sourceMap = map ? JSON.parse(map) : null
+      const sourceMap = parseSourceMap(map)
       const promises: Promise<void>[] = []
       if (updatedBaseStyle) {
         // update base style
@@ -71,7 +88,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         // should be reset css
         promises.push(
           writeFile(
-            join(cssDir, basename(cssFile!)),
+            join(cssDir, basename(cssFile)),
             watch ? `/* ${content} */` : css,
           ),
         )
@@ -83,11 +100,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           )
         }
       }
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(null, code, sourceMap))
+      Promise.all(promises).then(
+        () => callback(null, code, sourceMap as Parameters<typeof callback>[2]),
+        (error) => callback(toLoaderError(error)),
+      )
     } catch (error) {
-      callback(error as Error)
+      callback(toLoaderError(error))
     }
     return
   }

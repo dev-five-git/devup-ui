@@ -3,8 +3,8 @@ use oxc_ast::ast::{Expression, ObjectPropertyKind};
 
 use crate::utils::{get_string_by_literal_expression, get_string_by_property_key};
 
-/// Which StyleX function a named import refers to
-#[derive(Debug, Clone, PartialEq)]
+/// Which `StyleX` function a named import refers to
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StylexFunction {
     Create,
     Props,
@@ -15,7 +15,7 @@ pub enum StylexFunction {
     Include,
 }
 
-/// Check if a call expression is stylex.firstThatWorks() or named firstThatWorks().
+/// Check if a call expression is `stylex.firstThatWorks()` or named `firstThatWorks()`.
 pub fn is_first_that_works_call(callee: &Expression) -> bool {
     // stylex.firstThatWorks(...)
     if let Expression::StaticMemberExpression(member) = callee
@@ -32,7 +32,7 @@ pub fn is_first_that_works_call(callee: &Expression) -> bool {
     false
 }
 
-/// Check if a call expression is stylex.include() or named include().
+/// Check if a call expression is `stylex.include()` or named `include()`.
 /// This is a static check that does NOT require access to the visitor.
 pub fn is_include_call_static(callee: &Expression) -> bool {
     if let Expression::StaticMemberExpression(member) = callee
@@ -48,14 +48,14 @@ pub fn is_include_call_static(callee: &Expression) -> bool {
     false
 }
 
-/// A reference to a stylex.include(base.member) call found inside stylex.create().
+/// A reference to a stylex.include(base.member) call found inside `stylex.create()`.
 #[derive(Debug, Clone)]
 pub struct StylexIncludeRef {
     pub var_name: String,
     pub member_name: String,
 }
 
-/// Check if a call expression is stylex.types.X() or types.X() (type wrapper).
+/// Check if a call expression is `stylex.types.X()` or `types.X()` (type wrapper).
 pub fn is_types_call(callee: &Expression) -> bool {
     if let Expression::StaticMemberExpression(member) = callee {
         // stylex.types.X(...)
@@ -71,7 +71,7 @@ pub fn is_types_call(callee: &Expression) -> bool {
 }
 
 /// Convert camelCase CSS property name to kebab-case.
-/// StyleX uses standard CSS properties only — NO devup-ui shorthand expansion.
+/// `StyleX` uses standard CSS properties only — NO devup-ui shorthand expansion.
 pub fn normalize_stylex_property(name: &str) -> String {
     css::utils::to_kebab_case(name)
 }
@@ -79,7 +79,7 @@ pub fn normalize_stylex_property(name: &str) -> String {
 /// Intermediate selector parts collected during recursion.
 #[derive(Debug, Clone)]
 pub enum SelectorPart {
-    /// Pseudo-class or pseudo-element, e.g. ":hover", "::placeholder"
+    /// Pseudo-class or pseudo-element, e.g. ":hover", "`::placeholder`"
     Pseudo(String),
     /// At-rule condition, e.g. @media (max-width: 600px)
     AtRule { kind: AtRuleKind, query: String },
@@ -94,16 +94,16 @@ pub struct DecomposedStyle {
     pub selector: Option<StyleSelector>,
 }
 
-/// Information about a dynamic StyleX namespace (arrow function in stylex.create())
+/// Information about a dynamic `StyleX` namespace (arrow function in `stylex.create()`)
 #[derive(Debug, Clone)]
 pub struct StylexDynamicInfo {
     /// Combined class name string for all properties (static + dynamic)
     pub class_name: String,
-    /// Maps (param_index, css_variable_name) for each dynamic property
+    /// Maps (`param_index`, `css_variable_name`) for each dynamic property
     pub css_vars: Vec<(usize, String)>,
 }
 
-/// A StyleX namespace entry — either static or dynamic (arrow function)
+/// A `StyleX` namespace entry — either static or dynamic (arrow function)
 #[derive(Debug, Clone)]
 pub enum StylexNamespaceValue {
     /// Static namespace: just a className string
@@ -112,14 +112,14 @@ pub enum StylexNamespaceValue {
     Dynamic(StylexDynamicInfo),
 }
 
-/// Decompose a StyleX value-level condition object into flat (css_value, selector) tuples.
+/// Decompose a `StyleX` value-level condition object into flat (`css_value`, selector) tuples.
 ///
-/// StyleX allows values to be objects with condition keys:
+/// `StyleX` allows values to be objects with condition keys:
 /// ```js
 /// { color: { default: 'red', ':hover': 'blue', '@media (max-width:600px)': 'green' } }
 /// ```
 ///
-/// This recursively walks the value tree and returns flat tuples of (value_or_none, selector).
+/// This recursively walks the value tree and returns flat tuples of (`value_or_none`, selector).
 /// `None` value means null/no CSS emitted (but tracked for atomic override).
 pub fn decompose_value_conditions(
     css_property: &str,
@@ -185,7 +185,7 @@ pub fn decompose_value_conditions(
 
     let mut results = vec![];
 
-    for prop in obj.properties.iter() {
+    for prop in &obj.properties {
         let ObjectPropertyKind::ObjectProperty(prop) = prop else {
             continue;
         };
@@ -249,15 +249,14 @@ fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
         Some(format!("&{}", pseudos.join("")))
     };
 
-    if at_rules.is_empty() {
-        pseudo_str.map(StyleSelector::Selector)
-    } else {
-        let (kind, query) = at_rules.last().expect("at_rules is non-empty");
+    if let Some((kind, query)) = at_rules.last() {
         Some(StyleSelector::At {
             kind: *kind,
             query: query.to_string(),
             selector: pseudo_str,
         })
+    } else {
+        pseudo_str.map(StyleSelector::Selector)
     }
 }
 
@@ -276,6 +275,7 @@ fn parse_at_rule_key(key: &str) -> Option<(AtRuleKind, String)> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

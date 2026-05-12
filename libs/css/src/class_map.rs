@@ -30,7 +30,10 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        f(&GLOBAL_CLASS_MAP.lock().unwrap())
+        let guard = GLOBAL_CLASS_MAP
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&guard)
     }
 }
 
@@ -46,13 +49,16 @@ where
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        f(&mut GLOBAL_CLASS_MAP.lock().unwrap())
+        let mut guard = GLOBAL_CLASS_MAP
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f(&mut guard)
     }
 }
 
 /// for test
 pub fn reset_class_map() {
-    with_class_map_mut(|map| map.clear());
+    with_class_map_mut(HashMap::clear);
 }
 
 pub fn set_class_map(new_map: HashMap<String, HashMap<String, usize>>) {
@@ -60,7 +66,7 @@ pub fn set_class_map(new_map: HashMap<String, HashMap<String, usize>>) {
 }
 
 pub fn get_class_map() -> HashMap<String, HashMap<String, usize>> {
-    with_class_map(|map| map.clone())
+    with_class_map(Clone::clone)
 }
 
 #[cfg(test)]
@@ -73,7 +79,7 @@ mod tests {
     #[serial]
     fn test_set_and_get_class_map() {
         let mut test_map = HashMap::new();
-        test_map.insert("".to_string(), HashMap::new());
+        test_map.insert(String::new(), HashMap::new());
         set_class_map(test_map.clone());
         let got = get_class_map();
         assert_eq!(got.get(""), Some(&HashMap::new()));
@@ -83,7 +89,7 @@ mod tests {
     #[serial]
     fn test_reset_class_map() {
         let mut test_map = HashMap::new();
-        test_map.insert("".to_string(), HashMap::new());
+        test_map.insert(String::new(), HashMap::new());
         set_class_map(test_map);
         reset_class_map();
         let got = get_class_map();

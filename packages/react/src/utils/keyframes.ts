@@ -12,8 +12,7 @@ export function keyframes(strings: TemplateStringsArray): string
 export function keyframes(): string
 
 export function keyframes(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  strings?: TemplateStringsArray | KeyframesProps,
+  _strings?: TemplateStringsArray | KeyframesProps,
 ): string {
   throw new Error('Cannot run on the runtime')
 }

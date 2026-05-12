@@ -36,8 +36,8 @@ pub fn rm_last_semi_colon(code: &str) -> &str {
     code.trim_end_matches(';')
 }
 
-pub fn css_to_style_literal<'a>(
-    css: &TemplateLiteral<'a>,
+pub fn css_to_style_literal(
+    css: &TemplateLiteral<'_>,
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<CssToStyleResult> {
@@ -45,7 +45,7 @@ pub fn css_to_style_literal<'a>(
 
     // If there are no expressions, just process quasis as static CSS
     if css.expressions.is_empty() {
-        for quasi in css.quasis.iter() {
+        for quasi in &css.quasis {
             styles.extend(
                 css_to_style(&quasi.value.raw, level, selector)
                     .into_iter()
@@ -71,7 +71,7 @@ pub fn css_to_style_literal<'a>(
         // Add expression placeholder if not the last quasi
         if i < css.expressions.len() {
             // Use a unique placeholder format that CSS parser won't modify
-            let placeholder = format!("__EXPR_{}__", i);
+            let placeholder = format!("__EXPR_{i}__");
             expression_map.insert(placeholder.clone(), i);
             css_parts.push(placeholder);
         }
@@ -91,13 +91,23 @@ pub fn css_to_style_literal<'a>(
 
         // Find all placeholders in this value
         let mut found_placeholders = Vec::new();
-        for (placeholder, &idx) in expression_map.iter() {
+        for (placeholder, &idx) in &expression_map {
             if value.contains(placeholder) {
                 found_placeholders.push((placeholder.clone(), idx));
             }
         }
 
-        if !found_placeholders.is_empty() {
+        if found_placeholders.is_empty() {
+            // Check if property name contains a dynamic expression placeholder
+            let property = style.property();
+
+            if !expression_map.keys().any(|p| property.contains(p)) {
+                // Static style
+                styles.push(CssToStyleResult::Static(style));
+            }
+
+            // Property name is dynamic - skip for now as it's more complex
+        } else {
             // Check if all expressions are literals that can be statically evaluated
 
             let mut all_literals = true;
@@ -209,12 +219,12 @@ pub fn css_to_style_literal<'a>(
                             let expr_code = rm_last_semi_colon(&expr_code);
                             // Replace placeholder with ${expr} syntax
                             template_literal = template_literal
-                                .replace(placeholder.as_str(), &format!("${{{}}}", expr_code));
+                                .replace(placeholder.as_str(), &format!("${{{expr_code}}}"));
                         }
                     }
 
                     // Wrap in template literal backticks
-                    let final_identifier = format!("`{}`", template_literal);
+                    let final_identifier = format!("`{template_literal}`");
 
                     styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
                         style.property(),
@@ -224,16 +234,6 @@ pub fn css_to_style_literal<'a>(
                     )));
                 }
             }
-        } else {
-            // Check if property name contains a dynamic expression placeholder
-            let property = style.property();
-
-            if !expression_map.keys().any(|p| property.contains(p)) {
-                // Static style
-                styles.push(CssToStyleResult::Static(style));
-            }
-
-            // Property name is dynamic - skip for now as it's more complex
         }
     }
 
@@ -253,7 +253,7 @@ pub fn css_to_style(
         if input.contains(at_rule) {
             let at_inputs = input
                 .split(at_rule)
-                .flat_map(|s| {
+                .filter_map(|s| {
                     let s = s.trim();
                     if s.is_empty() {
                         None
@@ -277,7 +277,7 @@ pub fn css_to_style(
             let before_brace = &input[..start].trim();
 
             // Split by semicolon to find the last part which should be the selector
-            let parts: Vec<&str> = before_brace.split(';').map(|s| s.trim()).collect();
+            let parts: Vec<&str> = before_brace.split(';').map(str::trim).collect();
 
             // Find the selector part (the last part that doesn't contain ':')
             // or if all parts contain ':', then the last part is the selector
@@ -295,7 +295,7 @@ pub fn css_to_style(
                 let (props, sel) = parts.split_at(parts.len().min(selector_idx));
                 (props.join(";"), sel.join(";"))
             } else {
-                ("".to_string(), before_brace.to_string())
+                (String::new(), before_brace.to_string())
             };
 
             // Process plain properties if any
@@ -343,21 +343,21 @@ pub fn css_to_style(
                 if sel.starts_with("@media") {
                     Some(StyleSelector::At {
                         kind: AtRuleKind::Media,
-                        query: sel.replace(" ", "").replace("and(", "and (")["@media".len()..]
+                        query: sel.replace(' ', "").replace("and(", "and (")["@media".len()..]
                             .to_string(),
                         selector: None,
                     })
                 } else if sel.starts_with("@supports") {
                     Some(StyleSelector::At {
                         kind: AtRuleKind::Supports,
-                        query: sel.replace(" ", "").replace("and(", "and (")["@supports".len()..]
+                        query: sel.replace(' ', "").replace("and(", "and (")["@supports".len()..]
                             .to_string(),
                         selector: None,
                     })
                 } else if sel.starts_with("@container") {
                     Some(StyleSelector::At {
                         kind: AtRuleKind::Container,
-                        query: sel.replace(" ", "").replace("and(", "and (")["@container".len()..]
+                        query: sel.replace(' ', "").replace("and(", "and (")["@container".len()..]
                             .to_string(),
                         selector: None,
                     })
@@ -383,18 +383,17 @@ pub fn css_to_style(
             // Check if there's more content after the closing brace
             if closing_brace_pos + 1 < input.len() {
                 let remaining = &input[closing_brace_pos + 1..].trim();
-                if !remaining.is_empty() {
-                    // If there's remaining text after the closing brace, process it
-                    // This handles cases like "} color: blue;"
-                    if remaining.contains('{') {
-                        // If it contains '{', continue the loop
-                        input = remaining;
-                    } else {
-                        // If it doesn't contain '{', process it as a block and break
-                        styles.extend(css_to_style_block(remaining, level, selector));
-                        break;
-                    }
+                if remaining.is_empty() {
+                    break;
+                }
+                // If there's remaining text after the closing brace, process it
+                // This handles cases like "} color: blue;"
+                if remaining.contains('{') {
+                    // If it contains '{', continue the loop
+                    input = remaining;
                 } else {
+                    // If it doesn't contain '{', process it as a block and break
+                    styles.extend(css_to_style_block(remaining, level, selector));
                     break;
                 }
             } else {
@@ -415,15 +414,15 @@ fn css_to_style_block(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     rm_css_comment(css)
-        .split(";")
+        .split(';')
         .filter_map(|s| {
             let s = s.trim();
             if s.is_empty() {
                 None
             } else {
-                let mut iter = s.split(":").map(|s| s.trim());
-                let property = iter.next().unwrap();
-                let value = iter.next().unwrap();
+                let (property, value) = s.split_once(':')?;
+                let property = property.trim();
+                let value = value.trim();
                 let value = if check_multi_css_optimize(property) {
                     optimize_mutli_css_value(value)
                 } else {
@@ -492,48 +491,70 @@ pub fn optimize_css_block(css: &str) -> String {
             result.push(';');
         }
         first_segment = false;
-        let parts: Vec<&str> = s.split('{').collect();
-        let first_part_str = if parts.len() > 1 {
-            parts[..parts.len() - 1]
-                .iter()
-                .map(|p| p.trim())
-                .collect::<Vec<_>>()
-                .join("{")
-                + "{"
-        } else {
-            String::new()
-        };
-        let last_part = parts.last().unwrap().trim();
-        if !last_part.contains(':') {
-            result.push_str(&first_part_str);
-            result.push_str(last_part);
-        } else {
-            let mut iter = last_part.split(':');
-            let property = iter.next().unwrap().trim();
-            let value = iter.next().unwrap().trim();
 
-            let optimized_value =
-                if check_multi_css_optimize(property.split('{').next_back().unwrap()) {
-                    optimize_mutli_css_value(value)
-                } else {
-                    value.to_string()
-                };
-            result.push_str(&first_part_str);
+        let last_part = if let Some((prefix, last_part)) = s.rsplit_once('{') {
+            append_brace_prefix(&mut result, prefix);
+            last_part.trim()
+        } else {
+            s.trim()
+        };
+
+        if let Some((property, value)) = last_part.split_once(':') {
+            let property = property.trim();
+            let value = value.trim();
+
+            let property_name = property
+                .rsplit_once('{')
+                .map_or(property, |(_, property_name)| property_name);
+            let optimized_value = if check_multi_css_optimize(property_name) {
+                optimize_mutli_css_value(value)
+            } else {
+                value.to_string()
+            };
             result.push_str(property);
             result.push(':');
             result.push_str(&optimized_value);
+        } else {
+            result.push_str(last_part);
         }
     }
 
-    // Remove trailing ";}" -> "}"
-    let trimmed_result = result.trim();
-    if trimmed_result.is_empty() {
+    trim_string_in_place(&mut result);
+    if result.is_empty() {
         return String::new();
     }
-    trimmed_result.replace(";}", "}").to_string()
+    remove_semicolon_before_closing_brace(&mut result);
+    result
+}
+
+fn append_brace_prefix(result: &mut String, prefix: &str) {
+    for (idx, part) in prefix.split('{').enumerate() {
+        if idx > 0 {
+            result.push('{');
+        }
+        result.push_str(part.trim());
+    }
+    result.push('{');
+}
+
+fn trim_string_in_place(value: &mut String) {
+    let trimmed_start = value.len() - value.trim_start().len();
+    if trimmed_start > 0 {
+        value.drain(..trimmed_start);
+    }
+
+    let trimmed_len = value.trim_end().len();
+    value.truncate(trimmed_len);
+}
+
+fn remove_semicolon_before_closing_brace(value: &mut String) {
+    while let Some(idx) = value.find(";}") {
+        value.remove(idx);
+    }
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -1041,7 +1062,11 @@ mod tests {
     #[case(":root{ background: red; }", ":root{background:red}")]
     #[case(
         ":root, :section{ background: red; }",
-        ":root,:section{background:red}"
+        concat!(":root,:section", "{background:red}")
+    )]
+    #[case(
+        "@supports (display: grid) { .grid { gap : 1rem ; } }",
+        concat!("@supports (display: grid)", "{.grid", "{gap:1rem}}")
     )]
     #[case("*:hover{ background: red; }", "*:hover{background:red}")]
     #[case(":root {color-scheme: light dark }", ":root{color-scheme:light dark}")]
@@ -1391,23 +1416,38 @@ mod tests {
         #[case] expected: Vec<(&str, Vec<(&str, &str)>)>,
     ) {
         let styles = keyframes_to_keyframes_style(input);
-        if styles.len() != expected.len() {
-            panic!("styles.len() != expected.len()");
-        }
-        for (expected_key, expected_styles) in styles.iter() {
+        assert!(
+            styles.len() == expected.len(),
+            "styles.len() != expected.len()"
+        );
+        for (expected_key, expected_styles) in &styles {
             let styles = expected_styles;
             let mut result: Vec<(&str, &str)> = styles
                 .iter()
                 .map(|prop| (prop.property(), prop.value()))
                 .collect();
-            result.sort();
+            result.sort_unstable();
             let mut expected_sorted = expected
                 .iter()
                 .find(|(k, _)| k == expected_key)
                 .map(|(_, v)| v.clone())
                 .unwrap();
-            expected_sorted.sort();
+            expected_sorted.sort_unstable();
             assert_eq!(result, expected_sorted);
         }
+    }
+
+    #[rstest]
+    #[case("  hello", "hello")]
+    #[case("\t\nhello", "hello")]
+    #[case("  hello  ", "hello")]
+    #[case("hello  ", "hello")]
+    #[case("hello", "hello")]
+    #[case("", "")]
+    #[case("   ", "")]
+    fn test_trim_string_in_place(#[case] input: &str, #[case] expected: &str) {
+        let mut value = input.to_string();
+        trim_string_in_place(&mut value);
+        assert_eq!(value, expected);
     }
 }

@@ -15,7 +15,28 @@ use rustc_hash::FxHashMap;
 
 use crate::utils::get_string_by_property_key;
 
-/// Extract styles from a `stylex.create()` call's argument (ObjectExpression).
+const SHORTHAND_PROPERTIES: &[&str] = &[
+    "margin",
+    "padding",
+    "background",
+    "border",
+    "font",
+    "outline",
+    "overflow",
+    "flex",
+    "grid",
+    "gap",
+    "border-radius",
+    "border-color",
+    "border-style",
+    "border-width",
+    "margin-inline",
+    "margin-block",
+    "padding-inline",
+    "padding-block",
+];
+
+/// Extract styles from a `stylex.create()` call's argument (`ObjectExpression`).
 ///
 /// Handles static string/number values (Phase 1) and value-level conditions (Phase 2).
 ///
@@ -38,7 +59,7 @@ pub fn extract_stylex_namespace_styles<'a>(
 
     let mut result = vec![];
 
-    for prop in obj.properties.iter() {
+    for prop in &obj.properties {
         let ObjectPropertyKind::ObjectProperty(prop) = prop else {
             // Phase 4c: Spread not supported at namespace level
             if matches!(prop, ObjectPropertyKind::SpreadProperty(_)) {
@@ -80,7 +101,7 @@ pub fn extract_stylex_namespace_styles<'a>(
         let mut styles = vec![];
         let mut include_refs = vec![];
 
-        for style_prop in ns_obj.properties.iter() {
+        for style_prop in &ns_obj.properties {
             let ObjectPropertyKind::ObjectProperty(style_prop) = style_prop else {
                 // Check for stylex.include() spread
                 if let ObjectPropertyKind::SpreadProperty(spread) = style_prop
@@ -121,7 +142,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 let Expression::ObjectExpression(inner_obj) = &style_prop.value else {
                     continue;
                 };
-                for inner_prop in inner_obj.properties.iter() {
+                for inner_prop in &inner_obj.properties {
                     let ObjectPropertyKind::ObjectProperty(inner_prop) = inner_prop else {
                         continue;
                     };
@@ -155,31 +176,9 @@ pub fn extract_stylex_namespace_styles<'a>(
 
             let css_property = normalize_stylex_property(&prop_name);
 
-            // Phase 4c: Warn about CSS shorthand properties
-            const SHORTHAND_PROPERTIES: &[&str] = &[
-                "margin",
-                "padding",
-                "background",
-                "border",
-                "font",
-                "outline",
-                "overflow",
-                "flex",
-                "grid",
-                "gap",
-                "border-radius",
-                "border-color",
-                "border-style",
-                "border-width",
-                "margin-inline",
-                "margin-block",
-                "padding-inline",
-                "padding-block",
-            ];
             if SHORTHAND_PROPERTIES.contains(&css_property.as_str()) {
                 eprintln!(
-                    "[stylex] WARNING: Shorthand property '{}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft').",
-                    css_property
+                    "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
                 );
             }
 
@@ -272,8 +271,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 // Phase 4c: Non-static values in create() are not supported
                 if !matches!(&style_prop.value, Expression::NullLiteral(_)) {
                     eprintln!(
-                        "[stylex] ERROR: Non-static value for property '{}' in stylex.create(). Only string literals, numbers, null, objects (conditions), firstThatWorks(), types.*(), and arrow functions are allowed.",
-                        prop_name
+                        "[stylex] ERROR: Non-static value for property '{prop_name}' in stylex.create(). Only string literals, numbers, null, objects (conditions), firstThatWorks(), types.*(), and arrow functions are allowed."
                     );
                 }
                 continue;
@@ -300,8 +298,8 @@ pub fn extract_stylex_namespace_styles<'a>(
     result
 }
 
-/// Extract styles from a dynamic StyleX namespace (arrow function).
-/// Returns (styles_for_css, css_vars) where css_vars maps param_index to CSS variable name.
+/// Extract styles from a dynamic `StyleX` namespace (arrow function).
+/// Returns (`styles_for_css`, `css_vars`) where `css_vars` maps `param_index` to CSS variable name.
 #[allow(clippy::type_complexity)]
 fn extract_stylex_dynamic_namespace<'a>(
     arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
@@ -351,7 +349,7 @@ fn extract_stylex_dynamic_namespace<'a>(
     let mut styles = vec![];
     let mut css_vars = vec![];
 
-    for prop in body_obj.properties.iter() {
+    for prop in &body_obj.properties {
         let ObjectPropertyKind::ObjectProperty(prop) = prop else {
             continue;
         };

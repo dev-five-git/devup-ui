@@ -412,6 +412,7 @@ static SPECIAL_PROPERTIES: phf::Set<&str> = phf_set! {
     "webpreferences",
 };
 
+#[must_use]
 pub fn is_special_property(name: &str) -> bool {
     name.starts_with("on")
         || name.starts_with("data-")
@@ -959,7 +960,7 @@ mod tests {
             .map(to_camel_case),
         );
 
-        for property in SPECIAL_PROPERTIES.iter() {
+        for property in &SPECIAL_PROPERTIES {
             assert!(!css.contains(*property));
         }
     }

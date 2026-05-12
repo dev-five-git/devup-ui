@@ -86,7 +86,7 @@ fn gen_style<'a>(
                             false,
                             false,
                             false,
-                        ))
+                        ));
                     }
                 });
         } else if let (Some(c), None) = r {
@@ -107,7 +107,7 @@ fn gen_style<'a>(
                             false,
                             false,
                             false,
-                        ))
+                        ));
                     }
                 });
         } else if let (Some(c), Some(a)) = r {
@@ -116,7 +116,7 @@ fn gen_style<'a>(
             if collect_c.is_empty() && collect_a.is_empty() {
                 return vec![];
             }
-            for p in collect_c.iter() {
+            for p in &collect_c {
                 let found = collect_a.iter().any(|q| {
                     let r = matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name());
                     if let ObjectPropertyKind::ObjectProperty(p) = p
@@ -140,7 +140,7 @@ fn gen_style<'a>(
                 }
             }
 
-            for q in collect_a.iter() {
+            for q in &collect_a {
                 let found = collect_c.iter().any(|p| matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name()));
                 if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
                     properties.push(ast_builder.object_property_kind_object_property(
@@ -157,7 +157,7 @@ fn gen_style<'a>(
         }
     } else if let ExtractStyleProp::MemberExpression { map, expression } = style {
         let mut tmp_map = BTreeMap::<String, Vec<(String, String)>>::new();
-        for (key, value) in map.iter() {
+        for (key, value) in map {
             for style in value.extract() {
                 if let Some(StyleProperty::Variable {
                     variable_name,
@@ -168,7 +168,7 @@ fn gen_style<'a>(
                     tmp_map
                         .entry(variable_name)
                         .or_default()
-                        .push((key.to_string(), identifier));
+                        .push((key.clone(), identifier));
                 }
             }
         }
@@ -178,37 +178,29 @@ fn gen_style<'a>(
                 // do not create object expression when property is single
                 ast_builder.expression_identifier(SPAN, ast_builder.str(&value[0].1))
             } else {
-                Expression::ComputedMemberExpression(
-                    ast_builder.alloc_computed_member_expression(
+                Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
+                    SPAN,
+                    ast_builder.expression_object(
                         SPAN,
-                        ast_builder.expression_object(
-                            SPAN,
-                            oxc_allocator::Vec::from_iter_in(
-                                value
-                                    .into_iter()
-                                    .map(|(k, v)| {
-                                        ast_builder.object_property_kind_object_property(
-                                            SPAN,
-                                            PropertyKind::Init,
-                                            ast_builder.property_key_static_identifier(
-                                                SPAN,
-                                                ast_builder.str(&k),
-                                            ),
-                                            ast_builder
-                                                .expression_identifier(SPAN, ast_builder.str(&v)),
-                                            false,
-                                            false,
-                                            false,
-                                        )
-                                    })
-                                    .collect::<Vec<_>>(),
-                                ast_builder.allocator,
-                            ),
+                        oxc_allocator::Vec::from_iter_in(
+                            value.into_iter().map(|(k, v)| {
+                                ast_builder.object_property_kind_object_property(
+                                    SPAN,
+                                    PropertyKind::Init,
+                                    ast_builder
+                                        .property_key_static_identifier(SPAN, ast_builder.str(&k)),
+                                    ast_builder.expression_identifier(SPAN, ast_builder.str(&v)),
+                                    false,
+                                    false,
+                                    false,
+                                )
+                            }),
+                            ast_builder.allocator,
                         ),
-                        expression.clone_in(ast_builder.allocator),
-                        false,
                     ),
-                )
+                    expression.clone_in(ast_builder.allocator),
+                    false,
+                ))
             };
             properties.push(ast_builder.object_property_kind_object_property(
                 SPAN,

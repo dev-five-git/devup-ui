@@ -58,7 +58,7 @@ fn strip_important(identifier: &str) -> (String, bool) {
 }
 
 impl ExtractDynamicStyle {
-    /// create a new ExtractDynamicStyle
+    /// create a new `ExtractDynamicStyle`
     pub fn new(
         property: &str,
         level: u8,
@@ -77,27 +77,27 @@ impl ExtractDynamicStyle {
         }
     }
 
-    pub fn property(&self) -> &str {
+    pub const fn property(&self) -> &str {
         self.property.as_str()
     }
 
-    pub fn level(&self) -> u8 {
+    pub const fn level(&self) -> u8 {
         self.level
     }
 
-    pub fn selector(&self) -> Option<&StyleSelector> {
+    pub const fn selector(&self) -> Option<&StyleSelector> {
         self.selector.as_ref()
     }
 
-    pub fn identifier(&self) -> &str {
+    pub const fn identifier(&self) -> &str {
         self.identifier.as_str()
     }
 
-    pub fn style_order(&self) -> Option<u8> {
+    pub const fn style_order(&self) -> Option<u8> {
         self.style_order
     }
 
-    pub fn important(&self) -> bool {
+    pub const fn important(&self) -> bool {
         self.important
     }
 }

@@ -90,7 +90,7 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(name) = get_string_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
-                                let property_name = name.to_string();
+                                let property_name = name.clone();
                                 for name in disassemble_property(&property_name) {
                                     if &property_name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
@@ -208,9 +208,12 @@ pub fn extract_style_from_expression<'a>(
             && let Expression::ObjectExpression(obj) = expression
         {
             let mut props = vec![];
-            for p in obj.properties.iter_mut() {
+            for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    let key_name = o.key.name().unwrap().to_string();
+                    let Some(key_name) = o.key.name() else {
+                        continue;
+                    };
+                    let key_name = key_name.to_string();
                     let name = key_name.trim();
                     let mut part_of_selector = vec![];
 
@@ -234,7 +237,7 @@ pub fn extract_style_from_expression<'a>(
 
                     for sel in part_of_selector.iter().map(|name| {
                         if let Some(selector) = selector {
-                            if name.starts_with("_") {
+                            if name.starts_with('_') {
                                 if name.starts_with("_theme") {
                                     StyleSelector::from([
                                         to_kebab_case(name.strip_prefix("_").unwrap_or(name))
@@ -251,9 +254,9 @@ pub fn extract_style_from_expression<'a>(
                                     .to_string()
                                 }
                             } else {
-                                name.replace("&", &selector.to_string())
+                                name.replace('&', &selector.to_string())
                             }
-                        } else if name.starts_with("_") {
+                        } else if name.starts_with('_') {
                             StyleSelector::from(
                                 to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_str(),
                             )
@@ -292,14 +295,14 @@ pub fn extract_style_from_expression<'a>(
             && let Expression::ObjectExpression(obj) = expression
         {
             let mut props = vec![];
-            for p in obj.properties.iter_mut() {
+            for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p
                     && let Some(query) = get_string_by_property_key(&o.key)
                 {
                     let at_selector = StyleSelector::At {
                         kind: at_rule.into(),
-                        query: query.to_string(),
-                        selector: selector.as_ref().map(|s| s.to_string()),
+                        query: query.clone(),
+                        selector: selector.as_ref().map(ToString::to_string),
                     };
                     props.extend(
                         extract_style_from_expression(
@@ -341,37 +344,19 @@ pub fn extract_style_from_expression<'a>(
             ExtractResult {
                 styles: if typo {
                     vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
-                        value.to_string(),
+                        value.clone(),
                     ))]
-                } else {
-                    if matches!(
-                        literal_handling,
-                        LiteralHandling::ExpandResponsiveThemeToken
-                    ) {
-                        if let Some(levels) = get_responsive_theme_token(&value) {
-                            create_static_styles(
-                                name,
-                                &value,
-                                &levels,
-                                selector,
-                                ThemeTokenResolution::CssVariable,
-                            )
-                        } else {
-                            create_static_styles(
-                                name,
-                                &value,
-                                &[level],
-                                selector,
-                                ThemeTokenResolution::CssVariable,
-                            )
-                        }
-                    } else if get_responsive_theme_token(&value).is_some() {
+                } else if matches!(
+                    literal_handling,
+                    LiteralHandling::ExpandResponsiveThemeToken
+                ) {
+                    if let Some(levels) = get_responsive_theme_token(&value) {
                         create_static_styles(
                             name,
                             &value,
-                            &[level],
+                            &levels,
                             selector,
-                            ThemeTokenResolution::FirstValue,
+                            ThemeTokenResolution::CssVariable,
                         )
                     } else {
                         create_static_styles(
@@ -382,6 +367,22 @@ pub fn extract_style_from_expression<'a>(
                             ThemeTokenResolution::CssVariable,
                         )
                     }
+                } else if get_responsive_theme_token(&value).is_some() {
+                    create_static_styles(
+                        name,
+                        &value,
+                        &[level],
+                        selector,
+                        ThemeTokenResolution::FirstValue,
+                    )
+                } else {
+                    create_static_styles(
+                        name,
+                        &value,
+                        &[level],
+                        selector,
+                        ThemeTokenResolution::CssVariable,
+                    )
                 },
                 ..ExtractResult::default()
             }
@@ -707,7 +708,7 @@ pub fn extract_style_from_expression<'a>(
                 let mut props = vec![];
                 let params = obj.properties.iter().find_map(|p| {
                     if let ObjectPropertyKind::ObjectProperty(o) = p
-                        && o.key.name().unwrap() == "params"
+                        && o.key.name().is_some_and(|name| name == "params")
                         && selector.is_some()
                         && let Expression::ArrayExpression(array) = &o.value
                     {
@@ -736,11 +737,12 @@ pub fn extract_style_from_expression<'a>(
                     }
                 });
 
-                for p in obj.properties.iter_mut() {
+                for p in &mut obj.properties {
                     if let ObjectPropertyKind::ObjectProperty(o) = p
-                        && o.key.name().unwrap() != "params"
+                        && let Some(key_name) = o.key.name()
+                        && key_name != "params"
                     {
-                        for name in disassemble_property(&o.key.name().unwrap()) {
+                        for name in disassemble_property(&key_name) {
                             props.extend(
                                 extract_style_from_expression(
                                     ast_builder,

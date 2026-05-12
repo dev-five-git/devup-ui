@@ -2,9 +2,9 @@ use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write;
+use std::fmt::Write as _;
 
-/// ColorEntry stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
+/// `ColorEntry` stores both the original key (for TypeScript interface) and CSS key (for CSS variables)
 #[derive(Debug, Clone, Serialize)]
 pub struct ColorEntry {
     /// Original key with dots for TypeScript interface (e.g., "gray.100")
@@ -15,20 +15,20 @@ pub struct ColorEntry {
     pub value: String,
 }
 
-/// ColorTheme stores flattened color entries
+/// `ColorTheme` stores flattened color entries
 /// Supports:
-/// - Simple: `primary: "#000"` -> interface_key: "primary", css_key: "primary"
-/// - Dot notation: `"primary.100": "#000"` -> interface_key: "primary.100", css_key: "primary-100"
-/// - Nested object: `hello: { 100: "#000" }` -> interface_key: "hello.100", css_key: "hello-100"
-/// - Deep nested: `gray: { light: { 100: "#000" } }` -> interface_key: "gray.light.100", css_key: "gray-light-100"
+/// - Simple: `primary: "#000"` -> `interface_key`: "primary", `css_key`: "primary"
+/// - Dot notation: `"primary.100": "#000"` -> `interface_key`: "primary.100", `css_key`: "primary-100"
+/// - Nested object: `hello: { 100: "#000" }` -> `interface_key`: "hello.100", `css_key`: "hello-100"
+/// - Deep nested: `gray: { light: { 100: "#000" } }` -> `interface_key`: "gray.light.100", `css_key`: "gray-light-100"
 #[derive(Default, Serialize, Debug)]
 pub struct ColorTheme {
-    /// Map from css_key to ColorEntry for quick lookup
+    /// Map from `css_key` to `ColorEntry` for quick lookup
     entries: HashMap<String, ColorEntry>,
 }
 
-/// Recursively flatten a JSON value into ColorEntry list
-/// interface_prefix uses dots, css_prefix uses dashes
+/// Recursively flatten a JSON value into `ColorEntry` list
+/// `interface_prefix` uses dots, `css_prefix` uses dashes
 fn flatten_color_value(
     interface_prefix: &str,
     css_prefix: &str,
@@ -52,7 +52,7 @@ fn flatten_color_value(
                 let new_interface_prefix = if interface_prefix.is_empty() {
                     key.clone()
                 } else {
-                    format!("{}.{}", interface_prefix, key)
+                    format!("{interface_prefix}.{key}")
                 };
                 let new_css_prefix = if css_prefix.is_empty() {
                     key.replace('.', "-")
@@ -64,8 +64,7 @@ fn flatten_color_value(
             Ok(())
         }
         _ => Err(format!(
-            "color value for key '{}' must be a string or an object, got {:?}",
-            interface_prefix, value
+            "color value for key '{interface_prefix}' must be a string or an object, got {value:?}"
         )),
     }
 }
@@ -112,17 +111,19 @@ impl ColorTheme {
         self.entries.keys()
     }
 
-    /// Get iterator over (css_key, value) pairs for CSS generation
+    /// Get iterator over (`css_key`, value) pairs for CSS generation
     pub fn css_entries(&self) -> impl Iterator<Item = (&String, &String)> {
         self.entries.iter().map(|(k, e)| (k, &e.value))
     }
 
     /// Get value by CSS key
+    #[must_use]
     pub fn get(&self, css_key: &str) -> Option<&String> {
         self.entries.get(css_key).map(|e| &e.value)
     }
 
     /// Check if CSS key exists
+    #[must_use]
     pub fn contains_key(&self, css_key: &str) -> bool {
         self.entries.contains_key(css_key)
     }
@@ -159,7 +160,8 @@ pub struct Typography {
     pub letter_spacing: Option<String>,
 }
 impl Typography {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         font_family: Option<String>,
         font_size: Option<String>,
         font_weight: Option<String>,
@@ -198,12 +200,12 @@ fn deserialize_typo_prop(value: &Value) -> Result<Vec<Option<String>>, String> {
                     Value::Null => result.push(None),
                     Value::String(s) => result.push(Some(s.clone())),
                     Value::Number(n) => result.push(Some(n.to_string())),
-                    _ => return Err(format!("Invalid typography property value: {:?}", item)),
+                    _ => return Err(format!("Invalid typography property value: {item:?}")),
                 }
             }
             Ok(result)
         }
-        _ => Err(format!("Invalid typography property value: {:?}", value)),
+        _ => Err(format!("Invalid typography property value: {value:?}")),
     }
 }
 
@@ -327,8 +329,7 @@ impl<'de> Deserialize<'de> for Typographies {
                 Ok(Self(result))
             }
             _ => Err(D::Error::custom(format!(
-                "Typography must be an object or array, got: {:?}",
-                value
+                "Typography must be an object or array, got: {value:?}"
             ))),
         }
     }
@@ -373,13 +374,14 @@ impl<'de> Deserialize<'de> for TokenValues {
     }
 }
 
-/// LengthTheme stores a set of named length tokens for one theme variant
-/// e.g., { "gutterMd": ["2px", "4px"], "gutterLg": "16px", "gap": 8 }
+/// `LengthTheme` stores named length tokens for one theme variant.
+///
+/// e.g., `{ "gutterMd": ["2px", "4px"], "gutterLg": "16px", "gap": 8 }`
 /// Plain numbers are multiplied by 4 and suffixed with "px" (e.g., 8 → "32px").
 pub type LengthTheme = BTreeMap<String, TokenValues>;
 
-/// ShadowTheme stores a set of named shadow tokens for one theme variant
-/// e.g., { "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }
+/// `ShadowTheme` stores a set of named shadow tokens for one theme variant
+/// e.g., `{ "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }`
 pub type ShadowTheme = BTreeMap<String, TokenValues>;
 
 fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
@@ -518,6 +520,7 @@ impl Theme {
         default_variant_key(&self.colors).map(str::to_string)
     }
 
+    #[must_use]
     pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
         self.length.values().flat_map(|theme| theme.iter()).fold(
             BTreeMap::<String, Vec<u8>>::new(),
@@ -536,6 +539,7 @@ impl Theme {
         )
     }
 
+    #[must_use]
     pub fn get_shadow_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
         self.shadows.values().flat_map(|theme| theme.iter()).fold(
             BTreeMap::<String, Vec<u8>>::new(),
@@ -554,6 +558,7 @@ impl Theme {
         )
     }
 
+    #[must_use]
     pub fn get_default_length_value(&self, token: &str) -> Option<&str> {
         let default_key = default_variant_key(&self.length)?;
         self.length
@@ -564,6 +569,7 @@ impl Theme {
             .as_deref()
     }
 
+    #[must_use]
     pub fn get_default_shadow_value(&self, token: &str) -> Option<&str> {
         let default_key = default_variant_key(&self.shadows)?;
         self.shadows
@@ -574,6 +580,7 @@ impl Theme {
             .as_deref()
     }
 
+    #[must_use]
     pub fn to_css(&self) -> String {
         let mut theme_declaration = String::new();
 
@@ -598,25 +605,26 @@ impl Theme {
                 entries
                     .iter()
                     .find(|(k, _)| *k != &default_theme_key)
-                    .map(|(k, _)| k.to_string())
+                    .map(|(k, _)| (*k).clone())
             } else {
                 None
             };
             for (theme_name, theme_properties) in entries {
-                let mut css_contents = vec![];
-                let mut css_color_contents = vec![];
+                let mut theme_contents = String::new();
                 let theme_key = if *theme_name == *default_theme_key {
                     None
                 } else {
                     Some(theme_name)
                 };
                 if let Some(theme_key) = theme_key {
-                    write!(theme_declaration, ":root[data-theme={theme_key}]{{").unwrap();
-                    css_contents.push("color-scheme:dark".to_string());
+                    theme_declaration.push_str(":root[data-theme=");
+                    theme_declaration.push_str(theme_key);
+                    theme_declaration.push_str("]{");
+                    push_css_declaration(&mut theme_contents, "color-scheme:dark");
                 } else {
                     theme_declaration.push_str(":root{");
                     if !single_theme {
-                        css_contents.push("color-scheme:light".to_string());
+                        push_css_declaration(&mut theme_contents, "color-scheme:light");
                     }
                 }
                 for (prop, value) in theme_properties.css_entries() {
@@ -634,7 +642,7 @@ impl Theme {
                                     })
                                 })
                         {
-                            css_color_contents.push(format!("--{prop}:{default_value}"));
+                            push_css_variable(&mut theme_contents, prop, &default_value);
                         }
                     } else {
                         let other_theme_value =
@@ -651,85 +659,91 @@ impl Theme {
                                 })
                             });
                         // default theme
-                        css_color_contents.push(format!(
-                            "--{prop}:{}",
-                            if let Some(other_theme_value) = other_theme_value {
-                                format!("light-dark({optimized_value},{other_theme_value})")
-                            } else {
-                                optimized_value
-                            }
-                        ));
+                        if !theme_contents.is_empty() {
+                            theme_contents.push(';');
+                        }
+                        theme_contents.push_str("--");
+                        theme_contents.push_str(prop);
+                        theme_contents.push(':');
+                        if let Some(other_theme_value) = other_theme_value {
+                            theme_contents.push_str("light-dark(");
+                            theme_contents.push_str(&optimized_value);
+                            theme_contents.push(',');
+                            theme_contents.push_str(&other_theme_value);
+                            theme_contents.push(')');
+                        } else {
+                            theme_contents.push_str(&optimized_value);
+                        }
                     }
                 }
-                theme_declaration.push_str(
-                    [css_contents, css_color_contents]
-                        .concat()
-                        .join(";")
-                        .as_str(),
-                );
+                theme_declaration.push_str(&theme_contents);
                 theme_declaration.push('}');
             }
         }
         let mut css = theme_declaration;
-        let mut level_map = BTreeMap::<u8, Vec<String>>::new();
-        for ty in self.typography.iter() {
+        let mut level_map = BTreeMap::<u8, String>::new();
+        for ty in &self.typography {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
                     let resolve = |v: &str| -> String {
                         if let Some(token) = v.strip_prefix('$') {
-                            format!("var(--{})", token)
+                            format!("var(--{token})")
                         } else {
                             optimize_value(v)
                         }
                     };
-                    let css_content = [
-                        t.font_family
-                            .as_ref()
-                            .map(|v| format!("font-family:{}", resolve(v)))
-                            .unwrap_or_default(),
-                        t.font_size
-                            .as_ref()
-                            .map(|v| format!("font-size:{}", resolve(v)))
-                            .unwrap_or_default(),
-                        t.font_weight
-                            .as_ref()
-                            .map(|v| format!("font-weight:{}", resolve(v)))
-                            .unwrap_or_default(),
-                        t.line_height
-                            .as_ref()
-                            .map(|v| format!("line-height:{}", resolve(v)))
-                            .unwrap_or_default(),
-                        t.letter_spacing
-                            .as_ref()
-                            .map(|v| format!("letter-spacing:{}", resolve(v)))
-                            .unwrap_or_default(),
-                    ]
-                    .iter()
-                    .filter_map(|v| {
-                        let v = v.trim();
-                        if v.is_empty() { None } else { Some(v) }
-                    })
-                    .collect::<Vec<&str>>()
-                    .join(";");
+                    let mut css_content = String::new();
+                    push_typography_property(
+                        &mut css_content,
+                        "font-family",
+                        t.font_family.as_deref(),
+                        &resolve,
+                    );
+                    push_typography_property(
+                        &mut css_content,
+                        "font-size",
+                        t.font_size.as_deref(),
+                        &resolve,
+                    );
+                    push_typography_property(
+                        &mut css_content,
+                        "font-weight",
+                        t.font_weight.as_deref(),
+                        &resolve,
+                    );
+                    push_typography_property(
+                        &mut css_content,
+                        "line-height",
+                        t.line_height.as_deref(),
+                        &resolve,
+                    );
+                    push_typography_property(
+                        &mut css_content,
+                        "letter-spacing",
+                        t.letter_spacing.as_deref(),
+                        &resolve,
+                    );
 
                     if !css_content.is_empty() {
-                        level_map
-                            .entry(idx as u8)
-                            .or_default()
-                            .push(format!(".typo-{}{{{}}}", ty.0, css_content));
+                        let level_css = level_map.entry(idx as u8).or_default();
+                        level_css.push_str(".typo-");
+                        level_css.push_str(ty.0);
+                        level_css.push('{');
+                        level_css.push_str(&css_content);
+                        level_css.push('}');
                     }
                 }
             }
         }
         for (level, css_vec) in level_map {
             if level == 0 {
-                css.push_str(css_vec.join("").as_str());
-            } else if let Some(media) = self
-                .breakpoints
-                .get(level as usize)
-                .map(|v| format!("(min-width:{v}px)"))
-            {
-                css.push_str(&format!("@media{media}{{{}}}", css_vec.join("")));
+                css.push_str(&css_vec);
+            } else if let Some(bp) = self.breakpoints.get(level as usize) {
+                write!(css, "@media(min-width:{bp}px)")
+                    .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                css.push('{');
+                css.push_str(&css_vec);
+                css.push('}');
             }
         }
         // Generate CSS variables for length tokens
@@ -746,16 +760,14 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
-        if themes.is_empty() {
-            return;
-        }
-        // Safe: themes is non-empty, so at least one key exists
-        let default_key = themes
+        let Some(default_key) = themes
             .keys()
             .find(|k| *k == "default")
             .or_else(|| themes.keys().next())
             .cloned()
-            .unwrap();
+        else {
+            return;
+        };
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
@@ -774,9 +786,9 @@ impl Theme {
                 format!(":root[data-theme={variant_name}]")
             };
 
-            // Group variables by breakpoint level
-            let mut level_map = BTreeMap::<usize, Vec<String>>::new();
-            for (name, values) in token_theme.iter() {
+            // Group variables by breakpoint level without allocating one String per variable.
+            let mut level_map = BTreeMap::<usize, String>::new();
+            for (name, values) in *token_theme {
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
@@ -790,10 +802,14 @@ impl Theme {
                                         .is_some_and(|d| optimize_value(d) == optimized)
                                 });
                         if !is_same_as_default {
-                            level_map
-                                .entry(idx)
-                                .or_default()
-                                .push(format!("--{name}:{optimized}"));
+                            let vars = level_map.entry(idx).or_default();
+                            if !vars.is_empty() {
+                                vars.push(';');
+                            }
+                            vars.push_str("--");
+                            vars.push_str(name);
+                            vars.push(':');
+                            vars.push_str(&optimized);
                         }
                     }
                 }
@@ -801,12 +817,18 @@ impl Theme {
 
             for (level, vars) in &level_map {
                 if !vars.is_empty() {
-                    let vars_str = vars.join(";");
                     if *level == 0 {
-                        write!(css, "{selector}{{{vars_str}}}").unwrap();
+                        css.push_str(&selector);
+                        css.push('{');
+                        css.push_str(vars);
+                        css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
-                        write!(css, "@media(min-width:{bp}px){{{selector}{{{vars_str}}}}}")
-                            .unwrap();
+                        write!(css, "@media(min-width:{bp}px){{")
+                            .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
+                        css.push_str(&selector);
+                        css.push('{');
+                        css.push_str(vars);
+                        css.push_str("}}");
                     }
                 }
             }
@@ -814,11 +836,56 @@ impl Theme {
     }
 }
 
+fn push_typography_property(
+    css_content: &mut String,
+    property: &str,
+    value: Option<&str>,
+    resolve: &impl Fn(&str) -> String,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    if !css_content.is_empty() {
+        css_content.push(';');
+    }
+    css_content.push_str(property);
+    css_content.push(':');
+    css_content.push_str(&resolve(value));
+}
+
+fn push_css_declaration(css_content: &mut String, declaration: &str) {
+    if !css_content.is_empty() {
+        css_content.push(';');
+    }
+    css_content.push_str(declaration);
+}
+
+fn push_css_variable(css_content: &mut String, name: &str, value: &str) {
+    if !css_content.is_empty() {
+        css_content.push(';');
+    }
+    css_content.push_str("--");
+    css_content.push_str(name);
+    css_content.push(':');
+    css_content.push_str(value);
+}
+
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
+
+    fn make_named_color_theme(name: &str, value: &str) -> ColorTheme {
+        let mut ct = ColorTheme::default();
+        ct.add_color(name, value);
+        ct
+    }
 
     #[test]
     fn to_css_from_theme() {
@@ -876,44 +943,37 @@ mod tests {
         );
         assert_eq!(theme.to_css(), "");
 
-        // Helper to create a ColorTheme with a single color
-        fn make_color_theme(name: &str, value: &str) -> ColorTheme {
-            let mut ct = ColorTheme::default();
-            ct.add_color(name, value);
-            ct
-        }
-
         let mut theme = Theme::default();
-        theme.add_color_theme("default", make_color_theme("primary", "#000"));
-        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
+        theme.add_color_theme("default", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("a", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#000"));
-        theme.add_color_theme("a", make_color_theme("primary", "#000"));
-        theme.add_color_theme("c", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("c", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#001"));
-        theme.add_color_theme("a", make_color_theme("primary", "#002"));
-        theme.add_color_theme("c", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#001"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#002"));
+        theme.add_color_theme("c", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
     }
 
@@ -1119,7 +1179,7 @@ mod tests {
     fn test_nested_with_number_value_should_fail() {
         // Nested object with non-string value should fail
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "colors": {
                     "light": {
                         "gray": {
@@ -1127,7 +1187,7 @@ mod tests {
                         }
                     }
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
     }
@@ -1186,20 +1246,17 @@ mod tests {
         .unwrap();
         let light = theme.colors.get("light").unwrap();
 
-        let interface_keys: Vec<_> = light.interface_keys().cloned().collect();
-        let css_keys: Vec<_> = light.css_keys().cloned().collect();
-
         // Interface key uses dots
-        assert!(interface_keys.contains(&"a.b.c".to_string()));
+        assert!(light.interface_keys().any(|key| key == "a.b.c"));
         // CSS key uses dashes
-        assert!(css_keys.contains(&"a-b-c".to_string()));
+        assert!(light.css_keys().any(|key| key == "a-b-c"));
     }
 
     #[test]
     fn test_compact_typography_format() {
         // Test new compact format with property-level arrays
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontFamily": "Pretendard",
@@ -1210,7 +1267,7 @@ mod tests {
                         "letterSpacing": "-0.03em"
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1239,7 +1296,7 @@ mod tests {
     fn test_compact_typography_all_arrays() {
         // Test compact format where multiple properties have arrays
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "body": {
                         "fontFamily": "Pretendard",
@@ -1248,7 +1305,7 @@ mod tests {
                         "lineHeight": [1.3, null, 1.5]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1276,7 +1333,7 @@ mod tests {
     fn test_compact_typography_single_value() {
         // Test compact format with all single values (no arrays)
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "caption": {
                         "fontFamily": "Pretendard",
@@ -1287,7 +1344,7 @@ mod tests {
                         "letterSpacing": "-0.03em"
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1306,7 +1363,7 @@ mod tests {
     fn test_traditional_typography_array_still_works() {
         // Ensure backward compatibility with traditional array format
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": [
                         {
@@ -1326,7 +1383,7 @@ mod tests {
                         }
                     ]
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1348,7 +1405,7 @@ mod tests {
     fn test_compact_typography_css_output() {
         // Verify CSS output is correct for compact format
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontFamily": "Pretendard",
@@ -1357,7 +1414,7 @@ mod tests {
                         "lineHeight": 1.3
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1376,11 +1433,11 @@ mod tests {
     fn test_invalid_top_level_array_should_fail() {
         // Top-level array that's not traditional format should fail
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": ["38px", null, "52px"]
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1390,7 +1447,7 @@ mod tests {
     #[test]
     fn test_typography_variable_reference() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "body": {
                         "fontSize": "$text",
@@ -1398,20 +1455,18 @@ mod tests {
                         "fontWeight": 400
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
         let css = theme.to_css();
         assert!(
             css.contains("font-size:var(--text)"),
-            "Expected font-size:var(--text), got: {}",
-            css
+            "Expected font-size:var(--text), got: {css}"
         );
         assert!(
             css.contains("line-height:var(--leading)"),
-            "Expected line-height:var(--leading), got: {}",
-            css
+            "Expected line-height:var(--leading), got: {css}"
         );
         assert!(css.contains("font-weight:400"));
     }
@@ -1419,7 +1474,7 @@ mod tests {
     #[test]
     fn test_typography_variable_reference_responsive() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "heading": [
                         {
@@ -1435,20 +1490,18 @@ mod tests {
                         }
                     ]
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
         let css = theme.to_css();
         assert!(
             css.contains("font-size:var(--textSm)"),
-            "Expected font-size:var(--textSm), got: {}",
-            css
+            "Expected font-size:var(--textSm), got: {css}"
         );
         assert!(
             css.contains("font-size:var(--textLg)"),
-            "Expected font-size:var(--textLg), got: {}",
-            css
+            "Expected font-size:var(--textLg), got: {css}"
         );
     }
 
@@ -1456,7 +1509,7 @@ mod tests {
     fn test_mixed_typography_formats() {
         // Test that both formats can coexist in the same theme
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": [
                         { "fontFamily": "Pretendard", "fontSize": "38px" },
@@ -1468,7 +1521,7 @@ mod tests {
                         "fontSize": ["14px", null, "16px"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1493,14 +1546,14 @@ mod tests {
     fn test_deserialize_typo_prop_null_value() {
         // Test compact format with null values in arrays
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontFamily": null,
                         "fontSize": ["14px", null, "16px"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1518,13 +1571,13 @@ mod tests {
     fn test_deserialize_typo_prop_invalid_array_value() {
         // Test that invalid values in typography arrays fail
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontSize": ["14px", {"invalid": "object"}, "16px"]
                     }
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
     }
@@ -1533,13 +1586,13 @@ mod tests {
     fn test_deserialize_typo_prop_invalid_single_value() {
         // Test that invalid single value fails
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontSize": true
                     }
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
     }
@@ -1548,11 +1601,11 @@ mod tests {
     fn test_typography_invalid_type() {
         // Test that typography with invalid type (string) fails
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": "invalid string"
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1621,11 +1674,11 @@ mod tests {
     fn test_typography_empty_properties_all_none() {
         // Test that empty compact format with no properties creates None
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "empty": {}
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1638,13 +1691,13 @@ mod tests {
     fn test_typography_with_only_letter_spacing() {
         // Test typography with only letterSpacing property
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "letterSpacing": ["-0.02em", null, "-0.03em"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1675,7 +1728,7 @@ mod tests {
     fn test_traditional_typography_with_invalid_item() {
         // Test that traditional array with invalid item (not object/null) fails
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": [
                         { "fontFamily": "Arial" },
@@ -1683,7 +1736,7 @@ mod tests {
                         null
                     ]
                 }
-            }"##,
+            }"#,
         );
         // This should fail because "invalid string item" is not null or object
         // But the current implementation detects this as non-traditional and fails differently
@@ -1694,14 +1747,14 @@ mod tests {
     fn test_compact_typography_different_array_lengths() {
         // Test when different properties have different array lengths
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "fontSize": ["14px", "16px"],
                         "fontWeight": ["400", "500", "600", "700"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1746,14 +1799,14 @@ mod tests {
     fn test_typography_float_values() {
         // Test that float values are properly converted
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "typography": {
                     "h1": {
                         "lineHeight": [1.2, 1.5, 1.8],
                         "fontWeight": [400.5, 500, 600]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1772,11 +1825,11 @@ mod tests {
     fn test_typographies_direct_traditional_array_deserialize() {
         // Directly deserialize Typographies to ensure Value::Object branch is covered (line 183)
         let typographies: Typographies = serde_json::from_str(
-            r##"[
+            r#"[
                 { "fontFamily": "Arial", "fontSize": "16px" },
                 null,
                 { "fontFamily": "Helvetica", "fontSize": "18px" }
-            ]"##,
+            ]"#,
         )
         .unwrap();
 
@@ -1796,11 +1849,11 @@ mod tests {
     fn test_typographies_direct_invalid_array_item() {
         // Directly deserialize Typographies with invalid array item to cover line 188
         let result: Result<Typographies, _> = serde_json::from_str(
-            r##"[
+            r#"[
                 { "fontFamily": "Arial" },
                 "invalid string",
                 null
-            ]"##,
+            ]"#,
         );
 
         assert!(result.is_err());
@@ -1812,11 +1865,11 @@ mod tests {
     fn test_typographies_direct_number_in_array() {
         // Test with number in traditional array to ensure error branch is hit
         let result: Result<Typographies, _> = serde_json::from_str(
-            r##"[
+            r#"[
                 { "fontFamily": "Arial" },
                 123,
                 null
-            ]"##,
+            ]"#,
         );
 
         assert!(result.is_err());
@@ -1828,11 +1881,11 @@ mod tests {
     fn test_typographies_direct_bool_in_array() {
         // Test with boolean in traditional array
         let result: Result<Typographies, _> = serde_json::from_str(
-            r##"[
+            r#"[
                 null,
                 { "fontFamily": "Arial" },
                 true
-            ]"##,
+            ]"#,
         );
 
         assert!(result.is_err());
@@ -1844,11 +1897,11 @@ mod tests {
     fn test_typographies_direct_nested_array_in_array() {
         // Test with nested array in traditional array
         let result: Result<Typographies, _> = serde_json::from_str(
-            r##"[
+            r#"[
                 { "fontFamily": "Arial" },
                 ["nested", "array"],
                 null
-            ]"##,
+            ]"#,
         );
 
         assert!(result.is_err());
@@ -1861,13 +1914,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_single_string() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gutterMd": "8px"
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1880,13 +1933,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_single_number() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gap": 4
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1899,13 +1952,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_responsive_array() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gutterMd": ["2px", "4px"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1919,13 +1972,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_responsive_array_with_nulls() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gutterLg": ["8px", null, null, null, "16px"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1942,13 +1995,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_number_in_array() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gap": [4, null, 8]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -1963,13 +2016,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_invalid_value() {
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gap": true
                     }
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
     }
@@ -1977,13 +2030,13 @@ mod tests {
     #[test]
     fn test_length_deserialization_invalid_array_value() {
         let result: Result<Theme, _> = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gap": [true]
                     }
                 }
-            }"##,
+            }"#,
         );
         assert!(result.is_err());
     }
@@ -2113,7 +2166,7 @@ mod tests {
     #[test]
     fn test_length_deserialization_from_json() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "length": {
                     "default": {
                         "gutterMd": ["2px", "4px"],
@@ -2121,7 +2174,7 @@ mod tests {
                         "gap": 8
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -2146,14 +2199,14 @@ mod tests {
     #[test]
     fn test_shadow_deserialization_from_json() {
         let theme: Theme = serde_json::from_str(
-            r##"{
+            r#"{
                 "shadows": {
                     "default": {
                         "sm": "0 1px 2px rgba(0,0,0,0.1)",
                         "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"]
                     }
                 }
-            }"##,
+            }"#,
         )
         .unwrap();
 
@@ -2256,7 +2309,7 @@ mod tests {
     #[test]
     fn test_token_values_deserialize_invalid_array_item() {
         // Covers _ branch inside array match
-        let result: Result<TokenValues, _> = serde_json::from_str(r#"[true]"#);
+        let result: Result<TokenValues, _> = serde_json::from_str(r"[true]");
         assert!(result.is_err());
     }
 
@@ -2379,5 +2432,66 @@ mod tests {
         // No shadows at all
         let empty = Theme::default();
         assert_eq!(empty.get_default_shadow_value("card"), None);
+    }
+
+    // ===== Coverage: push_typography_property edge cases =====
+
+    #[test]
+    fn test_push_typography_property_none_value() {
+        // Covers early return when value is None
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", None, &|v| v.to_string());
+        assert_eq!(css, "");
+    }
+
+    #[test]
+    fn test_push_typography_property_empty_value() {
+        // Covers early return when trimmed value is empty
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some(""), &|v| v.to_string());
+        assert_eq!(css, "");
+
+        // Whitespace-only also returns early
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some("   "), &|v| v.to_string());
+        assert_eq!(css, "");
+    }
+
+    #[test]
+    fn test_push_typography_property_appends_separator() {
+        // Empty css → no leading semicolon
+        let mut css = String::new();
+        push_typography_property(&mut css, "font-family", Some("Arial"), &|v| v.to_string());
+        assert_eq!(css, "font-family:Arial");
+
+        // Non-empty css → prepends ';' before declaration
+        push_typography_property(&mut css, "font-size", Some("16px"), &|v| v.to_string());
+        assert_eq!(css, "font-family:Arial;font-size:16px");
+    }
+
+    // ===== Coverage: push_css_declaration / push_css_variable separators =====
+
+    #[test]
+    fn test_push_css_declaration_separator() {
+        let mut css = String::new();
+        push_css_declaration(&mut css, "color-scheme:light");
+        // First call → no separator
+        assert_eq!(css, "color-scheme:light");
+
+        // Second call on non-empty buffer → prepends ';'
+        push_css_declaration(&mut css, "color:red");
+        assert_eq!(css, "color-scheme:light;color:red");
+    }
+
+    #[test]
+    fn test_push_css_variable_separator() {
+        let mut css = String::new();
+        push_css_variable(&mut css, "primary", "#000");
+        // First call → no separator
+        assert_eq!(css, "--primary:#000");
+
+        // Second call → prepends ';'
+        push_css_variable(&mut css, "secondary", "#fff");
+        assert_eq!(css, "--primary:#000;--secondary:#fff");
     }
 }

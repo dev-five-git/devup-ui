@@ -1,4 +1,4 @@
-import { css, DevupThemeTypography } from '@devup-ui/react'
+import { css, type DevupThemeTypography } from '@devup-ui/react'
 import { describe, expect, it } from 'bun:test'
 import { render } from 'bun-test-env-dom'
 
@@ -61,19 +61,21 @@ describe('Button', () => {
   })
 
   it('should not have px when a wrong size variable is provided', () => {
-    const { container } = render(
-      // @ts-expect-error
-      <Button size="big">Click me</Button>,
-    )
+    const invalidSizeProps = {
+      size: 'big',
+      children: 'Click me',
+    } as unknown as React.ComponentProps<typeof Button>
+    const { container } = render(<Button {...invalidSizeProps} />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('button')).not.toHaveClass('px-0-16px--1')
   })
 
   it('should not have bg when a wrong size variable is provided', () => {
-    const { container } = render(
-      // @ts-expect-error
-      <Button variant="red">Click me</Button>,
-    )
+    const invalidVariantProps = {
+      variant: 'red',
+      children: 'Click me',
+    } as unknown as React.ComponentProps<typeof Button>
+    const { container } = render(<Button {...invalidVariantProps} />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('button')).not.toHaveClass(
       'bg-0-color-mix(in srgb,var(--primary,#8163E1) 10%,#FFF 90%)-8380715471663921674-1',
@@ -130,6 +132,7 @@ describe('Button', () => {
         data-testid="button"
         icon={
           <svg
+            aria-hidden="true"
             className={css({ color: '$white' })}
             fill="none"
             height="24"

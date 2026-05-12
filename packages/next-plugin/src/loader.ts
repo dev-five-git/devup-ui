@@ -35,13 +35,47 @@ export interface DevupUILoaderOptions {
 }
 let init = false
 
-let cachedPort: number | null = null
+const cachedPorts = new Map<string, number>()
 const keepAliveAgent = new Agent({ keepAlive: true })
 
+interface CoordinatorResponse {
+  code?: string
+  error?: string
+  map?: string
+}
+
+function toLoaderError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
 function readCoordinatorPort(portFile: string): number {
-  if (cachedPort !== null) return cachedPort
-  cachedPort = parseInt(readFileSync(portFile, 'utf-8').trim())
-  return cachedPort
+  const cachedPort = cachedPorts.get(portFile)
+  if (cachedPort !== undefined) return cachedPort
+
+  const port = Number.parseInt(readFileSync(portFile, 'utf-8').trim(), 10)
+  cachedPorts.set(portFile, port)
+  return port
+}
+
+function parseCoordinatorResponse(content: string): CoordinatorResponse {
+  const data: unknown = JSON.parse(content)
+  if (typeof data !== 'object' || data === null) {
+    return {}
+  }
+
+  const record = data as Record<string, unknown>
+  return {
+    code: typeof record.code === 'string' ? record.code : undefined,
+    error: typeof record.error === 'string' ? record.error : undefined,
+    map: typeof record.map === 'string' ? record.map : undefined,
+  }
+}
+
+function parseSourceMap(sourceMap: string | undefined): string | null {
+  if (!sourceMap) return null
+
+  JSON.parse(sourceMap)
+  return sourceMap
 }
 
 function coordinatorExtract(
@@ -50,7 +84,7 @@ function coordinatorExtract(
   callback: (
     err: Error | null,
     content?: string,
-    sourceMap?: object | null,
+    sourceMap?: string | null,
   ) => void,
 ): void {
   const req = request(
@@ -67,15 +101,21 @@ function coordinatorExtract(
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => {
         try {
-          const data = JSON.parse(Buffer.concat(chunks).toString('utf-8'))
+          const data = parseCoordinatorResponse(
+            Buffer.concat(chunks).toString('utf-8'),
+          )
           if (res.statusCode !== 200) {
             callback(new Error(data.error ?? 'Coordinator error'))
             return
           }
-          const sourceMap = data.map ? JSON.parse(data.map) : null
+          if (data.code === undefined) {
+            callback(new Error('Coordinator response missing code'))
+            return
+          }
+          const sourceMap = parseSourceMap(data.map)
           callback(null, data.code, sourceMap)
         } catch (e) {
-          callback(e instanceof Error ? e : new Error(String(e)))
+          callback(toLoaderError(e))
         }
       })
     },
@@ -106,6 +146,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
 
     // Coordinator mode: delegate to HTTP server
     if (coordinatorPortFile) {
+      this.addDependency(coordinatorPortFile)
       const callback = this.async()
       const tryCoordinator = (retries: number) => {
         if (!existsSync(coordinatorPortFile)) {
@@ -130,7 +171,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
             callback(null, content, sourceMap as Parameters<typeof callback>[2])
           })
         } catch (error) {
-          callback(error as Error)
+          callback(toLoaderError(error))
         }
       }
       tryCoordinator(20) // 20 retries × 50ms = 1s max wait
@@ -142,6 +183,10 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     if (!init) {
       init = true
       if (watch) {
+        this.addDependency(sheetFile)
+        this.addDependency(classMapFile)
+        this.addDependency(fileMapFile)
+        this.addDependency(themeFile)
         // restart loader issue
         // loader should read files when they exist in watch mode
         if (existsSync(sheetFile))
@@ -152,7 +197,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           importFileMap(JSON.parse(readFileSync(fileMapFile, 'utf-8')))
         if (existsSync(themeFile))
           registerTheme(
-            JSON.parse(readFileSync(themeFile, 'utf-8'))?.['theme'] ?? {},
+            JSON.parse(readFileSync(themeFile, 'utf-8'))?.theme ?? {},
           )
       } else {
         importFileMap(defaultFileMap)
@@ -180,7 +225,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
-      const sourceMap = map ? JSON.parse(map) : null
+      const sourceMap = parseSourceMap(map)
       if (updatedBaseStyle && watch) {
         // update base style
         promises.push(
@@ -191,7 +236,7 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         // don't write file when build
         promises.push(
           writeFile(
-            join(cssDir, basename(cssFile!)),
+            join(cssDir, basename(cssFile)),
             `/* ${this.resourcePath} ${Date.now()} */`,
           ),
           writeFile(sheetFile, exportSheet()),
@@ -199,13 +244,12 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
           writeFile(fileMapFile, exportFileMap()),
         )
       }
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(null, code, sourceMap))
+      Promise.all(promises).then(
+        () => callback(null, code, sourceMap),
+        (error) => callback(toLoaderError(error)),
+      )
     } catch (error) {
-      Promise.all(promises)
-        .catch(console.error)
-        .finally(() => callback(error as Error))
+      callback(toLoaderError(error))
     }
     return
   }
@@ -214,5 +258,5 @@ export default devupUILoader
 /** @internal Reset init state for testing purposes only */
 export const resetInit = () => {
   init = false
-  cachedPort = null
+  cachedPorts.clear()
 }

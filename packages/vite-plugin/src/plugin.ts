@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -18,7 +19,7 @@ import {
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
-import { type PluginOption, type UserConfig } from 'vite'
+import type { ModuleNode, PluginOption, UserConfig } from 'vite'
 
 export interface DevupUIPluginOptions {
   package: string
@@ -47,12 +48,7 @@ async function writeDataFiles(
 
     registerTheme(theme)
     const interfaceCode = getThemeInterface(
-      options.package,
-      'CustomColors',
-      'DevupThemeTypography',
-      'CustomLength',
-      'CustomShadows',
-      'DevupTheme',
+      ...createThemeInterfaceArgs(options.package),
     )
 
     if (interfaceCode) {
@@ -128,7 +124,7 @@ export function DevupUI({
         },
       }
       if (extractCss) {
-        ret['build'] = {
+        ret.build = {
           rollupOptions: {
             output: {
               manualChunks(id) {
@@ -161,6 +157,31 @@ export function DevupUI({
           console.error(error)
         }
       }
+    },
+    async handleHotUpdate({ file, server, modules, timestamp }) {
+      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+        return
+      }
+
+      await writeDataFiles({
+        package: libPackage,
+        cssDir,
+        devupFile,
+        distDir,
+        singleCss,
+      })
+
+      const invalidatedModules = new Set<ModuleNode>()
+      for (const mod of modules) {
+        server.moduleGraph.invalidateModule(
+          mod,
+          invalidatedModules,
+          timestamp,
+          true,
+        )
+      }
+      server.ws.send({ type: 'full-reload' })
+      return []
     },
     resolveId(id, importer) {
       const fileName = basename(id).split('?')[0]
@@ -227,12 +248,12 @@ export function DevupUI({
       }
 
       if (cssFile) {
-        const fileNum = getFileNumByFilename(cssFile!)
+        const fileNum = getFileNumByFilename(cssFile)
         const prevCss = cssMap.get(fileNum)
         if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
         promises.push(
           writeFile(
-            join(cssDir, basename(cssFile!)),
+            join(cssDir, basename(cssFile)),
             `/* ${id} ${Date.now()} */`,
             'utf-8',
           ),
@@ -251,7 +272,7 @@ export function DevupUI({
         (file) => bundle[file].name === 'devup-ui.css',
       )
       if (cssFile && 'source' in bundle[cssFile]) {
-        bundle[cssFile].source = cssMap.get(null)!
+        bundle[cssFile].source = cssMap.get(null) ?? ''
       }
     },
   }

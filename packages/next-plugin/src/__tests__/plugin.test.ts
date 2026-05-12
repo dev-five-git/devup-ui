@@ -16,6 +16,27 @@ import {
 import * as coordinatorModule from '../coordinator'
 import { DevupUI } from '../plugin'
 
+type NextWebpackConfig = Parameters<
+  NonNullable<ReturnType<typeof DevupUI>['webpack']>
+>[0]
+type NextWebpackContext = Parameters<
+  NonNullable<ReturnType<typeof DevupUI>['webpack']>
+>[1]
+
+function createWebpackConfig(): NextWebpackConfig {
+  return { plugins: [] } as unknown as NextWebpackConfig
+}
+
+function createWebpackContext(
+  overrides: Partial<NextWebpackContext> = {},
+): NextWebpackContext {
+  return { buildId: 'tmpBuildId', ...overrides } as NextWebpackContext
+}
+
+function setNodeEnv(value: string): void {
+  process.env.NODE_ENV = value
+}
+
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -41,7 +62,7 @@ let originalDebugPort: number
 
 beforeEach(() => {
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
-  mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue('' as any)
+  mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
   writeFileSyncSpy = spyOn(fs, 'writeFileSync').mockReturnValue(undefined)
   unlinkSyncSpy = spyOn(fs, 'unlinkSync').mockReturnValue(undefined)
@@ -81,7 +102,7 @@ beforeEach(() => {
   originalEnv = { ...process.env }
   originalFetch = global.fetch
   originalDebugPort = process.debugPort
-  global.fetch = mock(() => Promise.resolve({} as Response)) as any
+  global.fetch = mock(() => Promise.resolve({} as Response))
 })
 
 afterEach(() => {
@@ -113,7 +134,7 @@ describe('DevupUINextPlugin', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
 
-      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
+      ret.webpack!(createWebpackConfig(), createWebpackContext())
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('.next/cache', 'devup-ui_tmpBuildId'),
@@ -123,7 +144,7 @@ describe('DevupUINextPlugin', () => {
     it('should apply webpack plugin with dev', async () => {
       const ret = DevupUI({})
 
-      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId', dev: true } as any)
+      ret.webpack!(createWebpackConfig(), createWebpackContext({ dev: true }))
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         cssDir: resolve('df', 'devup-ui_tmpBuildId'),
@@ -139,7 +160,7 @@ describe('DevupUINextPlugin', () => {
         },
       )
 
-      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
+      ret.webpack!(createWebpackConfig(), createWebpackContext())
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
@@ -158,7 +179,7 @@ describe('DevupUINextPlugin', () => {
         },
       )
 
-      ret.webpack!({ plugins: [] }, { buildId: 'tmpBuildId' } as any)
+      ret.webpack!(createWebpackConfig(), createWebpackContext())
 
       expect(devupUIWebpackPluginSpy).toHaveBeenCalledWith({
         package: 'new-package',
@@ -438,7 +459,7 @@ describe('DevupUINextPlugin', () => {
       )
     })
     it('should start coordinator even in production mode', () => {
-      ;(process.env as any).NODE_ENV = 'production'
+      setNodeEnv('production')
       process.env.TURBOPACK = '1'
       existsSyncSpy
         .mockReturnValueOnce(true)
@@ -615,7 +636,7 @@ describe('DevupUINextPlugin', () => {
     })
     it('should start coordinator in development mode', async () => {
       process.env.TURBOPACK = '1'
-      ;(process.env as any).NODE_ENV = 'development'
+      setNodeEnv('development')
       existsSyncSpy
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)

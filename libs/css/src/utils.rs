@@ -1,4 +1,5 @@
 #[inline]
+#[must_use]
 pub fn to_kebab_case(value: &str) -> String {
     let mut result = String::with_capacity(value.len() + 4);
     for (i, c) in value.chars().enumerate() {
@@ -15,6 +16,7 @@ pub fn to_kebab_case(value: &str) -> String {
 }
 
 #[inline]
+#[must_use]
 pub fn to_camel_case(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     for (i, s) in value.split('-').enumerate() {
@@ -24,6 +26,19 @@ pub fn to_camel_case(value: &str) -> String {
             result.push(first.to_ascii_uppercase());
             result.push_str(&s[first.len_utf8()..]);
         }
+    }
+    result
+}
+
+#[inline]
+#[must_use]
+pub(crate) fn collapse_whitespace(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    for part in value.split_whitespace() {
+        if !result.is_empty() && !result.ends_with(',') {
+            result.push(' ');
+        }
+        result.push_str(part);
     }
     result
 }
@@ -51,5 +66,14 @@ mod tests {
     #[case("color", "color")]
     fn test_to_kebab_case(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(to_kebab_case(input), expected);
+    }
+
+    #[rstest]
+    #[case(" a   b ", "a b")]
+    #[case("a, b", "a,b")]
+    #[case("a , b", "a ,b")]
+    #[case("a,  b   c", "a,b c")]
+    fn test_collapse_whitespace(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(collapse_whitespace(input), expected);
     }
 }

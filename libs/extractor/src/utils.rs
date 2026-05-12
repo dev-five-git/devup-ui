@@ -73,7 +73,7 @@ pub(super) enum ParsedStyleOrder<'a> {
 
 impl ParsedStyleOrder<'_> {
     /// Convert to Option<u8> for backward compatibility (returns None for Conditional)
-    pub fn as_static(&self) -> Option<u8> {
+    pub const fn as_static(&self) -> Option<u8> {
         match self {
             ParsedStyleOrder::Static(v) => Some(*v),
             _ => None,
@@ -334,6 +334,7 @@ pub fn gcd(a: u32, b: u32) -> u32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use oxc_allocator::Vec;
     use oxc_ast::ast::NumberBase;
@@ -574,14 +575,13 @@ mod tests {
         } else {
             assert!(
                 result.is_some(),
-                "Expected Some, but got None for input: {:?}",
-                input
+                "Expected Some, but got None for input: {input:?}"
             );
             if let Some(expr) = result {
                 let code = super::expression_to_code(&expr);
                 let snapshot_name = format!(
                     "wrap_array_filter_{}",
-                    input.join("_").replace("\"", "quote")
+                    input.join("_").replace('"', "quote")
                 );
                 assert_snapshot!(snapshot_name, code);
             }

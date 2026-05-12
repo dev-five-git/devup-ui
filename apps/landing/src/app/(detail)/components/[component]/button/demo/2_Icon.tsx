@@ -15,6 +15,7 @@ export default function Icon() {
           className={css({ h: 'min-content' })}
           icon={
             <svg
+              aria-hidden="true"
               fill="none"
               height="24"
               viewBox="0 0 24 24"
@@ -37,6 +38,7 @@ export default function Icon() {
           className={css({ h: 'min-content' })}
           icon={
             <svg
+              aria-hidden="true"
               fill="none"
               height="24"
               viewBox="0 0 25 24"

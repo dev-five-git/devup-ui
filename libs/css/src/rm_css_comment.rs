@@ -1,13 +1,7 @@
-use crate::constant::CSS_COMMENT_RE;
+use crate::{constant::CSS_COMMENT_RE, utils::collapse_whitespace};
 
 pub fn rm_css_comment(value: &str) -> String {
-    CSS_COMMENT_RE
-        .replace_all(value, "")
-        .trim()
-        .split_ascii_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ")
-        .replace(", ", ",")
+    collapse_whitespace(&CSS_COMMENT_RE.replace_all(value, ""))
 }
 
 #[cfg(test)]

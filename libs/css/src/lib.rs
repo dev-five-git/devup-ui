@@ -44,15 +44,21 @@ mod prefix_state {
     use std::sync::Mutex;
     static GLOBAL_PREFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
     pub fn set_prefix(prefix: Option<String>) {
-        *GLOBAL_PREFIX.lock().unwrap() = prefix;
+        *GLOBAL_PREFIX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = prefix;
     }
     pub fn get_prefix() -> Option<String> {
-        GLOBAL_PREFIX.lock().unwrap().clone()
+        GLOBAL_PREFIX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
 pub use prefix_state::{get_prefix, set_prefix};
 
+#[must_use]
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
@@ -60,14 +66,14 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
                 let mut dot_class = String::with_capacity(1 + class_name.len());
                 dot_class.push('.');
                 dot_class.push_str(class_name);
-                value.replace("&", &dot_class)
+                value.replace('&', &dot_class)
             }
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
                     let mut dot_class = String::with_capacity(1 + class_name.len());
                     dot_class.push('.');
                     dot_class.push_str(class_name);
-                    s.replace("&", &dot_class)
+                    s.replace('&', &dot_class)
                 } else {
                     let mut result = String::with_capacity(1 + class_name.len());
                     result.push('.');
@@ -75,7 +81,7 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
                     result
                 }
             }
-            StyleSelector::Global(v, _) => v.to_string(),
+            StyleSelector::Global(v, _) => v.clone(),
         }
     } else {
         let mut result = String::with_capacity(1 + class_name.len());
@@ -85,36 +91,47 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     }
 }
 
+#[must_use]
 pub fn disassemble_property(property: &str) -> Vec<String> {
-    GLOBAL_STYLE_PROPERTY
-        .get(property)
-        .map(|v| match v.len() {
-            1 => vec![v[0].to_string()],
-            _ => v.iter().map(|v| v.to_string()).collect(),
-        })
-        .unwrap_or_else(|| {
+    GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
+        || {
             vec![if (property.starts_with("Webkit")
                 && property.len() > 6
-                && property.chars().nth(6).unwrap().is_uppercase())
+                && property
+                    .as_bytes()
+                    .get(6)
+                    .is_some_and(u8::is_ascii_uppercase))
                 || (property.starts_with("Moz")
                     && property.len() > 3
-                    && property.chars().nth(3).unwrap().is_uppercase())
+                    && property
+                        .as_bytes()
+                        .get(3)
+                        .is_some_and(u8::is_ascii_uppercase))
                 || (property.starts_with("ms")
                     && property.len() > 2
-                    && property.chars().nth(2).unwrap().is_uppercase())
+                    && property
+                        .as_bytes()
+                        .get(2)
+                        .is_some_and(u8::is_ascii_uppercase))
             {
                 format!("-{}", to_kebab_case(property))
             } else {
                 to_kebab_case(property)
             }]
-        })
+        },
+        |v| match v.len() {
+            1 => vec![v[0].to_string()],
+            _ => v.iter().map(ToString::to_string).collect(),
+        },
+    )
 }
 
+#[must_use]
 pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelector {
     match selector {
-        StyleSelector::Selector(value) => StyleSelector::Selector(format!("{}({})", value, params)),
+        StyleSelector::Selector(value) => StyleSelector::Selector(format!("{value}({params})")),
         StyleSelector::Global(value, file) => {
-            StyleSelector::Global(format!("{}({})", value, params), file)
+            StyleSelector::Global(format!("{value}({params})"), file)
         }
         StyleSelector::At {
             kind,
@@ -122,12 +139,13 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
             selector,
         } => StyleSelector::At {
             kind,
-            query: query.to_string(),
-            selector: selector.map(|s| format!("{}({})", s, params)),
+            query,
+            selector: selector.map(|s| format!("{s}({params})")),
         },
     }
 }
 
+#[must_use]
 pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(String, String)>> {
     if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
         if let Some(map) = map.get(value) {
@@ -144,6 +162,7 @@ pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(Strin
     }
 }
 
+#[must_use]
 pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&str, &str>>> {
     if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
         let mut ret = BTreeMap::new();
@@ -160,6 +179,7 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
     }
 }
 
+#[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
     let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
@@ -338,10 +358,10 @@ pub fn sheet_to_classname(
                 num_to_nm_base(len)
             }
         });
-        if filename.is_some() {
+        if let Some(file_num) = file_num {
             let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
             result.push_str(&prefix);
-            result.push_str(&num_to_nm_base(file_num.unwrap()));
+            result.push_str(&num_to_nm_base(file_num));
             result.push('-');
             result.push_str(&clas_num);
             result
@@ -369,6 +389,7 @@ fn write_u8(s: &mut String, v: u8) {
     }
 }
 
+#[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
     let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
@@ -596,7 +617,8 @@ mod tests {
 
         class_map::with_class_map(|map| {
             assert_eq!(
-                map.get("").unwrap().get("background-0-#FF000080--255"),
+                map.get("")
+                    .and_then(|entry| entry.get("background-0-#FF000080--255")),
                 Some(&2)
             );
         });
@@ -611,7 +633,11 @@ mod tests {
         );
 
         class_map::with_class_map(|map| {
-            assert_eq!(map.get("").unwrap().get("background-0-#FFF--255"), Some(&3));
+            assert_eq!(
+                map.get("")
+                    .and_then(|entry| entry.get("background-0-#FFF--255")),
+                Some(&3)
+            );
         });
 
         assert_eq!(
@@ -626,7 +652,8 @@ mod tests {
 
         class_map::with_class_map(|map| {
             assert_eq!(
-                map.get("").unwrap().get("background-0-#FFFA--255"),
+                map.get("")
+                    .and_then(|entry| entry.get("background-0-#FFFA--255")),
                 Some(&4)
             );
         });
@@ -820,9 +847,8 @@ mod tests {
             sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
         assert!(class_name.contains("background-0-red--255-"));
         // Should have a file number suffix
-        let parts: Vec<&str> = class_name.split('-').collect();
         assert!(
-            parts.len() >= 6,
+            class_name.split('-').count() >= 6,
             "Expected file suffix in debug classname: {class_name}"
         );
         set_debug(false);
@@ -902,9 +928,9 @@ mod tests {
     #[serial]
     fn test_set_class_map() {
         let mut map = HashMap::new();
-        map.insert("".to_string(), HashMap::new());
-        map.get_mut("")
-            .unwrap()
+        map.insert(String::new(), HashMap::new());
+        map.entry(String::new())
+            .or_default()
             .insert("background-0-rgba(255,0,0,0.5)-".to_string(), 1);
         set_class_map(map);
         assert_eq!(get_class_map().len(), 1);
@@ -1023,7 +1049,7 @@ mod tests {
         set_debug(false);
         reset_class_map();
 
-        set_prefix(Some("".to_string()));
+        set_prefix(Some(String::new()));
         let class1 = sheet_to_classname("background", 0, Some("red"), None, None, None);
 
         reset_class_map();
@@ -1041,7 +1067,7 @@ mod tests {
         // Test with filename to cover lines 148-151
         let name = keyframes_to_keyframes_name("spin", Some("test.tsx"));
         // Should include file number prefix
-        assert!(name.contains("-"));
+        assert!(name.contains('-'));
 
         // Same keyframe in same file should return same name
         let name2 = keyframes_to_keyframes_name("spin", Some("test.tsx"));
@@ -1060,7 +1086,7 @@ mod tests {
         // Test with filename to cover the filename branch
         let class1 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));
         // Should include file number prefix
-        assert!(class1.contains("-"));
+        assert!(class1.contains('-'));
 
         // Same property in same file should return same classname
         let class2 = sheet_to_classname("background", 0, Some("red"), None, None, Some("test.tsx"));

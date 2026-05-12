@@ -16,13 +16,12 @@ pub fn num_to_nm_base(num: usize) -> String {
         if n < first_base {
             result.insert(0, N_BASE_ARRAY[n]);
             break;
-        } else {
-            result.insert(0, M_BASE_ARRAY[(n - first_base) % other_base]);
-            n = (n - first_base) / other_base;
-            if n == 0 {
-                result.insert(0, N_BASE_ARRAY[0]);
-                break;
-            }
+        }
+        result.insert(0, M_BASE_ARRAY[(n - first_base) % other_base]);
+        n = (n - first_base) / other_base;
+        if n == 0 {
+            result.insert(0, N_BASE_ARRAY[0]);
+            break;
         }
     }
     if result.ends_with("ad") {

@@ -19,52 +19,39 @@ interface StyleXTypes {
 }
 
 export function create<S extends Record<string, StyleProperties>>(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  styles: S,
+  _styles: S,
 ): { readonly [K in keyof S]: S[K] } {
   throw new Error('Cannot run on the runtime')
 }
 
 export function props(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  ...styles: ReadonlyArray<StyleProperties | false | null | undefined>
+  ..._styles: ReadonlyArray<StyleProperties | false | null | undefined>
 ): { className?: string; style?: Record<string, string> } {
   throw new Error('Cannot run on the runtime')
 }
 
-export function keyframes(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  frames: Record<string, StyleProperties>,
-): string {
+export function keyframes(_frames: Record<string, StyleProperties>): string {
   throw new Error('Cannot run on the runtime')
 }
 
-export function firstThatWorks<T extends StyleValue>(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  ...values: T[]
-): T {
+export function firstThatWorks<T extends StyleValue>(..._values: T[]): T {
   throw new Error('Cannot run on the runtime')
 }
 
-export function include<S extends StyleProperties>(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  style: S,
-): S {
+export function include<S extends StyleProperties>(_style: S): S {
   throw new Error('Cannot run on the runtime')
 }
 
 export function defineVars<V extends Record<string, StyleValue>>(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  vars: V,
+  _vars: V,
 ): { readonly [K in keyof V]: string } {
   throw new Error('Cannot run on the runtime')
 }
 
 export function createTheme<V extends Record<string, string>>(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  vars: V,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  overrides: { readonly [K in keyof V]: StyleValue },
+  _vars: V,
+
+  _overrides: { readonly [K in keyof V]: StyleValue },
 ): Record<string, StyleValue> {
   throw new Error('Cannot run on the runtime')
 }

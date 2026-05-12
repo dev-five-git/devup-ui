@@ -51,6 +51,36 @@ export function createNodeModulesExcludeRegex(
   return new RegExp(extraExcludes ? `(${base})|(${extraExcludes})` : base)
 }
 
+export interface DevupThemeInterfaceNames {
+  color: string
+  typography: string
+  length: string
+  shadow: string
+  theme: string
+}
+
+export const DEFAULT_THEME_INTERFACE_NAMES = {
+  color: 'CustomColors',
+  typography: 'DevupThemeTypography',
+  length: 'CustomLength',
+  shadow: 'CustomShadows',
+  theme: 'DevupTheme',
+} satisfies DevupThemeInterfaceNames
+
+export function createThemeInterfaceArgs(
+  packageName: string,
+  names: DevupThemeInterfaceNames = DEFAULT_THEME_INTERFACE_NAMES,
+): [string, string, string, string, string, string] {
+  return [
+    packageName,
+    names.color,
+    names.typography,
+    names.length,
+    names.shadow,
+    names.theme,
+  ]
+}
+
 /**
  * Common plugin options shared across all devup-ui build plugins.
  */

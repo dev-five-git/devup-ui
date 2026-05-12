@@ -62,7 +62,7 @@ export function RightIndex() {
 
       setMenus(
         [...elements].map((element) => ({
-          text: element.textContent!,
+          text: element.textContent ?? '',
           sub:
             element.tagName === 'H3' ||
             element.tagName === 'H4' ||
@@ -91,7 +91,7 @@ export function RightIndex() {
       clearTimeout(timeoutId)
       observer.disconnect()
     }
-  }, [pathname])
+  }, [])
 
   return (
     <VStack gap="16px" p="20px 16px" w="200px">
@@ -101,12 +101,8 @@ export function RightIndex() {
             Contents
           </Text>
         </Flex>
-        {menus.map((menu, idx) => (
-          <IndexMenu
-            key={menu.text + idx}
-            onClick={menu.onClick}
-            sub={menu.sub}
-          >
+        {menus.map((menu) => (
+          <IndexMenu key={menu.text} onClick={menu.onClick} sub={menu.sub}>
             {menu.text}
           </IndexMenu>
         ))}
@@ -135,6 +131,7 @@ export function RightIndex() {
             Edit this page
           </Text>
           <svg
+            aria-hidden="true"
             className={css({
               color: '$caption',
               _groupHover: { color: '$text' },

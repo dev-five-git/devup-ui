@@ -19,7 +19,8 @@ function checkUselessResponsive<T extends RuleContext<string, []>>(
 ) {
   if (node.elements.length !== 1) return
 
-  const element = node.elements[0]!
+  const element = node.elements[0]
+  if (!element) return
   for (const ancestor of ancestors) {
     switch (ancestor.type) {
       case AST_NODE_TYPES.ConditionalExpression:
@@ -41,7 +42,7 @@ function checkUselessResponsive<T extends RuleContext<string, []>>(
     node,
     messageId: 'uselessResponsive',
     fix(fixer) {
-      return fixer.replaceText(node, context.sourceCode.getText(element!))
+      return fixer.replaceText(node, context.sourceCode.getText(element))
     },
   })
 }

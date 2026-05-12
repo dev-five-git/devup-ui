@@ -28,7 +28,7 @@ use std::error::Error;
 use std::path::PathBuf;
 
 /// Import alias configuration for redirecting imports from other CSS-in-JS libraries
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportAlias {
     /// Default export → named export (e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`)
     DefaultToNamed(String),
@@ -116,15 +116,15 @@ impl<'a> ExtractStyleProp<'a> {
                 styles
             }
             ExtractStyleProp::StaticArray(array) => {
-                array.iter().flat_map(|s| s.extract()).collect()
+                array.iter().flat_map(ExtractStyleProp::extract).collect()
             }
-            ExtractStyleProp::Expression { styles, .. } => styles.to_vec(),
+            ExtractStyleProp::Expression { styles, .. } => styles.clone(),
             ExtractStyleProp::MemberExpression { map, .. } => {
                 map.values().flat_map(|s| s.extract()).collect()
             }
             ExtractStyleProp::Enum { map, .. } => map
                 .values()
-                .flat_map(|s| s.iter().flat_map(|s| s.extract()))
+                .flat_map(|s| s.iter().flat_map(ExtractStyleProp::extract))
                 .collect(),
         }
     }
@@ -216,10 +216,10 @@ pub fn extract(
                     );
 
                     // Build class map by extracting the partial code
-                    let class_map = if !partial_code.is_empty() {
-                        extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
-                    } else {
+                    let class_map = if partial_code.is_empty() {
                         FxHashMap::default()
+                    } else {
+                        extract_class_map_from_code(filename, &partial_code, &option, &referenced)?
                     };
 
                     // Generate full code with class names substituted into selectors
@@ -285,10 +285,10 @@ pub fn extract(
         filename,
         &option.package,
         css_files,
-        if !option.single_css {
-            Some(filename.to_string())
-        } else {
+        if option.single_css {
             None
+        } else {
+            Some(filename.to_string())
         },
     );
     visitor.visit_program(&mut program);
@@ -341,10 +341,10 @@ fn extract_class_map_from_code(
             filename,
             &option.package,
             css_files,
-            if !option.single_css {
-                Some(filename.to_string())
-            } else {
+            if option.single_css {
                 None
+            } else {
+                Some(filename.to_string())
             },
         );
         visitor.visit_program(&mut program);
@@ -384,6 +384,7 @@ fn extract_class_map_from_code(
 }
 
 /// Check if the code has an import from the specified package
+#[must_use]
 pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
     if !code.contains(package) {
         return false;
@@ -415,6 +416,7 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeSet;
 
@@ -578,9 +580,9 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box as={`section`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -616,9 +618,9 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box as={`section`}></Box>
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -749,9 +751,9 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box as={b ? null:undefined} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -1181,9 +1183,9 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box as C} from '@devup-ui/core'
+                r"import {Box as C} from '@devup-ui/core'
         <C padding={1} margin={2} className={} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -1243,9 +1245,9 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box as C} from '@devup-ui/core'
+                r"import {Box as C} from '@devup-ui/core'
         <C padding={1} margin={2} className={variable} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -1262,13 +1264,13 @@ mod tests {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box as C} from '@devup-ui/core'
+                r"import {Box as C} from '@devup-ui/core'
         <C padding={1} 
       _hover={{
         borderColor: true ? 'blue' : ``,
       }}
  className={variable} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -3049,11 +3051,11 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box _hover={`
         background-color: red;
         `} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4002,9 +4004,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box color={`$nice`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4063,9 +4065,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Text} from '@devup-ui/core'
+                r"import {Text} from '@devup-ui/core'
         <Text typography={`bold`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4104,9 +4106,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Text} from '@devup-ui/core'
+                r"import {Text} from '@devup-ui/core'
         <Text typography={variable} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4123,9 +4125,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Text} from '@devup-ui/core'
+                r"import {Text} from '@devup-ui/core'
         <Text typography={bo ? a : b} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4142,9 +4144,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Text} from '@devup-ui/core'
+                r"import {Text} from '@devup-ui/core'
         <Text typography={`${bo ? a : b}`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4288,8 +4290,8 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {W} from '@devup-ui/core'
-        "#,
+                r"import {W} from '@devup-ui/core'
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4306,9 +4308,9 @@ import clsx from 'clsx'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {W, useTheme} from '@devup-ui/core';
+                r"import {W, useTheme} from '@devup-ui/core';
 useTheme();
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4543,9 +4545,9 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={1} zIndex={2} fontWeight={900} scale={2} flex={1} lineHeight={1} tabSize={4} MozTabSize={4} WebkitLineClamp={4} />
-        "#,
+        ",
                 ExtractOption { package: "@devup-ui/core".to_string(), css_dir: "@devup-ui/core".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
@@ -4560,9 +4562,9 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex MozTabSize={4} WebkitLineClamp={4} msBorderRadius={4} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4705,9 +4707,9 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={0.5} {...props} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4724,7 +4726,7 @@ e(o, { className: "a", bg: variable, style: { color: "blue" }, ...props })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import { VStack } from '@devup-ui/core'
+                r"import { VStack } from '@devup-ui/core'
 
 export default function Card({
   children,
@@ -4745,7 +4747,7 @@ export default function Card({
   )
 }
 
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4766,9 +4768,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[][0]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4785,9 +4787,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][-10]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4804,9 +4806,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][+10]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4823,9 +4825,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][100]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4924,9 +4926,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={-1} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4943,9 +4945,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={-a} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4962,9 +4964,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={-(1+a)} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -4981,9 +4983,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={-1*a} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5000,9 +5002,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={-(1)} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5019,9 +5021,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={(-1)} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5038,9 +5040,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box zIndex={[(-1),-2, -(3)]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5061,9 +5063,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box opacity={{}[1]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5099,9 +5101,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[`wrong`]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5118,9 +5120,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[1]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5161,13 +5163,13 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box as DevupButton} from '@devup-ui/core'
+                r"import {Box as DevupButton} from '@devup-ui/core'
         <DevupButton
       className={className}
       typography={typography}
     >
     </DevupButton>
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5207,9 +5209,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][0]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5226,9 +5228,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5][a]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5264,9 +5266,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex bg={[`$red`, `${variable}`][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5283,12 +5285,12 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Center} from '@devup-ui/core'
+                r"import {Center} from '@devup-ui/core'
 <Center
             bg={['$webBg', '$appBg', '$solutionBg'][categoryId - 1]}
           >
           </Center>
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5305,9 +5307,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5, ...some][100]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5324,9 +5326,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={[1, 0.5, ...some][a]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5347,7 +5349,7 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {
+                r"import {
   Box,
   Button as DevupButton,
   Center,
@@ -5369,7 +5371,7 @@ export default function Card({
     }[(!!icon).toString()]
     }
 />
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5470,9 +5472,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
         <Flex opacity={{a:1, b:0.5}[a]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5488,9 +5490,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box bg={SOME_VAR[idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5511,9 +5513,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={{ 0: [1, 2, 3], 1: [4, 5, 6] }[idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5575,9 +5577,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[1, 2, 3], [4, 5, 6]][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5594,9 +5596,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[1, 2, 3],[4, 5, 6]][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5616,9 +5618,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[a, b, c], [d, e, f]][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5635,9 +5637,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[, [d, e, f]][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5658,9 +5660,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={[[a, 1, c], [d, e, 2]][idx]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5681,9 +5683,9 @@ export default function Card({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Flex} from '@devup-ui/core'
+                r"import {Flex} from '@devup-ui/core'
 ;<Flex gap={true[1]} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5731,9 +5733,9 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
             <Box bg={`black`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5750,9 +5752,9 @@ PROCESS_DATA.map(({ id, title, content }, idx) => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
             <Box bg={`${variable}`} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5844,12 +5846,12 @@ import {Button} from '@devup/ui'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {css} from '@devup-ui/core'
+                r"import {css} from '@devup-ui/core'
     <div className={css({
        ...(a ? { bg: 'red' } : { bg: 'blue' }),
        ...({ p: 1 }),
      })} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5969,9 +5971,9 @@ import {Button} from '@devup/ui'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
     <Box m={`${1}`} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -5988,9 +5990,9 @@ import {Button} from '@devup/ui'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
     <Box m={`${-1}`} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6007,9 +6009,9 @@ import {Button} from '@devup/ui'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
     <Box m={`${1} ${2}`} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6026,9 +6028,9 @@ import {Button} from '@devup/ui'
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
     <Box className={`  ${1} ${2}  `} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6191,6 +6193,27 @@ import {Button} from '@devup/ui'
       opacity: 0.5
       }
     }} />
+            "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+
+        // Computed selector key whose `key.name()` is None must be skipped.
+        // Mixed with a valid selector to ensure extraction still proceeds.
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.jsx",
+                r#"import {Box} from '@devup-ui/core'
+<Box selectors={{ [dynamic]: { color: 'red' }, "&:focus": { color: 'blue' } }} />
             "#,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
@@ -6583,9 +6606,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box styleOrder={isActive ? 5 : 10} positioning={mode} />
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6603,9 +6626,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Text} from '@devup-ui/core'
+                r"import {Text} from '@devup-ui/core'
 <Text styleOrder={isActive ? 5 : 10} typography={typo} />
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6644,9 +6667,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box styleOrder={isActive ? 5 : 10} />
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -6956,11 +6979,11 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box styleVars={{
             variable
         }} />
-                "#,
+                ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -7085,9 +7108,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box styleVars={styleVars} />
-                "#,
+                ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -7104,9 +7127,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box styleVars={{...styleVars}} />
-                "#,
+                ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -7127,9 +7150,9 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.jsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
     <Box styleVars={} />
-            "#,
+            ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -8759,9 +8782,9 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box padding={1} margin={2} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -8844,9 +8867,9 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box positioning={a} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -8969,11 +8992,11 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
         <Box _is={{
           params: [],
         }} />
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9119,12 +9142,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledDiv = styled.section`
           background: red;
           color: blue;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9229,12 +9252,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled, Text} from '@devup-ui/core'
+                r"import {styled, Text} from '@devup-ui/core'
         const StyledComponent = styled(Text)`
           background: red;
           color: blue;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9272,12 +9295,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled, VStack} from '@devup-ui/core'
+                r"import {styled, VStack} from '@devup-ui/core'
         const StyledComponent = styled(VStack)`
           background: red;
           color: blue;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9315,12 +9338,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledComponent = styled(CustomComponent)`
           background: red;
           color: blue;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9405,12 +9428,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledDiv = styled.div`
           background: var(--text);
           color: var(--primary);
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9478,13 +9501,13 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const color = 'red';
         const StyledDiv = styled.div`
           color: ${color};
           background: blue;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9550,11 +9573,11 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const primaryColor = 'blue';
         const padding = '16px';
         const StyledDiv = styled.div({ bg: primaryColor, padding })
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9616,9 +9639,9 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledDiv = styled.div({ bg: obj.bg, padding: func(), color: obj.color() })
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9641,12 +9664,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledDiv = styled.div`
           background: ${props => props.bg};
           color: red;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9665,13 +9688,13 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled, Box} from '@devup-ui/core'
+                r"import {styled, Box} from '@devup-ui/core'
         const fontSize = '18px';
         const StyledComponent = styled(Box)`
           font-size: ${fontSize};
           color: ${props => props.color || 'black'};
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9690,7 +9713,7 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const margin = '10px';
         const padding = '20px';
         const StyledDiv = styled.div`
@@ -9698,7 +9721,7 @@ keyframes({
           padding: ${padding};
           background: ${props => props.bg || 'white'};
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9717,13 +9740,13 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const isActive = true;
         const StyledDiv = styled.div`
           color: ${isActive ? 'red' : 'blue'};
           opacity: ${isActive ? 1 : 0.5};
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9745,12 +9768,12 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {styled} from '@devup-ui/core'
+                r"import {styled} from '@devup-ui/core'
         const StyledDiv = styled(null)`
           background: ${props => props.bg};
           color: red;
         `
-        "#,
+        ",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9854,7 +9877,7 @@ keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r###"import {Box} from '@devup-ui/core'
+                r##"import {Box} from '@devup-ui/core'
         <Box
           aspectRatio="5.49"
           bg="#752E2E"
@@ -9864,7 +9887,7 @@ keyframes({
           maskSize="contain"
           w="121px"
         />
-        "###,
+        "##,
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -9995,9 +10018,9 @@ const StyledDiv = styled.div({ ...baseStyles })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {css} from '@devup-ui/core'
+                r"import {css} from '@devup-ui/core'
 const className = css()
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10019,9 +10042,9 @@ const className = css()
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {css} from '@devup-ui/core'
+                r"import {css} from '@devup-ui/core'
 const className = css({})
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10070,11 +10093,11 @@ const spin = keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {globalCss} from '@devup-ui/core'
+                r"import {globalCss} from '@devup-ui/core'
 globalCss({
     body: { margin: 0, padding: 0 }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10232,9 +10255,9 @@ globalCss({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box p={[1, 2, 3, 4]} m={[0, 1]} />
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10332,10 +10355,10 @@ const Component = ({ className }) => {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {css} from '@devup-ui/core'
+                r"import {css} from '@devup-ui/core'
 const size = 16;
 const className = css({ fontSize: `${size}px` })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10459,9 +10482,9 @@ const color = "red";
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {keyframes} from '@devup-ui/core'
+                r"import {keyframes} from '@devup-ui/core'
 const spin = keyframes()
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -10483,9 +10506,9 @@ const spin = keyframes()
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {globalCss} from '@devup-ui/core'
+                r"import {globalCss} from '@devup-ui/core'
 globalCss()
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -11243,7 +11266,7 @@ export const link = style({ color: "blue", textDecoration: "underline" })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "styles.css.ts",
-                r#"import { style } from '@vanilla-extract/css'
+                r"import { style } from '@vanilla-extract/css'
 export const hello = style({
   cursor: 'pointer',
   fontSize: 32,
@@ -11253,7 +11276,7 @@ export const hello = style({
 export const text = style({
   color: 'var(--text)',
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11301,10 +11324,10 @@ export const button = style({ background: primaryColor, padding: spacing })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "computed.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 const base = 8;
 export const box = style({ padding: base * 2, margin: base / 2 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11375,9 +11398,9 @@ export const hoverButton = style({ background: "gray", _hover: { background: "bl
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "responsive.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const responsiveBox = style({ padding: [8, 16, 32] })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11444,7 +11467,7 @@ globalStyle("body", { margin: 0, padding: 0 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "vars.css.ts",
-                r#"import { createVar, style } from '@devup-ui/react'
+                r"import { createVar, style } from '@devup-ui/react'
 export const colorVar = createVar()
 export const box = style({
   vars: {
@@ -11452,7 +11475,7 @@ export const box = style({
   },
   color: colorVar
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11470,12 +11493,12 @@ export const box = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "fallback.css.ts",
-                r#"import { createVar, fallbackVar, style } from '@devup-ui/react'
+                r"import { createVar, fallbackVar, style } from '@devup-ui/react'
 export const colorVar = createVar()
 export const box = style({
   color: fallbackVar(colorVar, 'red')
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11497,13 +11520,13 @@ export const box = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "variants.css.ts",
-                r#"import { styleVariants } from '@devup-ui/react'
+                r"import { styleVariants } from '@devup-ui/react'
 export const background = styleVariants({
   primary: { background: 'blue' },
   secondary: { background: 'gray' },
   danger: { background: 'red' }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11521,13 +11544,13 @@ export const background = styleVariants({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "variants-composed.css.ts",
-                r#"import { style, styleVariants } from '@devup-ui/react'
+                r"import { style, styleVariants } from '@devup-ui/react'
 const base = style({ padding: 12, borderRadius: 4 })
 export const button = styleVariants({
   primary: [base, { background: 'blue', color: 'white' }],
   secondary: [base, { background: 'gray', color: 'black' }]
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11607,7 +11630,7 @@ export const body = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme.css.ts",
-                r#"import { createTheme, style } from '@devup-ui/react'
+                r"import { createTheme, style } from '@devup-ui/react'
 export const [themeClass, vars] = createTheme({
   color: {
     brand: 'blue',
@@ -11623,7 +11646,7 @@ export const box = style({
   color: vars.color.text,
   padding: vars.space.medium
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11642,7 +11665,7 @@ export const box = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-contract.css.ts",
-                r#"import { createThemeContract, createTheme, style } from '@devup-ui/react'
+                r"import { createThemeContract, createTheme, style } from '@devup-ui/react'
 const vars = createThemeContract({
   color: {
     brand: null,
@@ -11661,7 +11684,7 @@ export const darkTheme = createTheme(vars, {
     text: 'white'
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11684,7 +11707,7 @@ export const darkTheme = createTheme(vars, {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "layers.css.ts",
-                r#"import { layer, style, globalStyle } from '@devup-ui/react'
+                r"import { layer, style, globalStyle } from '@devup-ui/react'
 export const reset = layer('reset')
 export const base = layer('base')
 export const components = layer('components')
@@ -11693,7 +11716,7 @@ globalStyle('*', {
   margin: 0,
   padding: 0
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11715,7 +11738,7 @@ globalStyle('*', {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "container.css.ts",
-                r#"import { createContainer, style } from '@devup-ui/react'
+                r"import { createContainer, style } from '@devup-ui/react'
 export const sidebar = createContainer()
 export const sidebarContainer = style({
   containerName: sidebar,
@@ -11728,7 +11751,7 @@ export const responsive = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11750,7 +11773,7 @@ export const responsive = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "global-theme.css.ts",
-                r#"import { createGlobalTheme } from '@devup-ui/react'
+                r"import { createGlobalTheme } from '@devup-ui/react'
 export const vars = createGlobalTheme(':root', {
   color: {
     brand: 'blue',
@@ -11761,7 +11784,7 @@ export const vars = createGlobalTheme(':root', {
     body: 'system-ui, sans-serif'
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11783,7 +11806,7 @@ export const vars = createGlobalTheme(':root', {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "composition.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 const base = style({
   padding: 12,
   borderRadius: 4
@@ -11796,7 +11819,7 @@ export const button = style([base, interactive, {
   background: 'blue',
   color: 'white'
 }])
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11818,7 +11841,7 @@ export const button = style([base, interactive, {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "selectors.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const button = style({
   background: 'blue',
   selectors: {
@@ -11837,7 +11860,7 @@ export const button = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11855,7 +11878,7 @@ export const button = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "selectors-complex.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const parent = style({
   background: 'white'
 })
@@ -11869,7 +11892,7 @@ export const child = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11891,7 +11914,7 @@ export const child = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "media.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const responsive = style({
   display: 'block',
   '@media': {
@@ -11907,7 +11930,7 @@ export const responsive = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -11929,7 +11952,7 @@ export const responsive = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "supports.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const grid = style({
   display: 'flex',
   '@supports': {
@@ -11938,7 +11961,7 @@ export const grid = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12150,10 +12173,10 @@ export const broken = style((() => { throw new Error("fail"); })())
         // File with no style() calls
         let result = extract(
             "empty.css.ts",
-            r#"import { style } from '@devup-ui/react'
+            r"import { style } from '@devup-ui/react'
 // No actual style calls, just comments
 const unused = 1;
-"#,
+",
             ExtractOption {
                 package: "@devup-ui/react".to_string(),
                 css_dir: "@devup-ui/react".to_string(),
@@ -12175,11 +12198,11 @@ const unused = 1;
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "constants.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const SPACING = 8;
 export const COLORS = { primary: 'blue', secondary: 'green' };
 export const box = style({ padding: SPACING })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12202,7 +12225,7 @@ export const box = style({ padding: SPACING })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-vars.css.ts",
-                r#"import { createTheme } from '@devup-ui/react'
+                r"import { createTheme } from '@devup-ui/react'
 export const [lightTheme, vars] = createTheme({
   color: {
     primary: 'blue',
@@ -12213,7 +12236,7 @@ export const [lightTheme, vars] = createTheme({
     medium: '8px'
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12236,7 +12259,7 @@ export const [lightTheme, vars] = createTheme({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "internal-theme.css.ts",
-                r#"import { createTheme, style } from '@devup-ui/react'
+                r"import { createTheme, style } from '@devup-ui/react'
 const [internalTheme, themeVars] = createTheme({
   colors: {
     bg: 'white',
@@ -12246,7 +12269,7 @@ const [internalTheme, themeVars] = createTheme({
 export const themed = style({
   background: 'red'
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12269,10 +12292,10 @@ export const themed = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "empty-comp.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const empty = style([])
 export const withEmpty = style([{}])
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12295,7 +12318,7 @@ export const withEmpty = style([{}])
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "variants-base.css.ts",
-                r#"import { style, styleVariants } from '@devup-ui/react'
+                r"import { style, styleVariants } from '@devup-ui/react'
 const base = style({
   padding: 8,
   borderRadius: 4
@@ -12305,7 +12328,7 @@ export const sizes = styleVariants({
   medium: [base, { fontSize: 16 }],
   large: [base, { fontSize: 20 }]
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12328,7 +12351,7 @@ export const sizes = styleVariants({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "layer-container.css.ts",
-                r#"import { layer, createContainer, style } from '@devup-ui/react'
+                r"import { layer, createContainer, style } from '@devup-ui/react'
 export const resetLayer = layer('reset')
 export const baseLayer = layer('base')
 export const myContainer = createContainer()
@@ -12336,7 +12359,7 @@ export const containerStyle = style({
   containerName: myContainer,
   containerType: 'inline-size'
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12359,7 +12382,7 @@ export const containerStyle = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "all-imports.css.ts",
-                r#"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'
+                r"import { style, globalStyle, keyframes, createTheme } from '@devup-ui/react'
 export const [theme, vars] = createTheme({
   color: { primary: 'blue' }
 })
@@ -12373,7 +12396,7 @@ globalStyle('body', {
 export const box = style({
   animation: 'fadeIn 1s'
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12396,7 +12419,7 @@ export const box = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-two-arg.css.ts",
-                r#"import { createThemeContract, createTheme } from '@devup-ui/react'
+                r"import { createThemeContract, createTheme } from '@devup-ui/react'
 const contract = createThemeContract({
   color: {
     brand: null,
@@ -12409,7 +12432,7 @@ export const darkTheme = createTheme(contract, {
     text: 'lightgray'
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12463,14 +12486,14 @@ export const text = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "vars-only.css.ts",
-                r#"import { createVar, style, fallbackVar } from '@devup-ui/react'
+                r"import { createVar, style, fallbackVar } from '@devup-ui/react'
 export const colorVar = createVar()
 export const sizeVar = createVar()
 export const box = style({
   color: fallbackVar(colorVar, 'blue'),
   fontSize: sizeVar
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12493,10 +12516,10 @@ export const box = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "global-theme-empty.css.ts",
-                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+                r"import { createGlobalTheme, style } from '@devup-ui/react'
 export const emptyVars = createGlobalTheme(':root', {})
 export const box = style({ padding: 8 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12519,14 +12542,14 @@ export const box = style({ padding: 8 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "mixed-exports.css.ts",
-                r#"import { style, keyframes, createVar, createContainer, layer } from '@devup-ui/react'
+                r"import { style, keyframes, createVar, createContainer, layer } from '@devup-ui/react'
 const internalStyle = style({ padding: 4 })
 const internalKeyframe = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
 const internalVar = createVar()
 const internalContainer = createContainer()
 const internalLayer = layer('internal')
 export const publicStyle = style({ margin: 8 })
-"#,
+",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
@@ -12543,7 +12566,7 @@ export const publicStyle = style({ margin: 8 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "selector-refs.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const parent = style({ background: 'white' })
 export const child = style({
   selectors: {
@@ -12559,7 +12582,7 @@ export const sibling = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12800,9 +12823,9 @@ globalCss({
         // Syntax error in JS execution will trigger fallback
         let result = extract(
             "error.css.ts",
-            r#"import { style } from '@devup-ui/react'
+            r"import { style } from '@devup-ui/react'
 const x = style({ padding: [[[}}} // invalid syntax
-"#,
+",
             ExtractOption {
                 package: "@devup-ui/react".to_string(),
                 css_dir: "@devup-ui/react".to_string(),
@@ -12832,9 +12855,9 @@ const x = style({ padding: [[[}}} // invalid syntax
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { css } from '@vanilla-extract/css'
+                r"import { css } from '@vanilla-extract/css'
 const buttonStyle = css({ bg: 'red', p: 4 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12857,7 +12880,7 @@ const buttonStyle = css({ bg: 'red', p: 4 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "keyframes-export.css.ts",
-                r#"import { keyframes, style } from '@devup-ui/react'
+                r"import { keyframes, style } from '@devup-ui/react'
 export const spin = keyframes({
   from: { transform: 'rotate(0deg)' },
   to: { transform: 'rotate(360deg)' }
@@ -12867,7 +12890,7 @@ const internal = keyframes({
   '100%': { opacity: 1 }
 })
 export const spinner = style({ animation: spin })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12890,11 +12913,11 @@ export const spinner = style({ animation: spin })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-vars-name.css.ts",
-                r#"import { createTheme } from '@devup-ui/react'
+                r"import { createTheme } from '@devup-ui/react'
 export const myTheme = createTheme({
   color: { primary: 'blue' }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12917,14 +12940,14 @@ export const myTheme = createTheme({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "variants-mixed.css.ts",
-                r#"import { style, styleVariants } from '@devup-ui/react'
+                r"import { style, styleVariants } from '@devup-ui/react'
 const base = style({ borderRadius: 4, padding: 8 })
 export const buttons = styleVariants({
   primary: [base, { background: 'blue', color: 'white' }],
   secondary: { background: 'gray', color: 'black' },
   danger: [base, { background: 'red' }]
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12947,7 +12970,7 @@ export const buttons = styleVariants({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "global-theme-vars.css.ts",
-                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+                r"import { createGlobalTheme, style } from '@devup-ui/react'
 export const vars = createGlobalTheme(':root', {
   color: {
     primary: 'blue',
@@ -12959,7 +12982,7 @@ export const vars = createGlobalTheme(':root', {
   }
 })
 export const box = style({ padding: 8 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -12982,10 +13005,10 @@ export const box = style({ padding: 8 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "fontface-minimal.css.ts",
-                r#"import { fontFace, style } from '@devup-ui/react'
+                r"import { fontFace, style } from '@devup-ui/react'
 export const minimalFont = fontFace({})
 export const text = style({ fontFamily: minimalFont })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13008,12 +13031,12 @@ export const text = style({ fontFamily: minimalFont })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "imports-combo.css.ts",
-                r#"import { style, globalStyle, keyframes, fontFace } from '@devup-ui/react'
+                r"import { style, globalStyle, keyframes, fontFace } from '@devup-ui/react'
 export const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
 export const myFont = fontFace({ src: 'local(Arial)' })
 globalStyle('body', { margin: 0, fontFamily: myFont })
 export const animated = style({ animation: fadeIn })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13036,7 +13059,7 @@ export const animated = style({ animation: fadeIn })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-exports.css.ts",
-                r#"import { createTheme, createThemeContract, style } from '@devup-ui/react'
+                r"import { createTheme, createThemeContract, style } from '@devup-ui/react'
 const contract = createThemeContract({
   colors: { bg: null, text: null }
 })
@@ -13047,7 +13070,7 @@ const internalTheme = createTheme(contract, {
   colors: { bg: 'gray', text: 'darkgray' }
 })
 export const box = style({ padding: 8 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13070,10 +13093,10 @@ export const box = style({ padding: 8 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "multi-comp.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 const base = style({ padding: 8 })
 export const complex = style([base, { margin: 4 }, { color: 'blue' }])
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13096,14 +13119,14 @@ export const complex = style([base, { margin: 4 }, { color: 'blue' }])
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "selector-ref.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const parent = style({ display: 'flex' })
 export const child = style({
   selectors: {
     [`${parent}:hover &`]: { background: 'red' }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13127,7 +13150,7 @@ export const child = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "all-combined.css.ts",
-                r#"import { style, globalStyle, keyframes, createVar, createContainer, layer, fontFace, createGlobalTheme, styleVariants } from '@devup-ui/react'
+                r"import { style, globalStyle, keyframes, createVar, createContainer, layer, fontFace, createGlobalTheme, styleVariants } from '@devup-ui/react'
 export const myVar = createVar()
 export const myContainer = createContainer()
 export const myLayer = layer('components')
@@ -13141,7 +13164,7 @@ export const buttons = styleVariants({
   secondary: { bg: 'gray' }
 })
 export const box = style({ fontFamily: myFont })
-"#,
+",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
@@ -13158,13 +13181,13 @@ export const box = style({ fontFamily: myFont })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-array.css.ts",
-                r#"import { createTheme, style } from '@devup-ui/react'
+                r"import { createTheme, style } from '@devup-ui/react'
 export const [themeClass, themeVars] = createTheme({
   colors: { primary: 'blue', secondary: 'green' },
   spacing: { small: '4px', medium: '8px' }
 })
 export const themed = style({ color: themeVars.colors.primary })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13221,7 +13244,7 @@ export const heading = style({ fontFamily: secondFont })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "globaltheme-remap.css.ts",
-                r#"import { createGlobalTheme, style } from '@devup-ui/react'
+                r"import { createGlobalTheme, style } from '@devup-ui/react'
 export const lightVars = createGlobalTheme(':root', {
   colors: { bg: 'white', text: 'black' }
 })
@@ -13229,7 +13252,7 @@ export const darkVars = createGlobalTheme('.dark', {
   colors: { bg: 'black', text: 'white' }
 })
 export const box = style({ padding: 8 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13345,7 +13368,7 @@ globalCss({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "refs.css.ts",
-                r#"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'
+                r"import { style, globalStyle, keyframes, createVar, fontFace, createContainer, layer } from '@devup-ui/react'
 export const colorVar = createVar()
 export const myContainer = createContainer()
 export const myLayer = layer('ui')
@@ -13358,7 +13381,7 @@ export const child = style({
   }
 })
 globalStyle('body', { margin: 0 })
-"#,
+",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() }
             )
             .unwrap()
@@ -13375,7 +13398,7 @@ globalStyle('body', { margin: 0 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-simple.css.ts",
-                r#"import { createThemeContract, createTheme, style } from '@devup-ui/react'
+                r"import { createThemeContract, createTheme, style } from '@devup-ui/react'
 const contract = createThemeContract({
   colors: { primary: null }
 })
@@ -13383,7 +13406,7 @@ export const lightTheme = createTheme(contract, {
   colors: { primary: 'blue' }
 })
 export const box = style({ padding: 8 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13440,7 +13463,7 @@ globalCss({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "theme-refs.css.ts",
-                r#"import { style, createGlobalTheme } from '@devup-ui/react'
+                r"import { style, createGlobalTheme } from '@devup-ui/react'
 export const vars = createGlobalTheme(':root', {
   colors: { primary: 'blue', secondary: 'green' }
 })
@@ -13450,7 +13473,7 @@ export const child = style({
     [`${parent}:hover &`]: { color: 'red' }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13473,7 +13496,7 @@ export const child = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "container.css.ts",
-                r#"import { style } from '@devup-ui/react'
+                r"import { style } from '@devup-ui/react'
 export const card = style({
   containerType: 'inline-size',
   '@container': {
@@ -13483,7 +13506,7 @@ export const card = style({
     }
   }
 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13538,9 +13561,9 @@ export const card = style({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import styled from '@emotion/styled'
+                r"import styled from '@emotion/styled'
 const Button = styled.button({ bg: 'red', p: 4 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13598,8 +13621,8 @@ const Card = styled("div")({ bg: 'blue', m: 2 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import React from 'react'
-const element = <div>Hello</div>"#,
+                r"import React from 'react'
+const element = <div>Hello</div>",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13627,9 +13650,9 @@ const element = <div>Hello</div>"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import myStyled from '@emotion/styled'
+                r"import myStyled from '@emotion/styled'
 const Button = myStyled.button({ bg: 'green', p: 2 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13658,9 +13681,9 @@ const Button = myStyled.button({ bg: 'green', p: 2 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import emotionStyled from '@emotion/styled'
+                r"import emotionStyled from '@emotion/styled'
 const Button = emotionStyled.button({ bg: 'purple', p: 3 })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13697,9 +13720,9 @@ const Button = emotionStyled.button({ bg: 'purple', p: 3 })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import styled from '@emotion/styled'
+                r"import styled from '@emotion/styled'
 const Button = styled.button({ bg: 'red' })
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -13950,11 +13973,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${enabled ? 'text-green-500' : 'text-blue-500'} text-3xl pr-5`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -13976,11 +13999,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${isActive && 'text-red-500'} ${fallback || 'text-blue-500'} p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14002,11 +14025,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${(cond ? 'text-red-500' : 'text-blue-500')} p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14028,11 +14051,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${`text-${color}-500`} p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14054,11 +14077,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${dynamicClass} text-red-500 p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14080,11 +14103,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box className={`${getClass()} text-blue-500 p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14107,11 +14130,11 @@ export const Card = () => (
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import {Box} from '@devup-ui/core'
+                r"import {Box} from '@devup-ui/core'
 <Box styleOrder={5} className={`${enabled ? 'text-green-500' : 'text-blue-500'} p-4`}>
   hello
 </Box>
-"#,
+",
                 ExtractOption {
                     package: "@devup-ui/core".to_string(),
                     css_dir: "@devup-ui/core".to_string(),
@@ -14326,8 +14349,8 @@ export { c as Lib };"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { color: 'red' } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14348,8 +14371,8 @@ const styles = stylex.create({ base: { color: 'red' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import * as stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { color: 'blue' } });"#,
+                r"import * as stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { color: 'blue' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14370,8 +14393,8 @@ const styles = stylex.create({ base: { color: 'blue' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create } from '@stylexjs/stylex';
-const styles = create({ base: { color: 'green' } });"#,
+                r"import { create } from '@stylexjs/stylex';
+const styles = create({ base: { color: 'green' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14392,14 +14415,14 @@ const styles = create({ base: { color: 'green' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: 'red',
         backgroundColor: 'blue',
         padding: '10px',
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14420,7 +14443,7 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: 'red',
@@ -14429,7 +14452,7 @@ const styles = stylex.create({
         color: 'blue',
         fontWeight: 'bold',
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14450,7 +14473,7 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         fontSize: 16,
@@ -14460,7 +14483,7 @@ const styles = stylex.create({
         padding: 8,
         flex: 1,
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14481,8 +14504,8 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({});"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14503,8 +14526,8 @@ const styles = stylex.create({});"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: {} });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: {} });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14525,12 +14548,12 @@ const styles = stylex.create({ base: {} });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { default: 'red', ':hover': 'blue' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14551,12 +14574,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { default: 'red', ':focus': 'blue' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14577,12 +14600,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { default: 'red', '@media (max-width: 600px)': 'blue' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14603,12 +14626,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         display: { default: 'block', '@supports (display: grid)': 'grid' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14629,12 +14652,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { ':hover': { default: null, '@media (hover: hover)': 'blue' } },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14655,12 +14678,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { '@media (min-width: 768px)': { default: 'red', ':hover': 'blue' } },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14681,12 +14704,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         '::placeholder': { color: '#999', opacity: 1 },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14733,12 +14756,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: { default: null, ':hover': 'blue' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14759,13 +14782,13 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         backgroundColor: { default: 'white', ':hover': 'gray' },
         color: { default: 'black', ':hover': 'red' },
     }
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14788,11 +14811,11 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: 'red', fontSize: '16px' },
 });
-const el = <div {...stylex.props(styles.base)} />;"#,
+const el = <div {...stylex.props(styles.base)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14813,12 +14836,12 @@ const el = <div {...stylex.props(styles.base)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: 'red' },
     active: { backgroundColor: 'blue' },
 });
-const el = <div {...stylex.props(styles.base, styles.active)} />;"#,
+const el = <div {...stylex.props(styles.base, styles.active)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14839,12 +14862,12 @@ const el = <div {...stylex.props(styles.base, styles.active)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: 'red' },
     active: { backgroundColor: 'blue' },
 });
-const el = <div {...stylex.props(styles.base, isActive && styles.active)} />;"#,
+const el = <div {...stylex.props(styles.base, isActive && styles.active)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14865,12 +14888,12 @@ const el = <div {...stylex.props(styles.base, isActive && styles.active)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     primary: { color: 'red' },
     secondary: { color: 'blue' },
 });
-const el = <div {...stylex.props(isPrimary ? styles.primary : styles.secondary)} />;"#,
+const el = <div {...stylex.props(isPrimary ? styles.primary : styles.secondary)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14891,8 +14914,8 @@ const el = <div {...stylex.props(isPrimary ? styles.primary : styles.secondary)}
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const el = <div {...stylex.props()} />;"#,
+                r"import stylex from '@stylexjs/stylex';
+const el = <div {...stylex.props()} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14913,11 +14936,11 @@ const el = <div {...stylex.props()} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: { default: 'red', ':hover': 'blue' } },
 });
-const el = <div {...stylex.props(styles.base)} />;"#,
+const el = <div {...stylex.props(styles.base)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14938,11 +14961,11 @@ const el = <div {...stylex.props(styles.base)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create, props } from '@stylexjs/stylex';
+                r"import { create, props } from '@stylexjs/stylex';
 const styles = create({
     base: { color: 'red' },
 });
-const el = <div {...props(styles.base)} />;"#,
+const el = <div {...props(styles.base)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14963,11 +14986,11 @@ const el = <div {...props(styles.base)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: 'red' },
 });
-const el = <div {...stylex.props(false, null, styles.base)} />;"#,
+const el = <div {...stylex.props(false, null, styles.base)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -14992,11 +15015,11 @@ const el = <div {...stylex.props(false, null, styles.base)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const fadeIn = stylex.keyframes({
     from: { opacity: 0 },
     to: { opacity: 1 },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15017,14 +15040,14 @@ const fadeIn = stylex.keyframes({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const fadeIn = stylex.keyframes({
     from: { opacity: 0 },
     to: { opacity: 1 },
 });
 const styles = stylex.create({
     base: { animationName: fadeIn, animationDuration: '0.5s' },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15045,10 +15068,10 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { position: stylex.firstThatWorks('sticky', '-webkit-sticky', 'fixed') },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15069,10 +15092,10 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { display: stylex.firstThatWorks('grid', 'flex') },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15093,10 +15116,10 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { width: stylex.types.length('100px') },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15117,10 +15140,10 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: { color: stylex.types.color('red') },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15141,14 +15164,14 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { keyframes, create } from '@stylexjs/stylex';
+                r"import { keyframes, create } from '@stylexjs/stylex';
 const fadeIn = keyframes({
     from: { opacity: 0 },
     to: { opacity: 1 },
 });
 const styles = create({
     base: { animationName: fadeIn },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15169,13 +15192,13 @@ const styles = create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   bar: (height) => ({
     height,
   }),
 });
-const result = stylex.props(styles.bar(h));"#,
+const result = stylex.props(styles.bar(h));",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15196,14 +15219,14 @@ const result = stylex.props(styles.bar(h));"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   bar: (height) => ({
     height,
     width: '100%',
   }),
 });
-const result = stylex.props(styles.bar(h));"#,
+const result = stylex.props(styles.bar(h));",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15224,14 +15247,14 @@ const result = stylex.props(styles.bar(h));"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   bar: (h, w) => ({
     height: h,
     width: w,
   }),
 });
-const result = stylex.props(styles.bar(myH, myW));"#,
+const result = stylex.props(styles.bar(myH, myW));",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15256,13 +15279,13 @@ const result = stylex.props(styles.bar(myH, myW));"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const key = 'color';
 const styles = stylex.create({
   base: {
     [key]: 'red',
   },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15283,14 +15306,14 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const shared = { color: 'red' };
 const styles = stylex.create({
   base: {
     ...shared,
     fontSize: '16px',
   },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15311,13 +15334,13 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   base: {
     color: someVariable,
     fontSize: '16px',
   },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15338,13 +15361,13 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
   base: {
     margin: '10px',
     color: 'red',
   },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15365,12 +15388,12 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const { base } = stylex.create({
   base: {
     color: 'red',
   },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15420,7 +15443,7 @@ const el = <div>
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 import { css } from '@devup-ui/react';
 const stylexStyles = stylex.create({
     base: { color: 'blue' },
@@ -15429,7 +15452,7 @@ const devupClass = css({ bg: 'red' });
 const el = <div>
   <div className={devupClass} />
   <div {...stylex.props(stylexStyles.base)} />
-</div>;"#,
+</div>;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15450,7 +15473,7 @@ const el = <div>
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         color: 'red',
@@ -15458,7 +15481,7 @@ const styles = stylex.create({
             display: stylex.firstThatWorks('grid', 'flex'),
         },
     },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15479,7 +15502,7 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({
     base: {
         width: {
@@ -15487,7 +15510,7 @@ const styles = stylex.create({
             '@media (min-width: 768px)': stylex.types.length('50%'),
         },
     },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15508,13 +15531,13 @@ const styles = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({
     root: { color: 'red', fontSize: '16px' },
 });
 const composed = stylex.create({
     fancy: { ...stylex.include(base.root), backgroundColor: 'blue' },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15535,13 +15558,13 @@ const composed = stylex.create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create, include } from '@stylexjs/stylex';
+                r"import { create, include } from '@stylexjs/stylex';
 const base = create({
     root: { color: 'red' },
 });
 const composed = create({
     fancy: { ...include(base.root), padding: '8px' },
-});"#,
+});",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15562,14 +15585,14 @@ const composed = create({
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({
     root: { color: 'red' },
 });
 const composed = stylex.create({
     fancy: { ...stylex.include(base.root), backgroundColor: 'blue' },
 });
-const el = <div {...stylex.props(composed.fancy)} />;"#,
+const el = <div {...stylex.props(composed.fancy)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15594,8 +15617,8 @@ const el = <div {...stylex.props(composed.fancy)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create, firstThatWorks } from '@stylexjs/stylex';
-const styles = create({ base: { color: firstThatWorks('red', 'blue') } });"#,
+                r"import { create, firstThatWorks } from '@stylexjs/stylex';
+const styles = create({ base: { color: firstThatWorks('red', 'blue') } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15616,8 +15639,8 @@ const styles = create({ base: { color: firstThatWorks('red', 'blue') } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { fontSize: 16, lineHeight: 1.5 } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { fontSize: 16, lineHeight: 1.5 } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15638,8 +15661,8 @@ const styles = stylex.create({ base: { fontSize: 16, lineHeight: 1.5 } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { zIndex: stylex.firstThatWorks(10, 20) } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { zIndex: stylex.firstThatWorks(10, 20) } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15660,8 +15683,8 @@ const styles = stylex.create({ base: { zIndex: stylex.firstThatWorks(10, 20) } }
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { fontSize: stylex.types.length(16) } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { fontSize: stylex.types.length(16) } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15682,8 +15705,8 @@ const styles = stylex.create({ base: { fontSize: stylex.types.length(16) } });"#
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar) } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar) } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15704,8 +15727,8 @@ const styles = stylex.create({ base: { fontSize: stylex.types.length(someVar) } 
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { ':hover': 'invalid' } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { ':hover': 'invalid' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15726,8 +15749,8 @@ const styles = stylex.create({ base: { ':hover': 'invalid' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: 'not-an-object', active: { color: 'blue' } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: 'not-an-object', active: { color: 'blue' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15748,9 +15771,9 @@ const styles = stylex.create({ base: 'not-an-object', active: { color: 'blue' } 
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const other = {};
-const styles = stylex.create({ ...other, base: { color: 'red' } });"#,
+const styles = stylex.create({ ...other, base: { color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15771,9 +15794,9 @@ const styles = stylex.create({ ...other, base: { color: 'red' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const key = 'base';
-const styles = stylex.create({ [key]: { color: 'red' } });"#,
+const styles = stylex.create({ [key]: { color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15794,8 +15817,8 @@ const styles = stylex.create({ [key]: { color: 'red' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: () => ({ color: 'red' }) });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: () => ({ color: 'red' }) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15816,8 +15839,8 @@ const styles = stylex.create({ base: () => ({ color: 'red' }) });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => { return { color: x }; } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => { return { color: x }; } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15838,8 +15861,8 @@ const styles = stylex.create({ base: (x) => { return { color: x }; } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => ({ fontSize: 16, height: x }) });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => ({ fontSize: 16, height: x }) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15860,9 +15883,9 @@ const styles = stylex.create({ base: (x) => ({ fontSize: 16, height: x }) });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const fadeIn = stylex.keyframes({ from: { opacity: '0' }, to: { opacity: '1' } });
-const styles = stylex.create({ base: (dur) => ({ animationName: fadeIn, animationDuration: dur }) });"#,
+const styles = stylex.create({ base: (dur) => ({ animationName: fadeIn, animationDuration: dur }) });",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
             )
             .unwrap()
@@ -15877,9 +15900,9 @@ const styles = stylex.create({ base: (dur) => ({ animationName: fadeIn, animatio
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ active: { color: 'red' } });
-const el = <div {...stylex.props(isActive ? styles.active : unknownRef)} />;"#,
+const el = <div {...stylex.props(isActive ? styles.active : unknownRef)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15900,9 +15923,9 @@ const el = <div {...stylex.props(isActive ? styles.active : unknownRef)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ fallback: { color: 'gray' } });
-const el = <div {...stylex.props(isActive ? unknownRef : styles.fallback)} />;"#,
+const el = <div {...stylex.props(isActive ? unknownRef : styles.fallback)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15923,9 +15946,9 @@ const el = <div {...stylex.props(isActive ? unknownRef : styles.fallback)} />;"#
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: { color: 'red' } });
-const el = <div {...stylex.props(isActive ? unknownA : unknownB)} />;"#,
+const el = <div {...stylex.props(isActive ? unknownA : unknownB)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15946,9 +15969,9 @@ const el = <div {...stylex.props(isActive ? unknownA : unknownB)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: { color: 'red' } });
-const el = <div {...stylex.props(styles.base, null, 0, false, '')} />;"#,
+const el = <div {...stylex.props(styles.base, null, 0, false, '')} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15969,9 +15992,9 @@ const el = <div {...stylex.props(styles.base, null, 0, false, '')} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: { color: 'red' } });
-const el = <div {...stylex.props(styles.base, someFunction())} />;"#,
+const el = <div {...stylex.props(styles.base, someFunction())} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -15992,9 +16015,9 @@ const el = <div {...stylex.props(styles.base, someFunction())} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: (x) => ({ color: x }) });
-const el = <div {...stylex.props(styles.base)} />;"#,
+const el = <div {...stylex.props(styles.base)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16015,9 +16038,9 @@ const el = <div {...stylex.props(styles.base)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({ dynamic: (x) => ({ color: x, fontSize: '14px' }) });
-const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backgroundColor: 'blue' } });"#,
+const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backgroundColor: 'blue' } });",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
             )
             .unwrap()
@@ -16032,8 +16055,8 @@ const composed = stylex.create({ fancy: { ...stylex.include(base.dynamic), backg
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create, unknownFunction } from '@stylexjs/stylex';
-const styles = create({ base: { color: 'red' } });"#,
+                r"import { create, unknownFunction } from '@stylexjs/stylex';
+const styles = create({ base: { color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16050,7 +16073,7 @@ const styles = create({ base: { color: 'red' } });"#,
     // Coverage tests: extract_style_from_stylex.rs
     // ==========================================
 
-    /// Line 24: Non-object argument to stylex.create()
+    /// Line 24: Non-object argument to `stylex.create()`
     #[test]
     #[serial]
     fn test_stylex_create_non_object_arg() {
@@ -16082,9 +16105,9 @@ const styles = stylex.create("not-object");"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const other = { fontSize: '14px' };
-const styles = stylex.create({ base: { ':hover': { ...other, [Symbol()]: 'val', color: 'red' } } });"#,
+const styles = stylex.create({ base: { ':hover': { ...other, [Symbol()]: 'val', color: 'red' } } });",
                 ExtractOption { package: "@devup-ui/react".to_string(), css_dir: "@devup-ui/react".to_string(), single_css: true, import_main_css: false, import_aliases: HashMap::new() },
             )
             .unwrap()
@@ -16100,9 +16123,9 @@ const styles = stylex.create({ base: { ':hover': { ...other, [Symbol()]: 'val', 
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const other = { fontSize: '14px' };
-const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, color: 'red' }) });"#,
+const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, color: 'red' }) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16124,9 +16147,9 @@ const styles = stylex.create({ base: (x) => ({ ...other, [Symbol()]: x, color: '
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const someVar = getSomething();
-const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) });"#,
+const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16143,7 +16166,7 @@ const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) })
     // Coverage tests: stylex.rs
     // ==========================================
 
-    /// Line 48: false from is_include_call_static — spread with non-include call
+    /// Line 48: false from `is_include_call_static` — spread with non-include call
     #[test]
     #[serial]
     fn test_stylex_spread_non_include_call() {
@@ -16152,9 +16175,9 @@ const styles = stylex.create({ base: (x) => ({ color: x, fontSize: someVar }) })
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 function notInclude() { return {}; }
-const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });"#,
+const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16167,7 +16190,7 @@ const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });"#,
         ));
     }
 
-    /// Lines 66-67: Named import types.X()
+    /// Lines 66-67: Named import `types.X()`
     #[test]
     #[serial]
     fn test_stylex_named_import_types() {
@@ -16176,8 +16199,8 @@ const styles = stylex.create({ base: { ...notInclude(), color: 'red' } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import { create, types } from '@stylexjs/stylex';
-const styles = create({ base: { width: types.length('100px') } });"#,
+                r"import { create, types } from '@stylexjs/stylex';
+const styles = create({ base: { width: types.length('100px') } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16190,7 +16213,7 @@ const styles = create({ base: { width: types.length('100px') } });"#,
         ));
     }
 
-    /// Line 70: false from is_types_call — call expression value that's not types or firstThatWorks
+    /// Line 70: false from `is_types_call` — call expression value that's not types or firstThatWorks
     #[test]
     #[serial]
     fn test_stylex_non_types_non_ftw_call() {
@@ -16199,9 +16222,9 @@ const styles = create({ base: { width: types.length('100px') } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 function someFunc() { return 'red'; }
-const styles = stylex.create({ base: { color: someFunc() } });"#,
+const styles = stylex.create({ base: { color: someFunc() } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16223,9 +16246,9 @@ const styles = stylex.create({ base: { color: someFunc() } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const someVar = getSomething();
-const styles = stylex.create({ base: { fontSize: { default: stylex.types.length(someVar) } } });"#,
+const styles = stylex.create({ base: { fontSize: { default: stylex.types.length(someVar) } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16247,8 +16270,8 @@ const styles = stylex.create({ base: { fontSize: { default: stylex.types.length(
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16270,9 +16293,9 @@ const styles = stylex.create({ base: { opacity: { default: [1, 2] } } });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const spreadObj = { ':hover': 'blue' };
-const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } } });"#,
+const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16294,9 +16317,9 @@ const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } }
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const key = ':hover';
-const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });"#,
+const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16322,9 +16345,9 @@ const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } 
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ empty: {} });
-const el = <div {...stylex.props(styles.empty)} />;"#,
+const el = <div {...stylex.props(styles.empty)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16346,9 +16369,9 @@ const el = <div {...stylex.props(styles.empty)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: { color: 'red' } });
-const el = <div {...stylex.props(styles.missing)} />;"#,
+const el = <div {...stylex.props(styles.missing)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16361,7 +16384,7 @@ const el = <div {...stylex.props(styles.missing)} />;"#,
         ));
     }
 
-    /// Line 208: None from LogicalExpression when right side can't resolve
+    /// Line 208: None from `LogicalExpression` when right side can't resolve
     #[test]
     #[serial]
     fn test_stylex_props_logical_unresolvable_right() {
@@ -16370,9 +16393,9 @@ const el = <div {...stylex.props(styles.missing)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const styles = stylex.create({ base: { color: 'red' } });
-const el = <div {...stylex.props(isActive && unknownRef)} />;"#,
+const el = <div {...stylex.props(isActive && unknownRef)} />;",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16385,7 +16408,7 @@ const el = <div {...stylex.props(isActive && unknownRef)} />;"#,
         ));
     }
 
-    /// Line 332: include with empty class_name_str — include a namespace that has no properties
+    /// Line 332: include with empty `class_name_str` — include a namespace that has no properties
     #[test]
     #[serial]
     fn test_stylex_include_empty_namespace() {
@@ -16394,9 +16417,9 @@ const el = <div {...stylex.props(isActive && unknownRef)} />;"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({ empty: {} });
-const composed = stylex.create({ test: { ...stylex.include(base.empty), color: 'red' } });"#,
+const composed = stylex.create({ test: { ...stylex.include(base.empty), color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16410,7 +16433,7 @@ const composed = stylex.create({ test: { ...stylex.include(base.empty), color: '
     }
 
     /// Dynamic namespace with bare expression body (not object): (x) => x
-    /// Covers: extract_style_from_stylex.rs ObjectExpression else branch
+    /// Covers: `extract_style_from_stylex.rs` `ObjectExpression` else branch
     #[test]
     #[serial]
     fn test_stylex_dynamic_bare_expression_body() {
@@ -16419,8 +16442,8 @@ const composed = stylex.create({ test: { ...stylex.include(base.empty), color: '
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => x });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => x });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16434,7 +16457,7 @@ const styles = stylex.create({ base: (x) => x });"#,
     }
 
     /// Dynamic namespace with parenthesized non-object body: (x) => (x)
-    /// Covers: extract_style_from_stylex.rs ParenthesizedExpression unwrap + ObjectExpression else
+    /// Covers: `extract_style_from_stylex.rs` `ParenthesizedExpression` unwrap + `ObjectExpression` else
     #[test]
     #[serial]
     fn test_stylex_dynamic_paren_non_object_body() {
@@ -16443,8 +16466,8 @@ const styles = stylex.create({ base: (x) => x });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({ base: (x) => (x) });"#,
+                r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({ base: (x) => (x) });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16457,8 +16480,8 @@ const styles = stylex.create({ base: (x) => (x) });"#,
         ));
     }
 
-    /// Include-only namespace with no own styles — class_name_str starts empty
-    /// Covers: visit.rs line 332 (class_name_str = included_class when empty)
+    /// Include-only namespace with no own styles — `class_name_str` starts empty
+    /// Covers: visit.rs line 332 (`class_name_str` = `included_class` when empty)
     #[test]
     #[serial]
     fn test_stylex_include_only_no_own_styles() {
@@ -16467,9 +16490,9 @@ const styles = stylex.create({ base: (x) => (x) });"#,
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r#"import stylex from '@stylexjs/stylex';
+                r"import stylex from '@stylexjs/stylex';
 const base = stylex.create({ root: { color: 'red' } });
-const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"#,
+const composed = stylex.create({ combined: { ...stylex.include(base.root) } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
@@ -16793,52 +16816,52 @@ const composed = stylex.create({ combined: { ...stylex.include(base.root) } });"
         let cases: &[(&str, &str)] = &[
             (
                 "identifier",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 const hoverStyle = { opacity: 1 };
 export const A = () => <Box _hover={hoverStyle} />;
-"#,
+",
             ),
             (
                 "call expression",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const getHover: () => object;
 export const A = () => <Box _hover={getHover()} />;
-"#,
+",
             ),
             (
                 "member expression",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const styles: { hover: object };
 export const A = () => <Box _hover={styles.hover} />;
-"#,
+",
             ),
             (
                 "binary expression",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const a: any; declare const b: any;
 export const A = () => <Box _hover={a || b} />;
-"#,
+",
             ),
             (
                 "template literal",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const x: string;
 export const A = () => <Box _hover={`${x}`} />;
-"#,
+",
             ),
             (
                 "unary expression",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const v: any;
 export const A = () => <Box _hover={!v} />;
-"#,
+",
             ),
             (
                 "computed member expression (array index)",
-                r#"import {Box} from '@devup-ui/react'
+                r"import {Box} from '@devup-ui/react'
 declare const arr: any[];
 export const A = () => <Box _hover={arr[0]} />;
-"#,
+",
             ),
         ];
 
@@ -16993,20 +17016,20 @@ export const A = () => <Box _hover={hoverStyle} bg="red" />;
         // pseudo-selector attribute.
         for src in [
             // BinaryExpression
-            r#"import {Box} from '@devup-ui/react'
+            r"import {Box} from '@devup-ui/react'
 declare const a: any; declare const b: any;
 export const A = () => <Box _hover={a + b} />;
-"#,
+",
             // StaticMemberExpression
-            r#"import {Box} from '@devup-ui/react'
+            r"import {Box} from '@devup-ui/react'
 declare const t: { hover: object };
 export const A = () => <Box _hover={t.hover} />;
-"#,
+",
             // CallExpression
-            r#"import {Box} from '@devup-ui/react'
+            r"import {Box} from '@devup-ui/react'
 declare const fn: () => object;
 export const A = () => <Box _hover={fn()} />;
-"#,
+",
         ] {
             reset_class_map();
             reset_file_map();

@@ -12,7 +12,49 @@ import {
   spyOn,
 } from 'bun:test'
 
+import type { DevupUILoaderOptions } from '../loader'
 import devupUILoader from '../loader'
+
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+type LoaderThis = ThisParameterType<typeof devupUILoader>
+type LoaderCallback = ReturnType<LoaderThis['async']>
+interface TestLoaderContext extends Pick<
+  LoaderThis,
+  'async' | 'resourcePath' | 'addDependency'
+> {
+  getOptions: () => Partial<DevupUILoaderOptions>
+  _compiler?: { __DEVUP_CACHE: string }
+}
+
+function createCodeExtractResult(
+  overrides: Partial<CodeExtractResult> = {},
+): CodeExtractResult {
+  return {
+    code: '',
+    css: '',
+    cssFile: undefined,
+    updatedBaseStyle: false,
+    map: undefined,
+    free: () => {},
+    [Symbol.dispose]: () => {},
+    ...overrides,
+  } as unknown as CodeExtractResult
+}
+
+function createLoaderContext(
+  options: Partial<DevupUILoaderOptions>,
+  callback: LoaderCallback,
+  resourcePath = 'index.tsx',
+  overrides: Partial<TestLoaderContext> = {},
+): LoaderThis {
+  return {
+    getOptions: () => options,
+    async: mock().mockReturnValue(callback),
+    resourcePath,
+    addDependency: mock(),
+    ...overrides,
+  } as unknown as LoaderThis
+}
 
 let codeExtractSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
@@ -31,15 +73,9 @@ let writeFileSpy: ReturnType<typeof spyOn>
 let dateNowSpy: ReturnType<typeof spyOn>
 
 beforeEach(() => {
-  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue({
-    code: '',
-    css: '',
-    cssFile: undefined,
-    updatedBaseStyle: false,
-    map: undefined,
-    free: () => {},
-    [Symbol.dispose]: () => {},
-  } as any)
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockReturnValue(
+    createCodeExtractResult(),
+  )
   exportClassMapSpy = spyOn(wasm, 'exportClassMap').mockReturnValue('{}')
   exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
   exportSheetSpy = spyOn(wasm, 'exportSheet').mockReturnValue('{}')
@@ -97,8 +133,8 @@ describe('devupUILoader', () => {
       __DEVUP_CACHE: '',
     }
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: 'cssFile',
         sheetFile: 'sheetFile',
@@ -106,26 +142,25 @@ describe('devupUILoader', () => {
         fileMapFile: 'fileMapFile',
         watch: true,
         singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-      _compiler,
-    }
+      },
+      asyncCallback,
+      'index.tsx',
+      { _compiler },
+    )
     exportSheetSpy.mockReturnValue('sheet')
     exportClassMapSpy.mockReturnValue('classMap')
     exportFileMapSpy.mockReturnValue('fileMap')
     getCssSpy.mockReturnValue('css')
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: '{}',
-      cssFile: 'cssFile',
-      updatedBaseStyle: options.updatedBaseStyle,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: '{}',
+        cssFile: 'cssFile',
+        updatedBaseStyle: options.updatedBaseStyle,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalledWith(
@@ -152,7 +187,7 @@ describe('devupUILoader', () => {
       )
     }
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
       expect(writeFileSpy).toHaveBeenCalledWith(
         join('cssFile', 'cssFile'),
         '/* index.tsx 0 */',
@@ -165,27 +200,25 @@ describe('devupUILoader', () => {
 
   it('should extract code without css', async () => {
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: 'cssFile',
         watch: false,
         singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: undefined,
+        map: undefined,
+        cssFile: undefined,
+        updatedBaseStyle: false,
       }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: undefined,
-      free: mock(),
-      map: undefined,
-      cssFile: undefined,
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    )
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalledWith(
@@ -208,49 +241,79 @@ describe('devupUILoader', () => {
 
   it('should handle error', async () => {
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: 'cssFile',
         watch: false,
         singleCss: true,
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
+      },
+      asyncCallback,
+    )
     codeExtractSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
     expect(asyncCallback).toHaveBeenCalledWith(new Error('error'))
   })
 
+  it('should propagate css write failures', async () => {
+    const asyncCallback = mock()
+    const writeError = new Error('write failed')
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'cssFile',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        watch: true,
+        singleCss: true,
+      },
+      asyncCallback,
+    )
+    writeFileSpy.mockRejectedValueOnce(writeError)
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: '{}',
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
+      }),
+    )
+
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(writeError)
+    })
+    expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
+  })
+
   it('should load with date now on watch', async () => {
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: 'cssFile',
         watch: true,
         singleCss: true,
+      },
+      asyncCallback,
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: undefined,
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
       }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    )
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
 
     expect(t.async).toHaveBeenCalled()
     expect(codeExtractSpy).toHaveBeenCalledWith(
@@ -267,32 +330,31 @@ describe('devupUILoader', () => {
 
   it('should load with nowatch', async () => {
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: './foo',
         watch: false,
         singleCss: true,
+      },
+      asyncCallback,
+      './foo/index.tsx',
+    )
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: undefined,
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
       }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: './foo/index.tsx',
-      addDependency: mock(),
-    }
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), '/foo/index.tsx')
+    )
+    devupUILoader.bind(t)(Buffer.from('code'), '/foo/index.tsx')
   })
   it('should load with theme', async () => {
     const asyncCallback = mock()
-    const t = {
-      getOptions: () => ({
+    const t = createLoaderContext(
+      {
         package: 'package',
         cssDir: 'cssFile',
         watch: false,
@@ -302,21 +364,19 @@ describe('devupUILoader', () => {
             primary: '#000',
           },
         },
-      }),
-      async: mock().mockReturnValue(asyncCallback),
-      resourcePath: 'index.tsx',
-      addDependency: mock(),
-    }
+      },
+      asyncCallback,
+    )
     registerThemeSpy.mockReturnValueOnce(undefined)
-    codeExtractSpy.mockReturnValue({
-      code: 'code',
-      css: 'css',
-      free: mock(),
-      map: undefined,
-      cssFile: 'cssFile',
-      updatedBaseStyle: false,
-      [Symbol.dispose]: mock(),
-    })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    codeExtractSpy.mockReturnValue(
+      createCodeExtractResult({
+        code: 'code',
+        css: 'css',
+        map: undefined,
+        cssFile: 'cssFile',
+        updatedBaseStyle: false,
+      }),
+    )
+    devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
   })
 })

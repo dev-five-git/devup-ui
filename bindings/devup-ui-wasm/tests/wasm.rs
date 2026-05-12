@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use js_sys::{Object, Reflect};
 use sheet::theme::Typography;
 use wasm_bindgen::JsValue;

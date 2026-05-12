@@ -45,17 +45,21 @@ pub fn optimize_value(value: &str) -> String {
     }
     if ret.contains("rgba(") {
         let replaced = F_RGBA_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-            let r = c[1].parse::<i32>().unwrap();
-            let g = c[2].parse::<i32>().unwrap();
-            let b = c[3].parse::<i32>().unwrap();
-            let a = c[4].parse::<f32>().unwrap();
-            format!(
-                "#{:02X}{:02X}{:02X}{:02X}",
-                r,
-                g,
-                b,
-                (a * 255.0).round() as i32
-            )
+            match (
+                c[1].parse::<i32>(),
+                c[2].parse::<i32>(),
+                c[3].parse::<i32>(),
+                c[4].parse::<f32>(),
+            ) {
+                (Ok(r), Ok(g), Ok(b), Ok(a)) => format!(
+                    "#{:02X}{:02X}{:02X}{:02X}",
+                    r,
+                    g,
+                    b,
+                    (a * 255.0).round() as i32
+                ),
+                _ => c[0].to_string(),
+            }
         });
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
@@ -63,10 +67,14 @@ pub fn optimize_value(value: &str) -> String {
     }
     if ret.contains("rgb(") {
         let replaced = F_RGB_RE.replace_all(&ret, |c: &regex_lite::Captures| {
-            let r = c[1].parse::<i32>().unwrap();
-            let g = c[2].parse::<i32>().unwrap();
-            let b = c[3].parse::<i32>().unwrap();
-            format!("#{r:02X}{g:02X}{b:02X}")
+            match (
+                c[1].parse::<i32>(),
+                c[2].parse::<i32>(),
+                c[3].parse::<i32>(),
+            ) {
+                (Ok(r), Ok(g), Ok(b)) => format!("#{r:02X}{g:02X}{b:02X}"),
+                _ => c[0].to_string(),
+            }
         });
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
@@ -94,7 +102,7 @@ pub fn optimize_value(value: &str) -> String {
         }
 
         let mut lower = ret.to_lowercase();
-        for f in ZERO_PERCENT_FUNCTION.iter() {
+        for f in &ZERO_PERCENT_FUNCTION {
             if let Some(start) = lower.find(f) {
                 let index = start + f.len();
                 let mut zero_idx = Vec::with_capacity(4);
@@ -116,7 +124,7 @@ pub fn optimize_value(value: &str) -> String {
                 }
                 // In-place replacement: replace each '0' with '0%' from back to front
                 for i in zero_idx.iter().rev() {
-                    ret.replace_range(*i..*i + 1, "0%");
+                    ret.replace_range((*i)..=(*i), "0%");
                 }
                 if !zero_idx.is_empty() {
                     // Refresh lowercase only when modification occurred
@@ -314,6 +322,12 @@ mod tests {
     #[case("translate(0px) scale(0deg)", "translate(0) scale(0)")]
     #[case("translate(-0px) scale(-0deg)", "translate(0) scale(0)")]
     #[case("translate(-10px) scale(-10deg)", "translate(-10px) scale(-10deg)")]
+    // rgba/rgb fallback paths when channel parsing fails
+    // i32 overflow for r/g/b (> i32::MAX = 2_147_483_647) → falls back to original
+    #[case("rgba(2147483648,0,0,0.5)", "rgba(2147483648,0,0,.5)")]
+    #[case("rgb(2147483648,0,0)", "rgb(2147483648,0,0)")]
+    // f32 parse failure for alpha (".") → falls back to original
+    #[case("rgba(255,0,0,.)", "rgba(255,0,0,.)")]
     fn test_optimize_value(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(optimize_value(input), expected);
     }

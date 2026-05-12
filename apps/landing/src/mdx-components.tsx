@@ -3,8 +3,13 @@ import type { MDXComponents } from 'mdx/types'
 
 import { Code } from './components/Code'
 
+interface MarkdownCodeProps extends React.ComponentProps<'code'> {
+  inline?: boolean
+  node?: unknown
+}
+
 export const _components = {
-  code({ node, inline, className, children, ...props }: any) {
+  code({ inline, className, children, ...props }: MarkdownCodeProps) {
     const match = /language-(\w+)/.exec(className || '')
     return !inline && match ? (
       <Code

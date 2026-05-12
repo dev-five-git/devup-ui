@@ -31,17 +31,17 @@ pub fn extract_global_style_from_expression<'a>(
     let mut styles = vec![];
 
     if let Expression::ObjectExpression(obj) = expression {
-        for p in obj.properties.iter_mut() {
+        for p in &mut obj.properties {
             match p {
                 ObjectPropertyKind::ObjectProperty(o) => {
                     if let Some(name) = get_string_by_property_key(&o.key) {
                         if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
-                                for p in arr.elements.iter() {
+                                for p in &arr.elements {
                                     if let Expression::ObjectExpression(obj) = p.to_expression() {
                                         let mut url = None;
                                         let mut query = None;
-                                        for p in obj.properties.iter() {
+                                        for p in &obj.properties {
                                             if let ObjectPropertyKind::ObjectProperty(o) = p
                                                 && let Some(ident) = o.key.as_expression()
                                                 && let Some(ident) =
@@ -64,7 +64,7 @@ pub fn extract_global_style_from_expression<'a>(
                                                         if let Some(query) = query {
                                                             format!(" {query}")
                                                         } else {
-                                                            "".to_string()
+                                                            String::new()
                                                         }
                                                     ),
                                                     file: file.to_string(),
@@ -88,7 +88,7 @@ pub fn extract_global_style_from_expression<'a>(
                             }
                         } else if name == "fontFaces" {
                             if let Expression::ArrayExpression(arr) = &o.value {
-                                for p in arr.elements.iter() {
+                                for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
                                         styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
                                             properties: BTreeMap::from_iter(
@@ -147,12 +147,13 @@ pub fn extract_global_style_from_expression<'a>(
                         } else {
                             // Handle @layer property in globalStyle
                             // Extract the layer name if present in the style object
-                            let mut layer_name: Option<String> = None;
-                            if let Expression::ObjectExpression(style_obj) = &o.value
+                            let layer_name = if let Expression::ObjectExpression(style_obj) = &o.value
                                 && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_string_by_property_key(&s.key) == Some("@layer".to_string())))
                             {
-                                layer_name = get_string_by_literal_expression(&sp.value);
-                            }
+                                get_string_by_literal_expression(&sp.value)
+                            } else {
+                                None
+                            };
 
                             let extracted = extract_style_from_expression(
                                 ast_builder,
@@ -161,9 +162,9 @@ pub fn extract_global_style_from_expression<'a>(
                                 0,
                                 &Some(StyleSelector::Global(
                                     if let Some(name) = name.strip_prefix("_") {
-                                        StyleSelector::from(name).to_string().replace("&", "*")
+                                        StyleSelector::from(name).to_string().replace('&', "*")
                                     } else {
-                                        name.to_string()
+                                        name.clone()
                                     },
                                     file.to_string(),
                                 )),

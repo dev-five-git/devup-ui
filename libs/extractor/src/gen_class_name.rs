@@ -18,8 +18,7 @@ pub fn gen_class_names<'a>(
         style_props
             .iter_mut()
             .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
-            .rev()
-            .collect(),
+            .rev(),
     )
 }
 
@@ -31,27 +30,28 @@ fn gen_class_name<'a>(
 ) -> Option<Expression<'a>> {
     match style_prop {
         ExtractStyleProp::Enum { map, condition } => {
-            let properties = map.iter_mut().map(|(key, value)| {
-                ast_builder.object_property_kind_object_property(
-                    SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
-                        SPAN,
-                        ast_builder.str(key),
-                        None,
-                    )),
-                    merge_expression_for_class_name(
-                        ast_builder,
-                        value
-                            .iter_mut()
-                            .map(|v| gen_class_name(ast_builder, v, style_order, filename).unwrap())
-                            .collect::<Vec<_>>(),
-                    )
-                    .unwrap(),
-                    false,
-                    false,
-                    false,
+            let properties = map.iter_mut().filter_map(|(key, value)| {
+                merge_expression_for_class_name(
+                    ast_builder,
+                    value
+                        .iter_mut()
+                        .filter_map(|v| gen_class_name(ast_builder, v, style_order, filename)),
                 )
+                .map(|class_name| {
+                    ast_builder.object_property_kind_object_property(
+                        SPAN,
+                        PropertyKind::Init,
+                        PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                            SPAN,
+                            ast_builder.str(key),
+                            None,
+                        )),
+                        class_name,
+                        false,
+                        false,
+                        false,
+                    )
+                })
             });
             let obj = ast_builder.expression_object(
                 SPAN,
@@ -84,8 +84,7 @@ fn gen_class_name<'a>(
         ExtractStyleProp::StaticArray(res) => merge_expression_for_class_name(
             ast_builder,
             res.iter_mut()
-                .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename))
-                .collect(),
+                .filter_map(|st| gen_class_name(ast_builder, st, style_order, filename)),
         ),
         ExtractStyleProp::Conditional {
             condition,
@@ -161,55 +160,61 @@ fn gen_class_name<'a>(
 
 pub fn merge_expression_for_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
-    expressions: Vec<Expression<'a>>,
+    expressions: impl IntoIterator<Item = Expression<'a>>,
 ) -> Option<Expression<'a>> {
-    let mut class_names = vec![];
     let mut unknown_expr = vec![];
+    let mut class_name = String::new();
     for expr in expressions {
         if let Expression::StringLiteral(str) = &expr {
-            class_names.push(str.value.trim().to_string())
+            let value = str.value.trim();
+            if !value.is_empty() {
+                if !class_name.is_empty() {
+                    class_name.push(' ');
+                }
+                class_name.push_str(value);
+            }
         } else {
             unknown_expr.push(expr);
         }
     }
-    if unknown_expr.is_empty() && class_names.is_empty() {
-        return None;
+    if unknown_expr.is_empty() {
+        if class_name.is_empty() {
+            return None;
+        }
+        return Some(ast_builder.expression_string_literal(
+            SPAN,
+            ast_builder.str(&class_name),
+            None,
+        ));
     }
-    let mut class_name = class_names.join(" ");
-    if !unknown_expr.is_empty() {
-        if class_name.is_empty() && unknown_expr.len() == 1 {
-            Some(unknown_expr.remove(0))
-        } else {
-            let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
-            for idx in 0..unknown_expr.len() + 1 {
-                let tail = idx == unknown_expr.len();
-                let t = TemplateElementValue {
-                    raw: ast_builder.str(if idx == 0 {
-                        if class_name.is_empty() {
-                            ""
-                        } else {
-                            class_name.push(' ');
-                            class_name.as_str()
-                        }
-                    } else if tail {
+    if class_name.is_empty() && unknown_expr.len() == 1 {
+        Some(unknown_expr.remove(0))
+    } else {
+        let mut qu = oxc_allocator::Vec::new_in(ast_builder.allocator);
+        for idx in 0..=unknown_expr.len() {
+            let tail = idx == unknown_expr.len();
+            let t = TemplateElementValue {
+                raw: ast_builder.str(if idx == 0 {
+                    if class_name.is_empty() {
                         ""
                     } else {
-                        " "
-                    }),
-                    cooked: None,
-                };
-                qu.push(ast_builder.template_element(SPAN, t, tail, false));
-            }
-
-            Some(ast_builder.expression_template_literal(
-                SPAN,
-                qu,
-                oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
-            ))
+                        class_name.push(' ');
+                        class_name.as_str()
+                    }
+                } else if tail {
+                    ""
+                } else {
+                    " "
+                }),
+                cooked: None,
+            };
+            qu.push(ast_builder.template_element(SPAN, t, tail, false));
         }
-    } else if class_name.is_empty() {
-        None
-    } else {
-        Some(ast_builder.expression_string_literal(SPAN, ast_builder.str(&class_name), None))
+
+        Some(ast_builder.expression_template_literal(
+            SPAN,
+            qu,
+            oxc_allocator::Vec::from_iter_in(unknown_expr, ast_builder.allocator),
+        ))
     }
 }

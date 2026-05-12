@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
-import { loadDevupConfig, mergeImportAliases } from '@devup-ui/plugin-utils'
+import {
+  createThemeInterfaceArgs,
+  loadDevupConfig,
+  mergeImportAliases,
+} from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   getThemeInterface,
@@ -32,14 +36,7 @@ async function writeDataFiles() {
   // Generate theme interface after registration (always write, even if empty)
   await writeFile(
     join(distDir, 'theme.d.ts'),
-    getThemeInterface(
-      libPackage,
-      'CustomColors',
-      'DevupThemeTypography',
-      'CustomLength',
-      'CustomShadows',
-      'DevupTheme',
-    ),
+    getThemeInterface(...createThemeInterfaceArgs(libPackage)),
     'utf-8',
   )
 

@@ -20,8 +20,8 @@ use oxc_ast::{
 };
 use oxc_span::SPAN;
 
-fn extract_base_tag_and_class_name<'a>(
-    input: &Expression<'a>,
+fn extract_base_tag_and_class_name(
+    input: &Expression<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
 ) -> (Option<String>, Option<Vec<ExtractStyleValue>>) {
     if let Expression::StaticMemberExpression(member) = input {
@@ -154,8 +154,8 @@ pub fn extract_style_from_styled<'a>(
         (None, None)
     };
     (
-        result.unwrap_or(ExtractResult::default()),
-        new_expr.unwrap_or(expression.clone_in(ast_builder.allocator)),
+        result.unwrap_or_else(ExtractResult::default),
+        new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator)),
     )
 }
 
@@ -246,27 +246,33 @@ fn create_styled_component<'a>(
                                                 SPAN,
                                                 class_name
                                                     .as_ref()
-                                                    .map(|name| {
-                                                        wrap_array_filter(
-                                                            ast_builder,
-                                                            &[
-                                                                name.clone_in(
-                                                                    ast_builder.allocator,
-                                                                ),
-                                                                ast_builder.expression_identifier(
-                                                                    SPAN,
-                                                                    ast_builder.str("className"),
-                                                                ),
-                                                            ],
-                                                        )
-                                                        .unwrap()
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        ast_builder.expression_identifier(
-                                                            SPAN,
-                                                            ast_builder.str("className"),
-                                                        )
-                                                    })
+                                                    .map_or_else(
+                                                        || {
+                                                            ast_builder.expression_identifier(
+                                                                SPAN,
+                                                                ast_builder.str("className"),
+                                                            )
+                                                        },
+                                                        |name| {
+                                                            wrap_array_filter(
+                                                                ast_builder,
+                                                                &[
+                                                                    name.clone_in(
+                                                                        ast_builder.allocator,
+                                                                    ),
+                                                                    ast_builder
+                                                                        .expression_identifier(
+                                                                            SPAN,
+                                                                            ast_builder
+                                                                                .str("className"),
+                                                                        ),
+                                                                ],
+                                                            )
+                                                            .unwrap_or_else(|| {
+                                                                name.clone_in(ast_builder.allocator)
+                                                            })
+                                                        },
+                                                    )
                                                     .into(),
                                             ),
                                         ),
@@ -282,27 +288,34 @@ fn create_styled_component<'a>(
                                                 SPAN,
                                                 style_vars
                                                     .as_ref()
-                                                    .map(|style_vars| {
-                                                        merge_object_expressions(
-                                                            ast_builder,
-                                                            &[
-                                                                style_vars.clone_in(
-                                                                    ast_builder.allocator,
-                                                                ),
-                                                                ast_builder.expression_identifier(
-                                                                    SPAN,
-                                                                    ast_builder.str("style"),
-                                                                ),
-                                                            ],
-                                                        )
-                                                        .unwrap()
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        ast_builder.expression_identifier(
-                                                            SPAN,
-                                                            ast_builder.str("style"),
-                                                        )
-                                                    })
+                                                    .map_or_else(
+                                                        || {
+                                                            ast_builder.expression_identifier(
+                                                                SPAN,
+                                                                ast_builder.str("style"),
+                                                            )
+                                                        },
+                                                        |style_vars| {
+                                                            merge_object_expressions(
+                                                                ast_builder,
+                                                                &[
+                                                                    style_vars.clone_in(
+                                                                        ast_builder.allocator,
+                                                                    ),
+                                                                    ast_builder
+                                                                        .expression_identifier(
+                                                                            SPAN,
+                                                                            ast_builder
+                                                                                .str("style"),
+                                                                        ),
+                                                                ],
+                                                            )
+                                                            .unwrap_or_else(|| {
+                                                                style_vars
+                                                                    .clone_in(ast_builder.allocator)
+                                                            })
+                                                        },
+                                                    )
                                                     .into(),
                                             ),
                                         ),

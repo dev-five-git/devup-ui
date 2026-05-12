@@ -12,7 +12,9 @@ function createClientThemeStore() {
   const get = () => theme
   const set = (newTheme: Theme) => {
     theme = newTheme
-    subscribers.forEach((subscriber) => subscriber(theme))
+    subscribers.forEach((subscriber) => {
+      subscriber(theme)
+    })
   }
 
   const subscribe = (onStoreChange: StoreChangeEvent) => {

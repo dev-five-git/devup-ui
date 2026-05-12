@@ -5,6 +5,11 @@ import { describe, expect, it } from 'bun:test'
 
 import { createServerThemeStore } from '../theme-store-server'
 
+type ServerThemeStore = ReturnType<typeof createServerThemeStore>
+type ThemeValue = Parameters<ServerThemeStore['set']>[0]
+
+const darkTheme = 'dark' as unknown as ThemeValue
+
 describe('themeStore ssr', () => {
   it('should filter mutations by type and target', async () => {
     // const { createThemeStore } = await import('../theme-store')
@@ -13,7 +18,7 @@ describe('themeStore ssr', () => {
     // Test SSR store behavior
     expect(themeStore).toBeDefined()
     expect(themeStore.get()).toBeNull()
-    expect(themeStore.set('dark' as any)).toBeUndefined()
+    expect(themeStore.set(darkTheme)).toBeUndefined()
 
     const unsubscribe = themeStore.subscribe(() => {})
     expect(typeof unsubscribe).toBe('function')

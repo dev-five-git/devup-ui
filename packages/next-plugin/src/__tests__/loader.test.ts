@@ -14,7 +14,31 @@ import {
   spyOn,
 } from 'bun:test'
 
+import type { DevupUILoaderOptions } from '../loader'
 import devupUILoader, { resetInit } from '../loader'
+
+type LoaderThis = ThisParameterType<typeof devupUILoader>
+
+interface TestLoaderContext {
+  getOptions: () => Partial<DevupUILoaderOptions>
+  async: ReturnType<typeof mock>
+  resourcePath: string
+  addDependency?: ReturnType<typeof mock>
+}
+
+interface TestClientRequest {
+  on: ReturnType<typeof mock>
+  write: ReturnType<typeof mock>
+  end: ReturnType<typeof mock>
+}
+
+function asLoaderContext(context: TestLoaderContext): LoaderThis {
+  return context as unknown as LoaderThis
+}
+
+function asClientRequest(request: TestClientRequest): http.ClientRequest {
+  return request as unknown as http.ClientRequest
+}
 
 let existsSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -110,7 +134,10 @@ describe('devupUILoader', () => {
       [Symbol.dispose]: mock(),
     })
 
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'nowatch-init.tsx')
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      'nowatch-init.tsx',
+    )
 
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
@@ -161,10 +188,13 @@ describe('devupUILoader', () => {
       [Symbol.dispose]: mock(),
     })
 
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'watch-init.tsx')
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      'watch-init.tsx',
+    )
 
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
     })
 
     // Verify watch mode init was executed (lines 55-67)
@@ -219,7 +249,7 @@ describe('devupUILoader', () => {
       updatedBaseStyle: false,
       [Symbol.dispose]: mock(),
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
@@ -251,7 +281,7 @@ describe('devupUILoader', () => {
       updatedBaseStyle: false,
       [Symbol.dispose]: mock(),
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
     expect(codeExtractSpy).toHaveBeenCalledWith(
       'index.tsx',
@@ -287,7 +317,7 @@ describe('devupUILoader', () => {
     codeExtractSpy.mockImplementation(() => {
       throw new Error('error')
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(new Error('error'))
@@ -296,7 +326,6 @@ describe('devupUILoader', () => {
 
   it('should handle error in watch mode', async () => {
     const asyncCallback = mock()
-    const consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => {})
     const t = {
       getOptions: () => ({
         package: 'package',
@@ -317,12 +346,54 @@ describe('devupUILoader', () => {
       throw new Error('extraction error')
     })
 
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'error-test.tsx')
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      'error-test.tsx',
+    )
 
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
     })
-    consoleErrorSpy.mockRestore()
+  })
+
+  it('should propagate css write failures in watch mode', async () => {
+    const asyncCallback = mock()
+    const writeError = new Error('write failed')
+    const t = {
+      getOptions: () => ({
+        package: 'package',
+        cssDir: 'cssDir',
+        sheetFile: 'sheetFile',
+        classMapFile: 'classMapFile',
+        fileMapFile: 'fileMapFile',
+        themeFile: 'themeFile',
+        watch: true,
+        singleCss: true,
+      }),
+      async: mock().mockReturnValue(asyncCallback),
+      resourcePath: 'write-error.tsx',
+      addDependency: mock(),
+    }
+    writeFileSpy.mockRejectedValueOnce(writeError)
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      css: 'css',
+      free: mock(),
+      map: '{}',
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: false,
+      [Symbol.dispose]: mock(),
+    })
+
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      'write-error.tsx',
+    )
+
+    await waitFor(() => {
+      expect(asyncCallback).toHaveBeenCalledWith(writeError)
+    })
+    expect(asyncCallback).not.toHaveBeenCalledWith(null, 'code', {})
   })
 
   it('should use correct relative css path', async () => {
@@ -350,7 +421,10 @@ describe('devupUILoader', () => {
       updatedBaseStyle: false,
       [Symbol.dispose]: mock(),
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), '/foo/index.tsx')
+    devupUILoader.bind(asLoaderContext(t))(
+      Buffer.from('code'),
+      '/foo/index.tsx',
+    )
     await waitFor(() => {
       expect(asyncCallback).toHaveBeenCalledWith(null, 'code', null)
     })
@@ -381,10 +455,10 @@ describe('devupUILoader', () => {
       updatedBaseStyle: true,
       [Symbol.dispose]: mock(),
     })
-    devupUILoader.bind(t as any)(Buffer.from('code'), 'index.tsx')
+    devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'index.tsx')
 
     await waitFor(() => {
-      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', {})
+      expect(asyncCallback).toHaveBeenCalledWith(null, 'code', '{}')
     })
     // In build mode (watch=false), no CSS files should be written
     expect(writeFileSpy).not.toHaveBeenCalled()
@@ -418,11 +492,11 @@ describe('devupUILoader', () => {
             }),
           }
           if (callback) callback(fakeRes)
-          return {
+          return asClientRequest({
             on: mock(() => ({})),
             write: mock(),
             end: mock(),
-          } as any
+          })
         },
       )
 
@@ -444,12 +518,17 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('source code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
 
       await waitFor(() => {
-        expect(asyncCallback).toHaveBeenCalledWith(null, 'coordinator code', {
-          version: 3,
-        })
+        expect(asyncCallback).toHaveBeenCalledWith(
+          null,
+          'coordinator code',
+          '{"version":3}',
+        )
       })
 
       // Verify HTTP request was made
@@ -483,7 +562,7 @@ describe('devupUILoader', () => {
             write: mock(),
             end: mock(),
           }
-          return fakeReq as any
+          return asClientRequest(fakeReq)
         },
       )
 
@@ -505,7 +584,10 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('source code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
 
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
@@ -533,11 +615,11 @@ describe('devupUILoader', () => {
             }),
           }
           if (callback) callback(fakeRes)
-          return {
+          return asClientRequest({
             on: mock(() => ({})),
             write: mock(),
             end: mock(),
-          } as any
+          })
         },
       )
 
@@ -559,11 +641,125 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('source code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
 
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
           new Error('extraction failed on server'),
+        )
+      })
+
+      requestSpy.mockRestore()
+    })
+
+    it('should handle non-object coordinator response', async () => {
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('12345')
+
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, callback?: any) => {
+          const fakeRes = {
+            statusCode: 200,
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'data') handler(Buffer.from('null'))
+              if (event === 'end') handler()
+              return fakeRes
+            }),
+          }
+          if (callback) callback(fakeRes)
+          return asClientRequest({
+            on: mock(() => ({})),
+            write: mock(),
+            end: mock(),
+          })
+        },
+      )
+
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          new Error('Coordinator response missing code'),
+        )
+      })
+
+      requestSpy.mockRestore()
+    })
+
+    it('should handle coordinator response without code', async () => {
+      existsSyncSpy.mockReturnValue(true)
+      readFileSyncSpy.mockReturnValue('12345')
+
+      const requestSpy = spyOn(http, 'request').mockImplementation(
+        (_options: any, callback?: any) => {
+          const fakeRes = {
+            statusCode: 200,
+            on: mock((event: string, handler: (...args: unknown[]) => void) => {
+              if (event === 'data')
+                handler(Buffer.from(JSON.stringify({ map: '{}' })))
+              if (event === 'end') handler()
+              return fakeRes
+            }),
+          }
+          if (callback) callback(fakeRes)
+          return asClientRequest({
+            on: mock(() => ({})),
+            write: mock(),
+            end: mock(),
+          })
+        },
+      )
+
+      const asyncCallback = mock()
+      const t = {
+        getOptions: () => ({
+          package: 'package',
+          cssDir: 'cssDir',
+          sheetFile: 'sheetFile',
+          classMapFile: 'classMapFile',
+          fileMapFile: 'fileMapFile',
+          themeFile: 'themeFile',
+          watch: true,
+          singleCss: true,
+          coordinatorPortFile: 'coordinator.port',
+        }),
+        async: mock().mockReturnValue(asyncCallback),
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+        addDependency: mock(),
+      }
+
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
+
+      await waitFor(() => {
+        expect(asyncCallback).toHaveBeenCalledWith(
+          new Error('Coordinator response missing code'),
         )
       })
 
@@ -585,11 +781,11 @@ describe('devupUILoader', () => {
             }),
           }
           if (callback) callback(fakeRes)
-          return {
+          return asClientRequest({
             on: mock(() => ({})),
             write: mock(),
             end: mock(),
-          } as any
+          })
         },
       )
 
@@ -611,7 +807,10 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('source code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
 
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(expect.any(Error))
@@ -642,7 +841,10 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('code'), 'fallback.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('code'),
+        'fallback.tsx',
+      )
 
       // Retries 20 times × 50ms = 1s max, then calls back with error
       await waitFor(() => {
@@ -685,11 +887,11 @@ describe('devupUILoader', () => {
             }),
           }
           if (callback) callback(fakeRes)
-          return {
+          return asClientRequest({
             on: mock(() => ({})),
             write: mock(),
             end: mock(),
-          } as any
+          })
         },
       )
 
@@ -711,7 +913,7 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(Buffer.from('code'), 'src/App.tsx')
 
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
@@ -752,7 +954,10 @@ describe('devupUILoader', () => {
         addDependency: mock(),
       }
 
-      devupUILoader.bind(t as any)(Buffer.from('source code'), 'src/App.tsx')
+      devupUILoader.bind(asLoaderContext(t))(
+        Buffer.from('source code'),
+        'src/App.tsx',
+      )
 
       await waitFor(() => {
         expect(asyncCallback).toHaveBeenCalledWith(
@@ -783,11 +988,11 @@ describe('devupUILoader', () => {
             }),
           }
           if (callback) callback(fakeRes)
-          return {
+          return asClientRequest({
             on: mock(() => ({})),
             write: mock(),
             end: mock(),
-          } as any
+          })
         },
       )
 
@@ -809,13 +1014,19 @@ describe('devupUILoader', () => {
       })
 
       // First call reads port from file
-      devupUILoader.bind(makeContext() as any)(Buffer.from('code'), 'test.tsx')
+      devupUILoader.bind(asLoaderContext(makeContext()))(
+        Buffer.from('code'),
+        'test.tsx',
+      )
       await waitFor(() => {
         expect(requestSpy).toHaveBeenCalledTimes(1)
       })
 
       // Second call should use cached port (readFileSync called only once for port)
-      devupUILoader.bind(makeContext() as any)(Buffer.from('code'), 'test.tsx')
+      devupUILoader.bind(asLoaderContext(makeContext()))(
+        Buffer.from('code'),
+        'test.tsx',
+      )
       await waitFor(() => {
         expect(requestSpy).toHaveBeenCalledTimes(2)
       })

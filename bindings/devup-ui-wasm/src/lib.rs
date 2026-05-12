@@ -1,15 +1,41 @@
-use css::class_map::{get_class_map, set_class_map};
-use css::file_map::{get_file_map, get_filename_by_file_num, set_file_map};
+use css::class_map::{set_class_map, with_class_map};
+use css::file_map::{set_file_map, with_file_map};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
+
+fn with_style_sheet<F, R>(f: F) -> R
+where
+    F: FnOnce(&StyleSheet) -> R,
+{
+    let guard = GLOBAL_STYLE_SHEET
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(&guard)
+}
+
+fn with_style_sheet_mut<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut StyleSheet) -> R,
+{
+    let mut guard = GLOBAL_STYLE_SHEET
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(&mut guard)
+}
+
+#[cfg(not(tarpaulin_include))]
+fn js_error(message: impl Display) -> JsValue {
+    js_sys::Error::new(&message.to_string()).into()
+}
 
 #[wasm_bindgen]
 pub struct Output {
@@ -42,50 +68,58 @@ impl Output {
         css_file: Option<String>,
         import_main_css: bool,
     ) -> Self {
-        let mut sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-        let default_collected = sheet.rm_global_css(&filename, single_css);
-        let (collected, updated_base_style) = sheet.update_styles(&styles, &filename, single_css);
-        Self {
-            code,
-            map,
-            css_file,
-            updated_base_style: updated_base_style || default_collected,
-            css: {
-                if !collected && !default_collected {
-                    None
-                } else {
-                    Some(sheet.create_css(
-                        if !single_css { Some(&filename) } else { None },
-                        import_main_css,
-                    ))
-                }
-            },
-        }
+        with_style_sheet_mut(|sheet| {
+            let default_collected = sheet.rm_global_css(&filename, single_css);
+            let (collected, updated_base_style) =
+                sheet.update_styles(&styles, &filename, single_css);
+            Self {
+                code,
+                map,
+                css_file,
+                updated_base_style: updated_base_style || default_collected,
+                css: {
+                    if !collected && !default_collected {
+                        None
+                    } else {
+                        Some(sheet.create_css(
+                            if single_css { None } else { Some(&filename) },
+                            import_main_css,
+                        ))
+                    }
+                },
+            }
+        })
     }
 
     /// Get the code
     #[wasm_bindgen(getter, js_name = "code")]
+    #[must_use]
     pub fn code(&self) -> String {
         self.code.clone()
     }
 
     #[wasm_bindgen(getter, js_name = "cssFile")]
+    #[must_use]
     pub fn css_file(&self) -> Option<String> {
         self.css_file.clone()
     }
 
     #[wasm_bindgen(getter, js_name = "map")]
+    #[must_use]
     pub fn map(&self) -> Option<String> {
         self.map.clone()
     }
 
     #[wasm_bindgen(getter, js_name = "updatedBaseStyle")]
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn updated_base_style(&self) -> bool {
         self.updated_base_style
     }
 
     /// Get the css
     #[wasm_bindgen(getter, js_name = "css")]
+    #[must_use]
     pub fn css(&self) -> Option<String> {
         self.css.clone()
     }
@@ -97,6 +131,7 @@ pub fn set_debug(debug: bool) {
 }
 
 #[wasm_bindgen(js_name = "isDebug")]
+#[must_use]
 pub fn is_debug() -> bool {
     css::debug::is_debug()
 }
@@ -147,78 +182,72 @@ pub fn set_prefix(prefix: Option<String>) {
 }
 
 #[wasm_bindgen(js_name = "getPrefix")]
+#[must_use]
 pub fn get_prefix() -> Option<String> {
     css::get_prefix()
 }
 
-/// Internal function to import a StyleSheet (testable without JsValue)
+/// Internal function to import a `StyleSheet` (testable without `JsValue`)
 pub fn import_sheet_internal(sheet: StyleSheet) {
-    *GLOBAL_STYLE_SHEET.lock().unwrap() = sheet;
+    with_style_sheet_mut(|global_sheet| *global_sheet = sheet);
 }
 
 #[wasm_bindgen(js_name = "importSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_sheet(sheet_object: JsValue) -> Result<(), JsValue> {
-    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let sheet: StyleSheet = serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?;
     import_sheet_internal(sheet);
     Ok(())
 }
 
-/// Internal function to export StyleSheet as JSON string (testable without JsValue)
+/// Internal function to export `StyleSheet` as JSON string (testable without `JsValue`)
 pub fn export_sheet_internal() -> Result<String, String> {
-    serde_json::to_string(&*GLOBAL_STYLE_SHEET.lock().unwrap()).map_err(|e| e.to_string())
+    with_style_sheet(serde_json::to_string).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "exportSheet")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_sheet() -> Result<String, JsValue> {
-    export_sheet_internal().map_err(|e| JsValue::from_str(&e))
+    export_sheet_internal().map_err(js_error)
 }
 
-/// Internal function to export class map as JSON string (testable without JsValue)
+/// Internal function to export class map as JSON string (testable without `JsValue`)
 pub fn export_class_map_internal() -> Result<String, String> {
-    serde_json::to_string(&get_class_map()).map_err(|e| e.to_string())
+    with_class_map(serde_json::to_string).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_class_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_class_map(
-        serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?,
-    );
+    set_class_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportClassMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_class_map() -> Result<String, JsValue> {
-    export_class_map_internal().map_err(|e| JsValue::from_str(&e))
+    export_class_map_internal().map_err(js_error)
 }
 
-/// Internal function to export file map as JSON string (testable without JsValue)
+/// Internal function to export file map as JSON string (testable without `JsValue`)
 pub fn export_file_map_internal() -> Result<String, String> {
-    serde_json::to_string(&get_file_map()).map_err(|e| e.to_string())
+    with_file_map(serde_json::to_string).map_err(|e| e.to_string())
 }
 
 #[wasm_bindgen(js_name = "importFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn import_file_map(sheet_object: JsValue) -> Result<(), JsValue> {
-    set_file_map(
-        serde_wasm_bindgen::from_value(sheet_object)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?,
-    );
+    set_file_map(serde_wasm_bindgen::from_value(sheet_object).map_err(js_error)?);
     Ok(())
 }
 
 #[wasm_bindgen(js_name = "exportFileMap")]
 #[cfg(not(tarpaulin_include))]
 pub fn export_file_map() -> Result<String, JsValue> {
-    export_file_map_internal().map_err(|e| JsValue::from_str(&e))
+    export_file_map_internal().map_err(js_error)
 }
 
-/// Internal function to extract code (testable without JsValue)
+/// Internal function to extract code (testable without `JsValue`)
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract_internal(
     filename: &str,
@@ -270,7 +299,7 @@ pub fn code_extract(
     // Deserialize import_aliases from JsValue
     // Format: { "package": "namedExport" } or { "package": null } for named exports
     let aliases: HashMap<String, Option<String>> =
-        serde_wasm_bindgen::from_value(import_aliases).unwrap_or_default();
+        serde_wasm_bindgen::from_value(import_aliases).map_err(js_error)?;
 
     // Convert to ImportAlias enum
     let import_aliases: HashMap<String, ImportAlias> = aliases
@@ -294,19 +323,19 @@ pub fn code_extract(
         import_main_css_in_css,
         import_aliases,
     )
-    .map_err(|e| JsValue::from_str(&e))
+    .map_err(js_error)
 }
 
-/// Internal function to register theme (testable without JsValue)
+/// Internal function to register theme (testable without `JsValue`)
 pub fn register_theme_internal(theme: sheet::theme::Theme) {
-    GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(theme);
+    with_style_sheet_mut(|sheet| sheet.set_theme(theme));
 }
 
 #[wasm_bindgen(js_name = "registerTheme")]
 #[cfg(not(tarpaulin_include))]
 pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
-    let theme: sheet::theme::Theme = serde_wasm_bindgen::from_value(theme_object)
-        .map_err(|e| JsValue::from_str(e.to_string().as_str()))?;
+    let theme: sheet::theme::Theme =
+        serde_wasm_bindgen::from_value(theme_object).map_err(js_error)?;
     register_theme_internal(theme);
     Ok(())
 }
@@ -314,18 +343,24 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
 #[wasm_bindgen(js_name = "getDefaultTheme")]
 #[cfg(not(tarpaulin_include))]
 pub fn get_default_theme() -> Result<Option<String>, JsValue> {
-    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.theme.get_default_theme())
+    Ok(with_style_sheet(|sheet| sheet.theme.get_default_theme()))
 }
 
 #[wasm_bindgen(js_name = "getCss")]
 #[cfg(not(tarpaulin_include))]
 pub fn get_css(file_num: Option<usize>, import_main_css: bool) -> Result<String, JsValue> {
-    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    Ok(sheet.create_css(
-        file_num.map(get_filename_by_file_num).as_deref(),
-        import_main_css,
-    ))
+    Ok(with_style_sheet(|sheet| {
+        if let Some(file_num) = file_num {
+            with_file_map(|map| {
+                sheet.create_css(
+                    map.get_by_right(&file_num).map(String::as_str),
+                    import_main_css,
+                )
+            })
+        } else {
+            sheet.create_css(None, import_main_css)
+        }
+    }))
 }
 
 #[wasm_bindgen(js_name = "getThemeInterface")]
@@ -338,30 +373,39 @@ pub fn get_theme_interface(
     shadows_interface_name: &str,
     theme_interface_name: &str,
 ) -> String {
-    let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-    sheet.create_interface(
-        package_name,
-        color_interface_name,
-        typography_interface_name,
-        length_interface_name,
-        shadows_interface_name,
-        theme_interface_name,
-    )
+    with_style_sheet(|sheet| {
+        sheet.create_interface(
+            package_name,
+            color_interface_name,
+            typography_interface_name,
+            length_interface_name,
+            shadows_interface_name,
+            theme_interface_name,
+        )
+    })
 }
 
 #[wasm_bindgen(js_name = "hasDevupUI")]
 #[cfg(not(tarpaulin_include))]
+#[must_use]
 pub fn has_devup_ui_wasm(filename: &str, code: &str, package: &str) -> bool {
     has_devup_ui(filename, code, package)
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use insta::assert_debug_snapshot;
     use rstest::rstest;
     use serial_test::serial;
     use sheet::theme::{ColorTheme, Theme, Typography};
+
+    fn make_named_color_theme(name: &str, value: &str) -> ColorTheme {
+        let mut ct = ColorTheme::default();
+        ct.add_color(name, value);
+        ct
+    }
 
     #[test]
     #[serial]
@@ -464,9 +508,9 @@ mod tests {
 
         {
             let theme: Theme = serde_json::from_str(
-                r##"{
+                r#"{
 "typography":{"noticeButton":{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":500,"fontSize":"16px","lineHeight":1.2,"letterSpacing":"-0.02em"},"button":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":500,"fontSize":"16px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":500,"fontSize":"18px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"title":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"16px","lineHeight":1.2,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"20px","lineHeight":1.2,"letterSpacing":"-0.01em"}],"text":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"15px","lineHeight":1.2,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"16px","lineHeight":1.2,"letterSpacing":"-0.01em"}],"caption":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"12px","lineHeight":1.2,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"14px","lineHeight":1.2,"letterSpacing":"-0.01em"}],"noticeTitle":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"15px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"18px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"noticeText":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"14px","lineHeight":1.5,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"16px","lineHeight":1.5,"letterSpacing":"-0.02em"}],"h3":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"18px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"24px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"h1":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"28px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"36px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"body":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"16px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"20px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"noticeBold":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"14px","lineHeight":1.2,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"18px","lineHeight":1.2,"letterSpacing":"-0.01em"}],"notice":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"13px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":400,"fontSize":"18px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"h2":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"20px","lineHeight":1.2,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"28px","lineHeight":1.2,"letterSpacing":"-0.01em"}],"result":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"24px","lineHeight":1.2,"letterSpacing":"-0.02em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":700,"fontSize":"32px","lineHeight":1.2,"letterSpacing":"-0.02em"}],"resultPoint":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":800,"fontSize":"24px","lineHeight":1.4,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":800,"fontSize":"28px","lineHeight":1.4,"letterSpacing":"-0.01em"}],"resultText":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"18px","lineHeight":1.4,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":600,"fontSize":"22px","lineHeight":1.4,"letterSpacing":"-0.01em"}],"resultList":[{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":500,"fontSize":"16px","lineHeight":1.4,"letterSpacing":"-0.01em"},null,null,null,{"fontFamily":"Pretendard","fontStyle":"normal","fontWeight":500,"fontSize":"20px","lineHeight":1.4,"letterSpacing":"-0.01em"}]}
-        }"##,
+        }"#,
             )
             .unwrap();
             assert_debug_snapshot!(theme);
@@ -530,44 +574,37 @@ mod tests {
         );
         assert_eq!(theme.to_css(), "");
 
-        // Helper to create a ColorTheme with a single color
-        fn make_color_theme(name: &str, value: &str) -> ColorTheme {
-            let mut ct = ColorTheme::default();
-            ct.add_color(name, value);
-            ct
-        }
-
         let mut theme = Theme::default();
-        theme.add_color_theme("default", make_color_theme("primary", "#000"));
-        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
+        theme.add_color_theme("default", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("dark", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("dark", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("a", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#000"));
-        theme.add_color_theme("a", make_color_theme("primary", "#000"));
-        theme.add_color_theme("c", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("c", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
 
         let mut theme = Theme::default();
-        theme.add_color_theme("light", make_color_theme("primary", "#000"));
-        theme.add_color_theme("b", make_color_theme("primary", "#001"));
-        theme.add_color_theme("a", make_color_theme("primary", "#002"));
-        theme.add_color_theme("c", make_color_theme("primary", "#000"));
+        theme.add_color_theme("light", make_named_color_theme("primary", "#000"));
+        theme.add_color_theme("b", make_named_color_theme("primary", "#001"));
+        theme.add_color_theme("a", make_named_color_theme("primary", "#002"));
+        theme.add_color_theme("c", make_named_color_theme("primary", "#000"));
         assert_debug_snapshot!(theme.to_css());
     }
 
@@ -899,8 +936,8 @@ mod tests {
 
         // The result should be valid JSON
         let json_str = result.unwrap();
-        assert!(json_str.starts_with("{"));
-        assert!(json_str.ends_with("}"));
+        assert!(json_str.starts_with('{'));
+        assert!(json_str.ends_with('}'));
     }
 
     #[test]
@@ -930,7 +967,7 @@ mod tests {
 
         // The result should be valid JSON (empty map)
         let json_str = result.unwrap();
-        assert!(json_str.starts_with("{") || json_str.starts_with("[]"));
+        assert!(json_str.starts_with('{') || json_str.starts_with("[]"));
     }
 
     #[test]
@@ -998,8 +1035,7 @@ mod tests {
         register_theme_internal(theme);
 
         // Verify the theme was registered
-        let sheet = GLOBAL_STYLE_SHEET.lock().unwrap();
-        let default_theme = sheet.theme.get_default_theme();
+        let default_theme = GLOBAL_STYLE_SHEET.lock().unwrap().theme.get_default_theme();
         assert_eq!(default_theme, Some("default".to_string()));
     }
 }

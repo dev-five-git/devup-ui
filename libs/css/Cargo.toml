@@ -2,9 +2,14 @@
 name = "css"
 version = "0.1.0"
 edition = "2024"
+description = "CSS utilities and selector optimization for Devup UI"
+license = "Apache-2.0"
+repository = "https://github.com/dev-five-git/devup-ui"
+keywords = ["css", "selectors", "optimization", "react", "devup-ui"]
+categories = ["development-tools", "wasm", "web-programming"]
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+[lints]
+workspace = true
 
 [dependencies]
 phf = { version = "0.13", features = ["macros"] }

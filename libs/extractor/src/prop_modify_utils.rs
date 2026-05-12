@@ -46,7 +46,7 @@ pub(crate) fn combine_conditional_class_name<'a>(
 
 /// modify object props
 /// Returns extracted Tailwind styles from static className strings
-/// `conditional_branch`: If Some, contains (condition, alternate_styles, alternate_style_order)
+/// `conditional_branch`: If Some, contains (condition, `alternate_styles`, `alternate_style_order`)
 ///   for generating a conditional className expression: `condition ? consequent_class : alternate_class`
 #[allow(clippy::too_many_arguments)]
 pub fn modify_prop_object<'a>(
@@ -164,7 +164,7 @@ pub fn modify_prop_object<'a>(
 }
 /// modify JSX props
 /// Returns extracted Tailwind styles from static className strings
-/// `conditional_branch`: If Some, contains (condition, alternate_styles, alternate_style_order)
+/// `conditional_branch`: If Some, contains (condition, `alternate_styles`, `alternate_style_order`)
 ///   for generating a conditional className expression: `condition ? consequent_class : alternate_class`
 #[allow(clippy::too_many_arguments)]
 pub fn modify_props<'a>(
@@ -317,42 +317,32 @@ pub fn get_class_name_expression<'a>(
     };
 
     // Merge class names: [tailwind/original class names] + [devup-ui component styles]
-    let expression = merge_string_expressions(
-        ast_builder,
-        [
-            class_name_to_use,
-            gen_class_names(ast_builder, styles, style_order, filename),
-        ]
-        .into_iter()
-        .flatten()
-        .chain(if class_name_prop.is_some() {
-            vec![]
-        } else {
-            spread_props
-                .iter()
-                .map(|ex| {
-                    convert_class_name(
-                        ast_builder,
-                        &Expression::StaticMemberExpression(
-                            ast_builder.alloc_static_member_expression(
-                                SPAN,
-                                ex.clone_in(ast_builder.allocator),
-                                ast_builder.identifier_name(SPAN, ast_builder.str("className")),
-                                true,
-                            ),
-                        ),
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-        .as_slice(),
-    );
+    let mut class_expressions = Vec::with_capacity(2 + spread_props.len());
+    if let Some(class_name) = class_name_to_use {
+        class_expressions.push(class_name);
+    }
+    if let Some(class_name) = gen_class_names(ast_builder, styles, style_order, filename) {
+        class_expressions.push(class_name);
+    }
+    if class_name_prop.is_none() {
+        class_expressions.extend(spread_props.iter().map(|ex| {
+            convert_class_name(
+                ast_builder,
+                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                    SPAN,
+                    ex.clone_in(ast_builder.allocator),
+                    ast_builder.identifier_name(SPAN, ast_builder.str("className")),
+                    true,
+                )),
+            )
+        }));
+    }
+    let expression = merge_string_expressions(ast_builder, &class_expressions);
 
     (expression, tailwind_styles)
 }
 
-/// Apply style_order to all ExtractStyleValue items
+/// Apply `style_order` to all `ExtractStyleValue` items
 fn apply_style_order_to_styles(styles: &mut [ExtractStyleValue], style_order: Option<u8>) {
     if let Some(order) = style_order {
         for style in styles.iter_mut() {
@@ -541,14 +531,12 @@ fn rebuild_expression_with_mapping<'a>(
 
 /// Extract all class name strings from a template literal, including from conditional expressions
 fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLiteral) -> String {
-    let mut classes = Vec::new();
+    let mut classes = String::new();
 
     // Extract from quasis (static parts of template literal)
     for quasi in &template.quasis {
         let raw = quasi.value.raw.as_str();
-        if !raw.trim().is_empty() {
-            classes.push(raw.trim().to_string());
-        }
+        push_class_segment(&mut classes, raw.trim());
     }
 
     // Extract from expressions (dynamic parts)
@@ -556,18 +544,26 @@ fn extract_all_classes_from_template_literal(template: &oxc_ast::ast::TemplateLi
         extract_classes_from_expression(expr, &mut classes);
     }
 
-    classes.join(" ")
+    classes
+}
+
+fn push_class_segment(classes: &mut String, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+    if !classes.is_empty() {
+        classes.push(' ');
+    }
+    classes.push_str(value);
 }
 
 /// Recursively extract class name strings from an expression
-fn extract_classes_from_expression(expr: &Expression, classes: &mut Vec<String>) {
+fn extract_classes_from_expression(expr: &Expression, classes: &mut String) {
     match expr {
         // Direct string literal: 'text-red-500'
         Expression::StringLiteral(lit) => {
             let value = lit.value.as_str().trim();
-            if !value.is_empty() {
-                classes.push(value.to_string());
-            }
+            push_class_segment(classes, value);
         }
         // Ternary/conditional: cond ? 'text-red' : 'text-blue'
         Expression::ConditionalExpression(cond) => {
@@ -586,9 +582,7 @@ fn extract_classes_from_expression(expr: &Expression, classes: &mut Vec<String>)
         // Template literal inside expression
         Expression::TemplateLiteral(inner_template) => {
             let inner_classes = extract_all_classes_from_template_literal(inner_template);
-            if !inner_classes.is_empty() {
-                classes.push(inner_classes);
-            }
+            push_class_segment(classes, &inner_classes);
         }
         // Other expressions (variables, function calls, etc.) - skip, can't extract statically
         _ => {}
@@ -603,35 +597,31 @@ pub fn get_style_expression<'a>(
     spread_props: &[Expression<'a>],
     filename: Option<&str>,
 ) -> Option<Expression<'a>> {
-    merge_object_expressions(
-        ast_builder,
-        [
-            gen_styles(ast_builder, styles, filename),
-            style_vars
-                .as_ref()
-                .map(|style_vars| convert_style_vars(ast_builder, style_vars)),
-            style_prop.clone_in(ast_builder.allocator),
-        ]
-        .into_iter()
-        .flatten()
-        .chain(if style_prop.is_some() {
-            vec![]
-        } else {
-            spread_props
-                .iter()
-                .map(|ex| {
-                    Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
-                        SPAN,
-                        ex.clone_in(ast_builder.allocator),
-                        ast_builder.identifier_name(SPAN, ast_builder.str("style")),
-                        true,
-                    ))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-        .as_slice(),
-    )
+    let mut style_expressions = Vec::with_capacity(3 + spread_props.len());
+    if let Some(style) = gen_styles(ast_builder, styles, filename) {
+        style_expressions.push(style);
+    }
+    if let Some(style_vars) = style_vars
+        .as_ref()
+        .map(|style_vars| convert_style_vars(ast_builder, style_vars))
+    {
+        style_expressions.push(style_vars);
+    }
+    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator) {
+        style_expressions.push(style_prop);
+    }
+    if style_prop.is_none() {
+        style_expressions.extend(spread_props.iter().map(|ex| {
+            Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                SPAN,
+                ex.clone_in(ast_builder.allocator),
+                ast_builder.identifier_name(SPAN, ast_builder.str("style")),
+                true,
+            ))
+        }));
+    }
+
+    merge_object_expressions(ast_builder, &style_expressions)
 }
 
 fn merge_string_expressions<'a>(
@@ -641,19 +631,19 @@ fn merge_string_expressions<'a>(
     if expressions.is_empty() {
         return None;
     }
-    if expressions.len() == 1
+    if let [expression] = expressions
         && !matches!(
-            expressions.first().unwrap(),
+            expression,
             Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
         )
     {
-        return Some(expressions.first().unwrap().clone_in(ast_builder.allocator));
+        return Some(expression.clone_in(ast_builder.allocator));
     }
 
     let mut string_literals: std::vec::Vec<String> = vec![];
     let mut other_expressions = vec![];
     let mut prev_str = String::new();
-    for ex in expressions.iter() {
+    for ex in expressions {
         if let Expression::StringLiteral(literal) = ex {
             let target_prev = prev_str.trim();
             let target = literal.value.trim();
@@ -676,7 +666,7 @@ fn merge_string_expressions<'a>(
                             ""
                         },
                         target_prev,
-                        if !target_prev.is_empty() { " " } else { "" },
+                        if target_prev.is_empty() { "" } else { " " },
                         target,
                         if !target.is_empty() && !target.ends_with("typo-") {
                             " "
@@ -693,13 +683,13 @@ fn merge_string_expressions<'a>(
             let target_prev = prev_str.trim();
             string_literals.push(format!(
                 "{}{}{}",
-                if !other_expressions.is_empty() {
-                    " "
-                } else {
+                if other_expressions.is_empty() {
                     ""
+                } else {
+                    " "
                 },
                 target_prev,
-                if !target_prev.is_empty() { " " } else { "" }
+                if target_prev.is_empty() { "" } else { " " }
             ));
             other_expressions.push(ex.clone_in(ast_builder.allocator));
             prev_str = String::new();
@@ -707,7 +697,7 @@ fn merge_string_expressions<'a>(
     }
     string_literals.push(format!(
         "{}{}",
-        if !prev_str.trim().is_empty() { " " } else { "" },
+        if prev_str.trim().is_empty() { "" } else { " " },
         prev_str.trim(),
     ));
     if other_expressions.is_empty() {

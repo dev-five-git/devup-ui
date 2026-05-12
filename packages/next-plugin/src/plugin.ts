@@ -9,6 +9,7 @@ import { join, relative, resolve } from 'node:path'
 
 import {
   createNodeModulesExcludeRegex,
+  createThemeInterfaceArgs,
   loadDevupConfigSync,
   mergeImportAliases,
 } from '@devup-ui/plugin-utils'
@@ -104,12 +105,7 @@ export function DevupUI(
     // since importSheet replaces the entire sheet including its theme.
     registerTheme(theme)
     const themeInterface = getThemeInterface(
-      libPackage,
-      'CustomColors',
-      'DevupThemeTypography',
-      'CustomLength',
-      'CustomShadows',
-      'DevupTheme',
+      ...createThemeInterfaceArgs(libPackage),
     )
     if (themeInterface) {
       writeFileSync(join(distDir, 'theme.d.ts'), themeInterface)
