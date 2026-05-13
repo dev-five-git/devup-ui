@@ -21,3 +21,4 @@ storybook-static
 test-results
 playwright-report
 .omc
+.playwright-mcp

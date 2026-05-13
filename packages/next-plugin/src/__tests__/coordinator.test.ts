@@ -481,14 +481,14 @@ describe('coordinator', () => {
     const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
     const port = parseInt(portStr)
 
-    // Mock Date.now to simulate time passing beyond MAX_WAIT_MS (30s)
+    // Mock Date.now to simulate time passing beyond MAX_WAIT_MS (60s).
     let callCount = 0
     const dateNowSpy = spyOn(Date, 'now').mockImplementation(() => {
       callCount++
-      // First call is `const start = Date.now()` → return 0
+      // First call is `const start = Date.now()` — return 0
       // Subsequent calls return past MAX_WAIT_MS threshold
       if (callCount <= 1) return 0
-      return 31_000
+      return 61_000
     })
 
     // Request CSS with waitForIdle=true but no extractions ever happen

@@ -22,6 +22,66 @@ export interface CoordinatorOptions {
   coordinatorPortFile: string
 }
 
+// Latest-Wins Coalescing Serializer.
+//
+// Multiple Turbopack workers may call /extract concurrently, each producing
+// CSS for the same target file (especially `devup-ui.css` in singleCss mode
+// where every file writes to it). Naive `writeFile` calls run in parallel via
+// libuv's thread pool with no completion-order guarantees, so a stale snapshot
+// can clobber a fresher one — leaving the on-disk CSS missing rules whose
+// class names already landed in the JSX markup.
+//
+// `safeWrite` solves this with a per-path FIFO chain + content coalescing:
+//   1. Each call records the latest content for the path (overwrites earlier).
+//   2. The next disk write is chained after the previous one for the same
+//      path, guaranteeing serial execution in invocation order.
+//   3. When the chained write actually runs, it pulls the most recent content
+//      (not the original captured value), so intermediate snapshots between
+//      enqueue-time and run-time are coalesced into a single write.
+//
+// Net effect: race becomes mathematically impossible (single-threaded JS +
+// FIFO queue), and total disk IO drops dramatically because N stale snapshots
+// for the same file are collapsed into 1 effective write.
+const writeChain = new Map<string, Promise<void>>()
+const latestContent = new Map<string, string>()
+
+function safeWrite(path: string, content: string): Promise<void> {
+  // Always record the most recent content for this path so a queued write
+  // picks up the latest snapshot when it runs.
+  latestContent.set(path, content)
+
+  // Swallow any prior error solely for chaining purposes — the actual caller
+  // that hit the error already saw it via the returned promise, but we must
+  // not let one failure poison every subsequent write for this path.
+  const prev = (writeChain.get(path) ?? Promise.resolve()).catch(() => {})
+
+  const next = prev.then(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const final = latestContent.get(path)
+        if (final === undefined) {
+          // An earlier chained run already consumed the latest content for
+          // this path; nothing new to write. Resolve as a no-op.
+          resolve()
+          return
+        }
+        latestContent.delete(path)
+        writeFile(path, final, 'utf-8', (err) =>
+          err ? reject(err) : resolve(),
+        )
+      }),
+  )
+
+  writeChain.set(path, next)
+  return next
+}
+
+// Best-effort drain of every pending write. Used on coordinator close so the
+// build process does not exit with stale files mid-flight.
+function flushPendingWrites(): Promise<void> {
+  return Promise.allSettled([...writeChain.values()]).then(() => undefined)
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -33,12 +93,31 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 let server: Server | null = null
 
-// Extraction tracking for waitForIdle
+// Extraction tracking for waitForIdle.
+//
+// The CSS loader fetches the live sheet from `/css?waitForIdle=true`. In
+// production builds the response of that call is what Turbopack bundles
+// for the `devup-ui.css` module — there is no second chance. So waitForIdle
+// must NOT resolve while there are still extractions in flight, or that
+// have not yet started but will start soon.
+//
+// We track two complementary signals:
+//   * activeExtractions / lastCompletedAt → are extractions currently happening?
+//   * pendingExtractStarts → did anyone POST /extract that hasn't progressed
+//     to `activeExtractions++` yet (e.g. still inside `await readBody(req)`)?
+//
+// IDLE_THRESHOLD_MS is increased so an early `/css` request — triggered by
+// the first .tsx loader resolving its import graph before the rest of the
+// route's files are processed — cannot resolve in the gap between two
+// extraction batches. Empirically the gap between Turbopack extraction
+// "waves" in a 64-route landing build can exceed the previous 500ms, which
+// caused the snapshot to capture only the early routes' styles.
 let activeExtractions = 0
 let totalExtractions = 0
 let lastCompletedAt = 0
-const IDLE_THRESHOLD_MS = 500
-const MAX_WAIT_MS = 30_000
+let pendingExtractStarts = 0
+const IDLE_THRESHOLD_MS = 2500
+const MAX_WAIT_MS = 60_000
 
 function waitForIdle(): Promise<void> {
   const start = Date.now()
@@ -46,13 +125,14 @@ function waitForIdle(): Promise<void> {
     const check = () => {
       const now = Date.now()
       if (now - start > MAX_WAIT_MS) {
-        // Timeout — return whatever CSS we have
+        // Hard timeout — give up and return whatever we have.
         resolve()
         return
       }
       if (
         totalExtractions > 0 &&
         activeExtractions === 0 &&
+        pendingExtractStarts === 0 &&
         now - lastCompletedAt >= IDLE_THRESHOLD_MS
       ) {
         resolve()
@@ -103,9 +183,18 @@ export function startCoordinator(options: CoordinatorOptions): {
     }
 
     if (req.method === 'POST' && url.pathname === '/extract') {
-      activeExtractions++
+      // Reserve a "start slot" before yielding on `await readBody`. Without
+      // this counter, `waitForIdle` could observe activeExtractions=0 in the
+      // window between the request hitting this handler and `activeExtractions++`
+      // below — making it falsely conclude the build is idle even though
+      // more extractions are imminent.
+      pendingExtractStarts++
+      let promotedToActive = false
       try {
         const body = JSON.parse(await readBody(req))
+        activeExtractions++
+        pendingExtractStarts--
+        promotedToActive = true
         const { filename, code, resourcePath } = body as {
           filename: string
           code: string
@@ -145,13 +234,9 @@ export function startCoordinator(options: CoordinatorOptions): {
 
         if (result.updatedBaseStyle) {
           promises.push(
-            new Promise<void>((resolve, reject) =>
-              writeFile(
-                join(cssDir, 'devup-ui.css'),
-                `${getCss(null, false)}\n/* ${Date.now()} */`,
-                'utf-8',
-                (err) => (err ? reject(err) : resolve()),
-              ),
+            safeWrite(
+              join(cssDir, 'devup-ui.css'),
+              `${getCss(null, false)}\n/* ${Date.now()} */`,
             ),
           )
         }
@@ -159,29 +244,13 @@ export function startCoordinator(options: CoordinatorOptions): {
         if (result.cssFile) {
           const fileNum = getFileNumByFilename(result.cssFile)
           promises.push(
-            new Promise<void>((resolve, reject) =>
-              writeFile(
-                join(cssDir, basename(result.cssFile!)),
-                getCss(fileNum, true),
-                'utf-8',
-                (err) => (err ? reject(err) : resolve()),
-              ),
+            safeWrite(
+              join(cssDir, basename(result.cssFile)),
+              getCss(fileNum, true),
             ),
-            new Promise<void>((resolve, reject) =>
-              writeFile(sheetFile, exportSheet(), 'utf-8', (err) =>
-                err ? reject(err) : resolve(),
-              ),
-            ),
-            new Promise<void>((resolve, reject) =>
-              writeFile(classMapFile, exportClassMap(), 'utf-8', (err) =>
-                err ? reject(err) : resolve(),
-              ),
-            ),
-            new Promise<void>((resolve, reject) =>
-              writeFile(fileMapFile, exportFileMap(), 'utf-8', (err) =>
-                err ? reject(err) : resolve(),
-              ),
-            ),
+            safeWrite(sheetFile, exportSheet()),
+            safeWrite(classMapFile, exportClassMap()),
+            safeWrite(fileMapFile, exportFileMap()),
           )
 
           // In non-singleCss mode, imports are rewritten from devup-ui-N.css to
@@ -192,13 +261,9 @@ export function startCoordinator(options: CoordinatorOptions): {
           // When updatedBaseStyle is true, devup-ui.css is already written above.
           if (!singleCss && !result.updatedBaseStyle && result.css != null) {
             promises.push(
-              new Promise<void>((resolve, reject) =>
-                writeFile(
-                  join(cssDir, 'devup-ui.css'),
-                  `${getCss(null, false)}\n/* ${Date.now()} */`,
-                  'utf-8',
-                  (err) => (err ? reject(err) : resolve()),
-                ),
+              safeWrite(
+                join(cssDir, 'devup-ui.css'),
+                `${getCss(null, false)}\n/* ${Date.now()} */`,
               ),
             )
           }
@@ -223,7 +288,13 @@ export function startCoordinator(options: CoordinatorOptions): {
           }),
         )
       } finally {
-        activeExtractions--
+        if (promotedToActive) {
+          activeExtractions--
+        } else {
+          // readBody/JSON.parse threw before we promoted to active, so the
+          // pending slot is still ours to release.
+          pendingExtractStarts--
+        }
         totalExtractions++
         lastCompletedAt = Date.now()
       }
@@ -243,6 +314,11 @@ export function startCoordinator(options: CoordinatorOptions): {
 
   return {
     close: () => {
+      // Fire-and-forget drain of any in-flight serialized writes so the
+      // last-written CSS reflects the final sheet state, even though
+      // `close` itself returns synchronously (it is invoked from
+      // `process.on('exit', ...)` where awaiting is not possible).
+      void flushPendingWrites()
       if (server) {
         server.close()
         server = null
@@ -256,6 +332,9 @@ export function startCoordinator(options: CoordinatorOptions): {
   }
 }
 
+/** @internal Wait for every pending serialized write to settle. */
+export const flushCoordinatorWrites = (): Promise<void> => flushPendingWrites()
+
 /** @internal Reset coordinator state for testing purposes only */
 export const resetCoordinator = () => {
   if (server) {
@@ -265,4 +344,6 @@ export const resetCoordinator = () => {
   activeExtractions = 0
   totalExtractions = 0
   lastCompletedAt = 0
+  writeChain.clear()
+  latestContent.clear()
 }
