@@ -1,3 +1,47 @@
-import { ComingSoon } from '@/components/ComingSoon'
+import { PropsTable } from '@/components/PropsTable'
 
-<ComingSoon />
+###### API
+
+`Textarea` props extends the textarea HTML attributes.
+
+<PropsTable
+  componentProps={[
+    {
+      property: 'typography',
+      description: 'Typography token applied to the textarea',
+      type: '`keyof DevupThemeTypography`',
+      default: '`undefined`',
+    },
+    {
+      property: 'error',
+      description: 'Whether the textarea is in an invalid state',
+      type: '`boolean`',
+      default: '`false`',
+    },
+    {
+      property: 'errorMessage',
+      description:
+        'Validation message shown below the textarea when `error` is true',
+      type: '`string`',
+      default: '`undefined`',
+    },
+    {
+      property: 'rows',
+      description: 'Visible text rows',
+      type: '`number`',
+      default: '`3`',
+    },
+    {
+      property: 'classNames',
+      description: 'Custom class names for inner elements',
+      type: '```{<br>  container?: string<br>  textarea?: string<br>  errorMessage?: string<br>}```',
+      default: '`undefined`',
+    },
+    {
+      property: 'colors',
+      description: 'Custom color variables for the textarea',
+      type: '```{<br>  primary?: string<br>  error?: string<br>  text?: string<br>  border?: string<br>  background?: string<br>  placeholder?: string<br>  focusRing?: string<br>}```',
+      default: '`undefined`',
+    },
+  ]}
+/>
