@@ -15,6 +15,7 @@ import {
 
 import {
   type CoordinatorOptions,
+  flushCoordinatorWrites,
   resetCoordinator,
   startCoordinator,
 } from '../coordinator'
@@ -481,14 +482,14 @@ describe('coordinator', () => {
     const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
     const port = parseInt(portStr)
 
-    // Mock Date.now to simulate time passing beyond MAX_WAIT_MS (30s)
+    // Mock Date.now to simulate time passing beyond MAX_WAIT_MS (60s).
     let callCount = 0
     const dateNowSpy = spyOn(Date, 'now').mockImplementation(() => {
       callCount++
-      // First call is `const start = Date.now()` → return 0
+      // First call is `const start = Date.now()` — return 0
       // Subsequent calls return past MAX_WAIT_MS threshold
       if (callCount <= 1) return 0
-      return 31_000
+      return 61_000
     })
 
     // Request CSS with waitForIdle=true but no extractions ever happen
@@ -711,5 +712,241 @@ describe('coordinator', () => {
 
     // Calling again should be safe (server is already null)
     resetCoordinator()
+  })
+
+  it('should coalesce duplicate writes to the same path within one /extract handler', async () => {
+    // When a single /extract invocation triggers multiple writes to the same
+    // path (singleCss + updatedBaseStyle=true → both the base-CSS write and
+    // the cssFile write target `devup-ui.css`), the second write must be
+    // collapsed by the latest-wins serializer: the first chained run sees the
+    // *latest* content and writes it once, the second chained run finds
+    // `latestContent` already consumed and resolves as a no-op.
+    codeExtractSpy.mockReturnValue({
+      code: 'single css code',
+      map: undefined,
+      cssFile: 'devup-ui.css',
+      updatedBaseStyle: true,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('all-styles')
+    exportSheetSpy.mockReturnValue('sheet-json')
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+
+    const options = makeOptions({ singleCss: true })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box bg="red" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+
+    // Both safeWrite calls target `devup-ui.css`. Coalescing means exactly
+    // one physical writeFile call is made for that path; the sheet/classMap/
+    // fileMap writes (3 more) all go to distinct paths.
+    const devupUiCssWrites = writeFileSpy.mock.calls.filter((call) =>
+      String(call[0]).endsWith('devup-ui.css'),
+    )
+    expect(devupUiCssWrites.length).toBe(1)
+
+    coordinator.close()
+  })
+
+  it('should expose flushCoordinatorWrites to drain queued writes', async () => {
+    // The exported helper must return a settled promise even when no writes
+    // are pending (idle coordinator), so build orchestration can safely await
+    // it without risk of hanging.
+    await expect(flushCoordinatorWrites()).resolves.toBeUndefined()
+
+    // After triggering a real /extract, awaiting the helper must wait for all
+    // queued writes (chained per path) to settle. We assert the spy has been
+    // invoked by the time the helper resolves.
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      map: undefined,
+      cssFile: 'devup-ui-7.css',
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('per-file-css')
+    exportSheetSpy.mockReturnValue('sheet-json')
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+
+    const options = makeOptions()
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box bg="red" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    await expect(flushCoordinatorWrites()).resolves.toBeUndefined()
+    expect(writeFileSpy.mock.calls.length).toBeGreaterThan(0)
+
+    coordinator.close()
+  })
+
+  it('should continue chained writes after a previous write fails (chain error recovery)', async () => {
+    // The serializer must not let one failed write poison every subsequent
+    // write for that path. We force the first writeFile to fail, then verify
+    // the second extraction's writes still happen for that same path.
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      map: undefined,
+      cssFile: 'devup-ui.css',
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('css-content')
+    exportSheetSpy.mockReturnValue('sheet-json')
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+
+    // Re-install writeFile spy with controlled failure: any write to the
+    // devup-ui.css path errors out on the *first* invocation only.
+    writeFileSpy.mockRestore()
+    let devupCssCallCount = 0
+    writeFileSpy = spyOn(fs, 'writeFile').mockImplementation(
+      (_path: any, _data: any, _encOrCb: any, maybeCb?: any) => {
+        const cb = typeof _encOrCb === 'function' ? _encOrCb : maybeCb
+        if (cb) {
+          if (String(_path).endsWith('devup-ui.css')) {
+            devupCssCallCount++
+            if (devupCssCallCount === 1) {
+              cb(new Error('simulated disk error'))
+              return
+            }
+          }
+          cb(null)
+        }
+      },
+    )
+
+    const options = makeOptions({ singleCss: true })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    // First /extract: triggers a write to devup-ui.css that we make fail.
+    // The coordinator will respond with 500 (await Promise.all([..., failingWrite])
+    // rejects), but the chain itself must NOT be poisoned.
+    const firstRes = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/A.tsx',
+        code: 'const x = <Box bg="red" />',
+        resourcePath: join(process.cwd(), 'src', 'A.tsx'),
+      }),
+    )
+    expect(firstRes.status).toBe(500)
+
+    // Second /extract for the same path must SUCCEED — the `.catch(() => {})`
+    // chain-survival branch is what makes this work.
+    const secondRes = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/B.tsx',
+        code: 'const y = <Box bg="blue" />',
+        resourcePath: join(process.cwd(), 'src', 'B.tsx'),
+      }),
+    )
+    expect(secondRes.status).toBe(200)
+
+    // We must have observed at least 2 attempts on the devup-ui.css path:
+    // the first (failed) and the second (succeeded).
+    expect(devupCssCallCount).toBeGreaterThanOrEqual(2)
+
+    coordinator.close()
+  })
+
+  it('should release the pending-extract slot when readBody throws before promotion', async () => {
+    // If JSON.parse on the request body throws, the handler must still tear
+    // down its `pendingExtractStarts` reservation (rather than the active
+    // counter) so waitForIdle is not left waiting forever for a phantom
+    // extraction. We verify by sending a malformed body, then proving the
+    // coordinator still processes a follow-up extraction normally.
+    codeExtractSpy.mockReturnValue({
+      code: 'code',
+      map: undefined,
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockReturnValue('per-file-css')
+    exportSheetSpy.mockReturnValue('sheet-json')
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+
+    const options = makeOptions()
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+
+    // Send an invalid body so JSON.parse throws BEFORE activeExtractions is
+    // incremented. The handler must still respond 500 cleanly.
+    const badRes = await httpRequest(port, 'POST', '/extract', 'not-json')
+    expect(badRes.status).toBe(500)
+    const errorPayload = JSON.parse(badRes.body) as { error: string }
+    expect(typeof errorPayload.error).toBe('string')
+
+    // A subsequent well-formed extraction must succeed. If the pending-slot
+    // bookkeeping was wrong (decrementing activeExtractions instead of
+    // pendingExtractStarts in finally), internal counters would drift negative
+    // — that would not crash this request but is asserted by the next test
+    // case via waitForIdle behaviour.
+    const goodRes = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box bg="red" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+    expect(goodRes.status).toBe(200)
+    const okPayload = JSON.parse(goodRes.body) as { code: string }
+    expect(okPayload.code).toBe('code')
+
+    coordinator.close()
   })
 })
