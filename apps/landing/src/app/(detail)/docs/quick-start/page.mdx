@@ -19,6 +19,10 @@ npm install @devup-ui/react
 npm install @devup-ui/vite-plugin    # for Vite
 npm install @devup-ui/next-plugin    # for Next.js
 npm install @devup-ui/rsbuild-plugin # for Rsbuild
+npm install @devup-ui/webpack-plugin # for Webpack
+
+# Or use the Bun plugin in Bun projects
+bun add @devup-ui/react @devup-ui/bun-plugin
 ```
 
 ## 2. Configure Your Build Tool
@@ -57,6 +61,29 @@ import { pluginReact } from '@rsbuild/plugin-react'
 
 export default defineConfig({
   plugins: [pluginReact(), DevupUIRsbuildPlugin()],
+})
+```
+
+### Webpack
+
+```js
+// webpack.config.js
+import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+
+export default {
+  plugins: [new DevupUIWebpackPlugin()],
+}
+```
+
+### Bun
+
+```ts
+// build.ts
+import '@devup-ui/bun-plugin'
+
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
 })
 ```
 
