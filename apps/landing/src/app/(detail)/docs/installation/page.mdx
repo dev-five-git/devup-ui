@@ -94,6 +94,47 @@ export default defineConfig({
 })
 ```
 
+### Using Devup UI with Webpack
+
+If you are using Webpack directly, you can install the Webpack plugin.
+
+```bash
+npm install @devup-ui/webpack-plugin
+```
+
+Add the plugin to your Webpack configuration.
+
+```js
+// webpack.config.js
+
+import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+
+export default {
+  plugins: [new DevupUIWebpackPlugin()],
+}
+```
+
+### Using Devup UI with Bun
+
+If you are using Bun as the bundler, install the Bun plugin with Devup UI.
+
+```bash
+bun add @devup-ui/react @devup-ui/bun-plugin
+```
+
+Import the plugin before running your Bun build so it can register itself with Bun.
+
+```ts
+// build.ts
+
+import '@devup-ui/bun-plugin'
+
+await Bun.build({
+  entrypoints: ['./src/index.tsx'],
+  outdir: './dist',
+})
+```
+
 ## Project Examples
 
 - [Next.js Example](https://github.com/dev-five-git/devup-ui/tree/main/apps/next)
