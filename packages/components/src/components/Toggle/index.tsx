@@ -65,12 +65,12 @@ export function Toggle({
         boxSizing="border-box"
         className={className}
         cursor="pointer"
+        data-group
         h={isDefault ? '28px' : '8px'}
         justifyContent={resultValue && 'flex-end'}
         onClick={() => !disabled && handleToggle(resultValue)}
         p={isDefault && 1}
         position="relative"
-        role="group"
         selectors={{
           '&[aria-disabled=true]': {
             cursor: 'not-allowed',

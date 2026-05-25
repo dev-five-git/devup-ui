@@ -19,9 +19,9 @@ export function GetStartedButton() {
         alignItems="center"
         bg="$text"
         borderRadius="100px"
+        data-group
         gap="20px"
         p="16px 40px"
-        role="group"
         w="fit-content"
       >
         <Box

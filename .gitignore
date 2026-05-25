@@ -22,3 +22,4 @@ test-results
 playwright-report
 .omc
 .playwright-mcp
+.omo

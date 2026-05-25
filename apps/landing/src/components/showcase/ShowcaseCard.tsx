@@ -6,7 +6,7 @@ interface ShowcaseCardProps {
 }
 export function ShowcaseCard({ name, image }: ShowcaseCardProps) {
   return (
-    <VStack cursor="pointer" gap="8px" role="group">
+    <VStack cursor="pointer" data-group gap="8px">
       <Box h="auto" overflow="hidden" w="100%">
         <Image
           _groupHover={{ transform: 'scale(1.1)' }}
