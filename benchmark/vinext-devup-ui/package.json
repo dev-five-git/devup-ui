@@ -11,7 +11,7 @@
   "dependencies": {
     "react": "^19.2",
     "react-dom": "^19.2",
-    "vinext": "^0.0.49",
+    "vinext": "^0.0.52",
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
