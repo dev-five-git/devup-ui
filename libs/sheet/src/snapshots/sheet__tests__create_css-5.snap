@@ -2,4 +2,4 @@
 source: libs/sheet/src/lib.rs
 expression: "sheet.create_css(None, false).split(\"*/\").nth(1).unwrap()"
 ---
-"*[role=group]:focus-visible .test{background:blue}*[role=group]:focus-visible .test{background:red}"
+":is([role=group],[data-group]):focus-visible .test{background:blue}:is([role=group],[data-group]):focus-visible .test{background:red}"

@@ -180,13 +180,21 @@ All CSS pseudo-classes and pseudo-elements from `csstype` are supported with `_c
 
 ### Group Selectors
 
-Style children based on parent state:
+Mark a parent with the `data-group` attribute, then children can react to that parent's state:
 
 ```tsx
-<Box _groupHover={{ color: "blue" }} />
-<Box _groupFocus={{ outline: "2px solid" }} />
-<Box _groupActive={{ bg: "darkblue" }} />
+<Box data-group>
+  <Text _groupHover={{ color: "blue" }}>Changes when parent hovered</Text>
+  <Box _groupFocus={{ outline: "2px solid" }} />
+  <Box _groupActive={{ bg: "darkblue" }} />
+</Box>
 ```
+
+Available: `_groupHover`, `_groupFocus`, `_groupActive`, `_groupDisabled`.
+
+> The legacy `role="group"` parent marker is still matched for backward
+> compatibility but will be removed in v2. Use `data-group` for new code so
+> `role="group"` stays reserved for genuine ARIA grouping semantics.
 
 ### Theme Selectors
 

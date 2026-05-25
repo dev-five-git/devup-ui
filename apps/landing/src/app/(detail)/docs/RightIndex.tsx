@@ -19,10 +19,10 @@ function IndexMenu({
     <Flex
       alignItems="center"
       cursor="pointer"
+      data-group
       gap="10px"
       onClick={onClick}
       p={sub ? '4px 10px 4px 30px' : '4px 10px'}
-      role="group"
     >
       {selected && <Box bg="$primary" borderRadius="50%" boxSize="6px" />}
       <Text
@@ -116,8 +116,8 @@ export function RightIndex() {
             textDecorationColor: '$text',
           },
         })}
+        data-group
         href={editUrl}
-        role="group"
         target="_blank"
       >
         <Flex gap="4px">

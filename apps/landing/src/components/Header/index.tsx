@@ -158,9 +158,9 @@ export function Header() {
               gap: '4px',
               alignItems: 'center',
             })}
+            data-group
             href="/storybook/index.html"
             prefetch={false}
-            role="group"
           >
             <Menu keyword="storybook">Storybook</Menu>
             <Box

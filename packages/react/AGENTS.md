@@ -63,7 +63,7 @@ src/
 - `_hover`, `_focus`, `_active` - pseudo classes
 - `_before`, `_after` - pseudo elements
 - `_themeDark`, `_themeLight` - theme-specific
-- `_groupHover` - parent group selectors
+- `_groupHover`, `_groupFocus`, `_groupActive`, `_groupDisabled` - parent group selectors. Mark the parent with `data-group` (legacy: `role="group"`, removed in v2).
 
 ### Theme Tokens
 ```tsx

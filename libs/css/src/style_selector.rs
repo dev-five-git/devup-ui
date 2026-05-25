@@ -165,12 +165,13 @@ impl From<&str> for StyleSelector {
             StyleSelector::Selector(value)
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
-            StyleSelector::Selector(format!(
-                "{}{}{} &",
-                "*[role=group]",
-                SelectorSeparator::from(post.as_str()),
-                post
-            ))
+            let sep = SelectorSeparator::from(post.as_str()).to_string();
+            // Match both the legacy `role="group"` attribute (deprecated, removal
+            // planned for v2) and the new `data-group` attribute with a single
+            // `:is()` clause. `:is()` adopts its highest-specificity argument, so
+            // the resulting specificity is identical to the prior `*[role=group]`
+            // form. See CHANGELOG and docs/api/group-selector.
+            StyleSelector::Selector(format!(":is([role=group],[data-group]){sep}{post} &"))
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
@@ -262,7 +263,7 @@ fn get_selector_order(selector: &str) -> u8 {
         return *order;
     }
 
-    // For group selectors like "*[role=group]:hover &", the pseudo-selector is before &
+    // For group selectors like ":is([role=group],[data-group]):hover &", the pseudo-selector is before &
     // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
     if selector.ends_with(" &") {
         let before_ampersand = selector.strip_suffix(" &").unwrap_or(selector);
@@ -285,9 +286,9 @@ mod tests {
     #[rstest]
     #[case("hover", StyleSelector::Selector("&:hover".to_string()))]
     #[case("focusVisible", StyleSelector::Selector("&:focus-visible".to_string()))]
-    #[case("group-hover", StyleSelector::Selector("*[role=group]:hover &".to_string()))]
-    #[case("group-focus-visible", StyleSelector::Selector("*[role=group]:focus-visible &".to_string()))]
-    #[case("group-1", StyleSelector::Selector("*[role=group]:1 &".to_string()))]
+    #[case("group-hover", StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string()))]
+    #[case("group-focus-visible", StyleSelector::Selector(":is([role=group],[data-group]):focus-visible &".to_string()))]
+    #[case("group-1", StyleSelector::Selector(":is([role=group],[data-group]):1 &".to_string()))]
     #[case(["theme-dark", "placeholder"], StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string()))]
     #[case("theme-light", StyleSelector::Selector(":root[data-theme=light] &".to_string()))]
     #[case("*[aria=disabled='true'] &:hover", StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string()))]
@@ -449,23 +450,23 @@ mod tests {
     )]
     // Group selector ordering tests - _groupHover should come before _groupActive
     #[case(
-        StyleSelector::Selector("*[role=group]:hover &".to_string()),
-        StyleSelector::Selector("*[role=group]:active &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):active &".to_string()),
         std::cmp::Ordering::Less
     )]
     #[case(
-        StyleSelector::Selector("*[role=group]:focus-visible &".to_string()),
-        StyleSelector::Selector("*[role=group]:focus &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):focus-visible &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):focus &".to_string()),
         std::cmp::Ordering::Less
     )]
     #[case(
-        StyleSelector::Selector("*[role=group]:active &".to_string()),
-        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):active &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string()),
         std::cmp::Ordering::Greater
     )]
     #[case(
-        StyleSelector::Selector("*[role=group]:hover &".to_string()),
-        StyleSelector::Selector("*[role=group]:hover &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string()),
+        StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string()),
         std::cmp::Ordering::Equal
     )]
     fn test_style_selector_ord(
@@ -493,7 +494,8 @@ mod tests {
     #[case(":root[data-theme=dark] &:selected", 4)]
     #[case(":root[data-theme=dark] &:disabled", 5)]
     #[case(":root[data-theme=dark] &:not-exist", 99)]
-    // Group selectors - pseudo-selector is before &
+    // Group selectors - pseudo-selector is before & (legacy single-form, still
+    // accepted by the ordering function so older sheets continue to sort correctly)
     #[case("*[role=group]:hover &", 0)]
     #[case("*[role=group]:focus-visible &", 1)]
     #[case("*[role=group]:focus &", 2)]
@@ -501,8 +503,67 @@ mod tests {
     #[case("*[role=group]:selected &", 4)]
     #[case("*[role=group]:disabled &", 5)]
     #[case("*[role=group]:not-exist &", 99)]
+    // Group selectors - new `:is()` form emitted by `From<&str>::from("group-*")`.
+    // Ordering must rank these identically to the legacy single-form. The pseudo
+    // sits after `:is(...)` so the suffix-based ordering logic remains stable
+    // regardless of the comma-separated attribute list nested inside `:is()`.
+    #[case(":is([role=group],[data-group]):hover &", 0)]
+    #[case(":is([role=group],[data-group]):focus-visible &", 1)]
+    #[case(":is([role=group],[data-group]):focus &", 2)]
+    #[case(":is([role=group],[data-group]):active &", 3)]
+    #[case(":is([role=group],[data-group]):selected &", 4)]
+    #[case(":is([role=group],[data-group]):disabled &", 5)]
+    #[case(":is([role=group],[data-group]):not-exist &", 99)]
     fn test_get_selector_order(#[case] selector: &str, #[case] expected: u8) {
         assert_eq!(get_selector_order(selector), expected);
+    }
+
+    /// Invariants of the `:is()` group selector emission:
+    ///   1. Exactly one CSS selector clause (no top-level comma)
+    ///   2. `:is()` argument list contains both `[role=group]` (deprecated, removed
+    ///      in v2) and `[data-group]` (new, preferred)
+    ///   3. Ends with `<pseudo> &` so `get_selector_order` ranks it correctly
+    ///
+    /// This pins the emission shape so a future refactor cannot silently drop the
+    /// legacy `[role=group]` half (breaking backward compat) or split the selector
+    /// back into two top-level clauses (re-introducing the fragile suffix-only
+    /// ordering risk).
+    #[rstest]
+    #[case("group-hover", ":hover")]
+    #[case("group-focus-visible", ":focus-visible")]
+    #[case("group-focus", ":focus")]
+    #[case("group-active", ":active")]
+    #[case("group-disabled", ":disabled")]
+    fn test_group_selector_is_form_invariants(
+        #[case] input: &str,
+        #[case] expected_pseudo_suffix: &str,
+    ) {
+        let StyleSelector::Selector(rendered) = StyleSelector::from(input) else {
+            panic!("group-* should produce StyleSelector::Selector");
+        };
+        // (1) single clause: no comma outside the `:is()` argument list
+        let Some((_, after_is)) = rendered.rsplit_once(')') else {
+            panic!("rendered selector must contain `)` from :is(): `{rendered}`");
+        };
+        assert!(
+            !after_is.contains(','),
+            "expected single top-level clause, got `{rendered}`"
+        );
+        // (2) both legacy and new attribute selectors present inside :is()
+        assert!(
+            rendered.contains("[role=group]"),
+            "missing legacy attribute in `{rendered}`"
+        );
+        assert!(
+            rendered.contains("[data-group]"),
+            "missing new attribute in `{rendered}`"
+        );
+        // (3) shape ends with `<pseudo> &`
+        let before_ampersand = rendered.trim_end_matches('&').trim_end();
+        assert!(
+            before_ampersand.ends_with(expected_pseudo_suffix),
+            "selector `{rendered}` does not end with pseudo `{expected_pseudo_suffix}`"
+        );
     }
 
     #[rstest]

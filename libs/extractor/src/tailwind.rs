@@ -147,17 +147,23 @@ impl TailwindVariant {
             TailwindVariant::FirstLine => StyleSelector::Selector("&::first-line".to_string()),
             TailwindVariant::Backdrop => StyleSelector::Selector("&::backdrop".to_string()),
             TailwindVariant::File => StyleSelector::Selector("&::file-selector-button".to_string()),
+            // Group variants emit a single `:is()` selector matching both the
+            // legacy `role="group"` attribute (deprecated, removal planned for v2)
+            // and the new `data-group` attribute. `:is()` adopts the highest-
+            // specificity argument, so specificity equals the prior `*[role=group]`
+            // form. Keep these in sync with `StyleSelector::from("group-*")` in
+            // `libs/css/src/style_selector.rs`.
             TailwindVariant::GroupHover => {
-                StyleSelector::Selector("*[role=group]:hover &".to_string())
+                StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string())
             }
             TailwindVariant::GroupFocus => {
-                StyleSelector::Selector("*[role=group]:focus &".to_string())
+                StyleSelector::Selector(":is([role=group],[data-group]):focus &".to_string())
             }
             TailwindVariant::GroupActive => {
-                StyleSelector::Selector("*[role=group]:active &".to_string())
+                StyleSelector::Selector(":is([role=group],[data-group]):active &".to_string())
             }
             TailwindVariant::GroupDisabled => {
-                StyleSelector::Selector("*[role=group]:disabled &".to_string())
+                StyleSelector::Selector(":is([role=group],[data-group]):disabled &".to_string())
             }
             TailwindVariant::PeerHover => StyleSelector::Selector(".peer:hover ~ &".to_string()),
             TailwindVariant::PeerFocus => StyleSelector::Selector(".peer:focus ~ &".to_string()),
@@ -3657,7 +3663,7 @@ mod tests {
         );
         assert_eq!(
             TailwindVariant::GroupHover.to_selector(),
-            StyleSelector::Selector("*[role=group]:hover &".to_string())
+            StyleSelector::Selector(":is([role=group],[data-group]):hover &".to_string())
         );
     }
 
@@ -3849,7 +3855,10 @@ mod tests {
         assert_eq!(parsed.variants[0], TailwindVariant::GroupHover);
 
         let selector = parsed.variants[0].to_selector();
-        assert_eq!(selector.to_string(), "*[role=group]:hover &");
+        assert_eq!(
+            selector.to_string(),
+            ":is([role=group],[data-group]):hover &"
+        );
     }
 
     #[test]
@@ -3959,9 +3968,15 @@ mod tests {
 
     // Wave 1.3: Group/Peer variant selectors (lines 143-151)
     #[rstest]
-    #[case(TailwindVariant::GroupFocus, "*[role=group]:focus &")]
-    #[case(TailwindVariant::GroupActive, "*[role=group]:active &")]
-    #[case(TailwindVariant::GroupDisabled, "*[role=group]:disabled &")]
+    #[case(TailwindVariant::GroupFocus, ":is([role=group],[data-group]):focus &")]
+    #[case(
+        TailwindVariant::GroupActive,
+        ":is([role=group],[data-group]):active &"
+    )]
+    #[case(
+        TailwindVariant::GroupDisabled,
+        ":is([role=group],[data-group]):disabled &"
+    )]
     #[case(TailwindVariant::PeerFocus, ".peer:focus ~ &")]
     #[case(TailwindVariant::PeerActive, ".peer:active ~ &")]
     #[case(TailwindVariant::PeerDisabled, ".peer:disabled ~ &")]

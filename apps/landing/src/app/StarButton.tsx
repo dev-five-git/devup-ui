@@ -113,8 +113,8 @@ export default function StarButton() {
         border="1px solid $imageBorder"
         borderRadius="12px"
         cursor="pointer"
+        data-group
         h="100%"
-        role="group"
         transition="all 0.1s ease-in-out"
       >
         <Flex

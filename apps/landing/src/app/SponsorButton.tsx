@@ -23,11 +23,11 @@ export default function SponsorButton() {
         bg="$containerBackground"
         border="1px solid $imageBorder"
         borderRadius="12px"
+        data-group
         gap="10px"
         pl="16px"
         pr="20px"
         py="10px"
-        role="group"
         transition="all 0.1s ease-in-out"
       >
         <Image

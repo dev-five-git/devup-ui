@@ -20,10 +20,10 @@ Group selectors allow child elements to respond to interactions on a parent elem
 
 ## Basic Usage
 
-Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, or `_groupActive` on children:
+Add the `data-group` attribute to a parent element, then use `_groupHover`, `_groupFocus`, or `_groupActive` on children:
 
 ```tsx
-<Box bg="$background" borderRadius="8px" p={4} role="group">
+<Box bg="$background" borderRadius="8px" data-group p={4}>
   <Text _groupHover={{ color: '$primary' }}>
     This text changes color when parent is hovered
   </Text>
@@ -32,6 +32,13 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
   </Box>
 </Box>
 ```
+
+> **Migrating from `role="group"`**: previous versions used `role="group"` to mark
+> group parents. Both forms are supported today, but `role="group"` carries ARIA
+> semantics that should be reserved for actual semantic groups (e.g. a `<fieldset>`
+> replacement), not for styling hooks. Prefer `data-group` going forward. The
+> `role="group"` form will be removed in v2 — see the
+> [CHANGELOG](https://github.com/dev-five-git/devup-ui/blob/main/CHANGELOG.md).
 
 ## Available Group Selectors
 
@@ -48,7 +55,7 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
         <code>_groupHover</code>
       </TableCell>
       <TableCell>
-        Parent with <code>role=&quot;group&quot;</code> is hovered
+        Parent with <code>data-group</code> is hovered
       </TableCell>
     </TableRow>
     <TableRow>
@@ -56,7 +63,7 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
         <code>_groupFocus</code>
       </TableCell>
       <TableCell>
-        Parent with <code>role=&quot;group&quot;</code> is focused
+        Parent with <code>data-group</code> is focused
       </TableCell>
     </TableRow>
     <TableRow>
@@ -64,7 +71,7 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
         <code>_groupActive</code>
       </TableCell>
       <TableCell>
-        Parent with <code>role=&quot;group&quot;</code> is active (pressed)
+        Parent with <code>data-group</code> is active (pressed)
       </TableCell>
     </TableRow>
     <TableRow>
@@ -85,8 +92,8 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
   borderRadius="8px"
   boxShadow="0 1px 3px rgba(0,0,0,0.1)"
   cursor="pointer"
+  data-group
   p={4}
-  role="group"
 >
   <Box
     bg="$backgroundMuted"
@@ -131,8 +138,8 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
       _hover={{ bg: '$backgroundMuted' }}
       as="li"
       borderBottom="1px solid $border"
+      data-group
       p={3}
-      role="group"
     >
       <Flex align="center" justify="space-between">
         <Text _groupHover={{ color: '$primary' }}>{item.title}</Text>
@@ -149,12 +156,7 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 
 ```tsx
 <Box as="nav">
-  <Box
-    _hover={{ bg: '$backgroundMuted' }}
-    borderRadius="4px"
-    p={2}
-    role="group"
-  >
+  <Box _hover={{ bg: '$backgroundMuted' }} borderRadius="4px" data-group p={2}>
     <Flex align="center" gap={2}>
       <Box
         _groupHover={{ bg: '$primary' }}
@@ -177,7 +179,7 @@ Add `role="group"` to a parent element, then use `_groupHover`, `_groupFocus`, o
 Group selectors can be combined with responsive arrays:
 
 ```tsx
-<Box p={[2, null, 4]} role="group">
+<Box data-group p={[2, null, 4]}>
   <Text
     _groupHover={{
       color: ['$primary', null, '$secondary'],
@@ -191,13 +193,13 @@ Group selectors can be combined with responsive arrays:
 
 ## Nested Groups
 
-For nested groups, the selector applies to the nearest parent with `role="group"`:
+For nested groups, the selector applies to the nearest parent with `data-group`:
 
 ```tsx
-<Box bg="white" p={4} role="group">
+<Box bg="white" data-group p={4}>
   <Text _groupHover={{ color: 'blue' }}>Responds to outer group</Text>
 
-  <Box bg="$backgroundMuted" mt={2} p={2} role="group">
+  <Box bg="$backgroundMuted" data-group mt={2} p={2}>
     <Text _groupHover={{ color: 'red' }}>Responds to inner group</Text>
   </Box>
 </Box>
@@ -206,7 +208,7 @@ For nested groups, the selector applies to the nearest parent with `role="group"
 ## CSS Output
 
 ```tsx
-<Box role="group">
+<Box data-group>
   <Box _groupHover={{ bg: 'red' }} />
 </Box>
 ```
@@ -214,15 +216,21 @@ For nested groups, the selector applies to the nearest parent with `role="group"
 Generates CSS like:
 
 ```css
-[role='group']:hover .a {
+:is([role='group'], [data-group]):hover .a {
   background-color: red;
 }
 ```
 
+The `:is()` wrapper matches both the new `data-group` attribute and the legacy
+`role="group"` attribute with a single rule, so existing markup keeps working
+during the migration window.
+
 ## Best Practices
 
-1. **Use semantic HTML**: Add `role="group"` to semantically appropriate elements
-2. **Keep interactions discoverable**: Don't hide critical content behind group hover
-3. **Consider touch devices**: Group hover doesn't work on touch - provide alternative interactions
-4. **Use transitions**: Add `transition` prop for smooth state changes
-5. **Accessibility**: Ensure interactive elements are keyboard accessible
+1. **Use `data-group` for styling hooks**: Reserve `role="group"` for elements that
+   genuinely form an ARIA group; use the data attribute for visual grouping that
+   has no a11y semantics.
+2. **Keep interactions discoverable**: Don't hide critical content behind group hover.
+3. **Consider touch devices**: Group hover doesn't work on touch — provide alternative interactions.
+4. **Use transitions**: Add `transition` prop for smooth state changes.
+5. **Accessibility**: Ensure interactive elements are keyboard accessible.
