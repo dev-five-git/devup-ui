@@ -12,15 +12,15 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-oxc_parser = "0.132.0"
-oxc_syntax = "0.132.0"
-oxc_span = "0.132.0"
-oxc_allocator = "0.132.0"
-oxc_ast = "0.132.0"
-oxc_ast_visit = "0.132.0"
-oxc_codegen = "0.132.0"
-oxc_transformer = "0.132.0"
-oxc_semantic = "0.132.0"
+oxc_parser = "0.133.0"
+oxc_syntax = "0.133.0"
+oxc_span = "0.133.0"
+oxc_allocator = "0.133.0"
+oxc_ast = "0.133.0"
+oxc_ast_visit = "0.133.0"
+oxc_codegen = "0.133.0"
+oxc_transformer = "0.133.0"
+oxc_semantic = "0.133.0"
 css = { path = "../css" }
 phf = "0.13"
 strum = "0.28.0"
@@ -32,7 +32,7 @@ smallvec = "1"
 
 [dev-dependencies]
 insta = "1.47.2"
-serial_test = "3.4.0"
+serial_test = "3.5.0"
 rstest = "0.26.1"
 criterion = { version = "0.8", features = ["html_reports"] }
 
