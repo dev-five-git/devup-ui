@@ -90,27 +90,36 @@ async function loadSourceFile(filePath: string) {
   return { contents, loader }
 }
 
-// Register plugin immediately before any other imports
-plugin({
-  name: 'devup-ui',
+// Registers the Bun plugin. Returns the promise produced by `plugin()` (its
+// `setup` is async), so callers MUST `await` it. Bun's preload mechanism waits
+// for an awaited module evaluation to settle; awaiting this guarantees the
+// `onLoad` hook is installed before any source file is loaded. Without the
+// await, preload-driven `bun test` users race the async setup and load sources
+// against the @devup-ui/react runtime stubs (throwing "Cannot run on the
+// runtime").
+function register() {
+  return plugin({
+    name: 'devup-ui',
 
-  async setup(build) {
-    await initialize()
-    setDebug(true)
+    async setup(build) {
+      await initialize()
+      setDebug(true)
 
-    // Resolve devup-ui CSS files
-    build.onResolve({ filter: /devup-ui(-\d+)?\.css$/ }, ({ path, importer }) =>
-      resolveCssPath(path, importer),
-    )
+      // Resolve devup-ui CSS files
+      build.onResolve(
+        { filter: /devup-ui(-\d+)?\.css$/ },
+        ({ path, importer }) => resolveCssPath(path, importer),
+      )
 
-    // Load source files from packages directory (file namespace)
-    build.onLoad(
-      {
-        filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
-      },
-      ({ path }) => loadSourceFile(path),
-    )
-  },
-})
+      // Load source files from packages directory (file namespace)
+      build.onLoad(
+        {
+          filter: /\.(?:tsx?|jsx|mjs)$|[\\/]@devup-ui[\\/].*\.js$/,
+        },
+        ({ path }) => loadSourceFile(path),
+      )
+    },
+  })
+}
 
-export { plugin }
+export { plugin, register }

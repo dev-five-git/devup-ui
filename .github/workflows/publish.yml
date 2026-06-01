@@ -113,6 +113,8 @@ jobs:
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
       - run: bun run test
+      - name: Regression test (bun-plugin preload race)
+        run: bun run --filter @devup-ui/bun-plugin test:regression
       - name: Format Rollback
         run: |
           rm -rf .rustfmt.toml

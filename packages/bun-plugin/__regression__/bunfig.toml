@@ -1,0 +1,13 @@
+# Regression harness for the preload race fixed by awaiting Bun.plugin().
+#
+# This suite runs SEPARATELY from the root test suite. It preloads the BUILT
+# plugin (its published ESM entry, dist/index.mjs) so it reproduces the exact
+# async-setup timing that preload-driven `bun test` users experience. The fix
+# (top-level `await register()` in dist/index.mjs) guarantees the onLoad hook is
+# installed before any test/source file loads.
+#
+# Coverage is intentionally disabled here: this suite asserts load-time behaviour
+# and depends on prebuilt dist + WASM artifacts, so the root suite's 100% line
+# coverage gate does not apply.
+[test]
+preload = ["@devup-ui/bun-plugin"]
