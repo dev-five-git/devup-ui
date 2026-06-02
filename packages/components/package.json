@@ -44,7 +44,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "@devup-ui/react": "workspace:^",
-    "react": "^19.2.6",
+    "react": "^19.2.7",
     "clsx": "^2.1"
   },
   "devDependencies": {
