@@ -11,6 +11,7 @@ import {
   type ImportAliases,
   loadDevupConfigSync,
   mergeImportAliases,
+  planAtomHoist,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import {
@@ -190,17 +191,14 @@ export class DevupUIWebpackPlugin {
           cwd,
           keyBy: 'cwd-relative',
         })
-        const reachByBucket: Record<string, number[]> = {}
-        for (const [file, ids] of Object.entries(fileReach)) {
-          const bucket = canonicalMap[file] ?? file
-          if (bucket === '@global') continue
-          const set = (reachByBucket[bucket] ??= [])
-          for (const id of ids) if (!set.includes(id)) set.push(id)
-        }
-        const routeCount = new Set(Object.values(fileReach).flat()).size
-        if (routeCount >= 2) {
-          importFileRoutes(reachByBucket)
-          setAtomHoist(Math.max(2, atomHoist))
+        const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
+        if (plan) {
+          importFileRoutes(plan.reachByBucket)
+          setAtomHoist(plan.threshold)
+        } else {
+          console.info(
+            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+          )
         }
       } catch {
         // Best-effort; on failure atom hoisting stays off (identity).

@@ -14,6 +14,7 @@ import {
   createThemeInterfaceArgs,
   loadDevupConfigSync,
   mergeImportAliases,
+  planAtomHoist,
 } from '@devup-ui/plugin-utils'
 import {
   exportClassMap,
@@ -159,17 +160,14 @@ export function DevupUI(
         // Fold per-file route reach onto the canonical bucket so the keys match
         // the engine's property bucket keys (canonical(filename)).
         const fileRoutes = computeFileRoutes({ srcDir, tsconfigPath, cwd })
-        const reachByBucket: Record<string, number[]> = {}
-        for (const [file, ids] of Object.entries(fileRoutes)) {
-          const bucket = canonicalMap[file] ?? file
-          if (bucket === '@global') continue
-          const set = (reachByBucket[bucket] ??= [])
-          for (const id of ids) if (!set.includes(id)) set.push(id)
-        }
-        const routeCount = new Set(Object.values(fileRoutes).flat()).size
-        if (routeCount >= 2) {
-          importFileRoutes(reachByBucket)
-          setAtomHoist(Math.max(2, atomHoist))
+        const plan = planAtomHoist(canonicalMap, fileRoutes, atomHoist)
+        if (plan) {
+          importFileRoutes(plan.reachByBucket)
+          setAtomHoist(plan.threshold)
+        } else {
+          console.info(
+            '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op.',
+          )
         }
       }
     } catch {

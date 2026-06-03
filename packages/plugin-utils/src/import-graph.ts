@@ -320,6 +320,43 @@ export function computeFileReach(
   return fileReach
 }
 
+export interface AtomHoistPlan {
+  /** atom-hoist threshold to pass to setAtomHoist (clamped to >= 2). */
+  threshold: number
+  /** canonical bucket -> route ids reaching it (input to importFileRoutes). */
+  reachByBucket: Record<string, number[]>
+}
+
+/**
+ * Shared fold + gate + clamp for atom-level hoisting, used identically by every
+ * bundler plugin (next/vite/webpack/rsbuild). Given the canonical (collapse) map
+ * and a file -> route-ids reach map, it folds reach onto the canonical bucket
+ * (the engine keys property buckets by `canonical(filename)`), skips the
+ * `@global` bucket, and returns the hoist plan — or `null` when fewer than two
+ * distinct routes exist (atom hoisting is then a no-op; a single bucket is
+ * already optimal).
+ *
+ * Extracting this removes a subtle, error-prone block (fold / `@global` skip /
+ * id dedupe / `>= 2` gate / `max(2, n)` clamp) from four plugin copies into one
+ * tested place.
+ */
+export function planAtomHoist(
+  canonicalMap: Record<string, string>,
+  fileReach: Record<string, number[]>,
+  atomHoist: number,
+): AtomHoistPlan | null {
+  const reachByBucket: Record<string, number[]> = {}
+  for (const [file, ids] of Object.entries(fileReach)) {
+    const bucket = canonicalMap[file] ?? file
+    if (bucket === '@global') continue
+    const set = (reachByBucket[bucket] ??= [])
+    for (const id of ids) if (!set.includes(id)) set.push(id)
+  }
+  const routeCount = new Set(Object.values(fileReach).flat()).size
+  if (routeCount < 2) return null
+  return { threshold: Math.max(2, atomHoist), reachByBucket }
+}
+
 function getRouteReachableGlobalFiles(
   files: string[],
   srcDir: string,

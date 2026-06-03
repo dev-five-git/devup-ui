@@ -589,5 +589,97 @@ const App = () => <Box></Box>`,
       expect(servedBase).toBe('CSS_FOR_null')
       expect(getCssSpy).toHaveBeenCalledWith(null, false)
     })
+
+    it('extracts with posix filename + relative cssDir in atom mode', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ code: '<div></div>', cssFile: '' }),
+      )
+      const transform = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform, modifyRsbuildConfig: mock() }),
+      )
+      // calls[1] is the source transform; atom mode posix-normalizes the
+      // filename and passes a relative cssDir + import_main_css_in_code=true.
+      await transform.mock.calls[1][1]({
+        code: `import { Box } from '@devup-ui/react'\nconst A = () => <Box w="1px" />`,
+        resourcePath: 'src/App.tsx',
+      })
+      const call = codeExtractSpy.mock.calls.at(-1)!
+      expect(call[0]).toBe('src/App.tsx') // posix-normalized (already posix here)
+      expect(typeof call[3]).toBe('string')
+      expect((call[3] as string).startsWith('./')).toBe(true) // relative cssDir
+      expect(call[5]).toBe(true) // import_main_css_in_code
+      expect(call[6]).toBe(false) // import_main_css_in_css
+    })
+
+    it('injects a shared-css splitChunks cacheGroup in atom mode', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      const modifyRsbuildConfig = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig }),
+      )
+      // prev undefined -> tools.rspack is the single injector function
+      const cfg = {} as { tools?: { rspack?: unknown } }
+      modifyRsbuildConfig.mock.calls[0][0](cfg)
+      const inject = cfg.tools?.rspack as (c: unknown) => void
+      expect(typeof inject).toBe('function')
+      // applying it adds the cacheGroup when splitChunks is an object
+      const rspackCfg = {
+        optimization: {
+          splitChunks: {} as {
+            cacheGroups?: Record<string, { type?: string }>
+          },
+        },
+      }
+      inject(rspackCfg)
+      expect(
+        rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks missing/false -> no cacheGroup added, no throw
+      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      inject(rspackCfg2)
+      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+    })
+
+    it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      const modifyFn = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({
+          transform: mock(),
+          modifyRsbuildConfig: modifyFn,
+        }),
+      )
+      const prevFn = mock()
+      const cfgFn = { tools: { rspack: prevFn as unknown } }
+      modifyFn.mock.calls[0][0](cfgFn)
+      expect(Array.isArray(cfgFn.tools.rspack)).toBe(true)
+      expect((cfgFn.tools.rspack as unknown[])[0]).toBe(prevFn)
+
+      const modifyArr = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({
+          transform: mock(),
+          modifyRsbuildConfig: modifyArr,
+        }),
+      )
+      const prevArr = [mock()] as unknown[]
+      const cfgArr = { tools: { rspack: prevArr as unknown } }
+      modifyArr.mock.calls[0][0](cfgArr)
+      expect((cfgArr.tools.rspack as unknown[]).length).toBe(2)
+    })
   })
 })

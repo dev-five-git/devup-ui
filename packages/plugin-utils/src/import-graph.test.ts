@@ -8,6 +8,7 @@ import {
   buildCanonicalMap,
   computeFileReach,
   computeFileRoutes,
+  planAtomHoist,
 } from './import-graph'
 
 describe('buildCanonicalMap', () => {
@@ -479,5 +480,43 @@ describe('computeFileReach', () => {
     expect(reach['src/b.tsx']).toEqual([1])
     // index is not an entry now and nobody it imports... it's not in any entry closure
     expect(reach['src/index.tsx']).toBeUndefined()
+  })
+})
+
+describe('planAtomHoist', () => {
+  it('folds reach onto the canonical bucket and skips @global', () => {
+    const plan = planAtomHoist(
+      { 'src/child.tsx': 'src/parent.tsx', 'src/glob.tsx': '@global' },
+      {
+        'src/parent.tsx': [0, 1],
+        'src/child.tsx': [0],
+        'src/glob.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      },
+      2,
+    )
+    expect(plan).toEqual({
+      threshold: 2,
+      // child folded into parent (deduped); @global dropped; r1 kept
+      reachByBucket: {
+        'src/parent.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      },
+    })
+  })
+
+  it('clamps the threshold to a minimum of 2', () => {
+    const plan = planAtomHoist({}, { 'a.tsx': [0], 'b.tsx': [1] }, 1)
+    expect(plan?.threshold).toBe(2)
+  })
+
+  it('honors a threshold above 2', () => {
+    const plan = planAtomHoist({}, { 'a.tsx': [0], 'b.tsx': [1] }, 5)
+    expect(plan?.threshold).toBe(5)
+  })
+
+  it('returns null when fewer than two distinct routes exist', () => {
+    expect(planAtomHoist({}, { 'a.tsx': [0] }, 2)).toBeNull()
+    expect(planAtomHoist({}, {}, 2)).toBeNull()
   })
 })

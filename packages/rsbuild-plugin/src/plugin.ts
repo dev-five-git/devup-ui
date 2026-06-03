@@ -11,6 +11,7 @@ import {
   type ImportAliases,
   loadDevupConfig,
   mergeImportAliases,
+  planAtomHoist,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -44,13 +45,10 @@ export interface DevupUIRsbuildPluginOptions {
    * import graph (entry points and dynamic-import targets). For a single-entry
    * SPA (routeCount < 2) it is a no-op.
    *
-   * KNOWN LIMITATION (rsbuild MPA): hoisted atoms get a single class name
-   * (correct), but rspack's default chunk strategy INLINES the shared base CSS
-   * into each entry bundle, so the base is duplicated across entries rather than
-   * emitted as one shared chunk. Rendering is correct; the cross-entry dedup
-   * benefit is not yet realized. Deduping requires an rspack `splitChunks`
-   * cacheGroup (type `css/mini-extract`, `minChunks >= 2`) — tracked as a
-   * follow-up. See the cssDir transform TODO below.
+   * On MPA, the shared base devup-ui.css (hoisted atoms) is emitted as ONE
+   * shared chunk via an injected rspack `splitChunks` cacheGroup
+   * (`type: 'css/mini-extract'`), so hoisting actually deduplicates across
+   * entries rather than being inlined per entry.
    */
   atomHoist?: number
   /**
@@ -160,17 +158,14 @@ export const DevupUI = ({
             cwd: root,
             keyBy: 'absolute',
           })
-          const reachByBucket: Record<string, number[]> = {}
-          for (const [file, ids] of Object.entries(fileReach)) {
-            const bucket = canonicalMap[file] ?? file
-            if (bucket === '@global') continue
-            const set = (reachByBucket[bucket] ??= [])
-            for (const id of ids) if (!set.includes(id)) set.push(id)
-          }
-          const routeCount = new Set(Object.values(fileReach).flat()).size
-          if (routeCount >= 2) {
-            importFileRoutes(reachByBucket)
-            setAtomHoist(Math.max(2, atomHoist))
+          const plan = planAtomHoist(canonicalMap, fileReach, atomHoist)
+          if (plan) {
+            importFileRoutes(plan.reachByBucket)
+            setAtomHoist(plan.threshold)
+          } else {
+            console.info(
+              '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
+            )
           }
         } catch {
           // Best-effort; on failure atom hoisting stays off (identity).
@@ -188,12 +183,8 @@ export const DevupUI = ({
           // shared base (devup-ui.css) so hoisted atoms load ONCE and are not
           // inlined per chunk. The base file itself imports nothing.
           // Route chunk and base are SEPARATE modules (the transformed entry
-          // code imports both via import_main_css).
-          // TODO(atom-B follow-up): rspack's default chunk strategy inlines the
-          // shared base CSS into each entry bundle (duplicated across MPA
-          // entries). Add an rspack `splitChunks` cacheGroup (type
-          // 'css/mini-extract', minChunks >= 2) to emit the base as one shared
-          // chunk and realize the cross-entry dedup benefit.
+          // code imports both via import_main_css); the injected splitChunks
+          // cacheGroup (see modifyRsbuildConfig) emits the base once.
           return getCss(getFileNumByFilename(basename(resourcePath)), false)
         },
       )
@@ -207,6 +198,40 @@ export const DevupUI = ({
               JSON.stringify(getDefaultTheme()),
             ...config.source.define,
           }
+        }
+        if (atomMode) {
+          // Emit the shared base devup-ui.css (hoisted atoms) as ONE chunk
+          // instead of rspack's default per-entry inlining, so hoisting actually
+          // deduplicates across MPA entries. Composed (not overwritten) with any
+          // user `tools.rspack`.
+          config.tools ??= {}
+          const prev = config.tools.rspack
+          const addSharedCssGroup = (rspackConfig: {
+            optimization?: {
+              splitChunks?:
+                | false
+                | { cacheGroups?: Record<string, unknown> }
+                | undefined
+            }
+          }) => {
+            rspackConfig.optimization ??= {}
+            const sc = rspackConfig.optimization.splitChunks
+            if (sc && typeof sc === 'object') {
+              sc.cacheGroups ??= {}
+              sc.cacheGroups['devupUiShared'] = {
+                type: 'css/mini-extract',
+                name: 'devup-ui-shared',
+                test: /[\\/]devup-ui\.css$/,
+                chunks: 'all',
+                enforce: true,
+              }
+            }
+          }
+          config.tools.rspack = Array.isArray(prev)
+            ? [...prev, addSharedCssGroup]
+            : prev != null
+              ? [prev, addSharedCssGroup]
+              : addSharedCssGroup
         }
         return config
       })
@@ -224,11 +249,17 @@ export const DevupUI = ({
           // relative cssDir is required for that code import to resolve, and the
           // extraction filename is POSIX-normalized to match the absolute-keyed
           // canonical map / FILE_ROUTES. Non-atom keeps the prior behavior.
-          let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
-            '\\',
-            '/',
-          )
-          if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+          let extractCssDir = cssDir
+          let extractName = resourcePath
+          if (atomMode) {
+            let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
+              '\\',
+              '/',
+            )
+            if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+            extractCssDir = relCssDir
+            extractName = resourcePath.replaceAll('\\', '/')
+          }
           const {
             code: retCode,
             css = '',
@@ -236,10 +267,10 @@ export const DevupUI = ({
             cssFile,
             updatedBaseStyle,
           } = codeExtract(
-            atomMode ? resourcePath.replaceAll('\\', '/') : resourcePath,
+            extractName,
             code,
             libPackage,
-            atomMode ? relCssDir : cssDir,
+            extractCssDir,
             singleCss,
             atomMode,
             !atomMode,
