@@ -21,7 +21,8 @@
   "version": "1.0.9",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
+    "build": "tsc && bun build --target node src/index.cjs.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external",
+    "test:regression": "cd __regression__ && bun test ./preload-race.bun.ts"
   },
   "publishConfig": {
     "access": "public"

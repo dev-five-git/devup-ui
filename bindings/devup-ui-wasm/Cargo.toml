@@ -36,7 +36,7 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.72"
-serial_test = "3.4.0"
+serial_test = "3.5.0"
 insta = "1.47.2"
 rstest = "0.26.1"
 

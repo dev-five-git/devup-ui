@@ -1,0 +1,1 @@
+{"changes":{"packages/bun-plugin/package.json":"Patch"},"note":"await Bun.plugin registration so preload-driven bun test users don't race the async setup()","date":"2026-06-01T16:22:13.991387300Z"}
