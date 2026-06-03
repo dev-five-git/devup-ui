@@ -4,6 +4,8 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 
 import {
+  buildCanonicalMap,
+  computeFileReach,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type ImportAliases,
@@ -15,10 +17,13 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
+  importCanonicalMap,
   importClassMap,
   importFileMap,
+  importFileRoutes,
   importSheet,
   registerTheme,
+  setAtomHoist,
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
@@ -34,6 +39,23 @@ export interface DevupUIWebpackPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  /**
+   * Atom-level route-aware hoisting threshold.
+   *
+   * When set, a style atom whose content is reached by `>= atomHoist` distinct
+   * entries/routes is emitted once into the shared `devup-ui.css`; route-private
+   * atoms stay in their per-route chunk. Clamped to a minimum of 2 (an atom
+   * shared by `>= 2` routes is the smallest case worth hoisting). Omit to
+   * disable atom hoisting (identity behavior).
+   *
+   * Composes with single-importer collapse: files used by exactly one importer
+   * still merge into that importer's bucket (deduplicating their identical
+   * atoms), and atom hoisting then shares atoms across the remaining buckets.
+   *
+   * Currently honored by the Next.js plugin; other bundlers wire it
+   * progressively. No effect where unsupported.
+   */
+  atomHoist?: number
   /**
    * Import aliases for redirecting imports from other CSS-in-JS libraries
    * Merged with defaults: @emotion/styled, styled-components, @vanilla-extract/css
@@ -59,6 +81,7 @@ export class DevupUIWebpackPlugin {
     include = [],
     singleCss = false,
     prefix,
+    atomHoist,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
     this.importAliases = mergeImportAliases(userImportAliases)
@@ -73,6 +96,7 @@ export class DevupUIWebpackPlugin {
       include,
       singleCss,
       prefix,
+      atomHoist,
     }
 
     this.sheetFile = join(this.options.distDir, 'sheet.json')
@@ -136,6 +160,52 @@ export class DevupUIWebpackPlugin {
       }
     }
     this.writeDataFiles()
+
+    // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any loader
+    // runs codeExtract (apply() body is synchronous, loaders run during
+    // compilation) so atoms receive global (shared) class names. The WASM
+    // instance is shared in-process with the loaders. Composes with
+    // single-importer collapse: both keyed by the canonical bucket. The webpack
+    // loader passes relative(process.cwd(), id) as the extraction filename, so
+    // the graph maps use cwd-relative keys (keyBy: 'cwd-relative').
+    const atomHoist = this.options.atomHoist
+    const atomMode =
+      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    if (atomMode) {
+      try {
+        const srcDir = resolve(process.cwd(), 'src')
+        const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+        const cwd = process.cwd()
+        const canonicalMap = buildCanonicalMap({
+          srcDir,
+          tsconfigPath,
+          cwd,
+          keyBy: 'cwd-relative',
+        })
+        importCanonicalMap(canonicalMap)
+
+        const fileReach = computeFileReach({
+          srcDir,
+          tsconfigPath,
+          cwd,
+          keyBy: 'cwd-relative',
+        })
+        const reachByBucket: Record<string, number[]> = {}
+        for (const [file, ids] of Object.entries(fileReach)) {
+          const bucket = canonicalMap[file] ?? file
+          if (bucket === '@global') continue
+          const set = (reachByBucket[bucket] ??= [])
+          for (const id of ids) if (!set.includes(id)) set.push(id)
+        }
+        const routeCount = new Set(Object.values(fileReach).flat()).size
+        if (routeCount >= 2) {
+          importFileRoutes(reachByBucket)
+          setAtomHoist(Math.max(2, atomHoist))
+        }
+      } catch {
+        // Best-effort; on failure atom hoisting stays off (identity).
+      }
+    }
 
     if (this.options.watch) {
       let lastModifiedTime: number | null = null

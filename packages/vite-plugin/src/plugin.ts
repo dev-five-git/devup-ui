@@ -3,6 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
+  buildCanonicalMap,
+  computeFileReach,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   getFileNumByFilename,
@@ -15,7 +17,10 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
+  importCanonicalMap,
+  importFileRoutes,
   registerTheme,
+  setAtomHoist,
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
@@ -31,6 +36,14 @@ export interface DevupUIPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  /**
+   * Atom-level route-aware hoisting threshold (min routes sharing an atom for
+   * it to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
+   * Opt-in: when set, single-importer collapse + atom hoisting are enabled for
+   * this build. "Routes" are inferred from the import graph (entry points and
+   * dynamic-import targets).
+   */
+  atomHoist?: number
   /**
    * Import aliases for redirecting imports from other CSS-in-JS libraries
    * Merged with defaults: @emotion/styled, styled-components, @vanilla-extract/css
@@ -82,6 +95,7 @@ export function DevupUI({
   include = [],
   singleCss = false,
   prefix,
+  atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIPluginOptions> = {}): PluginOption {
   setDebug(debug)
@@ -92,7 +106,7 @@ export function DevupUI({
   const cssMap = new Map()
   return {
     name: 'devup-ui',
-    async configResolved() {
+    async configResolved(config) {
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeDataFiles({
@@ -102,6 +116,66 @@ export function DevupUI({
         distDir,
         singleCss,
       })
+
+      // Atom-level hoisting (opt-in via `atomHoist`). Configured BEFORE any
+      // transform so atoms receive global (shared) class names. Composes with
+      // single-importer collapse: both are keyed by the canonical bucket. Vite
+      // passes the ABSOLUTE module id to codeExtract, so the graph maps use
+      // absolute keys (keyBy: 'absolute') to match the engine's bucket keys.
+      const atomMode =
+        atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      if (atomMode) {
+        try {
+          const root = config.root ?? process.cwd()
+          const srcDir = resolve(root, 'src')
+          const tsconfigPath = resolve(root, 'tsconfig.json')
+          // C: prefer the bundler's real JS entries; fall back to the heuristic
+          // (files with no importer) when input is html-only / unavailable.
+          const input = config.build?.rollupOptions?.input
+          const rawEntries =
+            typeof input === 'string'
+              ? [input]
+              : Array.isArray(input)
+                ? input
+                : input && typeof input === 'object'
+                  ? Object.values(input)
+                  : []
+          const entries = rawEntries
+            .filter((e): e is string => typeof e === 'string')
+            .filter((e) => /\.(tsx|ts|jsx|js|mjs)$/i.test(e))
+            .map((e) => resolve(root, e))
+
+          const canonicalMap = buildCanonicalMap({
+            srcDir,
+            tsconfigPath,
+            cwd: root,
+            keyBy: 'absolute',
+          })
+          importCanonicalMap(canonicalMap)
+
+          const fileReach = computeFileReach({
+            srcDir,
+            tsconfigPath,
+            cwd: root,
+            keyBy: 'absolute',
+            entries: entries.length > 0 ? entries : undefined,
+          })
+          const reachByBucket: Record<string, number[]> = {}
+          for (const [file, ids] of Object.entries(fileReach)) {
+            const bucket = canonicalMap[file] ?? file
+            if (bucket === '@global') continue
+            const set = (reachByBucket[bucket] ??= [])
+            for (const id of ids) if (!set.includes(id)) set.push(id)
+          }
+          const routeCount = new Set(Object.values(fileReach).flat()).size
+          if (routeCount >= 2) {
+            importFileRoutes(reachByBucket)
+            setAtomHoist(Math.max(2, atomHoist))
+          }
+        } catch {
+          // Best-effort; on failure atom hoisting stays off (identity).
+        }
+      }
     },
     config() {
       const theme = getDefaultTheme()

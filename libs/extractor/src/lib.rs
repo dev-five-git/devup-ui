@@ -15,7 +15,7 @@ mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::visit::DevupVisitor;
-use css::file_map::get_file_num_by_filename;
+use css::file_map::{canonical, get_file_num_by_filename, is_global};
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::Expression;
 use oxc_ast_visit::VisitMut;
@@ -257,17 +257,23 @@ pub fn extract(
     };
 
     let source_type = SourceType::from_path(filename)?;
-    let css_file = if option.single_css {
+    // Bucket identity for CSS naming/emission (single-importer collapse). Identity
+    // when no canonical map is loaded. Real `filename` is kept for parse/sourcemap.
+    let bucket = canonical(filename);
+    // Global (shared-chunk) files are emitted like single-css: into devup-ui.css
+    // with prefix-less global naming, so styles shared across routes ship once.
+    let global = option.single_css || is_global(filename);
+    let css_file = if global {
         format!("{}/devup-ui.css", option.css_dir)
     } else {
         format!(
             "{}/devup-ui-{}.css",
             option.css_dir,
-            get_file_num_by_filename(filename)
+            get_file_num_by_filename(&bucket)
         )
     };
     let mut css_files = vec![css_file.clone()];
-    if option.import_main_css && !option.single_css {
+    if option.import_main_css && !global {
         css_files.insert(0, format!("{}/devup-ui.css", option.css_dir));
     }
     let allocator = Allocator::default();
@@ -285,11 +291,7 @@ pub fn extract(
         filename,
         &option.package,
         css_files,
-        if option.single_css {
-            None
-        } else {
-            Some(filename.to_string())
-        },
+        if global { None } else { Some(bucket) },
     );
     visitor.visit_program(&mut program);
     let result = Codegen::new()
@@ -316,13 +318,15 @@ fn extract_class_map_from_code(
     style_names: &FxHashSet<String>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
     let source_type = SourceType::from_path(filename)?;
-    let css_file = if option.single_css {
+    let bucket = canonical(filename);
+    let global = option.single_css || is_global(filename);
+    let css_file = if global {
         format!("{}/devup-ui.css", option.css_dir)
     } else {
         format!(
             "{}/devup-ui-{}.css",
             option.css_dir,
-            get_file_num_by_filename(filename)
+            get_file_num_by_filename(&bucket)
         )
     };
     let css_files = vec![css_file];
@@ -341,11 +345,7 @@ fn extract_class_map_from_code(
             filename,
             &option.package,
             css_files,
-            if option.single_css {
-                None
-            } else {
-                Some(filename.to_string())
-            },
+            if global { None } else { Some(bucket) },
         );
         visitor.visit_program(&mut program);
 
@@ -459,6 +459,81 @@ mod tests {
         assert!(!option.single_css);
         assert!(!option.import_main_css);
         assert!(option.import_aliases.is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn extract_canonical_bucket_merge() {
+        use css::file_map::{reset_canonical_map, set_canonical_map};
+        reset_class_map();
+        reset_file_map();
+        reset_canonical_map();
+        // child.tsx is a single-importer leaf collapsed into parent.tsx's bucket.
+        let mut m = std::collections::HashMap::new();
+        m.insert("child.tsx".to_string(), "parent.tsx".to_string());
+        set_canonical_map(m);
+
+        let opt = || ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "df/devup-ui".to_string(),
+            single_css: false,
+            import_main_css: false,
+            import_aliases: HashMap::new(),
+        };
+        let src = r#"import { Box } from "@devup-ui/react"; const a = <Box bg="red" />;"#;
+        let parent = extract("parent.tsx", src, opt()).unwrap();
+        let child = extract("child.tsx", src, opt()).unwrap();
+
+        // co-bucketed -> same css chunk file (child uses parent's file_num)
+        assert_eq!(parent.css_file, child.css_file);
+        // co-bucketed -> identical class naming (dedup) -> identical transformed code
+        assert_eq!(parent.code, child.code);
+
+        reset_canonical_map();
+        reset_class_map();
+        reset_file_map();
+    }
+
+    #[test]
+    #[serial]
+    fn extract_global_hoist() {
+        use css::file_map::{GLOBAL_BUCKET, reset_canonical_map, set_canonical_map};
+        reset_class_map();
+        reset_file_map();
+        reset_canonical_map();
+        // shared.tsx is hoisted to the global chunk; normal.tsx is a per-file bucket.
+        let mut m = std::collections::HashMap::new();
+        m.insert("shared.tsx".to_string(), GLOBAL_BUCKET.to_string());
+        set_canonical_map(m);
+
+        let opt = || ExtractOption {
+            package: "@devup-ui/react".to_string(),
+            css_dir: "df/devup-ui".to_string(),
+            single_css: false,
+            import_main_css: false,
+            import_aliases: HashMap::new(),
+        };
+        let src = r#"import { Box } from "@devup-ui/react"; const a = <Box bg="red" />;"#;
+        let global_out = extract("shared.tsx", src, opt()).unwrap();
+        let normal_out = extract("normal.tsx", src, opt()).unwrap();
+
+        // global file emits into the shared devup-ui.css (loaded once)
+        assert_eq!(
+            global_out.css_file.as_deref(),
+            Some("df/devup-ui/devup-ui.css")
+        );
+        // non-global file stays in a per-file chunk
+        assert!(
+            normal_out
+                .css_file
+                .as_deref()
+                .unwrap()
+                .contains("devup-ui-")
+        );
+
+        reset_canonical_map();
+        reset_class_map();
+        reset_file_map();
     }
 
     #[test]

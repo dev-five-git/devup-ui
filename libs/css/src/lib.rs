@@ -1,7 +1,9 @@
+pub mod atom_hoist;
 pub mod class_map;
 mod constant;
 pub mod debug;
 pub mod file_map;
+pub mod file_routes;
 pub mod is_special_property;
 mod num_to_nm_base;
 pub mod optimize_multi_css_value;

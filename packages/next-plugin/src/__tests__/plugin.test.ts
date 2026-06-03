@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import * as importGraphModule from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPluginModule from '@devup-ui/webpack-plugin'
 import {
@@ -689,6 +690,119 @@ describe('DevupUINextPlugin', () => {
       expect(process.env.NODE_OPTIONS ?? '').not.toContain('--inspect-brk')
 
       processOnSpy.mockRestore()
+    })
+
+    it('does not enable atom hoisting when atomHoist option is unset', () => {
+      process.env.TURBOPACK = '1'
+      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
+        undefined,
+      )
+      const importFileRoutesSpy = spyOn(
+        wasm,
+        'importFileRoutes',
+      ).mockReturnValue(undefined)
+      const importCanonicalMapSpy = spyOn(
+        wasm,
+        'importCanonicalMap',
+      ).mockReturnValue(undefined)
+      try {
+        DevupUI({})
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+        expect(importFileRoutesSpy).not.toHaveBeenCalled()
+        // single-importer collapse still runs (it is the always-on default)
+        expect(importCanonicalMapSpy).toHaveBeenCalled()
+      } finally {
+        setAtomHoistSpy.mockRestore()
+        importFileRoutesSpy.mockRestore()
+        importCanonicalMapSpy.mockRestore()
+      }
+    })
+
+    it('composes atom hoisting WITH single-importer collapse when atomHoist is set', () => {
+      process.env.TURBOPACK = '1'
+      // 4 distinct leaf routes (ids 0..3); layout shared by all four.
+      const computeSpy = spyOn(
+        importGraphModule,
+        'computeFileRoutes',
+      ).mockReturnValue({
+        'src/app/layout.tsx': [0, 1, 2, 3],
+        'src/app/a/page.tsx': [0],
+        'src/app/b/page.tsx': [1],
+        'src/app/c/page.tsx': [2],
+        'src/app/d/page.tsx': [3],
+      })
+      const importFileRoutesSpy = spyOn(
+        wasm,
+        'importFileRoutes',
+      ).mockReturnValue(undefined)
+      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
+        undefined,
+      )
+      // Collapse and atom hoisting COMPOSE: importCanonicalMap must STILL run.
+      const importCanonicalMapSpy = spyOn(
+        wasm,
+        'importCanonicalMap',
+      ).mockReturnValue(undefined)
+      try {
+        DevupUI({}, { atomHoist: 2 })
+        // reach folded by bucket; mocked FS => empty canonical map => bucket==file
+        expect(importFileRoutesSpy).toHaveBeenCalledWith({
+          'src/app/layout.tsx': [0, 1, 2, 3],
+          'src/app/a/page.tsx': [0],
+          'src/app/b/page.tsx': [1],
+          'src/app/c/page.tsx': [2],
+          'src/app/d/page.tsx': [3],
+        })
+        // direct threshold, clamped to >= 2
+        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+        // composition: collapse pre-pass also ran
+        expect(importCanonicalMapSpy).toHaveBeenCalled()
+      } finally {
+        computeSpy.mockRestore()
+        importFileRoutesSpy.mockRestore()
+        setAtomHoistSpy.mockRestore()
+        importCanonicalMapSpy.mockRestore()
+      }
+    })
+
+    it('clamps the atomHoist threshold to a minimum of 2', () => {
+      process.env.TURBOPACK = '1'
+      const computeSpy = spyOn(
+        importGraphModule,
+        'computeFileRoutes',
+      ).mockReturnValue({
+        'src/app/a/page.tsx': [0],
+        'src/app/b/page.tsx': [1],
+      })
+      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
+        undefined,
+      )
+      try {
+        DevupUI({}, { atomHoist: 1 })
+        // max(2, 1) === 2
+        expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+      } finally {
+        computeSpy.mockRestore()
+        setAtomHoistSpy.mockRestore()
+      }
+    })
+
+    it('keeps atom hoisting off when fewer than two routes exist', () => {
+      process.env.TURBOPACK = '1'
+      const computeSpy = spyOn(
+        importGraphModule,
+        'computeFileRoutes',
+      ).mockReturnValue({ 'src/app/a/page.tsx': [0] })
+      const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(
+        undefined,
+      )
+      try {
+        DevupUI({}, { atomHoist: 2 })
+        expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      } finally {
+        computeSpy.mockRestore()
+        setAtomHoistSpy.mockRestore()
+      }
     })
   })
 })

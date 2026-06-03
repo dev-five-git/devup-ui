@@ -8,6 +8,8 @@ import {
 import { join, relative, resolve } from 'node:path'
 
 import {
+  buildCanonicalMap,
+  computeFileRoutes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   loadDevupConfigSync,
@@ -20,10 +22,13 @@ import {
   getCss,
   getDefaultTheme,
   getThemeInterface,
+  importCanonicalMap,
   importClassMap,
   importFileMap,
+  importFileRoutes,
   importSheet,
   registerTheme,
+  setAtomHoist,
   setPrefix,
 } from '@devup-ui/wasm'
 import {
@@ -64,6 +69,7 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
+      atomHoist,
       importAliases: userImportAliases,
     } = options
 
@@ -76,6 +82,7 @@ export function DevupUI(
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
     const fileMapFile = join(distDir, 'fileMap.json')
+    const canonicalMapFile = join(distDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
     if (!existsSync(distDir))
       mkdirSync(distDir, {
@@ -114,6 +121,61 @@ export function DevupUI(
     const excludeRegex = createNodeModulesExcludeRegex(include, '.mdx.[tj]sx?$')
 
     const coordinatorPortFile = join(distDir, 'coordinator.port')
+
+    // Pre-pass: single-importer collapse ALWAYS runs (files with exactly one
+    // importer merge into that importer's bucket, so their identical atoms share
+    // one class). Atom-level hoisting COMPOSES on top: an atom reached by
+    // >= atomHoist distinct routes is emitted once into the shared devup-ui.css.
+    //
+    // The two compose because both are keyed by the canonical bucket: the engine
+    // keys property buckets by canonical(filename), and the route-reach map below
+    // is folded onto the SAME canonical bucket — so route_count_for_files() looks
+    // atoms up by bucket and the lookup hits. `atomHoist` must be configured
+    // BEFORE any extraction so atoms receive global (shared) class names; the
+    // coordinator shares this WASM instance, so it applies to every /extract.
+    const atomMode =
+      atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    try {
+      const srcDir = resolve(process.cwd(), 'src')
+      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+      const cwd = process.cwd()
+      // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
+      // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
+      const hoistV = atomMode
+        ? undefined
+        : process.env.DEVUP_HOIST_V
+          ? Number(process.env.DEVUP_HOIST_V)
+          : undefined
+      const canonicalMap = buildCanonicalMap({
+        srcDir,
+        tsconfigPath,
+        cwd,
+        hoistV,
+      })
+      importCanonicalMap(canonicalMap)
+      writeFileSync(canonicalMapFile, JSON.stringify(canonicalMap))
+
+      if (atomMode) {
+        // Fold per-file route reach onto the canonical bucket so the keys match
+        // the engine's property bucket keys (canonical(filename)).
+        const fileRoutes = computeFileRoutes({ srcDir, tsconfigPath, cwd })
+        const reachByBucket: Record<string, number[]> = {}
+        for (const [file, ids] of Object.entries(fileRoutes)) {
+          const bucket = canonicalMap[file] ?? file
+          if (bucket === '@global') continue
+          const set = (reachByBucket[bucket] ??= [])
+          for (const id of ids) if (!set.includes(id)) set.push(id)
+        }
+        const routeCount = new Set(Object.values(fileRoutes).flat()).size
+        if (routeCount >= 2) {
+          importFileRoutes(reachByBucket)
+          setAtomHoist(Math.max(2, atomHoist))
+        }
+      }
+    } catch {
+      // Pre-pass is best-effort; on failure canonical() is the identity (no
+      // merge) and atom hoisting stays off.
+    }
 
     // create devup-ui.css file
     writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))

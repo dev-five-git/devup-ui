@@ -2,6 +2,8 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{
+    atom_hoist::{atom_hoist_threshold, is_atom_hoist},
+    file_routes::route_count_for_files,
     merge_selector, sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector},
     theme_tokens::set_theme_token_levels,
@@ -11,7 +13,7 @@ use extractor::extract_style::extract_static_style::ThemeTokenResolution;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
 use regex_lite::Regex;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
@@ -340,6 +342,16 @@ impl StyleSheet {
     ) -> (bool, bool) {
         let mut collected = false;
         let mut updated_base_style = false;
+        // Decouple class NAMING from property BUCKETING. atom_hoist uses GLOBAL
+        // (prefix-less, shared-registry) names like single_css, but still keeps
+        // per-file property buckets so create_css can route each atom to the
+        // global chunk or a per-route chunk based on its route usage.
+        let name_scope = if single_css || is_atom_hoist() {
+            None
+        } else {
+            Some(filename)
+        };
+        let bucket_scope = if single_css { None } else { Some(filename) };
         for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
@@ -372,10 +384,10 @@ impl StyleSheet {
                                 Some(&resolved_value),
                                 selector.as_deref(),
                                 st.style_order(),
-                                if single_css { None } else { Some(filename) },
+                                name_scope,
                             )
                         } else {
-                            match st.extract(if single_css { None } else { Some(filename) }) {
+                            match st.extract(name_scope) {
                                 StyleProperty::ClassName(cls)
                                 | StyleProperty::Variable {
                                     class_name: cls, ..
@@ -390,7 +402,7 @@ impl StyleSheet {
                         &resolved_value,
                         st.selector(),
                         st.style_order(),
-                        if single_css { None } else { Some(filename) },
+                        bucket_scope,
                         st.layer(),
                     ) {
                         collected = true;
@@ -404,7 +416,7 @@ impl StyleSheet {
                         class_name,
                         variable_name,
                         ..
-                    }) = style.extract(if single_css { None } else { Some(filename) })
+                    }) = style.extract(name_scope)
                         && self.add_property(
                             &class_name,
                             dy.property(),
@@ -416,7 +428,7 @@ impl StyleSheet {
                             },
                             dy.selector(),
                             dy.style_order(),
-                            if single_css { None } else { Some(filename) },
+                            bucket_scope,
                         )
                     {
                         collected = true;
@@ -428,9 +440,7 @@ impl StyleSheet {
 
                 ExtractStyleValue::Keyframes(keyframes) => {
                     if self.add_keyframes(
-                        &keyframes
-                            .extract(if single_css { None } else { Some(filename) })
-                            .to_string(),
+                        &keyframes.extract(name_scope).to_string(),
                         keyframes
                             .keyframes
                             .iter()
@@ -449,7 +459,7 @@ impl StyleSheet {
                                 )
                             })
                             .collect(),
-                        if single_css { None } else { Some(filename) },
+                        bucket_scope,
                     ) {
                         collected = true;
                     }
@@ -717,6 +727,38 @@ impl StyleSheet {
         &HEADER
     }
 
+    /// Compute the set of atom class names that should be hoisted into the
+    /// global stylesheet under atom-level hoisting.
+    ///
+    /// An atom (uniquely identified by its `class_name` under global naming) is
+    /// hoisted when the number of routes that transitively use it reaches the
+    /// configured threshold. Base styles (`style_order == 0`) are excluded
+    /// because they are already emitted globally and shared by every chunk.
+    fn compute_hoisted_atoms(&self, threshold: usize) -> FxHashSet<String> {
+        // atom class_name -> set of files that reference it (order != 0)
+        let mut atom_files: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
+        for (filename, property_map) in &self.properties {
+            for (style_order, level_map) in property_map {
+                if *style_order == 0 {
+                    continue;
+                }
+                for props in level_map.values() {
+                    for prop in props {
+                        atom_files
+                            .entry(prop.class_name.clone())
+                            .or_default()
+                            .insert(filename.as_str());
+                    }
+                }
+            }
+        }
+        atom_files
+            .into_iter()
+            .filter(|(_, files)| route_count_for_files(files.iter().copied()) >= threshold)
+            .map(|(class_name, _)| class_name)
+            .collect()
+    }
+
     #[must_use]
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
@@ -730,6 +772,11 @@ impl StyleSheet {
         }
 
         let write_global = filename.is_none();
+
+        // Under atom-level hoisting, decide which atoms (order != 0) live in the
+        // shared global stylesheet vs. their per-route chunk.
+        let hoisted_atoms: Option<FxHashSet<String>> =
+            atom_hoist_threshold().map(|threshold| self.compute_hoisted_atoms(threshold));
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
@@ -852,6 +899,43 @@ impl StyleSheet {
                     css.push('}');
                 }
             }
+            // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
+            // stylesheet, aggregated across every file and deduplicated by atom
+            // identity (class_name).
+            if let Some(hoisted) = &hoisted_atoms {
+                let mut aggregated: BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>> =
+                    BTreeMap::new();
+                for property_map in self.properties.values() {
+                    for (style_order, level_map) in property_map {
+                        if *style_order == 0 {
+                            continue;
+                        }
+                        for (level, props) in level_map {
+                            for prop in props {
+                                if hoisted.contains(&prop.class_name) {
+                                    aggregated
+                                        .entry(*style_order)
+                                        .or_default()
+                                        .entry(*level)
+                                        .or_default()
+                                        .insert(prop.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                for (style_order, map) in aggregated {
+                    let current_css = self.create_style(&map);
+                    if current_css.is_empty() {
+                        continue;
+                    }
+                    if style_order == 255 {
+                        css.push_str(&current_css);
+                    } else {
+                        push_fmt!(&mut css, "@layer o{style_order}{{{current_css}}}");
+                    }
+                }
+            }
         } else {
             // avoid inline import issue (vite plugin)
             if import_main_css {
@@ -886,7 +970,27 @@ impl StyleSheet {
                     // base style was created in global css
                     continue;
                 }
-                let current_css = self.create_style(map);
+                // Under atom hoisting, hoisted atoms were emitted globally; the
+                // per-route chunk keeps only its route-private atoms.
+                let current_css = if let Some(hoisted) = &hoisted_atoms {
+                    let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
+                        .iter()
+                        .filter_map(|(level, props)| {
+                            let kept: FxHashSet<StyleSheetProperty> = props
+                                .iter()
+                                .filter(|prop| !hoisted.contains(&prop.class_name))
+                                .cloned()
+                                .collect();
+                            (!kept.is_empty()).then_some((*level, kept))
+                        })
+                        .collect();
+                    if filtered.is_empty() {
+                        continue;
+                    }
+                    self.create_style(&filtered)
+                } else {
+                    self.create_style(map)
+                };
 
                 if !current_css.is_empty() {
                     // order style 255 is user css

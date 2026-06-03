@@ -1,4 +1,5 @@
 import * as fsPromises from 'node:fs/promises'
+import * as nodePath from 'node:path'
 import { join } from 'node:path'
 
 import * as wasm from '@devup-ui/wasm'
@@ -378,5 +379,40 @@ describe('devupUILoader', () => {
       }),
     )
     devupUILoader.bind(t)(Buffer.from('code'), 'index.tsx')
+  })
+
+  it('posix-normalizes the extraction filename (Windows path safety)', () => {
+    // Simulate Windows: force path.relative to emit backslashes. The loader
+    // MUST normalize to forward slashes so the engine bucket key matches the
+    // canonical map / FILE_ROUTES (built posix by plugin-utils).
+    const relativeSpy = spyOn(nodePath, 'relative').mockImplementation(
+      (from: string, to: string) =>
+        (
+          nodePath as { posix: { relative: (a: string, b: string) => string } }
+        ).posix
+          .relative(from, to)
+          .replaceAll('/', '\\'),
+    )
+    const asyncCallback = mock()
+    const t = createLoaderContext(
+      {
+        package: 'package',
+        cssDir: 'df/devup-ui',
+        sheetFile: 's',
+        classMapFile: 'c',
+        fileMapFile: 'f',
+        watch: false,
+        singleCss: true,
+      },
+      asyncCallback,
+      'src/Card.tsx',
+    )
+    try {
+      devupUILoader.bind(t)(Buffer.from('code'), 'src/Card.tsx')
+      const filenameArg = codeExtractSpy.mock.calls[0]?.[0] as string
+      expect(filenameArg).not.toContain('\\')
+    } finally {
+      relativeSpy.mockRestore()
+    }
   })
 })

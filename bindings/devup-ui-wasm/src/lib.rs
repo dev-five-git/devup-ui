@@ -1,5 +1,7 @@
 use css::class_map::{set_class_map, with_class_map};
-use css::file_map::{set_file_map, with_file_map};
+use css::file_map::{
+    canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
+};
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use rustc_hash::FxHashSet;
@@ -68,10 +70,17 @@ impl Output {
         css_file: Option<String>,
         import_main_css: bool,
     ) -> Self {
+        // Use the bucket identity (single-importer collapse) so the sheet's CSS
+        // naming + property bucket + emitted chunk match the canonical class names
+        // the extractor already baked into `code`. Identity when no map is loaded.
+        // Global (shared-chunk) files are treated like single-css: emitted into the
+        // global bucket (devup-ui.css) with prefix-less naming.
+        let canonical_filename = canonical(&filename);
+        let global = single_css || is_global(&filename);
         with_style_sheet_mut(|sheet| {
-            let default_collected = sheet.rm_global_css(&filename, single_css);
+            let default_collected = sheet.rm_global_css(&canonical_filename, global);
             let (collected, updated_base_style) =
-                sheet.update_styles(&styles, &filename, single_css);
+                sheet.update_styles(&styles, &canonical_filename, global);
             Self {
                 code,
                 map,
@@ -82,7 +91,11 @@ impl Output {
                         None
                     } else {
                         Some(sheet.create_css(
-                            if single_css { None } else { Some(&filename) },
+                            if global {
+                                None
+                            } else {
+                                Some(&canonical_filename)
+                            },
                             import_main_css,
                         ))
                     }
@@ -247,6 +260,63 @@ pub fn export_file_map() -> Result<String, JsValue> {
     export_file_map_internal().map_err(js_error)
 }
 
+/// Internal function to import the canonical (bucket) map (testable without `JsValue`)
+pub fn import_canonical_map_internal(map: HashMap<String, String>) {
+    set_canonical_map(map);
+}
+
+/// Internal function to export the canonical map as JSON string (testable without `JsValue`)
+pub fn export_canonical_map_internal() -> Result<String, String> {
+    with_canonical_map(serde_json::to_string).map_err(|e| e.to_string())
+}
+
+#[wasm_bindgen(js_name = "importCanonicalMap")]
+#[cfg(not(tarpaulin_include))]
+pub fn import_canonical_map(map_object: JsValue) -> Result<(), JsValue> {
+    set_canonical_map(serde_wasm_bindgen::from_value(map_object).map_err(js_error)?);
+    Ok(())
+}
+
+#[wasm_bindgen(js_name = "exportCanonicalMap")]
+#[cfg(not(tarpaulin_include))]
+pub fn export_canonical_map() -> Result<String, JsValue> {
+    export_canonical_map_internal().map_err(js_error)
+}
+
+/// Set the atom-level hoist threshold.
+///
+/// When set to `Some(n)`, a style atom whose content is used by `>= n` distinct
+/// routes is emitted into the shared global `devup-ui.css` (shipped once) instead
+/// of duplicated into each per-route chunk. `None` (the default) disables atom
+/// hoisting entirely (identity behavior).
+///
+/// MUST be called BEFORE `codeExtract` so atoms receive global (shared) class
+/// names; enabling it afterwards leaves per-file names and nothing hoists.
+/// Pair with `importFileRoutes` to provide the file -> routes mapping.
+#[wasm_bindgen(js_name = "setAtomHoist")]
+pub fn set_atom_hoist(threshold: Option<usize>) {
+    css::atom_hoist::set_atom_hoist(threshold);
+}
+
+/// Internal function to import the file -> routes map (testable without `JsValue`)
+pub fn import_file_routes_internal(map: HashMap<String, std::collections::HashSet<u32>>) {
+    css::file_routes::set_file_routes(map);
+}
+
+/// Import the file -> set-of-route-ids mapping used to decide atom hoisting.
+///
+/// Accepts a JS object like `{ "src/page.tsx": [0, 3], "src/card.tsx": [0] }`
+/// where each value is the set of leaf-route ids whose render closure includes
+/// that file. Populated by the build-time pre-pass.
+#[wasm_bindgen(js_name = "importFileRoutes")]
+#[cfg(not(tarpaulin_include))]
+pub fn import_file_routes(map_object: JsValue) -> Result<(), JsValue> {
+    css::file_routes::set_file_routes(
+        serde_wasm_bindgen::from_value(map_object).map_err(js_error)?,
+    );
+    Ok(())
+}
+
 /// Internal function to extract code (testable without `JsValue`)
 #[allow(clippy::too_many_arguments)]
 pub fn code_extract_internal(
@@ -405,6 +475,464 @@ mod tests {
         let mut ct = ColorTheme::default();
         ct.add_color(name, value);
         ct
+    }
+
+    #[test]
+    #[serial]
+    fn atom_hoist_splits_global_and_private() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::class_map::reset_class_map;
+        use css::file_map::reset_file_map;
+        use css::file_routes::{reset_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        {
+            let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
+            *s = StyleSheet::default();
+        }
+        reset_class_map();
+        reset_file_map();
+        reset_file_routes();
+        register_theme_internal(sheet::theme::Theme::default());
+
+        // a.tsx -> route 0, b.tsx -> route 1. bg:red is in BOTH (routes {0,1}, count 2 => HOIST).
+        // width:11px only in a (route {0}, private). width:22px only in b (private).
+        let mut fr = HashMap::new();
+        fr.insert("a.tsx".to_string(), HashSet::from([0u32]));
+        fr.insert("b.tsx".to_string(), HashSet::from([1u32]));
+        set_file_routes(fr);
+        set_atom_hoist(Some(2));
+
+        let srca = r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" w="11px" />;"#;
+        let srcb = r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" w="22px" />;"#;
+        code_extract_internal(
+            "a.tsx",
+            srca,
+            "@devup-ui/react",
+            "df".to_string(),
+            false,
+            false,
+            false,
+            HashMap::new(),
+        )
+        .unwrap();
+        code_extract_internal(
+            "b.tsx",
+            srcb,
+            "@devup-ui/react",
+            "df".to_string(),
+            false,
+            false,
+            false,
+            HashMap::new(),
+        )
+        .unwrap();
+
+        let global = with_style_sheet(|s| s.create_css(None, false));
+        let chunk_a = with_style_sheet(|s| s.create_css(Some("a.tsx"), false));
+        let chunk_b = with_style_sheet(|s| s.create_css(Some("b.tsx"), false));
+
+        // hoisted shared atom in the global file, ONCE; not the private ones
+        assert!(
+            global.contains("background:red"),
+            "global must have hoisted bg:red"
+        );
+        assert_eq!(
+            global.matches("background:red").count(),
+            1,
+            "bg:red deduped once in global"
+        );
+        assert!(
+            !global.contains("width:11px") && !global.contains("width:22px"),
+            "private atoms not in global"
+        );
+
+        // private atoms in their route chunk; hoisted atom NOT duplicated there
+        assert!(
+            chunk_a.contains("width:11px") && !chunk_a.contains("background:red"),
+            "chunk a: private only"
+        );
+        assert!(
+            chunk_b.contains("width:22px") && !chunk_b.contains("background:red"),
+            "chunk b: private only"
+        );
+
+        set_atom_hoist(None);
+        reset_file_routes();
+    }
+
+    /// Env-gated artifact emitter for split-native measurement. Writes REAL
+    /// devup CSS output (header, `@layer`, naming, dedup all authentic) for three
+    /// delivery models across several workloads, so an external script can
+    /// measure gzip/brotli + multi-route session + incremental-invalidation
+    /// bytes. Set `DEVUP_EMIT_MEASURE=1` to run; no-op (and zero cost) otherwise
+    /// so the normal test suite stays clean.
+    #[test]
+    #[serial]
+    #[allow(clippy::items_after_statements, clippy::format_push_string)]
+    fn emit_split_measurement_artifacts() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::class_map::reset_class_map;
+        use css::file_map::reset_file_map;
+        use css::file_routes::{reset_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+        use std::fs;
+
+        if std::env::var("DEVUP_EMIT_MEASURE").is_err() {
+            return;
+        }
+
+        let props = [
+            "w",
+            "h",
+            "p",
+            "m",
+            "minW",
+            "minH",
+            "maxW",
+            "maxH",
+            "fontSize",
+            "lineHeight",
+            "borderRadius",
+            "gap",
+        ];
+        let atom = |key: &str, px: usize| format!("<Box {key}=\"{px}px\" />");
+        let build = |els: &[String]| {
+            format!(
+                "import {{ Box }} from \"@devup-ui/react\"; const x = <>{}</>;",
+                els.join("")
+            )
+        };
+        let reset = || {
+            {
+                let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
+                *s = StyleSheet::default();
+            }
+            reset_class_map();
+            reset_file_map();
+            reset_file_routes();
+            register_theme_internal(sheet::theme::Theme::default());
+        };
+
+        let out = std::env::temp_dir().join("devup-split-measure");
+        let _ = fs::remove_dir_all(&out);
+        fs::create_dir_all(&out).unwrap();
+
+        // (name, routes, universal atoms, private atoms/route)
+        let workloads = [
+            ("shared_heavy", 8usize, 80usize, 25usize),
+            ("balanced", 8usize, 50usize, 50usize),
+            ("disjoint", 8usize, 20usize, 60usize),
+        ];
+        let mut manifest = String::from("[");
+        for (wi, (name, n, u, p)) in workloads.iter().enumerate() {
+            let (n, u, p) = (*n, *u, *p);
+            let universal: Vec<String> = (0..u)
+                .map(|i| atom(props[i % props.len()], 100_000 + i))
+                .collect();
+            let make_priv = |r: usize| -> Vec<String> {
+                (0..p)
+                    .map(|i| {
+                        atom(
+                            props[i % props.len()],
+                            1_000_000 + wi * 1_000_000 + r * p + i,
+                        )
+                    })
+                    .collect()
+            };
+            let sources: Vec<String> = (0..n)
+                .map(|r| {
+                    let mut e = universal.clone();
+                    e.extend(make_priv(r));
+                    build(&e)
+                })
+                .collect();
+            let run = |single: bool| {
+                reset();
+                for (r, src) in sources.iter().enumerate() {
+                    code_extract_internal(
+                        &format!("r{r}.tsx"),
+                        src,
+                        "@devup-ui/react",
+                        "df".to_string(),
+                        single,
+                        false,
+                        false,
+                        HashMap::new(),
+                    )
+                    .unwrap();
+                }
+            };
+
+            // single-css: one shared file with every atom.
+            run(true);
+            fs::write(
+                out.join(format!("{name}_single.css")),
+                with_style_sheet(|s| s.create_css(None, false)),
+            )
+            .unwrap();
+
+            // per-file: shared base (theme/base only) + one full chunk per route.
+            run(false);
+            fs::write(
+                out.join(format!("{name}_perfile_base.css")),
+                with_style_sheet(|s| s.create_css(None, false)),
+            )
+            .unwrap();
+            for r in 0..n {
+                fs::write(
+                    out.join(format!("{name}_perfile_r{r}.css")),
+                    with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)),
+                )
+                .unwrap();
+            }
+
+            // atom-B: hoisted shared base (universal atoms) + per-route delta.
+            // CRITICAL: atom_hoist must be enabled BEFORE extraction so atoms get
+            // GLOBAL names (shared identity across files). Enabling it only at
+            // create_css time leaves per-file names, so the same universal atom
+            // looks like N distinct atoms (one per file) and never hoists.
+            reset();
+            let mut fr = HashMap::new();
+            for r in 0..n {
+                fr.insert(format!("r{r}.tsx"), HashSet::from([r as u32]));
+            }
+            set_file_routes(fr);
+            set_atom_hoist(Some(n));
+            for (r, src) in sources.iter().enumerate() {
+                code_extract_internal(
+                    &format!("r{r}.tsx"),
+                    src,
+                    "@devup-ui/react",
+                    "df".to_string(),
+                    false,
+                    false,
+                    false,
+                    HashMap::new(),
+                )
+                .unwrap();
+            }
+            fs::write(
+                out.join(format!("{name}_atomb_base.css")),
+                with_style_sheet(|s| s.create_css(None, false)),
+            )
+            .unwrap();
+            for r in 0..n {
+                fs::write(
+                    out.join(format!("{name}_atomb_r{r}.css")),
+                    with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)),
+                )
+                .unwrap();
+            }
+            set_atom_hoist(None);
+            reset_file_routes();
+
+            manifest.push_str(&format!(
+                "{}{{\"name\":\"{name}\",\"n\":{n},\"u\":{u},\"p\":{p}}}",
+                if wi > 0 { "," } else { "" }
+            ));
+        }
+        manifest.push(']');
+        fs::write(out.join("manifest.json"), manifest).unwrap();
+        reset();
+        set_atom_hoist(None);
+        println!("[EMIT] artifacts -> {}", out.display());
+    }
+
+    /// SPLIT-NATIVE LOCK: atom-level route-aware hoisting (global-named
+    /// shared-base + per-route delta) is a STRICT upgrade over the per-file mode
+    /// on the metrics that split actually competes on -- multi-route SESSION
+    /// bytes and incremental-deploy INVALIDATION bytes -- NOT on fresh-single-
+    /// route bytes (where per-file already hits the theoretical floor).
+    ///
+    /// This test supersedes an earlier "no win" lock that was built on a
+    /// measurement bug: enabling atom_hoist AFTER extraction left per-file class
+    /// names, so the same universal atom looked like N distinct atoms and never
+    /// hoisted -- making atom-B byte-identical to per-file (a no-op, not a
+    /// truth). The fix, asserted here, is that atom_hoist MUST be enabled BEFORE
+    /// extraction so atoms get GLOBAL (shared) names.
+    #[test]
+    #[serial]
+    // byte sizes are tiny so ratios are exact; doc prose names models literally
+    #[allow(clippy::cast_precision_loss, clippy::doc_markdown)]
+    fn atom_b_beats_per_file_on_session_and_invalidation() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::class_map::reset_class_map;
+        use css::file_map::reset_file_map;
+        use css::file_routes::{reset_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        // Realistic design-system workload: many shared primitives, fewer
+        // route-private atoms. Routes are disjoint on private atoms.
+        const ROUTES: usize = 8;
+        const UNIVERSAL: usize = 80;
+        const PRIVATE: usize = 25;
+
+        let props = ["w", "h", "p", "m", "minW", "minH", "maxW", "maxH"];
+        let atom = |key: &str, px: usize| format!("<Box {key}=\"{px}px\" />");
+        let build_source = |elements: &[String]| -> String {
+            let body = elements.join("");
+            format!("import {{ Box }} from \"@devup-ui/react\"; const x = <>{body}</>;")
+        };
+        let reset_engine = || {
+            {
+                let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
+                *s = StyleSheet::default();
+            }
+            reset_class_map();
+            reset_file_map();
+            reset_file_routes();
+            register_theme_internal(sheet::theme::Theme::default());
+        };
+
+        let universal_atoms: Vec<String> = (0..UNIVERSAL)
+            .map(|i| atom(props[i % props.len()], 100_000 + i))
+            .collect();
+        let make_private = |route: usize| -> Vec<String> {
+            (0..PRIVATE)
+                .map(|i| atom(props[i % props.len()], 1_000_000 + route * PRIVATE + i))
+                .collect()
+        };
+        let sources: Vec<String> = (0..ROUTES)
+            .map(|r| {
+                let mut e = universal_atoms.clone();
+                e.extend(make_private(r));
+                build_source(&e)
+            })
+            .collect();
+        let extract_all = |single_css: bool| {
+            for (r, src) in sources.iter().enumerate() {
+                code_extract_internal(
+                    &format!("r{r}.tsx"),
+                    src,
+                    "@devup-ui/react",
+                    "df".to_string(),
+                    single_css,
+                    false,
+                    false,
+                    HashMap::new(),
+                )
+                .unwrap();
+            }
+        };
+
+        // ---- per-file: atom_hoist OFF, multi-css. Each chunk carries all of
+        // its route's atoms (universals duplicated into every chunk). ----
+        reset_engine();
+        extract_all(false);
+        let pf_base = with_style_sheet(|s| s.create_css(None, false)).len();
+        let pf_chunks: Vec<usize> = (0..ROUTES)
+            .map(|r| with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)).len())
+            .collect();
+
+        // ---- atom-B: enable hoist + routes BEFORE extraction so atoms get
+        // GLOBAL names; universals (used by all ROUTES) hoist into the base,
+        // privates stay in their per-route delta. ----
+        reset_engine();
+        let mut fr = HashMap::new();
+        for r in 0..ROUTES {
+            fr.insert(format!("r{r}.tsx"), HashSet::from([r as u32]));
+        }
+        set_file_routes(fr);
+        set_atom_hoist(Some(ROUTES));
+        extract_all(false);
+        let ab_base = with_style_sheet(|s| s.create_css(None, false)).len();
+        let ab_deltas: Vec<usize> = (0..ROUTES)
+            .map(|r| with_style_sheet(|s| s.create_css(Some(&format!("r{r}.tsx")), false)).len())
+            .collect();
+        set_atom_hoist(None);
+        reset_file_routes();
+        reset_engine();
+
+        // Session = visit every route once (base cached after the first route).
+        let pf_session = pf_base + pf_chunks.iter().sum::<usize>();
+        let ab_session = ab_base + ab_deltas.iter().sum::<usize>();
+        // Invalidation = one route's styles change; returning user re-downloads
+        // only the file(s) whose hash changed.
+        let pf_invalidation = pf_chunks[0];
+        let ab_invalidation = ab_deltas[0];
+
+        let session_margin = (pf_session as f64 - ab_session as f64) / pf_session as f64 * 100.0;
+        let invalidation_margin =
+            (pf_invalidation as f64 - ab_invalidation as f64) / pf_invalidation as f64 * 100.0;
+        println!(
+            "[SPLIT] base: per-file={pf_base}B atom-B={ab_base}B | chunk: per-file={}B atom-B-delta={}B",
+            pf_chunks[0], ab_deltas[0]
+        );
+        println!(
+            "[SPLIT] session: per-file={pf_session}B atom-B={ab_session}B ({session_margin:.1}% smaller) | invalidation: per-file={pf_invalidation}B atom-B={ab_invalidation}B ({invalidation_margin:.1}% smaller)"
+        );
+
+        // Regression guard against the no-op-hoist bug: hoisting MUST have moved
+        // the universal atoms into the base, so the base is large and the delta
+        // is much smaller than a full per-file chunk.
+        assert!(
+            ab_base > pf_base + 500,
+            "hoist no-op: atom-B base ({ab_base}B) should hold the universal atoms, \
+             but is barely larger than the empty per-file base ({pf_base}B). \
+             atom_hoist was likely enabled AFTER extraction."
+        );
+        assert!(
+            (ab_deltas[0] as f64) < (pf_chunks[0] as f64) * 0.6,
+            "hoist no-op: atom-B delta ({}B) should be far smaller than the full \
+             per-file chunk ({}B) once universals are hoisted out",
+            ab_deltas[0],
+            pf_chunks[0]
+        );
+        // The split-native wins this whole investigation hinges on.
+        assert!(
+            session_margin >= 15.0,
+            "atom-B should beat per-file on multi-route session bytes by >=15% \
+             (got {session_margin:.1}%)"
+        );
+        assert!(
+            invalidation_margin >= 30.0,
+            "atom-B should beat per-file on incremental-deploy invalidation by \
+             >=30% (got {invalidation_margin:.1}%)"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_atom_hoist_and_file_routes_bindings() {
+        use css::atom_hoist::atom_hoist_threshold;
+        use css::file_routes::{get_file_routes, reset_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        // setAtomHoist binding controls the global threshold.
+        set_atom_hoist(None);
+        assert_eq!(atom_hoist_threshold(), None);
+        set_atom_hoist(Some(4));
+        assert_eq!(atom_hoist_threshold(), Some(4));
+        set_atom_hoist(None);
+        assert_eq!(atom_hoist_threshold(), None);
+
+        // importFileRoutes binding populates the file->routes map.
+        reset_file_routes();
+        let mut m = HashMap::new();
+        m.insert("a.tsx".to_string(), HashSet::from([0u32, 1]));
+        m.insert("b.tsx".to_string(), HashSet::from([2u32]));
+        import_file_routes_internal(m.clone());
+        assert_eq!(get_file_routes(), m);
+        reset_file_routes();
+    }
+
+    #[test]
+    #[serial]
+    fn test_canonical_map_import_export_roundtrip() {
+        use css::file_map::{get_canonical_map, reset_canonical_map};
+        reset_canonical_map();
+        let mut m = HashMap::new();
+        m.insert("src/child.tsx".to_string(), "src/parent.tsx".to_string());
+        import_canonical_map_internal(m.clone());
+        assert_eq!(get_canonical_map(), m);
+        let json = export_canonical_map_internal().expect("export canonical map");
+        assert!(json.contains("src/child.tsx"));
+        assert!(json.contains("src/parent.tsx"));
+        // canonical() resolves via the imported map; unmapped is identity.
+        assert_eq!(canonical("src/child.tsx"), "src/parent.tsx");
+        assert_eq!(canonical("src/other.tsx"), "src/other.tsx");
+        reset_canonical_map();
     }
 
     #[test]

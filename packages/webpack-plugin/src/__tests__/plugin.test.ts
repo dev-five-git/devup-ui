@@ -452,4 +452,117 @@ describe('devupUIWebpackPlugin', () => {
     plugin.apply(asCompiler(compiler))
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
+
+  describe('atomHoist pre-pass', () => {
+    let buildCanonicalMapSpy: ReturnType<typeof spyOn>
+    let computeFileReachSpy: ReturnType<typeof spyOn>
+    let importCanonicalMapSpy: ReturnType<typeof spyOn>
+    let importFileRoutesSpy: ReturnType<typeof spyOn>
+    let setAtomHoistSpy: ReturnType<typeof spyOn>
+
+    beforeEach(() => {
+      buildCanonicalMapSpy = spyOn(
+        pluginUtils,
+        'buildCanonicalMap',
+      ).mockReturnValue({})
+      computeFileReachSpy = spyOn(
+        pluginUtils,
+        'computeFileReach',
+      ).mockReturnValue({})
+      importCanonicalMapSpy = spyOn(wasm, 'importCanonicalMap').mockReturnValue(
+        undefined,
+      )
+      importFileRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
+        undefined,
+      )
+      setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
+    })
+
+    afterEach(() => {
+      buildCanonicalMapSpy.mockRestore()
+      computeFileReachSpy.mockRestore()
+      importCanonicalMapSpy.mockRestore()
+      importFileRoutesSpy.mockRestore()
+      setAtomHoistSpy.mockRestore()
+    })
+
+    it('does nothing when atomHoist is unset', () => {
+      const plugin = new DevupUIWebpackPlugin({})
+      plugin.apply(asCompiler(createCompiler()))
+      expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    it('composes collapse + hoist and folds reach onto the canonical bucket', () => {
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+        'src/glob.tsx': '@global',
+      })
+      computeFileReachSpy.mockReturnValue({
+        'src/parent.tsx': [0, 1],
+        'src/child.tsx': [0],
+        'src/glob.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(createCompiler()))
+      // collapse runs with cwd-relative keys (webpack loader passes relative path)
+      expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ keyBy: 'cwd-relative' }),
+      )
+      expect(importCanonicalMapSpy).toHaveBeenCalled()
+      // reach folded by bucket: child -> parent, @global skipped
+      expect(importFileRoutesSpy).toHaveBeenCalledWith({
+        'src/parent.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      })
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('clamps the threshold to a minimum of 2', () => {
+      computeFileReachSpy.mockReturnValue({
+        'src/a.tsx': [0],
+        'src/b.tsx': [1],
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 1 })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('stays off when fewer than two routes are reachable', () => {
+      computeFileReachSpy.mockReturnValue({ 'src/a.tsx': [0] })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    it('swallows pre-pass errors (atom hoisting stays off)', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      // apply must still complete without throwing
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+    })
+
+    it('configures atom hoisting BEFORE registering loader rules', () => {
+      computeFileReachSpy.mockReturnValue({
+        'src/a.tsx': [0],
+        'src/b.tsx': [1],
+      })
+      const compiler = createCompiler()
+      let rulesLenAtSetAtomHoist = -1
+      setAtomHoistSpy.mockImplementation(() => {
+        rulesLenAtSetAtomHoist = compiler.options.module.rules.length
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(compiler))
+      // pre-pass must run before module rules are pushed (single WASM instance)
+      expect(rulesLenAtSetAtomHoist).toBe(0)
+      expect(compiler.options.module.rules.length).toBeGreaterThan(0)
+    })
+  })
 })
