@@ -1550,6 +1550,70 @@ mod tests {
 
     #[test]
     #[serial]
+    fn collapse_multiple_members_keep_root_global_css() {
+        collapse_setup();
+        let mut m = HashMap::new();
+        m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
+        m.insert("header.tsx".to_string(), "layout.tsx".to_string());
+        import_canonical_map_internal(m);
+
+        extract_for_collapse("layout.tsx", LAYOUT_GLOBAL);
+        // multiple members collapse into the same root; none may wipe its globalCss.
+        extract_for_collapse("footer.tsx", MEMBER_BOX);
+        extract_for_collapse("header.tsx", MEMBER_BOX);
+
+        let css = with_style_sheet(|s| s.create_css(None, false));
+        css::file_map::reset_canonical_map();
+        assert!(
+            css.contains("Pretendard") && css.contains("border-radius:10px"),
+            "multiple collapsed members wiped root globalCss. css=\n{css}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn collapse_member_reextract_clears_only_its_own_global_css() {
+        collapse_setup();
+        let mut m = HashMap::new();
+        m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
+        import_canonical_map_internal(m);
+
+        extract_for_collapse("layout.tsx", LAYOUT_GLOBAL);
+        // member's OWN globalCss v1: a global selector + a distinct font.
+        extract_for_collapse(
+            "footer.tsx",
+            r#"import { globalCss } from "@devup-ui/react"; globalCss({ code: { color: "red" }, fontFaces: [{ fontFamily: "D2Coding", src: "url(/d.woff2)" }] });"#,
+        );
+        // member re-extracted (HMR) with DIFFERENT globalCss.
+        extract_for_collapse(
+            "footer.tsx",
+            r#"import { globalCss } from "@devup-ui/react"; globalCss({ samp: { color: "blue" } });"#,
+        );
+
+        let css = with_style_sheet(|s| s.create_css(None, false));
+        css::file_map::reset_canonical_map();
+        // member's NEW globalCss present; its STALE globalCss cleared from the
+        // canonical bucket (selector) and raw maps (font); root untouched.
+        assert!(
+            css.contains("color:blue"),
+            "member new globalCss missing. css=\n{css}"
+        );
+        assert!(
+            !css.contains("color:red"),
+            "stale member global selector not cleared from canonical bucket. css=\n{css}"
+        );
+        assert!(
+            !css.contains("D2Coding"),
+            "stale member @font-face not cleared. css=\n{css}"
+        );
+        assert!(
+            css.contains("Pretendard"),
+            "root globalCss wiped by member re-extract. css=\n{css}"
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_import_sheet_internal() {
         // Reset global state
         *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();

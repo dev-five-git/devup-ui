@@ -297,6 +297,10 @@ impl StyleSheet {
         self.css.remove(file);
 
         self.font_faces.remove(file);
+        // @import rules are per-source-file globalCss (keyed by raw filename),
+        // like `css`/`font_faces`; clear them so an @import removed from source
+        // does not linger across re-extraction (HMR).
+        self.imports.remove(file);
         // `file` is the RAW source filename (globalCss is per-source-file). Atoms
         // were bucketed by canonical(file) in update_styles, so global-selector
         // atom removal must read from the canonical bucket while still matching
@@ -1152,6 +1156,22 @@ mod tests {
             css.matches("@font-face{").count(),
             1,
             "duplicate @font-face must be emitted once: {css}"
+        );
+    }
+
+    // rm_global_css clears a file's globalCss before it is re-added on the next
+    // extraction (HMR). It must also drop the file's @import rules, otherwise an
+    // @import removed from source lingers until restart.
+    #[test]
+    fn rm_global_css_clears_imports() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_import("a.tsx", "\"https://example.com/stale.css\"");
+        assert!(sheet.create_css(None, false).contains("stale.css"));
+        sheet.rm_global_css("a.tsx", false);
+        let css = sheet.create_css(None, false);
+        assert!(
+            !css.contains("stale.css"),
+            "rm_global_css must clear stale @import: {css}"
         );
     }
     #[test]
