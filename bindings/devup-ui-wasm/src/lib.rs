@@ -78,7 +78,11 @@ impl Output {
         let canonical_filename = canonical(&filename);
         let global = single_css || is_global(&filename);
         with_style_sheet_mut(|sheet| {
-            let default_collected = sheet.rm_global_css(&canonical_filename, global);
+            // globalCss (@font-face / global selectors) is per-SOURCE-file, never
+            // collapsed. rm_global_css MUST use the RAW filename so a collapsed
+            // member (sharing the bucket-root's canonical) never wipes the root's
+            // globalCss. Atom property bucketing still uses canonical_filename.
+            let default_collected = sheet.rm_global_css(&filename, global);
             let (collected, updated_base_style) =
                 sheet.update_styles(&styles, &canonical_filename, global);
             Self {
@@ -1428,6 +1432,120 @@ mod tests {
 
         // The updated_base_style should be true because global CSS was removed
         assert!(output.updated_base_style());
+    }
+
+    // Regression: single-importer collapse must NOT wipe a bucket-root file's
+    // globalCss (@font-face / global selectors). When child.tsx collapses into
+    // parent.tsx, extracting child must not delete parent's globalCss.
+    fn collapse_setup() {
+        use css::class_map::reset_class_map;
+        use css::file_map::{reset_canonical_map, reset_file_map};
+        {
+            let mut s = GLOBAL_STYLE_SHEET.lock().unwrap();
+            *s = StyleSheet::default();
+        }
+        reset_class_map();
+        reset_file_map();
+        reset_canonical_map();
+        register_theme_internal(sheet::theme::Theme::default());
+    }
+
+    fn extract_for_collapse(filename: &str, code: &str) {
+        code_extract_internal(
+            filename,
+            code,
+            "@devup-ui/react",
+            "df".to_string(),
+            false,
+            false,
+            false,
+            HashMap::new(),
+        )
+        .unwrap();
+    }
+
+    const LAYOUT_GLOBAL: &str = r#"import { globalCss } from "@devup-ui/react"; globalCss({ pre: { borderRadius: "10px" }, fontFaces: [{ fontFamily: "Pretendard", src: "url(/p.woff2)", fontWeight: 800 }] });"#;
+    const MEMBER_BOX: &str =
+        r#"import { Box } from "@devup-ui/react"; const x = <Box bg="red" />;"#;
+
+    #[test]
+    #[serial]
+    fn collapse_member_after_root_keeps_global_css() {
+        collapse_setup();
+        let mut m = HashMap::new();
+        m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
+        import_canonical_map_internal(m);
+
+        extract_for_collapse("layout.tsx", LAYOUT_GLOBAL);
+        // member collapses into layout.tsx, extracted AFTER the root -> must NOT
+        // wipe layout's @font-face / pre{} globalCss.
+        extract_for_collapse("footer.tsx", MEMBER_BOX);
+
+        let css = with_style_sheet(|s| s.create_css(None, false));
+        css::file_map::reset_canonical_map();
+        assert!(
+            css.contains("@font-face"),
+            "collapse wiped @font-face. css=\n{css}"
+        );
+        assert!(
+            css.contains("Pretendard"),
+            "collapse wiped Pretendard font-family. css=\n{css}"
+        );
+        assert!(
+            css.contains("border-radius:10px"),
+            "collapse wiped pre{{}} global selector. css=\n{css}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn collapse_member_before_root_keeps_global_css() {
+        collapse_setup();
+        let mut m = HashMap::new();
+        m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
+        import_canonical_map_internal(m);
+
+        // member first, then root -> root still re-adds its globalCss.
+        extract_for_collapse("footer.tsx", MEMBER_BOX);
+        extract_for_collapse("layout.tsx", LAYOUT_GLOBAL);
+
+        let css = with_style_sheet(|s| s.create_css(None, false));
+        css::file_map::reset_canonical_map();
+        assert!(
+            css.contains("@font-face"),
+            "missing @font-face. css=\n{css}"
+        );
+        assert!(
+            css.contains("Pretendard"),
+            "missing Pretendard. css=\n{css}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn collapse_member_with_own_global_css_preserves_both() {
+        collapse_setup();
+        let mut m = HashMap::new();
+        m.insert("footer.tsx".to_string(), "layout.tsx".to_string());
+        import_canonical_map_internal(m);
+
+        extract_for_collapse("layout.tsx", LAYOUT_GLOBAL);
+        // member has its OWN globalCss with a distinct font family.
+        extract_for_collapse(
+            "footer.tsx",
+            r#"import { globalCss } from "@devup-ui/react"; globalCss({ fontFaces: [{ fontFamily: "D2Coding", src: "url(/d.woff2)" }] });"#,
+        );
+
+        let css = with_style_sheet(|s| s.create_css(None, false));
+        css::file_map::reset_canonical_map();
+        assert!(
+            css.contains("Pretendard"),
+            "collapse wiped root's Pretendard. css=\n{css}"
+        );
+        assert!(
+            css.contains("D2Coding"),
+            "member's own font-family missing. css=\n{css}"
+        );
     }
 
     #[test]

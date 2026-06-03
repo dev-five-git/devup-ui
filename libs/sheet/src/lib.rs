@@ -3,6 +3,7 @@ pub mod theme;
 use crate::theme::Theme;
 use css::{
     atom_hoist::{atom_hoist_threshold, is_atom_hoist},
+    file_map::canonical,
     file_routes::route_count_for_files,
     merge_selector, sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector},
@@ -296,7 +297,15 @@ impl StyleSheet {
         self.css.remove(file);
 
         self.font_faces.remove(file);
-        let property_key = if single_css { "" } else { file }.to_string();
+        // `file` is the RAW source filename (globalCss is per-source-file). Atoms
+        // were bucketed by canonical(file) in update_styles, so global-selector
+        // atom removal must read from the canonical bucket while still matching
+        // the raw owner via `f == file` below.
+        let property_key = if single_css {
+            String::new()
+        } else {
+            canonical(file)
+        };
 
         if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
@@ -827,8 +836,15 @@ impl StyleSheet {
             if !theme_css.is_empty() {
                 push_fmt!(&mut css, "@layer t{{{theme_css}}}");
             }
+            // One source file extracted under multiple passes (e.g. Next
+            // server + client compilations) registers identical @font-face rules
+            // under multiple file keys; emit each distinct rule only once.
+            let mut seen_font_faces: BTreeSet<&BTreeMap<String, String>> = BTreeSet::new();
             for font_faces in self.font_faces.values() {
                 for font_face in font_faces {
+                    if !seen_font_faces.insert(font_face) {
+                        continue;
+                    }
                     css.push_str("@font-face{");
                     let mut first = true;
                     for (key, value) in font_face {
@@ -1050,6 +1066,93 @@ mod tests {
         sheet.add_property("test", "border", 0, "1px solid", None, None, None);
         sheet.add_property("test", "border-color", 0, "red", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    // Under single-importer collapse, a collapsed file's globalCss atoms are
+    // bucketed by canonical(file). rm_global_css(raw) must therefore clear them
+    // from the CANONICAL bucket (matching the raw owner via f == file), and must
+    // NOT touch the bucket-root's own global atoms.
+    #[test]
+    #[serial]
+    fn rm_global_css_clears_collapsed_globals_from_canonical_bucket() {
+        use css::file_map::{reset_canonical_map, set_canonical_map};
+        reset_class_map();
+        reset_file_map();
+        reset_canonical_map();
+        let mut m = std::collections::HashMap::new();
+        m.insert("child.tsx".to_string(), "parent.tsx".to_string());
+        set_canonical_map(m);
+
+        let mut sheet = StyleSheet::default();
+        // child's own globalCss: @font-face + a global selector, bucketed by
+        // canonical(child) == "parent.tsx".
+        sheet.add_font_face(
+            "child.tsx",
+            &BTreeMap::from([("font-family".to_string(), "D2Coding".to_string())]),
+        );
+        sheet.add_property(
+            "c1",
+            "border-radius",
+            0,
+            "10px",
+            Some(&StyleSelector::Global(
+                "pre".to_string(),
+                "child.tsx".to_string(),
+            )),
+            Some(0),
+            Some("parent.tsx"),
+        );
+        // parent's own global selector in the SAME canonical bucket.
+        sheet.add_property(
+            "p1",
+            "border-radius",
+            0,
+            "5px",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "parent.tsx".to_string(),
+            )),
+            Some(0),
+            Some("parent.tsx"),
+        );
+
+        // Clearing child's globalCss must remove ONLY child's contributions.
+        sheet.rm_global_css("child.tsx", false);
+        let css = sheet.create_css(None, false);
+        reset_canonical_map();
+
+        assert!(
+            !css.contains("D2Coding"),
+            "child @font-face not cleared: {css}"
+        );
+        assert!(
+            !css.contains("border-radius:10px"),
+            "child global atom not cleared from canonical bucket: {css}"
+        );
+        assert!(
+            css.contains("border-radius:5px"),
+            "parent global atom wrongly cleared: {css}"
+        );
+    }
+
+    // A single source file extracted under multiple passes (e.g. Next server +
+    // client compilations) registers the SAME @font-face under multiple file
+    // keys. The emitted CSS must contain each distinct @font-face only ONCE.
+    #[test]
+    fn font_faces_deduplicated_across_file_keys() {
+        let props = BTreeMap::from([
+            ("font-family".to_string(), "Roboto".to_string()),
+            ("src".to_string(), "url(/r.woff2)".to_string()),
+        ]);
+        let mut sheet = StyleSheet::default();
+        sheet.add_font_face("a.tsx", &props);
+        sheet.add_font_face("b.tsx", &props);
+        let css = sheet.create_css(None, false);
+        assert_eq!(
+            css.matches("@font-face{").count(),
+            1,
+            "duplicate @font-face must be emitted once: {css}"
+        );
     }
     #[test]
     fn test_create_css_with_selector_sort_test() {
