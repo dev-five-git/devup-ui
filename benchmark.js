@@ -15,7 +15,7 @@ function clearBuildFile() {
   }
 }
 
-function checkDirSize(path) {
+function checkDirSize(path, filter) {
   let totalSize = 0
 
   function calculateSize(directory) {
@@ -24,7 +24,7 @@ function checkDirSize(path) {
       const entryPath = join(directory, entry)
       if (statSync(entryPath).isDirectory()) {
         calculateSize(entryPath) // 재귀적으로 하위 폴더 크기 계산
-      } else {
+      } else if (!filter || filter(entryPath)) {
         const stats = statSync(entryPath)
         totalSize += stats.size // 파일 크기 합산
       }
@@ -33,6 +33,12 @@ function checkDirSize(path) {
 
   calculateSize(path)
   return totalSize
+}
+
+// Sum only the size of emitted CSS files. Build-size totals are dominated by
+// JS/assets and hide CSS-only differences (e.g. single-importer collapse).
+function checkCssSize(path) {
+  return checkDirSize(path, (p) => p.endsWith('.css'))
 }
 
 clearBuildFile()
@@ -55,7 +61,10 @@ function benchmark(target) {
   const outputDir = existsSync(join(benchmarkDir, '.next'))
     ? join(benchmarkDir, '.next')
     : join(benchmarkDir, 'dist')
-  return `${target} ${(performance.getEntriesByName(target)[0].duration / 1000).toFixed(2).toLocaleString()}s ${checkDirSize(outputDir).toLocaleString()} bytes`
+  const duration = (
+    performance.getEntriesByName(target)[0].duration / 1000
+  ).toFixed(2)
+  return `${target} ${duration}s ${checkDirSize(outputDir).toLocaleString()} bytes (css ${checkCssSize(outputDir).toLocaleString()} bytes)`
 }
 
 let result = []
@@ -74,5 +83,7 @@ result.push(benchmark('devup-ui-single-turbo'))
 result.push(benchmark('vanilla-extract-devup-ui'))
 result.push(benchmark('tailwind-turbo-devup-ui'))
 result.push(benchmark('vinext-devup-ui'))
+// Multi-component app exercising single-importer collapse (atom dedup).
+result.push(benchmark('devup-ui-collapse'))
 
 console.info(result.join('\n'))
