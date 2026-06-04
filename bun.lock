@@ -154,6 +154,23 @@
         "typescript": "^6",
       },
     },
+    "benchmark/next-devup-ui-collapse": {
+      "name": "next-devup-ui-collapse-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.2",
+        "react": "^19.2",
+        "react-dom": "^19.2",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^25",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "typescript": "^6",
+      },
+    },
     "benchmark/next-devup-ui-single": {
       "name": "next-devup-ui-single-benchmark",
       "version": "0.1.0",
@@ -2707,6 +2724,8 @@
     "next-chakra-ui-benchmark": ["next-chakra-ui-benchmark@workspace:benchmark/next-chakra-ui"],
 
     "next-devup-ui-benchmark": ["next-devup-ui-benchmark@workspace:benchmark/next-devup-ui"],
+
+    "next-devup-ui-collapse-benchmark": ["next-devup-ui-collapse-benchmark@workspace:benchmark/next-devup-ui-collapse"],
 
     "next-devup-ui-single-benchmark": ["next-devup-ui-single-benchmark@workspace:benchmark/next-devup-ui-single"],
 
