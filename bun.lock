@@ -205,6 +205,23 @@
         "typescript": "^6",
       },
     },
+    "benchmark/next-devup-ui-turbo": {
+      "name": "next-devup-ui-turbo-benchmark",
+      "version": "0.1.0",
+      "dependencies": {
+        "@devup-ui/react": "workspace:^",
+        "next": "^16.2",
+        "react": "^19.2",
+        "react-dom": "^19.2",
+      },
+      "devDependencies": {
+        "@devup-ui/next-plugin": "workspace:^",
+        "@types/node": "^25",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "typescript": "^6",
+      },
+    },
     "benchmark/next-kuma-ui": {
       "name": "next-kuma-ui-benchmark",
       "version": "0.1.0",
@@ -2730,6 +2747,8 @@
     "next-devup-ui-single-benchmark": ["next-devup-ui-single-benchmark@workspace:benchmark/next-devup-ui-single"],
 
     "next-devup-ui-single-turbo-benchmark": ["next-devup-ui-single-turbo-benchmark@workspace:benchmark/next-devup-ui-single-turbo"],
+
+    "next-devup-ui-turbo-benchmark": ["next-devup-ui-turbo-benchmark@workspace:benchmark/next-devup-ui-turbo"],
 
     "next-example": ["next-example@workspace:apps/next"],
 
