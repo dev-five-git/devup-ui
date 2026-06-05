@@ -136,6 +136,9 @@ export function DevupUI(
     // coordinator shares this WASM instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    // Hoisted out of the try so the coordinator can receive it for per-bucket
+    // completion. Stays `{}` if the best-effort pre-pass fails.
+    let canonicalMap: Record<string, string> = {}
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
@@ -147,7 +150,7 @@ export function DevupUI(
         : process.env.DEVUP_HOIST_V
           ? Number(process.env.DEVUP_HOIST_V)
           : undefined
-      const canonicalMap = buildCanonicalMap({
+      canonicalMap = buildCanonicalMap({
         srcDir,
         tsconfigPath,
         cwd,
@@ -196,6 +199,7 @@ export function DevupUI(
       fileMapFile,
       importAliases: importAliases as unknown as Record<string, string | null>,
       coordinatorPortFile,
+      canonicalMap,
     })
 
     // Cleanup on exit

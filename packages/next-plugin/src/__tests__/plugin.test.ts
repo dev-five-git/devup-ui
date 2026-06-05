@@ -486,6 +486,7 @@ describe('DevupUINextPlugin', () => {
           'styled-components': 'styled',
         },
         coordinatorPortFile: join('df', 'coordinator.port'),
+        canonicalMap: expect.any(Object),
       })
     })
     it('should create theme.d.ts file', async () => {
@@ -672,6 +673,7 @@ describe('DevupUINextPlugin', () => {
           'styled-components': 'styled',
         },
         coordinatorPortFile: join('df', 'coordinator.port'),
+        canonicalMap: expect.any(Object),
       })
 
       // Verify initial CSS file is written
