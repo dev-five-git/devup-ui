@@ -478,7 +478,14 @@ function getStaticClosure(
   return closure
 }
 
-function listSourceFiles(srcDir: string): string[] {
+/**
+ * Enumerate every extractable source file under `srcDir`, sorted by POSIX path
+ * (deterministic order). Skips `node_modules`, test/spec files, and non-JS/TS
+ * files — the SAME filter `buildCanonicalMap` uses internally, so a plugin can
+ * pre-warm the extractor over exactly the file set the canonical map was built
+ * from. Returns absolute paths.
+ */
+export function listSourceFiles(srcDir: string): string[] {
   const files: string[] = []
 
   function visit(dir: string): void {

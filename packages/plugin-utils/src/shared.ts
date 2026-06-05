@@ -25,11 +25,20 @@ export function getFileNumByFilename(filename: string): number | null {
   // append arbitrary queries (e.g. `?dpl=...`) when assetPrefix is set, and
   // those must not interfere with base CSS detection.
   const pathOnly = filename.split('?')[0]
-  if (pathOnly.endsWith('devup-ui.css')) return null
 
-  const numericPart = pathOnly.split('devup-ui-')[1]?.split('.')[0]
-  if (numericPart === undefined) return null
-  const num = parseInt(numericPart, 10)
+  // Match against the BASENAME only. Splitting the whole path on "devup-ui-"
+  // breaks when an ancestor directory itself contains "devup-ui-" (e.g. a
+  // folder named `next-devup-ui-collapse`, or a project path containing the
+  // package name): `split('devup-ui-')[1]` then grabs the wrong segment and
+  // yields NaN -> null, so the css-loader silently serves the base sheet
+  // instead of the per-file bucket (dropping collapsed-bucket atoms in
+  // webpack, which uses the `devup-ui-N.css` filename form).
+  const base = pathOnly.split(/[\\/]/).pop() ?? pathOnly
+  if (base === 'devup-ui.css') return null
+
+  const match = base.match(/^devup-ui-(\d+)\.css$/)
+  if (!match) return null
+  const num = parseInt(match[1], 10)
   return Number.isNaN(num) ? null : num
 }
 

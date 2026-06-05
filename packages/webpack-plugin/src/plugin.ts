@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
@@ -9,12 +9,14 @@ import {
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type ImportAliases,
+  listSourceFiles,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
   type WasmImportAliases,
 } from '@devup-ui/plugin-utils'
 import {
+  codeExtract,
   getCss,
   getDefaultTheme,
   getThemeInterface,
@@ -133,6 +135,42 @@ export class DevupUIWebpackPlugin {
       )
   }
 
+  /**
+   * Extract every source file under `src` into the shared WASM sheet so that a
+   * later `getCss(fileNum)` call returns the COMPLETE bucket (all collapsed
+   * members), not just the first member webpack happened to build. Mirrors the
+   * loader's `codeExtract` call (same filename keying + options) so re-extraction
+   * during compilation is idempotent. Best-effort: extraction errors are
+   * swallowed so a single bad file never breaks the build.
+   */
+  private prewarmExtractor() {
+    try {
+      const cwd = process.cwd()
+      const srcDir = resolve(cwd, 'src')
+      for (const file of listSourceFiles(srcDir)) {
+        const relativePath = relative(cwd, file).replaceAll('\\', '/')
+        let relCssDir = relative(dirname(file), this.options.cssDir).replaceAll(
+          '\\',
+          '/',
+        )
+        if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+        codeExtract(
+          relativePath,
+          readFileSync(file, 'utf-8'),
+          this.options.package,
+          relCssDir,
+          this.options.singleCss,
+          false,
+          true,
+          this.importAliases,
+        )
+      }
+    } catch {
+      // Best-effort warm-up; on failure the css-loader still serves whatever
+      // atoms were extracted, matching pre-fix behavior.
+    }
+  }
+
   apply(compiler: Compiler) {
     setDebug(this.options.debug)
     if (this.options.prefix) {
@@ -172,19 +210,24 @@ export class DevupUIWebpackPlugin {
     const atomHoist = this.options.atomHoist
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-    if (atomMode) {
-      try {
-        const srcDir = resolve(process.cwd(), 'src')
-        const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
-        const cwd = process.cwd()
-        const canonicalMap = buildCanonicalMap({
-          srcDir,
-          tsconfigPath,
-          cwd,
-          keyBy: 'cwd-relative',
-        })
-        importCanonicalMap(canonicalMap)
+    // Single-importer collapse ALWAYS runs: files used by exactly one importer
+    // merge into that importer's bucket, deduplicating their identical atoms.
+    // The canonical map is built + imported unconditionally; only atom HOISTING
+    // composes on top when `atomHoist` is set. Mirrors next-plugin's pre-pass.
+    let canonicalMap: Record<string, string> = {}
+    try {
+      const srcDir = resolve(process.cwd(), 'src')
+      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+      const cwd = process.cwd()
+      canonicalMap = buildCanonicalMap({
+        srcDir,
+        tsconfigPath,
+        cwd,
+        keyBy: 'cwd-relative',
+      })
+      importCanonicalMap(canonicalMap)
 
+      if (atomMode) {
         const fileReach = computeFileReach({
           srcDir,
           tsconfigPath,
@@ -200,9 +243,25 @@ export class DevupUIWebpackPlugin {
             '[devup-ui] atomHoist is set but fewer than 2 routes were detected; atom hoisting is a no-op (single-entry/SPA).',
           )
         }
-      } catch {
-        // Best-effort; on failure atom hoisting stays off (identity).
       }
+    } catch {
+      // Best-effort; on failure canonical() is the identity (no merge) and atom
+      // hoisting stays off.
+    }
+
+    // Pre-warm the extractor so the css-loader serves COMPLETE bucket CSS.
+    //
+    // Under collapse, several source files share ONE devup-ui-N.css (the
+    // importer's bucket). The css-loader serves `getCss(N, true)`, but webpack
+    // builds that shared .css module ONCE — at the FIRST import resolution,
+    // before the bucket's other members have been extracted — so their atoms
+    // would be dropped. Turbopack avoids this via its idle coordinator; webpack
+    // has no such re-serve, so we extract every source file up front (single
+    // shared WASM instance) to populate the bucket fully BEFORE any css-loader
+    // runs. Re-extraction by the per-file loader is then idempotent (set-based
+    // atom dedup). Only needed for one-shot builds when collapse is active.
+    if (!this.options.watch && Object.keys(canonicalMap).length > 0) {
+      this.prewarmExtractor()
     }
 
     if (this.options.watch) {
