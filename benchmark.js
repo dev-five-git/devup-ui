@@ -58,9 +58,14 @@ function benchmark(target) {
   performance.measure(target, target + '-start', target + '-end')
 
   const benchmarkDir = join('./benchmark', dir)
-  const outputDir = existsSync(join(benchmarkDir, '.next'))
-    ? join(benchmarkDir, '.next')
-    : join(benchmarkDir, 'dist')
+  // Resolve the real build-output dir. Next.js emits to `.next`; Vite emits to
+  // `dist`. vinext (Next-on-Vite) emits its real artifacts to `dist` but ALSO
+  // leaves a tiny vestigial `.next` stub (~988 B, no CSS) - so checking `.next`
+  // first measured the empty stub and reported "988 bytes (css 0 bytes)" even
+  // though dist held ~1.28 MB incl. the extracted CSS. Prefer `dist` when it
+  // exists; fall back to `.next` for pure Next.js apps (which never emit dist).
+  const distDir = join(benchmarkDir, 'dist')
+  const outputDir = existsSync(distDir) ? distDir : join(benchmarkDir, '.next')
   const duration = (
     performance.getEntriesByName(target)[0].duration / 1000
   ).toFixed(2)
