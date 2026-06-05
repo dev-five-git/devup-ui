@@ -1072,6 +1072,117 @@ mod tests {
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
     }
 
+    // Atom-level hoisting emission. Without an atom-hoist test these branches in
+    // compute_hoisted_atoms / create_css were uncovered:
+    //   * compute_hoisted_atoms skips style_order 0
+    //   * the global hoist emission skips style_order 0
+    //   * the global hoist emission skips an aggregated order whose CSS is empty
+    //     (a hoisted atom that is a *layered global* prop -> no direct output)
+    //   * the global hoist emission wraps a hoisted order != 255 in `@layer o{N}`
+    //   * the per-route emission skips a chunk whose atoms were all hoisted away
+    #[test]
+    #[serial]
+    fn create_css_atom_hoisting_emission() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::file_routes::{reset_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        reset_class_map();
+        reset_file_map();
+        reset_file_routes();
+
+        // a.tsx and b.tsx each own one distinct route, so an atom referenced by
+        // BOTH is reached by 2 routes (>= threshold) and gets hoisted.
+        let mut routes = HashMap::new();
+        routes.insert("a.tsx".to_string(), HashSet::from([0u32]));
+        routes.insert("b.tsx".to_string(), HashSet::from([1u32]));
+        set_file_routes(routes);
+        set_atom_hoist(Some(2));
+
+        let mut sheet = StyleSheet::default();
+        // Hoisted user atom (style_order 255), in both files.
+        sheet.add_property("hu", "color", 0, "red", None, Some(255), Some("a.tsx"));
+        sheet.add_property("hu", "color", 0, "red", None, Some(255), Some("b.tsx"));
+        // Hoisted ordered atom (style_order 1) -> emitted as `@layer o1`.
+        sheet.add_property("ho", "padding", 0, "1px", None, Some(1), Some("a.tsx"));
+        sheet.add_property("ho", "padding", 0, "1px", None, Some(1), Some("b.tsx"));
+        // Base style (style_order 0) -> exercises the style_order == 0 skips.
+        sheet.add_property("hb", "margin", 0, "0", None, Some(0), Some("a.tsx"));
+        // Hoisted LAYERED GLOBAL atom (style_order 2): when aggregated, its
+        // create_style produces no direct CSS (it goes to the discarded layer
+        // map), so that aggregated order is skipped as empty.
+        let ga = StyleSelector::Global("div".to_string(), "a.tsx".to_string());
+        sheet.add_property_with_layer(
+            "hg",
+            "border-radius",
+            0,
+            "9px",
+            Some(&ga),
+            Some(2),
+            Some("a.tsx"),
+            Some("lyr"),
+        );
+        let gb = StyleSelector::Global("div".to_string(), "b.tsx".to_string());
+        sheet.add_property_with_layer(
+            "hg",
+            "border-radius",
+            0,
+            "9px",
+            Some(&gb),
+            Some(2),
+            Some("b.tsx"),
+            Some("lyr"),
+        );
+        // Non-hoisted responsive at-rule atom (only a.tsx): emitted in a.tsx's
+        // chunk via the break-point at-rule path (level != 0 -> break_point set).
+        let at = StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(hover:hover)".to_string(),
+            selector: None,
+        };
+        sheet.add_property(
+            "atr",
+            "color",
+            1,
+            "blue",
+            Some(&at),
+            Some(255),
+            Some("a.tsx"),
+        );
+
+        // Global stylesheet: runs compute_hoisted_atoms + the hoist emission.
+        let global_css = sheet.create_css(None, false);
+        assert!(
+            global_css.contains("@layer o1"),
+            "hoisted order-1 atom must emit @layer o1: {global_css}"
+        );
+
+        // Per-route chunk for a.tsx: every one of its atoms was hoisted, so the
+        // chunk keeps none of them (exercises the all-hoisted skip).
+        let chunk_css = sheet.create_css(Some("a.tsx"), false);
+        assert!(
+            !chunk_css.contains("@layer o1"),
+            "hoisted atoms must not duplicate into the per-route chunk: {chunk_css}"
+        );
+        assert!(
+            !chunk_css.contains("padding:1px"),
+            "hoisted padding atom must not be in the chunk: {chunk_css}"
+        );
+        // The responsive at-rule wrapper AND its property must both be emitted
+        // (exercises the break-point at-rule path).
+        assert!(
+            chunk_css.contains("hover:hover"),
+            "at-rule wrapper must be emitted: {chunk_css}"
+        );
+        assert!(
+            chunk_css.contains("blue"),
+            "at-rule property must be written: {chunk_css}"
+        );
+
+        set_atom_hoist(None);
+        reset_file_routes();
+    }
+
     // Under single-importer collapse, a collapsed file's globalCss atoms are
     // bucketed by canonical(file). rm_global_css(raw) must therefore clear them
     // from the CANONICAL bucket (matching the raw owner via f == file), and must
