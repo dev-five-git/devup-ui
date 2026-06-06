@@ -139,6 +139,10 @@ export function DevupUI(
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
+    // Route-reachable runtime files (cwd-relative POSIX) — the deterministic
+    // base-css completion signal handed to the coordinator. Stays `[]` (idle
+    // fallback) when no routes are detected or the pre-pass fails.
+    let expectedBaseFiles: string[] = []
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
@@ -159,10 +163,14 @@ export function DevupUI(
       importCanonicalMap(canonicalMap)
       writeFileSync(canonicalMapFile, JSON.stringify(canonicalMap))
 
+      // Route reachability drives BOTH the deterministic base-css wait and (in
+      // atom mode) the hoist plan, so compute it once and share.
+      const fileRoutes = computeFileRoutes({ srcDir, tsconfigPath, cwd })
+      expectedBaseFiles = Object.keys(fileRoutes)
+
       if (atomMode) {
         // Fold per-file route reach onto the canonical bucket so the keys match
         // the engine's property bucket keys (canonical(filename)).
-        const fileRoutes = computeFileRoutes({ srcDir, tsconfigPath, cwd })
         const plan = planAtomHoist(canonicalMap, fileRoutes, atomHoist)
         if (plan) {
           importFileRoutes(plan.reachByBucket)
@@ -200,6 +208,7 @@ export function DevupUI(
       importAliases: importAliases as unknown as Record<string, string | null>,
       coordinatorPortFile,
       canonicalMap,
+      expectedBaseFiles,
     })
 
     // Cleanup on exit

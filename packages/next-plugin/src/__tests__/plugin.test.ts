@@ -487,6 +487,7 @@ describe('DevupUINextPlugin', () => {
         },
         coordinatorPortFile: join('df', 'coordinator.port'),
         canonicalMap: expect.any(Object),
+        expectedBaseFiles: expect.any(Array),
       })
     })
     it('should create theme.d.ts file', async () => {
@@ -674,6 +675,7 @@ describe('DevupUINextPlugin', () => {
         },
         coordinatorPortFile: join('df', 'coordinator.port'),
         canonicalMap: expect.any(Object),
+        expectedBaseFiles: expect.any(Array),
       })
 
       // Verify initial CSS file is written

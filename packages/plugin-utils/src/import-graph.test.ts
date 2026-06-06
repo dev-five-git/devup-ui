@@ -323,6 +323,81 @@ describe('buildCanonicalMap', () => {
       'src/app/layout.tsx': '@global',
     })
   })
+
+  // Type-only imports/exports are erased by the bundler and produce NO runtime
+  // module. Counting them as static graph edges merged phantom members into a
+  // bucket the bundler never compiles, which forced the next-plugin coordinator
+  // to wait out its wall-clock fail-open. They must NOT become graph edges.
+  it('should not treat a named `import type` target as a bucket member', () => {
+    writeFixture(
+      'src/a.tsx',
+      "import type { M } from './m'\nexport const a = 1\n",
+    )
+    writeFixture('src/m.tsx', 'export type M = number\nexport const m = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should not treat a default `import type Foo` target as a member', () => {
+    writeFixture(
+      'src/a.tsx',
+      "import type Foo from './foo'\nexport const a = 1\n",
+    )
+    writeFixture('src/foo.tsx', 'const foo = 1\nexport default foo\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should not treat a namespace `import type * as NS` target as a member', () => {
+    writeFixture(
+      'src/a.tsx',
+      "import type * as NS from './ns'\nexport const a = 1\n",
+    )
+    writeFixture('src/ns.tsx', 'export const ns = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should not treat an `export type ... from` target as a member', () => {
+    writeFixture(
+      'src/b.tsx',
+      "export type { M } from './m'\nexport const b = 1\n",
+    )
+    writeFixture('src/m.tsx', 'export type M = number\nexport const m = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should keep an inline `import { type T, val }` target (module still imported)', () => {
+    writeFixture(
+      'src/a.tsx',
+      "import { type T, val } from './b'\nexport const a: T = val\n",
+    )
+    writeFixture('src/b.tsx', 'export type T = number\nexport const val = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('should collapse a shared dep into its only VALUE importer when others import it type-only', () => {
+    // `a` imports `shared` at runtime; `b` only `import type`s it. Erasing the
+    // type edge leaves `shared` with a single real importer -> it collapses into
+    // `a`, which is both correct (b never loads it at runtime) and tighter CSS.
+    writeFixture('src/a.tsx', "import './shared'\n")
+    writeFixture(
+      'src/b.tsx',
+      "import type { S } from './shared'\nexport const b = 1\n",
+    )
+    writeFixture(
+      'src/shared.tsx',
+      'export type S = number\nexport const s = 1\n',
+    )
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/shared.tsx': 'src/a.tsx',
+    })
+  })
 })
 
 describe('computeFileRoutes', () => {

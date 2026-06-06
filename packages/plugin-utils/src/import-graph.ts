@@ -568,7 +568,12 @@ function collectAstImports(
     type === 'ExportNamedDeclaration' ||
     type === 'ExportAllDeclaration'
   ) {
-    addAstImport(imports, 'static', node.source)
+    // `import type`/`export type ... from` carry importKind/exportKind 'type'.
+    // They are erased at build time (no runtime module), so they must NOT
+    // become static graph edges — see the regex fallback in `scanImports`.
+    if (node.importKind !== 'type' && node.exportKind !== 'type') {
+      addAstImport(imports, 'static', node.source)
+    }
   } else if (type === 'ImportExpression') {
     addAstImport(imports, 'dynamic', node.source ?? node.argument)
   } else if (type === 'CallExpression' && isImportCallee(node.callee)) {
@@ -613,17 +618,26 @@ function isImportCallee(node: unknown): boolean {
 function scanImports(source: string): ImportReference[] {
   const imports: ImportReference[] = []
   const code = stripComments(source)
+  // The leading `(type\s+)?` is CAPTURED (not skipped) so we can drop type-only
+  // statements: `import type ... from` / `export type ... from` are erased by
+  // the bundler and produce NO runtime module — counting them as static graph
+  // edges merges phantom members into a bucket that the bundler never compiles,
+  // which is exactly what forced the coordinator's wall-clock fail-open to fire.
+  // Inline specifier types (`import { type A, b } from`) keep importing the
+  // module for `b`, so the leading group stays undefined and they are kept.
   const staticImportRegex =
-    /\bimport\s+(?:type\s+)?(?:[^'"`]*?\s+from\s*)?(['"])([^'"]+)\1/gm
+    /\bimport\s+(type\s+)?(?:[^'"`]*?\s+from\s*)?(['"])([^'"]+)\2/gm
   const exportFromRegex =
-    /\bexport\s+(?:type\s+)?(?:\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\1/gm
+    /\bexport\s+(type\s+)?(?:\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\2/gm
   const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
 
   for (const match of code.matchAll(staticImportRegex)) {
-    imports.push({ kind: 'static', specifier: match[2] })
+    if (match[1]) continue
+    imports.push({ kind: 'static', specifier: match[3] })
   }
   for (const match of code.matchAll(exportFromRegex)) {
-    imports.push({ kind: 'static', specifier: match[2] })
+    if (match[1]) continue
+    imports.push({ kind: 'static', specifier: match[3] })
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
     imports.push({ kind: 'dynamic', specifier: match[2] })

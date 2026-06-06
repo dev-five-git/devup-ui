@@ -1080,4 +1080,134 @@ describe('coordinator per-bucket completion', () => {
 
     coordinator.close()
   })
+
+  // T3: a bucket member that never arrives -> the per-bucket wait fails open
+  // after maxWaitMs (serves whatever exists) instead of hanging the build.
+  it('fails open and serves partial CSS when a bucket member never extracts', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
+    getCssSpy.mockReturnValue('partial-css')
+    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
+    // m1 is a member of the bucket but is never POSTed to /extract.
+    const canonicalMap = { 'src/m1.tsx': 'src/bucket.tsx' }
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({ canonicalMap, idleThresholdMs: 100, maxWaitMs: 150 }),
+    )
+    // Extract only the bucket root; src/m1.tsx stays missing forever.
+    await extract(port, 'src/bucket.tsx')
+
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
+
+    // Resolves via the hard timeout (fail open) rather than hanging.
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('partial-css')
+    expect(elapsed).toBeGreaterThanOrEqual(150)
+    expect(warnSpy).toHaveBeenCalled()
+    expect(getCssSpy).toHaveBeenCalledWith(1, true)
+
+    warnSpy.mockRestore()
+    coordinator.close()
+  })
+
+  // T4: base css resolves DETERMINISTICALLY once every route-reachable runtime
+  // file (expectedBaseFiles) is extracted — NOT after an idle gap. Proven by a
+  // large idleThresholdMs that would dominate if the idle path were taken.
+  it('serves base css as soon as all expectedBaseFiles are extracted (no idle wait)', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
+    getCssSpy.mockReturnValue('base-css')
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        expectedBaseFiles: ['src/a.tsx', 'src/b.tsx'],
+        idleThresholdMs: 5000,
+      }),
+    )
+    await extract(port, 'src/a.tsx')
+    await extract(port, 'src/b.tsx')
+
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?importMainCss=false&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
+
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('base-css')
+    // Both expected files extracted -> immediate; the 5000ms idle threshold is
+    // never consulted on the deterministic path.
+    expect(elapsed).toBeLessThan(1000)
+
+    coordinator.close()
+  })
+
+  // T5: the deterministic wait blocks base css until a still-missing
+  // expectedBaseFile arrives — even after the idle threshold elapses with
+  // nothing in flight. This is exactly the gap-between-waves case the old idle
+  // heuristic resolved too early (dropping late files' styles).
+  it('blocks base css until a missing expectedBaseFile is extracted', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
+    getCssSpy.mockReturnValue('base-css')
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        expectedBaseFiles: ['src/a.tsx', 'src/late.tsx'],
+        idleThresholdMs: 50,
+      }),
+    )
+    await extract(port, 'src/a.tsx')
+
+    let resolved = false
+    const cssPromise = httpRequest(
+      port,
+      'GET',
+      '/css?importMainCss=false&waitForIdle=true',
+    ).then((r) => {
+      resolved = true
+      return r
+    })
+    // Idle threshold (50ms) elapses and nothing is in flight, yet src/late.tsx
+    // is still missing -> must NOT resolve.
+    await new Promise((r) => setTimeout(r, 300))
+    expect(resolved).toBe(false)
+
+    await extract(port, 'src/late.tsx')
+    const res = await cssPromise
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('base-css')
+
+    coordinator.close()
+  })
+
+  // T6: a phantom expectedBaseFile that never extracts fails open via the
+  // dormant maxWaitMs backstop instead of hanging the build forever.
+  it('fails open on a phantom expectedBaseFile via maxWaitMs', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
+    getCssSpy.mockReturnValue('base-css')
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        expectedBaseFiles: ['src/a.tsx', 'src/phantom.tsx'],
+        maxWaitMs: 150,
+      }),
+    )
+    await extract(port, 'src/a.tsx')
+
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?importMainCss=false&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
+
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('base-css')
+    expect(elapsed).toBeGreaterThanOrEqual(150)
+
+    coordinator.close()
+  })
 })
