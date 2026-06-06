@@ -553,6 +553,19 @@ function getOxcParser(): OxcParser | undefined {
   return cachedOxcParser || undefined
 }
 
+/**
+ * @internal test-only: force the cached oxc parser. oxc-parser is an optional
+ * peer that is absent in this repo, so the AST path is otherwise unreachable
+ * from tests; module state is shared across test files (no per-file reset), so
+ * `mock.module` cannot toggle it deterministically. Pass `undefined` to clear
+ * the cache and re-detect (back to the regex fallback).
+ */
+export function __setOxcParserForTest(
+  parser: OxcParser | false | undefined,
+): void {
+  cachedOxcParser = parser
+}
+
 function collectAstImports(
   node: unknown,
   imports: ImportReference[],
@@ -910,15 +923,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-if (import.meta.main) {
-  const [srcDirArg, cwdArg = process.cwd(), tsconfigPathArg, outFileArg] =
-    process.argv.slice(2)
+/** @internal CLI entry, extracted from the `import.meta.main` guard so it is
+ * reachable from tests (the guard itself never runs under the test runner). */
+export function runImportGraphCli(argv: string[]): void {
+  const [srcDirArg, cwdArg = process.cwd(), tsconfigPathArg, outFileArg] = argv
 
   if (!srcDirArg) {
     console.error(
       'Usage: bun packages/next-plugin/src/import-graph.ts <srcDir> [cwd] [tsconfigPath] [outFile]',
     )
     process.exit(1)
+    return
   }
 
   const cwd = resolve(cwdArg)
@@ -935,3 +950,5 @@ if (import.meta.main) {
     console.info(json.trimEnd())
   }
 }
+
+if (import.meta.main) runImportGraphCli(process.argv.slice(2))

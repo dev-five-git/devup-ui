@@ -1,14 +1,22 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 
 import {
+  __setOxcParserForTest,
   buildCanonicalMap,
   computeFileReach,
   computeFileRoutes,
   planAtomHoist,
+  runImportGraphCli,
 } from './import-graph'
 
 describe('buildCanonicalMap', () => {
@@ -398,6 +406,151 @@ describe('buildCanonicalMap', () => {
       'src/shared.tsx': 'src/a.tsx',
     })
   })
+
+  it('treats a value `export { x } from` as a static import (collapses)', () => {
+    writeFixture('src/a.tsx', "export { x } from './b'\n")
+    writeFixture('src/b.tsx', 'export const x = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('parses imports while stripping comments and string escapes', () => {
+    writeFixture(
+      'src/a.tsx',
+      [
+        'const s = "a\\\\b\\tc" // line comment with import \'./not-real\'',
+        '/* block comment',
+        ' spanning lines with import "./also-not" */',
+        "import './b'",
+        'export const a = 1',
+      ].join('\n'),
+    )
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+
+    // Imports inside comments/strings are ignored; only the real one collapses.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('returns no aliases when tsconfig has no compilerOptions', () => {
+    writeFixture('tsconfig.json', '{}')
+    writeFixture('src/a.tsx', "import '@/foo'\n")
+    writeFixture('src/foo.tsx', 'export const foo = 1\n')
+
+    expect(
+      buildCanonicalMap({
+        cwd,
+        srcDir,
+        tsconfigPath: join(cwd, 'tsconfig.json'),
+      }),
+    ).toEqual({})
+  })
+
+  it('returns no aliases when tsconfig compilerOptions has no paths', () => {
+    writeFixture(
+      'tsconfig.json',
+      JSON.stringify({ compilerOptions: { baseUrl: '.' } }),
+    )
+    writeFixture('src/a.tsx', "import '@/foo'\n")
+    writeFixture('src/foo.tsx', 'export const foo = 1\n')
+
+    expect(
+      buildCanonicalMap({
+        cwd,
+        srcDir,
+        tsconfigPath: join(cwd, 'tsconfig.json'),
+      }),
+    ).toEqual({})
+  })
+
+  it('ignores a malformed tsconfig (JSON parse error)', () => {
+    writeFixture('tsconfig.json', '{ this is not json')
+    writeFixture('src/a.tsx', "import './b'\n")
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+
+    expect(
+      buildCanonicalMap({
+        cwd,
+        srcDir,
+        tsconfigPath: join(cwd, 'tsconfig.json'),
+      }),
+    ).toEqual({ 'src/b.tsx': 'src/a.tsx' })
+  })
+
+  it('prefers the longest-prefix alias when multiple tsconfig paths overlap', () => {
+    // Two aliases -> the prefix-length sort comparator runs; the longer prefix
+    // (`@components/`) must win over the broader `@/`.
+    writeFixture(
+      'tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: '.',
+          paths: {
+            '@/*': ['src/*'],
+            '@components/*': ['src/components/*'],
+          },
+        },
+      }),
+    )
+    writeFixture('src/a.tsx', "import '@components/x'\n")
+    writeFixture('src/components/x.tsx', 'export const x = 1\n')
+
+    expect(
+      buildCanonicalMap({
+        cwd,
+        srcDir,
+        tsconfigPath: join(cwd, 'tsconfig.json'),
+      }),
+    ).toEqual({ 'src/components/x.tsx': 'src/a.tsx' })
+  })
+
+  it('handles a root-absolute import specifier', () => {
+    writeFixture('src/a.tsx', "import '/abs/thing'\n")
+
+    // The `/`-prefixed branch runs; it resolves outside srcDir -> unresolved.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('resolves an import that includes an explicit .tsx extension', () => {
+    writeFixture('src/a.tsx', "import './b.tsx'\n")
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('resolves a directory import to its index file', () => {
+    writeFixture('src/a.tsx', "import './dir'\n")
+    writeFixture('src/dir/index.tsx', 'export const d = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/dir/index.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('leaves an import that resolves to no file unresolved', () => {
+    writeFixture('src/a.tsx', "import './ghost'\n")
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('keys the map by absolute POSIX path when keyBy is "absolute"', () => {
+    writeFixture('src/a.tsx', "import './b'\n")
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+
+    const map = buildCanonicalMap({ cwd, srcDir, keyBy: 'absolute' })
+    const [key, value] = Object.entries(map)[0]
+
+    // Absolute POSIX (backslashes normalized), not cwd-relative.
+    expect(key).not.toContain('\\')
+    expect(key.endsWith('/src/b.tsx')).toBe(true)
+    expect(value.endsWith('/src/a.tsx')).toBe(true)
+    expect(key).not.toBe('src/b.tsx')
+  })
 })
 
 describe('computeFileRoutes', () => {
@@ -593,5 +746,205 @@ describe('planAtomHoist', () => {
   it('returns null when fewer than two distinct routes exist', () => {
     expect(planAtomHoist({}, { 'a.tsx': [0] }, 2)).toBeNull()
     expect(planAtomHoist({}, {}, 2)).toBeNull()
+  })
+})
+
+// The oxc AST path is the fast parser used when `oxc-parser` is installed in
+// the host project. It is absent in this repo, so we inject a fake parser to
+// exercise the AST walk (module state is shared across test files, so this is
+// reset after each test back to the regex fallback).
+describe('oxc AST parsing path', () => {
+  let tempRoot: string
+  let cwd: string
+  let srcDir: string
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'devup-ui-oxc-'))
+    cwd = join(tempRoot, 'project')
+    srcDir = join(cwd, 'src')
+    mkdirSync(srcDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    __setOxcParserForTest(undefined)
+    rmSync(tempRoot, { recursive: true, force: true })
+  })
+
+  function writeFixture(path: string, code: string): void {
+    const filePath = join(cwd, path)
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, code)
+  }
+
+  it('collects every import/export node kind from the AST (type-only excluded)', () => {
+    const circular: Record<string, unknown> = { type: 'SelfRef' }
+    circular.self = circular // self-reference -> exercises the `seen` guard
+    const richProgram = {
+      type: 'Program',
+      body: [
+        // value import -> static edge (getStringLiteralValue via `.value`)
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          source: { value: './val' },
+        },
+        // `import type` -> skipped (importKind 'type')
+        {
+          type: 'ImportDeclaration',
+          importKind: 'type',
+          source: { value: './t1' },
+        },
+        // value re-export -> static edge
+        {
+          type: 'ExportNamedDeclaration',
+          exportKind: 'value',
+          source: { value: './exp' },
+        },
+        // `export type` -> skipped (exportKind 'type')
+        {
+          type: 'ExportNamedDeclaration',
+          exportKind: 'type',
+          source: { value: './t2' },
+        },
+        // export-all -> static edge
+        { type: 'ExportAllDeclaration', source: { value: './all' } },
+        // dynamic import expression with `.source`
+        { type: 'ImportExpression', source: { value: './dyn1' } },
+        // dynamic import expression falling back to `.argument`
+        { type: 'ImportExpression', argument: { value: './dyn2' } },
+        // import() call via callee.type === 'Import', specifier via `.raw`
+        {
+          type: 'CallExpression',
+          callee: { type: 'Import' },
+          arguments: [{ raw: "'./dyn3'" }],
+        },
+        // import() call via callee.name === 'import'
+        {
+          type: 'CallExpression',
+          callee: { name: 'import' },
+          arguments: [{ value: './dyn4' }],
+        },
+        // import() with non-array arguments -> first arg undefined -> no push
+        {
+          type: 'CallExpression',
+          callee: { type: 'Import' },
+          arguments: 'not-an-array',
+        },
+        // non-import call (isImportCallee false via name) -> falls through
+        { type: 'CallExpression', callee: { name: 'other' }, arguments: [] },
+        // non-record callee -> isImportCallee returns false
+        { type: 'CallExpression', callee: null, arguments: [] },
+        // source literal with neither `.value` nor `.raw` -> no push
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          source: { kind: 'no-literal' },
+        },
+        circular,
+        'primitive-child',
+        7,
+        null,
+      ] as unknown[],
+    }
+    __setOxcParserForTest({
+      parseSync: (filename: string) =>
+        filename.endsWith('a.tsx')
+          ? { program: richProgram }
+          : { program: { type: 'Program', body: [] as unknown[] } },
+    })
+
+    writeFixture('src/a.tsx', 'parsed by the fake oxc parser, content ignored')
+    writeFixture(
+      'src/val.tsx',
+      'parsed by the fake oxc parser, content ignored',
+    )
+
+    // Proof the AST path ran: `a` statically imports `./val` -> val collapses
+    // into a. The regex fallback would parse the literal content -> no imports.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/val.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('falls back to the regex scan when the oxc parser throws', () => {
+    __setOxcParserForTest({
+      parseSync: () => {
+        throw new Error('boom')
+      },
+    })
+
+    writeFixture('src/a.tsx', "import './b'\n")
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+
+    // parseSync throws -> parseImportsWithOxc returns undefined -> scanImports.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+})
+
+describe('runImportGraphCli', () => {
+  function makeProject(): { root: string; cwd: string } {
+    const root = mkdtempSync(join(tmpdir(), 'devup-ui-cli-'))
+    const cwd = join(root, 'project')
+    const srcDir = join(cwd, 'src')
+    mkdirSync(srcDir, { recursive: true })
+    writeFileSync(join(srcDir, 'a.tsx'), "import './b'\n")
+    writeFileSync(join(srcDir, 'b.tsx'), 'export const b = 1\n')
+    return { root, cwd }
+  }
+
+  it('prints usage and exits when the srcDir arg is missing', () => {
+    const errorSpy = spyOn(console, 'error').mockReturnValue(undefined)
+    const exitSpy = spyOn(process, 'exit').mockImplementation(
+      (() => undefined) as never,
+    )
+
+    runImportGraphCli([])
+
+    expect(errorSpy).toHaveBeenCalled()
+    expect(exitSpy).toHaveBeenCalledWith(1)
+
+    errorSpy.mockRestore()
+    exitSpy.mockRestore()
+  })
+
+  it('prints the canonical map JSON to stdout when no outFile is given', () => {
+    const { root, cwd } = makeProject()
+    const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
+
+    runImportGraphCli(['src', cwd])
+
+    const printed = (infoSpy.mock.calls[0] as [string])[0]
+    expect(printed).toContain('src/b.tsx')
+
+    infoSpy.mockRestore()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('writes the canonical map JSON to outFile (with a tsconfig arg)', () => {
+    const { root, cwd } = makeProject()
+    writeFileSync(
+      join(cwd, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { baseUrl: '.' } }),
+    )
+
+    runImportGraphCli(['src', cwd, 'tsconfig.json', 'out.json'])
+
+    const written = JSON.parse(readFileSync(join(cwd, 'out.json'), 'utf-8'))
+    expect(written).toEqual({ 'src/b.tsx': 'src/a.tsx' })
+
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('defaults cwd to process.cwd() when only srcDir is given', () => {
+    const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
+
+    // A non-existent srcDir -> empty map -> prints "{}" without touching files.
+    runImportGraphCli(['__devup_nonexistent_src__'])
+
+    expect(infoSpy).toHaveBeenCalledWith('{}')
+
+    infoSpy.mockRestore()
   })
 })
