@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import * as nodePath from 'node:path'
 
+import * as pluginUtils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterEach,
@@ -578,5 +579,149 @@ describe('devupUIVitePlugin', () => {
   it('should call setPrefix when prefix option is provided', () => {
     DevupUI({ prefix: 'my-prefix' })
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
+  })
+})
+
+describe('devupUIVitePlugin atom hoisting', () => {
+  type ConfigResolved = (config: unknown) => Promise<void>
+  const runConfigResolved = async (
+    options: Parameters<typeof DevupUI>[0],
+    config: unknown,
+  ) => {
+    const plugin = DevupUI(options) as unknown as {
+      configResolved: ConfigResolved
+    }
+    await plugin.configResolved(config)
+  }
+
+  let buildCanonicalMapSpy: ReturnType<typeof spyOn>
+  let computeFileReachSpy: ReturnType<typeof spyOn>
+  let importCanonicalMapSpy: ReturnType<typeof spyOn>
+  let importFileRoutesSpy: ReturnType<typeof spyOn>
+  let setAtomHoistSpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    buildCanonicalMapSpy = spyOn(
+      pluginUtils,
+      'buildCanonicalMap',
+    ).mockReturnValue({})
+    computeFileReachSpy = spyOn(
+      pluginUtils,
+      'computeFileReach',
+    ).mockReturnValue({})
+    importCanonicalMapSpy = spyOn(wasm, 'importCanonicalMap').mockReturnValue(
+      undefined,
+    )
+    importFileRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
+      undefined,
+    )
+    setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
+  })
+
+  afterEach(() => {
+    buildCanonicalMapSpy.mockRestore()
+    computeFileReachSpy.mockRestore()
+    importCanonicalMapSpy.mockRestore()
+    importFileRoutesSpy.mockRestore()
+    setAtomHoistSpy.mockRestore()
+  })
+
+  it('does nothing when atomHoist is unset', async () => {
+    await runConfigResolved({}, { root: '/p' })
+    expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
+  })
+
+  it('composes collapse + hoist and folds reach onto the canonical bucket', async () => {
+    buildCanonicalMapSpy.mockReturnValue({
+      '/p/src/child.tsx': '/p/src/parent.tsx',
+      '/p/src/glob.tsx': '@global',
+    })
+    computeFileReachSpy.mockReturnValue({
+      '/p/src/parent.tsx': [0, 1],
+      '/p/src/child.tsx': [0],
+      '/p/src/glob.tsx': [0, 1],
+      '/p/src/r1.tsx': [1],
+    })
+    await runConfigResolved(
+      { atomHoist: 2 },
+      { root: '/p', build: { rollupOptions: { input: { a: 'src/a.tsx' } } } },
+    )
+    // collapse runs (composition) with absolute keys
+    expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ keyBy: 'absolute' }),
+    )
+    expect(importCanonicalMapSpy).toHaveBeenCalled()
+    // reach folded by bucket: child -> parent, @global skipped
+    expect(importFileRoutesSpy).toHaveBeenCalledWith({
+      '/p/src/parent.tsx': [0, 1],
+      '/p/src/r1.tsx': [1],
+    })
+    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+  })
+
+  it('clamps the threshold to a minimum of 2', async () => {
+    computeFileReachSpy.mockReturnValue({
+      '/p/src/a.tsx': [0],
+      '/p/src/b.tsx': [1],
+    })
+    await runConfigResolved({ atomHoist: 1 }, { root: '/p' })
+    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+  })
+
+  it('stays off when fewer than two routes are reachable', async () => {
+    computeFileReachSpy.mockReturnValue({ '/p/src/a.tsx': [0] })
+    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the heuristic when input has no JS entries', async () => {
+    computeFileReachSpy.mockReturnValue({
+      '/p/src/a.tsx': [0],
+      '/p/src/b.tsx': [1],
+    })
+    await runConfigResolved(
+      { atomHoist: 2 },
+      { root: '/p', build: { rollupOptions: { input: 'index.html' } } },
+    )
+    // html-only input => entries override omitted => computeFileReach called
+    // without an explicit entries list
+    expect(computeFileReachSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ entries: undefined }),
+    )
+    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+  })
+
+  it('accepts array and string JS entries', async () => {
+    computeFileReachSpy.mockReturnValue({
+      '/p/src/a.tsx': [0],
+      '/p/src/b.tsx': [1],
+    })
+    await runConfigResolved(
+      { atomHoist: 2 },
+      { root: '/p', build: { rollupOptions: { input: ['src/a.tsx'] } } },
+    )
+    await runConfigResolved(
+      { atomHoist: 2 },
+      { root: '/p', build: { rollupOptions: { input: 'src/a.tsx' } } },
+    )
+    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+  })
+
+  it('swallows pre-pass errors (atom hoisting stays off)', async () => {
+    buildCanonicalMapSpy.mockImplementation(() => {
+      throw new Error('boom')
+    })
+    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+    expect(setAtomHoistSpy).not.toHaveBeenCalled()
+  })
+
+  it('uses process.cwd() when config.root is absent', async () => {
+    computeFileReachSpy.mockReturnValue({
+      '/p/src/a.tsx': [0],
+      '/p/src/b.tsx': [1],
+    })
+    await runConfigResolved({ atomHoist: 2 }, {})
+    expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
   })
 })

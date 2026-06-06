@@ -452,4 +452,217 @@ describe('devupUIWebpackPlugin', () => {
     plugin.apply(asCompiler(compiler))
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
   })
+
+  describe('collapse + atomHoist pre-pass', () => {
+    let buildCanonicalMapSpy: ReturnType<typeof spyOn>
+    let computeFileReachSpy: ReturnType<typeof spyOn>
+    let importCanonicalMapSpy: ReturnType<typeof spyOn>
+    let importFileRoutesSpy: ReturnType<typeof spyOn>
+    let setAtomHoistSpy: ReturnType<typeof spyOn>
+    let listSourceFilesSpy: ReturnType<typeof spyOn>
+
+    beforeEach(() => {
+      buildCanonicalMapSpy = spyOn(
+        pluginUtils,
+        'buildCanonicalMap',
+      ).mockReturnValue({})
+      computeFileReachSpy = spyOn(
+        pluginUtils,
+        'computeFileReach',
+      ).mockReturnValue({})
+      importCanonicalMapSpy = spyOn(wasm, 'importCanonicalMap').mockReturnValue(
+        undefined,
+      )
+      importFileRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
+        undefined,
+      )
+      setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
+      // Default: no source files so pre-warm is a no-op unless a test opts in.
+      listSourceFilesSpy = spyOn(
+        pluginUtils,
+        'listSourceFiles',
+      ).mockReturnValue([])
+    })
+
+    afterEach(() => {
+      buildCanonicalMapSpy.mockRestore()
+      computeFileReachSpy.mockRestore()
+      importCanonicalMapSpy.mockRestore()
+      importFileRoutesSpy.mockRestore()
+      setAtomHoistSpy.mockRestore()
+      listSourceFilesSpy.mockRestore()
+    })
+
+    it('runs single-importer collapse even when atomHoist is unset (always-on), without hoisting', () => {
+      // Constraint: single-importer collapse must ALWAYS be on. The canonical
+      // map is built + imported unconditionally; only atom HOISTING is gated.
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+      })
+      const plugin = new DevupUIWebpackPlugin({})
+      plugin.apply(asCompiler(createCompiler()))
+      expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ keyBy: 'cwd-relative' }),
+      )
+      expect(importCanonicalMapSpy).toHaveBeenCalled()
+      // atom hoisting stays off without atomHoist
+      expect(computeFileReachSpy).not.toHaveBeenCalled()
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    it('pre-warms the extractor over all source files in build mode when collapse is active', () => {
+      // Without pre-warm, webpack builds each shared devup-ui-N.css ONCE at
+      // first import — before later bucket members are extracted — so their
+      // atoms are dropped. Pre-warming the sheet makes getCss(N) complete from
+      // the first css-loader call.
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+      })
+      listSourceFilesSpy.mockReturnValue([
+        resolve(process.cwd(), 'src', 'parent.tsx'),
+        resolve(process.cwd(), 'src', 'child.tsx'),
+      ])
+      readFileSyncSpy.mockReturnValue('source')
+      const plugin = new DevupUIWebpackPlugin({
+        package: '@devup-ui/react',
+        singleCss: true,
+      })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(listSourceFilesSpy).toHaveBeenCalled()
+      expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+      expect(codeExtractSpy).toHaveBeenCalledWith(
+        'src/parent.tsx',
+        'source',
+        '@devup-ui/react',
+        expect.any(String),
+        true,
+        false,
+        true,
+        expect.anything(),
+      )
+      expect(codeExtractSpy).toHaveBeenCalledWith(
+        'src/child.tsx',
+        'source',
+        '@devup-ui/react',
+        expect.any(String),
+        true,
+        false,
+        true,
+        expect.anything(),
+      )
+    })
+
+    it('skips pre-warm when the canonical map is empty (no collapse, no race)', () => {
+      buildCanonicalMapSpy.mockReturnValue({})
+      listSourceFilesSpy.mockReturnValue([
+        resolve(process.cwd(), 'src', 'a.tsx'),
+      ])
+      readFileSyncSpy.mockReturnValue('source')
+      const plugin = new DevupUIWebpackPlugin({})
+      plugin.apply(asCompiler(createCompiler()))
+      expect(codeExtractSpy).not.toHaveBeenCalled()
+    })
+
+    it('skips pre-warm in watch mode (race only affects one-shot builds)', () => {
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+      })
+      listSourceFilesSpy.mockReturnValue([
+        resolve(process.cwd(), 'src', 'parent.tsx'),
+      ])
+      readFileSyncSpy.mockReturnValue('source')
+      const plugin = new DevupUIWebpackPlugin({ watch: true })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(codeExtractSpy).not.toHaveBeenCalled()
+    })
+
+    it('swallows pre-warm errors (extraction failure does not break apply)', () => {
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+      })
+      listSourceFilesSpy.mockReturnValue([
+        resolve(process.cwd(), 'src', 'parent.tsx'),
+      ])
+      readFileSyncSpy.mockReturnValue('source')
+      codeExtractSpy.mockImplementation(() => {
+        throw new Error('extract boom')
+      })
+      const plugin = new DevupUIWebpackPlugin({})
+      // apply must still complete without throwing
+      plugin.apply(asCompiler(createCompiler()))
+      expect(codeExtractSpy).toHaveBeenCalled()
+    })
+
+    it('composes collapse + hoist and folds reach onto the canonical bucket', () => {
+      buildCanonicalMapSpy.mockReturnValue({
+        'src/child.tsx': 'src/parent.tsx',
+        'src/glob.tsx': '@global',
+      })
+      computeFileReachSpy.mockReturnValue({
+        'src/parent.tsx': [0, 1],
+        'src/child.tsx': [0],
+        'src/glob.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(createCompiler()))
+      // collapse runs with cwd-relative keys (webpack loader passes relative path)
+      expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ keyBy: 'cwd-relative' }),
+      )
+      expect(importCanonicalMapSpy).toHaveBeenCalled()
+      // reach folded by bucket: child -> parent, @global skipped
+      expect(importFileRoutesSpy).toHaveBeenCalledWith({
+        'src/parent.tsx': [0, 1],
+        'src/r1.tsx': [1],
+      })
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('clamps the threshold to a minimum of 2', () => {
+      computeFileReachSpy.mockReturnValue({
+        'src/a.tsx': [0],
+        'src/b.tsx': [1],
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 1 })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('stays off when fewer than two routes are reachable', () => {
+      computeFileReachSpy.mockReturnValue({ 'src/a.tsx': [0] })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    it('swallows pre-pass errors (atom hoisting stays off)', () => {
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      // apply must still complete without throwing
+      plugin.apply(asCompiler(createCompiler()))
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+    })
+
+    it('configures atom hoisting BEFORE registering loader rules', () => {
+      computeFileReachSpy.mockReturnValue({
+        'src/a.tsx': [0],
+        'src/b.tsx': [1],
+      })
+      const compiler = createCompiler()
+      let rulesLenAtSetAtomHoist = -1
+      setAtomHoistSpy.mockImplementation(() => {
+        rulesLenAtSetAtomHoist = compiler.options.module.rules.length
+      })
+      const plugin = new DevupUIWebpackPlugin({ atomHoist: 2 })
+      plugin.apply(asCompiler(compiler))
+      // pre-pass must run before module rules are pushed (single WASM instance)
+      expect(rulesLenAtSetAtomHoist).toBe(0)
+      expect(compiler.options.module.rules.length).toBeGreaterThan(0)
+    })
+  })
 })

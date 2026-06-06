@@ -1,6 +1,32 @@
+import type { Locator } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { waitForStyleSettle } from './helpers'
+/** Read the background color of a button's inner bg-bearing <div> (or itself). */
+function readInnerBg(locator: Locator): Promise<string> {
+  return locator.evaluate((el) => {
+    const inner = el.querySelector('div') || el
+    return getComputedStyle(inner).backgroundColor
+  })
+}
+
+/**
+ * Hover the link, then poll the inner background until it reaches `expectedHex`.
+ *
+ * `:hover` styles apply via the pointer, and a CSS transition means the computed
+ * color is not final on the next frame. A fixed wait races that transition and
+ * flakes; auto-retrying the assertion waits exactly as long as needed.
+ */
+async function expectHoverBg(
+  link: Locator,
+  expectedHex: string,
+): Promise<void> {
+  await link.hover()
+  await expect
+    .poll(async () => normalizeColor(await readInnerBg(link)), {
+      timeout: 5_000,
+    })
+    .toBe(expectedHex)
+}
 
 function normalizeColor(raw: string): string {
   const trimmed = raw.trim().toLowerCase()
@@ -34,29 +60,13 @@ test.describe('Landing Page - Interactions', () => {
     const getStartedLink = page.locator('a', { hasText: 'Get started' }).first()
     await expect(getStartedLink).toBeVisible()
 
-    // Get the inner flex container that has the bg (first div child)
-    const bgBefore = await getStartedLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    // Hover
-    await getStartedLink.hover()
-    await waitForStyleSettle(page)
-
-    const bgAfter = await getStartedLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
     expect(
-      normalizeColor(bgBefore),
+      normalizeColor(await readInnerBg(getStartedLink)),
       'Before hover: bg should be $text (#2F2F2F)',
     ).toBe('#2f2f2f')
-    expect(
-      normalizeColor(bgAfter),
-      'After hover: bg should change to $title (#1A1A1A)',
-    ).toBe('#1a1a1a')
+
+    // After hover: bg should change to $title (#1A1A1A)
+    await expectHoverBg(getStartedLink, '#1a1a1a')
   })
 
   test('Discord button background changes on hover', async ({ page }) => {
@@ -65,21 +75,8 @@ test.describe('Landing Page - Interactions', () => {
     const discordLink = page.getByRole('link', { name: /Join our Discord/i })
     await expect(discordLink).toBeVisible()
 
-    const bgBefore = await discordLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    await discordLink.hover()
-    await waitForStyleSettle(page)
-
-    const bgAfter = await discordLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    expect(normalizeColor(bgBefore)).toBe('#266ccd')
-    expect(normalizeColor(bgAfter)).toBe('#1453ac')
+    expect(normalizeColor(await readInnerBg(discordLink))).toBe('#266ccd')
+    await expectHoverBg(discordLink, '#1453ac')
   })
 
   test('KakaoTalk button background changes on hover', async ({ page }) => {
@@ -88,21 +85,8 @@ test.describe('Landing Page - Interactions', () => {
     const kakaoLink = page.getByRole('link', { name: /Open KakaoTalk/i })
     await expect(kakaoLink).toBeVisible()
 
-    const bgBefore = await kakaoLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    await kakaoLink.hover()
-    await waitForStyleSettle(page)
-
-    const bgAfter = await kakaoLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    expect(normalizeColor(bgBefore)).toBe('#de9800')
-    expect(normalizeColor(bgAfter)).toBe('#c98900')
+    expect(normalizeColor(await readInnerBg(kakaoLink))).toBe('#de9800')
+    await expectHoverBg(kakaoLink, '#c98900')
   })
 
   test('FigmaButton background changes on hover', async ({ page }) => {
@@ -117,20 +101,8 @@ test.describe('Landing Page - Interactions', () => {
     })
     await expect(figmaLink).toBeVisible()
 
-    const bgBefore = await figmaLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
-    await figmaLink.hover()
-    await waitForStyleSettle(page)
-
-    const bgAfter = await figmaLink.evaluate((el) => {
-      const inner = el.querySelector('div') || el
-      return getComputedStyle(inner).backgroundColor
-    })
-
     // Before hover should be transparent (rgba(0, 0, 0, 0))
+    const bgBefore = await readInnerBg(figmaLink)
     const isTransparent =
       bgBefore === 'rgba(0, 0, 0, 0)' || bgBefore === 'transparent'
     expect(
@@ -139,6 +111,6 @@ test.describe('Landing Page - Interactions', () => {
     ).toBeTruthy()
 
     // After hover should be $menuHover = #F6F4FF
-    expect(normalizeColor(bgAfter)).toBe('#f6f4ff')
+    await expectHoverBg(figmaLink, '#f6f4ff')
   })
 })

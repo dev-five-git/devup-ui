@@ -2,6 +2,9 @@ pub mod theme;
 
 use crate::theme::Theme;
 use css::{
+    atom_hoist::{atom_hoist_threshold, is_atom_hoist},
+    file_map::canonical,
+    file_routes::route_count_for_files,
     merge_selector, sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector},
     theme_tokens::set_theme_token_levels,
@@ -11,7 +14,7 @@ use extractor::extract_style::extract_static_style::ThemeTokenResolution;
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::extract_style::style_property::StyleProperty;
 use regex_lite::Regex;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
@@ -294,7 +297,19 @@ impl StyleSheet {
         self.css.remove(file);
 
         self.font_faces.remove(file);
-        let property_key = if single_css { "" } else { file }.to_string();
+        // @import rules are per-source-file globalCss (keyed by raw filename),
+        // like `css`/`font_faces`; clear them so an @import removed from source
+        // does not linger across re-extraction (HMR).
+        self.imports.remove(file);
+        // `file` is the RAW source filename (globalCss is per-source-file). Atoms
+        // were bucketed by canonical(file) in update_styles, so global-selector
+        // atom removal must read from the canonical bucket while still matching
+        // the raw owner via `f == file` below.
+        let property_key = if single_css {
+            String::new()
+        } else {
+            canonical(file)
+        };
 
         if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
@@ -340,6 +355,16 @@ impl StyleSheet {
     ) -> (bool, bool) {
         let mut collected = false;
         let mut updated_base_style = false;
+        // Decouple class NAMING from property BUCKETING. atom_hoist uses GLOBAL
+        // (prefix-less, shared-registry) names like single_css, but still keeps
+        // per-file property buckets so create_css can route each atom to the
+        // global chunk or a per-route chunk based on its route usage.
+        let name_scope = if single_css || is_atom_hoist() {
+            None
+        } else {
+            Some(filename)
+        };
+        let bucket_scope = if single_css { None } else { Some(filename) };
         for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
@@ -372,10 +397,10 @@ impl StyleSheet {
                                 Some(&resolved_value),
                                 selector.as_deref(),
                                 st.style_order(),
-                                if single_css { None } else { Some(filename) },
+                                name_scope,
                             )
                         } else {
-                            match st.extract(if single_css { None } else { Some(filename) }) {
+                            match st.extract(name_scope) {
                                 StyleProperty::ClassName(cls)
                                 | StyleProperty::Variable {
                                     class_name: cls, ..
@@ -390,7 +415,7 @@ impl StyleSheet {
                         &resolved_value,
                         st.selector(),
                         st.style_order(),
-                        if single_css { None } else { Some(filename) },
+                        bucket_scope,
                         st.layer(),
                     ) {
                         collected = true;
@@ -404,7 +429,7 @@ impl StyleSheet {
                         class_name,
                         variable_name,
                         ..
-                    }) = style.extract(if single_css { None } else { Some(filename) })
+                    }) = style.extract(name_scope)
                         && self.add_property(
                             &class_name,
                             dy.property(),
@@ -416,7 +441,7 @@ impl StyleSheet {
                             },
                             dy.selector(),
                             dy.style_order(),
-                            if single_css { None } else { Some(filename) },
+                            bucket_scope,
                         )
                     {
                         collected = true;
@@ -428,9 +453,7 @@ impl StyleSheet {
 
                 ExtractStyleValue::Keyframes(keyframes) => {
                     if self.add_keyframes(
-                        &keyframes
-                            .extract(if single_css { None } else { Some(filename) })
-                            .to_string(),
+                        &keyframes.extract(name_scope).to_string(),
                         keyframes
                             .keyframes
                             .iter()
@@ -449,7 +472,7 @@ impl StyleSheet {
                                 )
                             })
                             .collect(),
-                        if single_css { None } else { Some(filename) },
+                        bucket_scope,
                     ) {
                         collected = true;
                     }
@@ -717,6 +740,38 @@ impl StyleSheet {
         &HEADER
     }
 
+    /// Compute the set of atom class names that should be hoisted into the
+    /// global stylesheet under atom-level hoisting.
+    ///
+    /// An atom (uniquely identified by its `class_name` under global naming) is
+    /// hoisted when the number of routes that transitively use it reaches the
+    /// configured threshold. Base styles (`style_order == 0`) are excluded
+    /// because they are already emitted globally and shared by every chunk.
+    fn compute_hoisted_atoms(&self, threshold: usize) -> FxHashSet<String> {
+        // atom class_name -> set of files that reference it (order != 0)
+        let mut atom_files: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
+        for (filename, property_map) in &self.properties {
+            for (style_order, level_map) in property_map {
+                if *style_order == 0 {
+                    continue;
+                }
+                for props in level_map.values() {
+                    for prop in props {
+                        atom_files
+                            .entry(prop.class_name.clone())
+                            .or_default()
+                            .insert(filename.as_str());
+                    }
+                }
+            }
+        }
+        atom_files
+            .into_iter()
+            .filter(|(_, files)| route_count_for_files(files.iter().copied()) >= threshold)
+            .map(|(class_name, _)| class_name)
+            .collect()
+    }
+
     #[must_use]
     pub fn create_css(&self, filename: Option<&str>, import_main_css: bool) -> String {
         let mut css = String::with_capacity(4096);
@@ -730,6 +785,11 @@ impl StyleSheet {
         }
 
         let write_global = filename.is_none();
+
+        // Under atom-level hoisting, decide which atoms (order != 0) live in the
+        // shared global stylesheet vs. their per-route chunk.
+        let hoisted_atoms: Option<FxHashSet<String>> =
+            atom_hoist_threshold().map(|threshold| self.compute_hoisted_atoms(threshold));
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
@@ -780,8 +840,15 @@ impl StyleSheet {
             if !theme_css.is_empty() {
                 push_fmt!(&mut css, "@layer t{{{theme_css}}}");
             }
+            // One source file extracted under multiple passes (e.g. Next
+            // server + client compilations) registers identical @font-face rules
+            // under multiple file keys; emit each distinct rule only once.
+            let mut seen_font_faces: BTreeSet<&BTreeMap<String, String>> = BTreeSet::new();
             for font_faces in self.font_faces.values() {
                 for font_face in font_faces {
+                    if !seen_font_faces.insert(font_face) {
+                        continue;
+                    }
                     css.push_str("@font-face{");
                     let mut first = true;
                     for (key, value) in font_face {
@@ -852,6 +919,43 @@ impl StyleSheet {
                     css.push('}');
                 }
             }
+            // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
+            // stylesheet, aggregated across every file and deduplicated by atom
+            // identity (class_name).
+            if let Some(hoisted) = &hoisted_atoms {
+                let mut aggregated: BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>> =
+                    BTreeMap::new();
+                for property_map in self.properties.values() {
+                    for (style_order, level_map) in property_map {
+                        if *style_order == 0 {
+                            continue;
+                        }
+                        for (level, props) in level_map {
+                            for prop in props {
+                                if hoisted.contains(&prop.class_name) {
+                                    aggregated
+                                        .entry(*style_order)
+                                        .or_default()
+                                        .entry(*level)
+                                        .or_default()
+                                        .insert(prop.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                for (style_order, map) in aggregated {
+                    let current_css = self.create_style(&map);
+                    if current_css.is_empty() {
+                        continue;
+                    }
+                    if style_order == 255 {
+                        css.push_str(&current_css);
+                    } else {
+                        push_fmt!(&mut css, "@layer o{style_order}{{{current_css}}}");
+                    }
+                }
+            }
         } else {
             // avoid inline import issue (vite plugin)
             if import_main_css {
@@ -886,7 +990,27 @@ impl StyleSheet {
                     // base style was created in global css
                     continue;
                 }
-                let current_css = self.create_style(map);
+                // Under atom hoisting, hoisted atoms were emitted globally; the
+                // per-route chunk keeps only its route-private atoms.
+                let current_css = if let Some(hoisted) = &hoisted_atoms {
+                    let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
+                        .iter()
+                        .filter_map(|(level, props)| {
+                            let kept: FxHashSet<StyleSheetProperty> = props
+                                .iter()
+                                .filter(|prop| !hoisted.contains(&prop.class_name))
+                                .cloned()
+                                .collect();
+                            (!kept.is_empty()).then_some((*level, kept))
+                        })
+                        .collect();
+                    if filtered.is_empty() {
+                        continue;
+                    }
+                    self.create_style(&filtered)
+                } else {
+                    self.create_style(map)
+                };
 
                 if !current_css.is_empty() {
                     // order style 255 is user css
@@ -946,6 +1070,220 @@ mod tests {
         sheet.add_property("test", "border", 0, "1px solid", None, None, None);
         sheet.add_property("test", "border-color", 0, "red", None, None, None);
         assert_debug_snapshot!(sheet.create_css(None, false).split("*/").nth(1).unwrap());
+    }
+
+    // Atom-level hoisting emission. Without an atom-hoist test these branches in
+    // compute_hoisted_atoms / create_css were uncovered:
+    //   * compute_hoisted_atoms skips style_order 0
+    //   * the global hoist emission skips style_order 0
+    //   * the global hoist emission skips an aggregated order whose CSS is empty
+    //     (a hoisted atom that is a *layered global* prop -> no direct output)
+    //   * the global hoist emission wraps a hoisted order != 255 in `@layer o{N}`
+    //   * the per-route emission skips a chunk whose atoms were all hoisted away
+    #[test]
+    #[serial]
+    fn create_css_atom_hoisting_emission() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::file_routes::{reset_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        reset_class_map();
+        reset_file_map();
+        reset_file_routes();
+
+        // a.tsx and b.tsx each own one distinct route, so an atom referenced by
+        // BOTH is reached by 2 routes (>= threshold) and gets hoisted.
+        let mut routes = HashMap::new();
+        routes.insert("a.tsx".to_string(), HashSet::from([0u32]));
+        routes.insert("b.tsx".to_string(), HashSet::from([1u32]));
+        set_file_routes(routes);
+        set_atom_hoist(Some(2));
+
+        let mut sheet = StyleSheet::default();
+        // Hoisted user atom (style_order 255), in both files.
+        sheet.add_property("hu", "color", 0, "red", None, Some(255), Some("a.tsx"));
+        sheet.add_property("hu", "color", 0, "red", None, Some(255), Some("b.tsx"));
+        // Hoisted ordered atom (style_order 1) -> emitted as `@layer o1`.
+        sheet.add_property("ho", "padding", 0, "1px", None, Some(1), Some("a.tsx"));
+        sheet.add_property("ho", "padding", 0, "1px", None, Some(1), Some("b.tsx"));
+        // Base style (style_order 0) -> exercises the style_order == 0 skips.
+        sheet.add_property("hb", "margin", 0, "0", None, Some(0), Some("a.tsx"));
+        // Hoisted LAYERED GLOBAL atom (style_order 2): when aggregated, its
+        // create_style produces no direct CSS (it goes to the discarded layer
+        // map), so that aggregated order is skipped as empty.
+        let ga = StyleSelector::Global("div".to_string(), "a.tsx".to_string());
+        sheet.add_property_with_layer(
+            "hg",
+            "border-radius",
+            0,
+            "9px",
+            Some(&ga),
+            Some(2),
+            Some("a.tsx"),
+            Some("lyr"),
+        );
+        let gb = StyleSelector::Global("div".to_string(), "b.tsx".to_string());
+        sheet.add_property_with_layer(
+            "hg",
+            "border-radius",
+            0,
+            "9px",
+            Some(&gb),
+            Some(2),
+            Some("b.tsx"),
+            Some("lyr"),
+        );
+        // Non-hoisted responsive at-rule atom (only a.tsx): emitted in a.tsx's
+        // chunk via the break-point at-rule path (level != 0 -> break_point set).
+        let at = StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(hover:hover)".to_string(),
+            selector: None,
+        };
+        sheet.add_property(
+            "atr",
+            "color",
+            1,
+            "blue",
+            Some(&at),
+            Some(255),
+            Some("a.tsx"),
+        );
+
+        // Global stylesheet: runs compute_hoisted_atoms + the hoist emission.
+        let global_css = sheet.create_css(None, false);
+        assert!(
+            global_css.contains("@layer o1"),
+            "hoisted order-1 atom must emit @layer o1: {global_css}"
+        );
+
+        // Per-route chunk for a.tsx: every one of its atoms was hoisted, so the
+        // chunk keeps none of them (exercises the all-hoisted skip).
+        let chunk_css = sheet.create_css(Some("a.tsx"), false);
+        assert!(
+            !chunk_css.contains("@layer o1"),
+            "hoisted atoms must not duplicate into the per-route chunk: {chunk_css}"
+        );
+        assert!(
+            !chunk_css.contains("padding:1px"),
+            "hoisted padding atom must not be in the chunk: {chunk_css}"
+        );
+        // The responsive at-rule wrapper AND its property must both be emitted
+        // (exercises the break-point at-rule path).
+        assert!(
+            chunk_css.contains("hover:hover"),
+            "at-rule wrapper must be emitted: {chunk_css}"
+        );
+        assert!(
+            chunk_css.contains("blue"),
+            "at-rule property must be written: {chunk_css}"
+        );
+
+        set_atom_hoist(None);
+        reset_file_routes();
+    }
+
+    // Under single-importer collapse, a collapsed file's globalCss atoms are
+    // bucketed by canonical(file). rm_global_css(raw) must therefore clear them
+    // from the CANONICAL bucket (matching the raw owner via f == file), and must
+    // NOT touch the bucket-root's own global atoms.
+    #[test]
+    #[serial]
+    fn rm_global_css_clears_collapsed_globals_from_canonical_bucket() {
+        use css::file_map::{reset_canonical_map, set_canonical_map};
+        reset_class_map();
+        reset_file_map();
+        reset_canonical_map();
+        let mut m = std::collections::HashMap::new();
+        m.insert("child.tsx".to_string(), "parent.tsx".to_string());
+        set_canonical_map(m);
+
+        let mut sheet = StyleSheet::default();
+        // child's own globalCss: @font-face + a global selector, bucketed by
+        // canonical(child) == "parent.tsx".
+        sheet.add_font_face(
+            "child.tsx",
+            &BTreeMap::from([("font-family".to_string(), "D2Coding".to_string())]),
+        );
+        sheet.add_property(
+            "c1",
+            "border-radius",
+            0,
+            "10px",
+            Some(&StyleSelector::Global(
+                "pre".to_string(),
+                "child.tsx".to_string(),
+            )),
+            Some(0),
+            Some("parent.tsx"),
+        );
+        // parent's own global selector in the SAME canonical bucket.
+        sheet.add_property(
+            "p1",
+            "border-radius",
+            0,
+            "5px",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "parent.tsx".to_string(),
+            )),
+            Some(0),
+            Some("parent.tsx"),
+        );
+
+        // Clearing child's globalCss must remove ONLY child's contributions.
+        sheet.rm_global_css("child.tsx", false);
+        let css = sheet.create_css(None, false);
+        reset_canonical_map();
+
+        assert!(
+            !css.contains("D2Coding"),
+            "child @font-face not cleared: {css}"
+        );
+        assert!(
+            !css.contains("border-radius:10px"),
+            "child global atom not cleared from canonical bucket: {css}"
+        );
+        assert!(
+            css.contains("border-radius:5px"),
+            "parent global atom wrongly cleared: {css}"
+        );
+    }
+
+    // A single source file extracted under multiple passes (e.g. Next server +
+    // client compilations) registers the SAME @font-face under multiple file
+    // keys. The emitted CSS must contain each distinct @font-face only ONCE.
+    #[test]
+    fn font_faces_deduplicated_across_file_keys() {
+        let props = BTreeMap::from([
+            ("font-family".to_string(), "Roboto".to_string()),
+            ("src".to_string(), "url(/r.woff2)".to_string()),
+        ]);
+        let mut sheet = StyleSheet::default();
+        sheet.add_font_face("a.tsx", &props);
+        sheet.add_font_face("b.tsx", &props);
+        let css = sheet.create_css(None, false);
+        assert_eq!(
+            css.matches("@font-face{").count(),
+            1,
+            "duplicate @font-face must be emitted once: {css}"
+        );
+    }
+
+    // rm_global_css clears a file's globalCss before it is re-added on the next
+    // extraction (HMR). It must also drop the file's @import rules, otherwise an
+    // @import removed from source lingers until restart.
+    #[test]
+    fn rm_global_css_clears_imports() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_import("a.tsx", "\"https://example.com/stale.css\"");
+        assert!(sheet.create_css(None, false).contains("stale.css"));
+        sheet.rm_global_css("a.tsx", false);
+        let css = sheet.create_css(None, false);
+        assert!(
+            !css.contains("stale.css"),
+            "rm_global_css must clear stale @import: {css}"
+        );
     }
     #[test]
     fn test_create_css_with_selector_sort_test() {

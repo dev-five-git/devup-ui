@@ -56,7 +56,11 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     try {
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
-      const relativePath = relative(process.cwd(), id)
+      // POSIX-normalize so the engine's bucket key matches the canonical map /
+      // FILE_ROUTES keys (built with forward slashes by plugin-utils). Without
+      // this, single-importer collapse and atom hoisting silently no-op on
+      // Windows. No-op on POSIX.
+      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
       const {

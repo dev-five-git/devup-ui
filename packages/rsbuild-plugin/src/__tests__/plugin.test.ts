@@ -2,9 +2,11 @@ import * as fs from 'node:fs'
 import * as fsPromises from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
+import * as pluginUtils from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import {
   afterAll,
+  afterEach,
   beforeAll,
   describe,
   expect,
@@ -453,5 +455,231 @@ const App = () => <Box></Box>`,
       }),
     )
     expect(setPrefixSpy).toHaveBeenCalledWith('my-prefix')
+  })
+
+  describe('atomHoist pre-pass', () => {
+    let buildCanonicalMapSpy: ReturnType<typeof spyOn>
+    let computeFileReachSpy: ReturnType<typeof spyOn>
+    let importCanonicalMapSpy: ReturnType<typeof spyOn>
+    let importFileRoutesSpy: ReturnType<typeof spyOn>
+    let setAtomHoistSpy: ReturnType<typeof spyOn>
+    let getCssSpy: ReturnType<typeof spyOn>
+
+    function spies() {
+      buildCanonicalMapSpy = spyOn(
+        pluginUtils,
+        'buildCanonicalMap',
+      ).mockReturnValue({})
+      computeFileReachSpy = spyOn(
+        pluginUtils,
+        'computeFileReach',
+      ).mockReturnValue({})
+      importCanonicalMapSpy = spyOn(wasm, 'importCanonicalMap').mockReturnValue(
+        undefined,
+      )
+      importFileRoutesSpy = spyOn(wasm, 'importFileRoutes').mockReturnValue(
+        undefined,
+      )
+      setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(undefined)
+      getCssSpy = spyOn(wasm, 'getCss').mockReturnValue('CSS')
+    }
+    afterEach(() => {
+      buildCanonicalMapSpy?.mockRestore()
+      computeFileReachSpy?.mockRestore()
+      importCanonicalMapSpy?.mockRestore()
+      importFileRoutesSpy?.mockRestore()
+      setAtomHoistSpy?.mockRestore()
+      getCssSpy?.mockRestore()
+    })
+
+    it('does nothing when atomHoist is unset', async () => {
+      spies()
+      await DevupUI().setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
+      )
+      expect(buildCanonicalMapSpy).not.toHaveBeenCalled()
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+      expect(importFileRoutesSpy).not.toHaveBeenCalled()
+    })
+
+    it('composes collapse + hoist and folds reach onto the canonical bucket', async () => {
+      spies()
+      buildCanonicalMapSpy.mockReturnValue({
+        '/p/src/child.tsx': '/p/src/parent.tsx',
+        '/p/src/glob.tsx': '@global',
+      })
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/parent.tsx': [0, 1],
+        '/p/src/child.tsx': [0],
+        '/p/src/glob.tsx': [0, 1],
+        '/p/src/r1.tsx': [1],
+      })
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
+      )
+      // rsbuild passes absolute resourcePath -> keyBy absolute
+      expect(buildCanonicalMapSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ keyBy: 'absolute' }),
+      )
+      expect(importCanonicalMapSpy).toHaveBeenCalled()
+      expect(importFileRoutesSpy).toHaveBeenCalledWith({
+        '/p/src/parent.tsx': [0, 1],
+        '/p/src/r1.tsx': [1],
+      })
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('clamps the threshold to a minimum of 2', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      await DevupUI({ atomHoist: 1 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
+      )
+      expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+    })
+
+    it('stays off when fewer than two routes are reachable', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({ '/p/src/a.tsx': [0] })
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
+      )
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+    })
+
+    it('swallows pre-pass errors (atom hoisting stays off)', async () => {
+      spies()
+      buildCanonicalMapSpy.mockImplementation(() => {
+        throw new Error('boom')
+      })
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig: mock() }),
+      )
+      expect(setAtomHoistSpy).not.toHaveBeenCalled()
+    })
+
+    it('serves per-route getCss(fileNum) for css imports in atom mode', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      getCssSpy.mockImplementation(
+        (fileNum: number | null) => `CSS_FOR_${String(fileNum)}`,
+      )
+      const transform = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform, modifyRsbuildConfig: mock() }),
+      )
+      // calls[0] is the cssDir transform; route chunk + base served as separate
+      // modules (the entry code imports both), so each is getCss(fileNum, false).
+      const servedChunk = transform.mock.calls[0][1]({
+        code: '',
+        resourcePath: resolve('df', 'devup-ui', 'devup-ui-3.css'),
+      })
+      expect(servedChunk).toBe('CSS_FOR_3')
+      expect(getCssSpy).toHaveBeenCalledWith(3, false)
+      const servedBase = transform.mock.calls[0][1]({
+        code: '',
+        resourcePath: resolve('df', 'devup-ui', 'devup-ui.css'),
+      })
+      expect(servedBase).toBe('CSS_FOR_null')
+      expect(getCssSpy).toHaveBeenCalledWith(null, false)
+    })
+
+    it('extracts with posix filename + relative cssDir in atom mode', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      codeExtractSpy.mockReturnValue(
+        createCodeExtractResult({ code: '<div></div>', cssFile: '' }),
+      )
+      const transform = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform, modifyRsbuildConfig: mock() }),
+      )
+      // calls[1] is the source transform; atom mode posix-normalizes the
+      // filename and passes a relative cssDir + import_main_css_in_code=true.
+      await transform.mock.calls[1][1]({
+        code: `import { Box } from '@devup-ui/react'\nconst A = () => <Box w="1px" />`,
+        resourcePath: 'src/App.tsx',
+      })
+      const call = codeExtractSpy.mock.calls.at(-1)!
+      expect(call[0]).toBe('src/App.tsx') // posix-normalized (already posix here)
+      expect(typeof call[3]).toBe('string')
+      expect((call[3] as string).startsWith('./')).toBe(true) // relative cssDir
+      expect(call[5]).toBe(true) // import_main_css_in_code
+      expect(call[6]).toBe(false) // import_main_css_in_css
+    })
+
+    it('injects a shared-css splitChunks cacheGroup in atom mode', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      const modifyRsbuildConfig = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({ transform: mock(), modifyRsbuildConfig }),
+      )
+      // prev undefined -> tools.rspack is the single injector function
+      const cfg = {} as { tools?: { rspack?: unknown } }
+      modifyRsbuildConfig.mock.calls[0][0](cfg)
+      const inject = cfg.tools?.rspack as (c: unknown) => void
+      expect(typeof inject).toBe('function')
+      // applying it adds the cacheGroup when splitChunks is an object
+      const rspackCfg = {
+        optimization: {
+          splitChunks: {} as {
+            cacheGroups?: Record<string, { type?: string }>
+          },
+        },
+      }
+      inject(rspackCfg)
+      expect(
+        rspackCfg.optimization.splitChunks.cacheGroups?.devupUiShared.type,
+      ).toBe('css/mini-extract')
+      // splitChunks missing/false -> no cacheGroup added, no throw
+      const rspackCfg2 = {} as { optimization?: { splitChunks?: unknown } }
+      inject(rspackCfg2)
+      expect(rspackCfg2.optimization?.splitChunks).toBeUndefined()
+    })
+
+    it('composes the cacheGroup with existing tools.rspack (function then array)', async () => {
+      spies()
+      computeFileReachSpy.mockReturnValue({
+        '/p/src/a.tsx': [0],
+        '/p/src/b.tsx': [1],
+      })
+      const modifyFn = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({
+          transform: mock(),
+          modifyRsbuildConfig: modifyFn,
+        }),
+      )
+      const prevFn = mock()
+      const cfgFn = { tools: { rspack: prevFn as unknown } }
+      modifyFn.mock.calls[0][0](cfgFn)
+      expect(Array.isArray(cfgFn.tools.rspack)).toBe(true)
+      expect((cfgFn.tools.rspack as unknown[])[0]).toBe(prevFn)
+
+      const modifyArr = mock()
+      await DevupUI({ atomHoist: 2 }).setup(
+        createSetupContext({
+          transform: mock(),
+          modifyRsbuildConfig: modifyArr,
+        }),
+      )
+      const prevArr = [mock()] as unknown[]
+      const cfgArr = { tools: { rspack: prevArr as unknown } }
+      modifyArr.mock.calls[0][0](cfgArr)
+      expect((cfgArr.tools.rspack as unknown[]).length).toBe(2)
+    })
   })
 })

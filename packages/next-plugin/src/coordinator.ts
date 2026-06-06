@@ -20,6 +20,35 @@ export interface CoordinatorOptions {
   fileMapFile: string
   importAliases: Record<string, string | null>
   coordinatorPortFile: string
+  /**
+   * Canonical (single-importer collapse) map: cwd-relative POSIX source path ->
+   * its canonical bucket path (or the `@global` sentinel). Used to wait for ALL
+   * members of a shared CSS bucket before serving it, instead of guessing
+   * completion from idle time. Empty when collapse is disabled.
+   */
+  canonicalMap: Record<string, string>
+  /**
+   * Route-reachable runtime source files (cwd-relative POSIX), i.e. exactly the
+   * files the bundler will compile and POST to `/extract`. Used to resolve the
+   * base-css `/css` wait DETERMINISTICALLY — block until every one of these has
+   * been extracted, instead of guessing completion from an idle gap. Comes from
+   * `computeFileRoutes` (already type-filtered and orphan-free), so it can never
+   * contain a phantom file the bundler skips. Empty when no routes are detected
+   * (e.g. pages-router) or the best-effort pre-pass failed, in which case the
+   * legacy idle heuristic below is the fallback.
+   */
+  expectedBaseFiles?: string[]
+  /**
+   * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
+   * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
+   * signal available). Exposed for tests; the plugin omits it.
+   */
+  idleThresholdMs?: number
+  /**
+   * Hard timeout (ms) for both the idle and per-bucket waits before failing
+   * open. Defaults to 60000. Exposed for tests; the plugin omits it.
+   */
+  maxWaitMs?: number
 }
 
 // Latest-Wins Coalescing Serializer.
@@ -116,29 +145,131 @@ let activeExtractions = 0
 let totalExtractions = 0
 let lastCompletedAt = 0
 let pendingExtractStarts = 0
-const IDLE_THRESHOLD_MS = 2500
-const MAX_WAIT_MS = 60_000
+let idleThresholdMs = 2500
+let maxWaitMs = 60_000
 
-function waitForIdle(): Promise<void> {
+function baseFilesComplete(): boolean {
+  // Deterministic: the base sheet is complete once every route-reachable runtime
+  // file has been extracted. Each `/extract` (success OR failure) adds its file
+  // to `extractedFiles`, and `expectedBaseFiles` is phantom-free, so this is a
+  // device-independent superset check — no idle gap to guess.
+  if (expectedBaseFiles.size === 0) return false
+  for (const file of expectedBaseFiles) {
+    if (!extractedFiles.has(file)) return false
+  }
+  return true
+}
+
+function waitForBase(): Promise<void> {
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
       const now = Date.now()
-      if (now - start > MAX_WAIT_MS) {
-        // Hard timeout — give up and return whatever we have.
+      if (now - start > maxWaitMs) {
+        // Last-resort backstop (see waitForBucket). Never fires on a healthy
+        // build: either every expected file extracts, or the idle fallback
+        // resolves first.
         resolve()
         return
       }
+      // Primary, deterministic path.
+      if (baseFilesComplete()) {
+        resolve()
+        return
+      }
+      // Fallback ONLY when no deterministic signal exists (no routes detected /
+      // pre-pass failed -> expectedBaseFiles empty): the legacy idle heuristic.
       if (
+        expectedBaseFiles.size === 0 &&
         totalExtractions > 0 &&
         activeExtractions === 0 &&
         pendingExtractStarts === 0 &&
-        now - lastCompletedAt >= IDLE_THRESHOLD_MS
+        now - lastCompletedAt >= idleThresholdMs
       ) {
         resolve()
         return
       }
-      setTimeout(check, 50)
+      setTimeout(check, 25)
+    }
+    check()
+  })
+}
+
+// Per-bucket completion tracking (deterministic replacement for waitForIdle on
+// collapsed chunks).
+//
+// Single-importer collapse merges several source files into ONE shared CSS
+// chunk (a "bucket"). That chunk is only complete once EVERY member file has
+// been extracted. Turbopack, however, may request the chunk as soon as ONE
+// member's import resolves. The old global idle heuristic guessed completion
+// and dropped late members' atoms when extraction "waves" exceeded the idle
+// threshold (flaky CI rendering). Instead we wait for the bucket's KNOWN
+// members (from the canonical map) — no guessing, no extra extraction.
+const extractedFiles = new Set<string>()
+const fileNumToBucket = new Map<number, string>()
+let bucketToMembers = new Map<string, Set<string>>()
+let canonicalMapRef: Record<string, string> = {}
+// Route-reachable runtime files the base sheet must wait for (cwd-relative
+// POSIX). When populated, base-css completion is deterministic; empty falls back
+// to the idle heuristic. See CoordinatorOptions.expectedBaseFiles.
+let expectedBaseFiles = new Set<string>()
+
+function buildBucketToMembers(
+  canonicalMap: Record<string, string>,
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  for (const [member, bucket] of Object.entries(canonicalMap)) {
+    // `@global` files contribute to the base sheet, not a numbered bucket.
+    if (bucket === '@global') continue
+    let members = map.get(bucket)
+    if (!members) {
+      // The bucket root is itself a member of its own chunk.
+      members = new Set([bucket])
+      map.set(bucket, members)
+    }
+    members.add(member)
+  }
+  return map
+}
+
+function waitForBucket(bucket: string): Promise<void> {
+  const members = bucketToMembers.get(bucket) ?? new Set([bucket])
+  const start = Date.now()
+  return new Promise((resolve) => {
+    const check = () => {
+      let allExtracted = true
+      for (const member of members) {
+        if (!extractedFiles.has(member)) {
+          allExtracted = false
+          break
+        }
+      }
+      if (allExtracted) {
+        resolve()
+        return
+      }
+      if (Date.now() - start > maxWaitMs) {
+        // Last-resort backstop only — NOT the primary completion mechanism.
+        //
+        // A bucket's member set comes from the import graph (`canonicalMap`),
+        // which now excludes type-only edges (`import type` / `export type`):
+        // those are erased by the bundler and never POST /extract, so before
+        // the fix they were phantom members that hung this wait until the
+        // wall clock expired. With runtime-only members, every member of a
+        // REQUESTED bucket is reachable and therefore extracted, so the loop
+        // above resolves deterministically and this timer never fires on a
+        // healthy build — its duration no longer affects correctness. It stays
+        // purely to fail open (serve partial CSS) on a pathological graph
+        // mismatch instead of hanging the build forever. Turbopack exposes no
+        // compilation-complete hook, so a timer is the only available backstop.
+        const missing = [...members].filter((m) => !extractedFiles.has(m))
+        console.warn(
+          `[devup-ui] coordinator: bucket "${bucket}" not complete after ${maxWaitMs}ms; serving partial CSS (missing: ${missing.join(', ')})`,
+        )
+        resolve()
+        return
+      }
+      setTimeout(check, 25)
     }
     check()
   })
@@ -158,6 +289,14 @@ export function startCoordinator(options: CoordinatorOptions): {
     coordinatorPortFile,
   } = options
 
+  idleThresholdMs = options.idleThresholdMs ?? 2500
+  maxWaitMs = options.maxWaitMs ?? 60_000
+  canonicalMapRef = options.canonicalMap
+  bucketToMembers = buildBucketToMembers(options.canonicalMap)
+  expectedBaseFiles = new Set(options.expectedBaseFiles ?? [])
+  extractedFiles.clear()
+  fileNumToBucket.clear()
+
   server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
@@ -174,7 +313,16 @@ export function startCoordinator(options: CoordinatorOptions): {
       const fileNum = fileNumParam != null ? parseInt(fileNumParam) : undefined
 
       if (shouldWait) {
-        await waitForIdle()
+        if (fileNum != null && fileNumToBucket.has(fileNum)) {
+          // Deterministic: block until every member of this collapsed bucket
+          // has been extracted, then serve the complete chunk.
+          await waitForBucket(fileNumToBucket.get(fileNum)!)
+        } else {
+          // Base css (no fileNum) or a bucket no member has reported yet:
+          // wait for the deterministic route-reachable file set (idle fallback
+          // only when that set is unavailable).
+          await waitForBase()
+        }
       }
 
       res.writeHead(200, { 'Content-Type': 'text/css' })
@@ -190,6 +338,7 @@ export function startCoordinator(options: CoordinatorOptions): {
       // more extractions are imminent.
       pendingExtractStarts++
       let promotedToActive = false
+      let extractedFilename: string | undefined
       try {
         const body = JSON.parse(await readBody(req))
         activeExtractions++
@@ -200,6 +349,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           code: string
           resourcePath: string
         }
+        extractedFilename = filename
 
         let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
           '\\',
@@ -243,6 +393,11 @@ export function startCoordinator(options: CoordinatorOptions): {
 
         if (result.cssFile) {
           const fileNum = getFileNumByFilename(result.cssFile)
+          if (fileNum != null) {
+            // Record this bucket's fileNum -> canonical bucket path so /css can
+            // wait for the bucket's members before serving it.
+            fileNumToBucket.set(fileNum, canonicalMapRef[filename] ?? filename)
+          }
           promises.push(
             safeWrite(
               join(cssDir, basename(result.cssFile)),
@@ -295,6 +450,9 @@ export function startCoordinator(options: CoordinatorOptions): {
           // pending slot is still ours to release.
           pendingExtractStarts--
         }
+        // Mark the file processed (success OR failure) so per-bucket waiters
+        // never hang on a file that errored — fail open, like the idle path.
+        if (extractedFilename != null) extractedFiles.add(extractedFilename)
         totalExtractions++
         lastCompletedAt = Date.now()
       }
@@ -344,6 +502,14 @@ export const resetCoordinator = () => {
   activeExtractions = 0
   totalExtractions = 0
   lastCompletedAt = 0
+  pendingExtractStarts = 0
+  idleThresholdMs = 2500
+  maxWaitMs = 60_000
+  extractedFiles.clear()
+  fileNumToBucket.clear()
+  bucketToMembers = new Map()
+  canonicalMapRef = {}
+  expectedBaseFiles = new Set()
   writeChain.clear()
   latestContent.clear()
 }

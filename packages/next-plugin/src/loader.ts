@@ -160,7 +160,13 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         }
         try {
           const port = readCoordinatorPort(coordinatorPortFile)
-          const relativePath = relative(process.cwd(), this.resourcePath)
+          // POSIX-normalize so the engine's bucket key matches the canonical map
+          // and FILE_ROUTES keys (both built with forward slashes). Without this,
+          // canonical collapse and atom hoisting silently no-op on Windows.
+          const relativePath = relative(
+            process.cwd(),
+            this.resourcePath,
+          ).replaceAll('\\', '/')
           const body = JSON.stringify({
             filename: relativePath,
             code: source.toString(),
@@ -212,7 +218,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const id = this.resourcePath
       let relCssDir = relative(dirname(id), cssDir).replaceAll('\\', '/')
 
-      const relativePath = relative(process.cwd(), id)
+      // POSIX-normalize (see coordinator-mode note above) so bucket keys match
+      // the canonical map / FILE_ROUTES on Windows.
+      const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
       const { code, map, cssFile, updatedBaseStyle } = codeExtract(
