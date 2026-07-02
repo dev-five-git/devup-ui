@@ -45,6 +45,19 @@ export interface CoordinatorOptions {
    */
   idleThresholdMs?: number
   /**
+   * Full-quiet window (ms) after which a wait with still-missing members
+   * concludes those members will NEVER be compiled by the bundler and serves
+   * the CSS. Member sets come from the static import graph, which can
+   * over-approximate the bundle: an edge whose bindings the bundler erases
+   * (a type imported without the `type` keyword, or an unused import) keeps
+   * the member in the graph while the bundler never runs a loader for it.
+   * Once at least one extraction happened and NOTHING has been in flight for
+   * this window, the module graph is exhausted — serving now is complete for
+   * the actual bundle (a never-compiled file contributes no runtime markup).
+   * Defaults to 10000. Exposed for tests; the plugin omits it.
+   */
+  quietMs?: number
+  /**
    * Hard timeout (ms) for both the idle and per-bucket waits before failing
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
@@ -146,7 +159,24 @@ let totalExtractions = 0
 let lastCompletedAt = 0
 let pendingExtractStarts = 0
 let idleThresholdMs = 2500
+let quietMs = 10_000
 let maxWaitMs = 60_000
+
+// The bundler invokes the extract loader for every compilable source file it
+// discovers. Once at least one extraction happened and nothing has been in
+// flight for a full quiet window, the module graph is exhausted: a member that
+// still has not reported will never be compiled (its only import edges were
+// erased at build time — see CoordinatorOptions.quietMs). Serving then is
+// complete for the ACTUAL bundle, so waits use this as an early exit instead
+// of stalling until the wall-clock backstop.
+function bundlerQuiet(now: number): boolean {
+  return (
+    totalExtractions > 0 &&
+    activeExtractions === 0 &&
+    pendingExtractStarts === 0 &&
+    now - lastCompletedAt >= quietMs
+  )
+}
 
 function baseFilesComplete(): boolean {
   // Deterministic: the base sheet is complete once every route-reachable runtime
@@ -174,6 +204,13 @@ function waitForBase(): Promise<void> {
       }
       // Primary, deterministic path.
       if (baseFilesComplete()) {
+        resolve()
+        return
+      }
+      // The graph over-approximated: some expected file's import edges were
+      // erased by the bundler, so it will never extract. Once the bundler has
+      // gone fully quiet the sheet is complete for the actual bundle.
+      if (expectedBaseFiles.size > 0 && bundlerQuiet(now)) {
         resolve()
         return
       }
@@ -248,20 +285,29 @@ function waitForBucket(bucket: string): Promise<void> {
         resolve()
         return
       }
-      if (Date.now() - start > maxWaitMs) {
+      const now = Date.now()
+      // A bucket's member set comes from the import graph (`canonicalMap`),
+      // which excludes type-only edges (`import type` / `export type` /
+      // all-inline-type specifier lists) — but it CANNOT statically see
+      // bundler usage-based elision (a type imported without the `type`
+      // keyword, or an unused import). Such phantom members never POST
+      // /extract. Once the bundler has gone fully quiet, conclude the
+      // remaining members are phantoms and serve: the sheet is complete for
+      // the actual bundle, since a never-compiled file renders no markup.
+      if (bundlerQuiet(now)) {
+        const missing = [...members].filter((m) => !extractedFiles.has(m))
+        console.info(
+          `[devup-ui] coordinator: bucket "${bucket}" member(s) were never compiled by the bundler (likely type-only or unused imports, erased at build time): ${missing.join(', ')}; CSS is complete for the compiled bundle`,
+        )
+        resolve()
+        return
+      }
+      if (now - start > maxWaitMs) {
         // Last-resort backstop only — NOT the primary completion mechanism.
-        //
-        // A bucket's member set comes from the import graph (`canonicalMap`),
-        // which now excludes type-only edges (`import type` / `export type`):
-        // those are erased by the bundler and never POST /extract, so before
-        // the fix they were phantom members that hung this wait until the
-        // wall clock expired. With runtime-only members, every member of a
-        // REQUESTED bucket is reachable and therefore extracted, so the loop
-        // above resolves deterministically and this timer never fires on a
-        // healthy build — its duration no longer affects correctness. It stays
-        // purely to fail open (serve partial CSS) on a pathological graph
-        // mismatch instead of hanging the build forever. Turbopack exposes no
-        // compilation-complete hook, so a timer is the only available backstop.
+        // Fires only when extraction traffic never pauses for `quietMs`
+        // within the whole window (a continuously busy build with a genuinely
+        // missing member). Turbopack exposes no compilation-complete hook, so
+        // a timer is the only available backstop against hanging forever.
         const missing = [...members].filter((m) => !extractedFiles.has(m))
         console.warn(
           `[devup-ui] coordinator: bucket "${bucket}" not complete after ${maxWaitMs}ms; serving partial CSS (missing: ${missing.join(', ')})`,
@@ -290,6 +336,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   } = options
 
   idleThresholdMs = options.idleThresholdMs ?? 2500
+  quietMs = options.quietMs ?? 10_000
   maxWaitMs = options.maxWaitMs ?? 60_000
   canonicalMapRef = options.canonicalMap
   bucketToMembers = buildBucketToMembers(options.canonicalMap)
@@ -504,6 +551,7 @@ export const resetCoordinator = () => {
   lastCompletedAt = 0
   pendingExtractStarts = 0
   idleThresholdMs = 2500
+  quietMs = 10_000
   maxWaitMs = 60_000
   extractedFiles.clear()
   fileNumToBucket.clear()

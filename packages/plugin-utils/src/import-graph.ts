@@ -584,7 +584,13 @@ function collectAstImports(
     // `import type`/`export type ... from` carry importKind/exportKind 'type'.
     // They are erased at build time (no runtime module), so they must NOT
     // become static graph edges — see the regex fallback in `scanImports`.
-    if (node.importKind !== 'type' && node.exportKind !== 'type') {
+    // The same applies when every specifier is inline-type
+    // (`import { type A } from` / `export { type A } from`).
+    if (
+      node.importKind !== 'type' &&
+      node.exportKind !== 'type' &&
+      !hasOnlyInlineTypeSpecifiers(node)
+    ) {
       addAstImport(imports, 'static', node.source)
     }
   } else if (type === 'ImportExpression') {
@@ -605,6 +611,20 @@ function collectAstImports(
     }
     collectAstImports(value, imports, seen)
   }
+}
+
+// AST counterpart of `isAllInlineTypeSpecifiers`: an import/re-export whose
+// specifiers are ALL inline-type is erased by the bundler (no runtime module),
+// so it must not become a static graph edge. Default/namespace specifiers
+// carry no `type` kind, so their presence keeps the edge.
+function hasOnlyInlineTypeSpecifiers(node: Record<string, unknown>): boolean {
+  const specifiers = node.specifiers
+  if (!Array.isArray(specifiers) || specifiers.length === 0) return false
+  return specifiers.every(
+    (specifier) =>
+      isRecord(specifier) &&
+      (specifier.importKind === 'type' || specifier.exportKind === 'type'),
+  )
 }
 
 function addAstImport(
@@ -628,6 +648,29 @@ function isImportCallee(node: unknown): boolean {
   return node.type === 'Import' || node.name === 'import'
 }
 
+// A brace clause whose specifiers are ALL inline-type (`{ type A, type B }`)
+// is erased by the bundler exactly like a statement-level `import type`:
+// TypeScript import elision (the Next.js/SWC default) removes the whole
+// statement, so no runtime module is ever produced. Counting such an edge as
+// static merges a phantom member into a bucket the bundler never compiles —
+// the next-plugin coordinator then waits for a file that can never arrive.
+// A mixed clause (`{ type A, b }`) still imports the module for `b` and is
+// kept. A default/namespace clause is always a value import and is kept.
+function isAllInlineTypeSpecifiers(clause: string | undefined): boolean {
+  if (!clause) return false
+  const trimmed = clause.trim()
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false
+  const specifiers = trimmed
+    .slice(1, -1)
+    .split(',')
+    .map((specifier) => specifier.trim())
+    .filter((specifier) => specifier.length > 0)
+  return (
+    specifiers.length > 0 &&
+    specifiers.every((specifier) => /^type\s/.test(specifier))
+  )
+}
+
 function scanImports(source: string): ImportReference[] {
   const imports: ImportReference[] = []
   const code = stripComments(source)
@@ -636,21 +679,24 @@ function scanImports(source: string): ImportReference[] {
   // the bundler and produce NO runtime module — counting them as static graph
   // edges merges phantom members into a bucket that the bundler never compiles,
   // which is exactly what forced the coordinator's wall-clock fail-open to fire.
-  // Inline specifier types (`import { type A, b } from`) keep importing the
-  // module for `b`, so the leading group stays undefined and they are kept.
+  // The clause between the keyword and `from` is captured too, so all-inline-
+  // type specifier lists (`import { type A } from` / `export { type A } from`)
+  // — which the bundler also erases — are dropped via
+  // `isAllInlineTypeSpecifiers`. Mixed lists (`import { type A, b } from`)
+  // keep importing the module for `b`, so they are kept.
   const staticImportRegex =
-    /\bimport\s+(type\s+)?(?:[^'"`]*?\s+from\s*)?(['"])([^'"]+)\2/gm
+    /\bimport\s+(type\s+)?(?:([^'"`]*?)\s+from\s*)?(['"])([^'"]+)\3/gm
   const exportFromRegex =
-    /\bexport\s+(type\s+)?(?:\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\2/gm
+    /\bexport\s+(type\s+)?(\*[^'"`]*?|\{[^}]*\})\s+from\s*(['"])([^'"]+)\3/gm
   const dynamicImportRegex = /\bimport\s*\(\s*(['"])([^'"]+)\1\s*\)/gm
 
   for (const match of code.matchAll(staticImportRegex)) {
-    if (match[1]) continue
-    imports.push({ kind: 'static', specifier: match[3] })
+    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(exportFromRegex)) {
-    if (match[1]) continue
-    imports.push({ kind: 'static', specifier: match[3] })
+    if (match[1] || isAllInlineTypeSpecifiers(match[2])) continue
+    imports.push({ kind: 'static', specifier: match[4] })
   }
   for (const match of code.matchAll(dynamicImportRegex)) {
     imports.push({ kind: 'dynamic', specifier: match[2] })
@@ -669,6 +715,23 @@ function stripComments(source: string): string {
     const next = source[index + 1]
 
     if (quote) {
+      // Template-literal CONTENTS are blanked (delimiters and newlines kept):
+      // embedded code snippets (docs sites, codegen templates) would otherwise
+      // look like real import statements to the scanners below and create
+      // phantom graph edges for files the bundler never loads. Contents of
+      // '/" strings are preserved — import specifiers themselves are read from
+      // those literals by the scan regexes.
+      if (quote === '`') {
+        if (char === '\\') {
+          result += '  '
+          index += 2
+          continue
+        }
+        result += char === '`' || char === '\n' ? char : ' '
+        if (char === '`') quote = false
+        index += 1
+        continue
+      }
       result += char
       if (char === '\\') {
         result += next ?? ''

@@ -1183,6 +1183,72 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
+  // T7: a phantom bucket member (its import edges were erased by the bundler,
+  // e.g. a type imported without the `type` keyword, or an unused import) can
+  // never extract. Once the bundler goes fully quiet the wait must conclude
+  // the member is a phantom and serve — via console.info, NOT the scary
+  // partial-CSS warn — long before the wall-clock backstop.
+  it('serves a bucket via the quiet exit when a member is never compiled', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
+    getCssSpy.mockReturnValue('bucket-css')
+    const infoSpy = spyOn(console, 'info').mockReturnValue(undefined)
+    const warnSpy = spyOn(console, 'warn').mockReturnValue(undefined)
+    const canonicalMap = { 'src/phantom.tsx': 'src/bucket.tsx' }
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({ canonicalMap, quietMs: 100, maxWaitMs: 10_000 }),
+    )
+    await extract(port, 'src/bucket.tsx')
+
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
+
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('bucket-css')
+    // Resolved by the quiet exit (~100ms), NOT the 10s wall-clock backstop.
+    expect(elapsed).toBeLessThan(5000)
+    expect(infoSpy).toHaveBeenCalled()
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    infoSpy.mockRestore()
+    warnSpy.mockRestore()
+    coordinator.close()
+  })
+
+  // T8: a phantom expectedBaseFile resolves the base-css wait via the same
+  // quiet exit instead of stalling until maxWaitMs.
+  it('serves base css via the quiet exit when an expectedBaseFile is never compiled', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
+    getCssSpy.mockReturnValue('base-css')
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        expectedBaseFiles: ['src/a.tsx', 'src/phantom.tsx'],
+        quietMs: 100,
+        maxWaitMs: 10_000,
+      }),
+    )
+    await extract(port, 'src/a.tsx')
+
+    const t0 = Date.now()
+    const res = await httpRequest(
+      port,
+      'GET',
+      '/css?importMainCss=false&waitForIdle=true',
+    )
+    const elapsed = Date.now() - t0
+
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('base-css')
+    // Quiet exit (~100ms), not the 10s backstop.
+    expect(elapsed).toBeLessThan(5000)
+
+    coordinator.close()
+  })
+
   // T6: a phantom expectedBaseFile that never extracts fails open via the
   // dormant maxWaitMs backstop instead of hanging the build forever.
   it('fails open on a phantom expectedBaseFile via maxWaitMs', async () => {

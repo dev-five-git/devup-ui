@@ -388,6 +388,64 @@ describe('buildCanonicalMap', () => {
     })
   })
 
+  it('should not treat an all-inline-type `import { type T }` target as a member', () => {
+    // With no value bindings left, TypeScript import elision erases the whole
+    // statement at build time — no runtime module, so no graph edge. Keeping
+    // it made the target a phantom bucket member the bundler never compiles.
+    writeFixture(
+      'src/a.tsx',
+      "import { type T } from './b'\nexport const a: T = 1\n",
+    )
+    writeFixture('src/b.tsx', 'export type T = number\nexport const val = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should not treat a multiline all-inline-type import target as a member', () => {
+    writeFixture(
+      'src/a.tsx',
+      "import {\n  type T,\n  type U,\n} from './b'\nexport const a = 1\n",
+    )
+    writeFixture(
+      'src/b.tsx',
+      'export type T = number\nexport type U = string\nexport const val = 1\n',
+    )
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('should not treat an all-inline-type `export { type T } from` target as a member', () => {
+    writeFixture(
+      'src/a.tsx',
+      "export { type T } from './b'\nexport const a = 1\n",
+    )
+    writeFixture('src/b.tsx', 'export type T = number\nexport const val = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({})
+  })
+
+  it('keeps a mixed `export { type T, x } from` target (module still imported)', () => {
+    writeFixture('src/a.tsx', "export { type T, x } from './b'\n")
+    writeFixture('src/b.tsx', 'export type T = number\nexport const x = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('keeps an import of a value binding literally named `type`', () => {
+    // `{ type }` imports a VALUE named "type" — not an inline type specifier.
+    writeFixture(
+      'src/a.tsx',
+      "import { type } from './b'\nexport const a = type\n",
+    )
+    writeFixture('src/b.tsx', 'export const type = 1\n')
+
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
   it('should collapse a shared dep into its only VALUE importer when others import it type-only', () => {
     // `a` imports `shared` at runtime; `b` only `import type`s it. Erasing the
     // type edge leaves `shared` with a single real importer -> it collapses into
@@ -413,6 +471,31 @@ describe('buildCanonicalMap', () => {
 
     expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
       'src/b.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('ignores import-like code snippets inside template literals', () => {
+    // A docs/codegen file embedding example code in a template literal must
+    // NOT create a graph edge: the bundler never loads './b', so counting it
+    // would make it a phantom bucket member (the coordinator-stall class).
+    writeFixture(
+      'src/a.tsx',
+      [
+        'const snippet = `',
+        "import { Box } from './b'",
+        "import './b'",
+        '`',
+        "const escaped = `mid \\` import './b' `",
+        "import './c'",
+        'export const a = 1',
+      ].join('\n'),
+    )
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+    writeFixture('src/c.tsx', 'export const c = 1\n')
+
+    // Only the real import ('./c') collapses; './b' stays edge-free.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/c.tsx': 'src/a.tsx',
     })
   })
 
@@ -863,6 +946,84 @@ describe('oxc AST parsing path', () => {
     // into a. The regex fallback would parse the literal content -> no imports.
     expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
       'src/val.tsx': 'src/a.tsx',
+    })
+  })
+
+  it('skips AST import/export nodes whose specifiers are all inline-type', () => {
+    const program = {
+      type: 'Program',
+      body: [
+        // all-inline-type import -> erased by the bundler -> no edge
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          specifiers: [{ type: 'ImportSpecifier', importKind: 'type' }],
+          source: { value: './phantom' },
+        },
+        // all-inline-type re-export -> erased -> no edge
+        {
+          type: 'ExportNamedDeclaration',
+          exportKind: 'value',
+          specifiers: [{ type: 'ExportSpecifier', exportKind: 'type' }],
+          source: { value: './phantom2' },
+        },
+        // mixed inline types -> module still imported -> edge kept
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          specifiers: [
+            { type: 'ImportSpecifier', importKind: 'type' },
+            { type: 'ImportSpecifier', importKind: 'value' },
+          ],
+          source: { value: './mixed' },
+        },
+        // default specifier (no importKind) alongside an inline type -> kept
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          specifiers: [
+            { type: 'ImportDefaultSpecifier' },
+            { type: 'ImportSpecifier', importKind: 'type' },
+          ],
+          source: { value: './withdefault' },
+        },
+        // non-record specifier entry -> not type-only -> kept
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          specifiers: ['bogus'],
+          source: { value: './bogus' },
+        },
+        // empty specifier list (`import {} from`) -> kept (side-effect import)
+        {
+          type: 'ImportDeclaration',
+          importKind: 'value',
+          specifiers: [] as unknown[],
+          source: { value: './empty' },
+        },
+      ] as unknown[],
+    }
+    __setOxcParserForTest({
+      parseSync: (filename: string) =>
+        filename.endsWith('a.tsx')
+          ? { program }
+          : { program: { type: 'Program', body: [] as unknown[] } },
+    })
+
+    writeFixture('src/a.tsx', 'fake parser input')
+    writeFixture('src/phantom.tsx', 'fake parser input')
+    writeFixture('src/phantom2.tsx', 'fake parser input')
+    writeFixture('src/mixed.tsx', 'fake parser input')
+    writeFixture('src/withdefault.tsx', 'fake parser input')
+    writeFixture('src/bogus.tsx', 'fake parser input')
+    writeFixture('src/empty.tsx', 'fake parser input')
+
+    // phantom/phantom2 gain no importer (edges dropped) -> roots, not members.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/bogus.tsx': 'src/a.tsx',
+      'src/empty.tsx': 'src/a.tsx',
+      'src/mixed.tsx': 'src/a.tsx',
+      'src/withdefault.tsx': 'src/a.tsx',
     })
   })
 
