@@ -712,7 +712,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Expression::Identifier(ident) = &tag.tag
             && let Some(css_type) = self.util_imports.get(ident.name.as_str())
         {
-            let css_str = {
+            // Only the Keyframes and GlobalCss arms need the concatenated quasi string
+            let build_css_str = || {
                 let mut s = String::new();
                 for quasi in &tag.quasi.quasis {
                     s.push_str(quasi.value.raw.as_str());
@@ -741,7 +742,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 // already set style order
             } else if matches!(r, UtilType::Keyframes) {
                 let keyframes = ExtractKeyframes {
-                    keyframes: keyframes_to_keyframes_style(&css_str),
+                    keyframes: keyframes_to_keyframes_style(&build_css_str()),
                 };
                 let name = keyframes
                     .extract(self.split_filename.as_deref())
@@ -755,7 +756,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     &self.ast,
                 )
             } else {
-                let optimized_css = optimize_css_block(&css_str);
+                let optimized_css = optimize_css_block(&build_css_str());
                 if !optimized_css.is_empty() {
                     let css = ExtractStyleValue::Css(ExtractCss {
                         css: optimized_css,

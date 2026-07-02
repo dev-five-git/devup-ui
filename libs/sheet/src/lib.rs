@@ -227,20 +227,26 @@ impl StyleSheet {
             self.global_css_files.insert(file.clone());
         }
 
-        self.properties
-            .entry(filename.unwrap_or_default().to_string())
-            .or_default()
-            .entry(style_order.unwrap_or(255))
-            .or_default()
-            .entry(level)
-            .or_default()
-            .insert(StyleSheetProperty {
-                class_name: class_name.to_string(),
-                property: property.to_string(),
-                value: value.to_string(),
-                selector: selector.cloned(),
-                layer: layer.map(ToString::to_string),
-            })
+        // Avoid allocating an owned key when the file bucket already exists (the common case).
+        let filename_key = filename.unwrap_or_default();
+        if !self.properties.contains_key(filename_key) {
+            self.properties
+                .insert(filename_key.to_string(), BTreeMap::new());
+        }
+        self.properties.get_mut(filename_key).is_some_and(|bucket| {
+            bucket
+                .entry(style_order.unwrap_or(255))
+                .or_default()
+                .entry(level)
+                .or_default()
+                .insert(StyleSheetProperty {
+                    class_name: class_name.to_string(),
+                    property: property.to_string(),
+                    value: value.to_string(),
+                    selector: selector.cloned(),
+                    layer: layer.map(ToString::to_string),
+                })
+        })
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {

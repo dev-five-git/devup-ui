@@ -1204,17 +1204,22 @@ fn register_vanilla_extract_apis(
 /// Returns a set of style names that need to be extracted first
 pub fn find_selector_references(collected: &CollectedStyles) -> FxHashSet<String> {
     let mut referenced = rustc_hash::FxHashSet::default();
-    let style_names: FxHashSet<&str> = collected.styles.keys().map(String::as_str).collect();
+    // Build the probe strings once per style name instead of per (entry, name) pair
+    let probes: Vec<(String, String, &str)> = collected
+        .styles
+        .keys()
+        .map(|name| (format!("\"{name}:"), format!("\"{name} "), name.as_str()))
+        .collect();
 
     for entry in collected.styles.values() {
         // Check if this style's JSON contains references to other style names
-        for style_name in &style_names {
+        for (probe_colon, probe_space, style_name) in &probes {
             // Look for patterns like "stylename:" or "stylename " in selectors
             // The JSON has selectors like {"selectors":{"parent:hover &":{...}}}
-            if entry.json.contains(&format!("\"{style_name}:"))
-                || entry.json.contains(&format!("\"{style_name} "))
+            if entry.json.contains(probe_colon.as_str())
+                || entry.json.contains(probe_space.as_str())
             {
-                referenced.insert(style_name.to_string());
+                referenced.insert((*style_name).to_string());
             }
         }
     }
@@ -1552,275 +1557,7 @@ fn append_non_style_code(
 
 /// Convert collected styles to code that can be processed by existing extract logic
 pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
-    let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
-
-    // Generate import statement
-    let mut imports = Vec::new();
-    if !collected.styles.is_empty()
-        || !collected.style_variants.is_empty()
-        || !collected.themes.is_empty()
-    {
-        imports.push("css");
-    }
-    if !collected.global_styles.is_empty()
-        || !collected.font_faces.is_empty()
-        || !collected.global_themes.is_empty()
-    {
-        imports.push("globalCss");
-    }
-    if !collected.keyframes.is_empty() {
-        imports.push("keyframes");
-    }
-
-    if !imports.is_empty() {
-        code_parts.push(format!(
-            "import {{ {} }} from '{}'",
-            imports.join(", "),
-            package
-        ));
-    }
-
-    // Generate style declarations (sorted for deterministic output)
-    // First, build a map of name -> json for looking up base styles
-    let style_json_map: FxHashMap<&str, &str> = collected
-        .styles
-        .iter()
-        .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
-        .collect();
-
-    let mut styles: Vec<_> = collected.styles.iter().collect();
-    styles.sort_by_key(|(name, _)| *name);
-    for (name, entry) in styles {
-        let prefix = if entry.exported { "export " } else { "" };
-        if entry.bases.is_empty() {
-            // Simple style, no composition
-            code_parts.push(format!("{}const {} = css({})", prefix, name, entry.json));
-        } else {
-            // Composition: merge all base styles + own styles into a single css() call
-            let mut merged_parts = Vec::new();
-
-            // Add styles from each base
-            for base_name in &entry.bases {
-                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
-                    // Strip outer braces and add to merged parts
-                    let inner = base_json
-                        .trim()
-                        .trim_start_matches('{')
-                        .trim_end_matches('}')
-                        .trim();
-                    if !inner.is_empty() {
-                        merged_parts.push(inner.to_string());
-                    }
-                }
-            }
-
-            // Add own styles
-            let own_inner = entry
-                .json
-                .trim()
-                .trim_start_matches('{')
-                .trim_end_matches('}')
-                .trim();
-            if !own_inner.is_empty() {
-                merged_parts.push(own_inner.to_string());
-            }
-
-            let merged_json = format!("{{{}}}", merged_parts.join(","));
-            code_parts.push(format!("{prefix}const {name} = css({merged_json})"));
-        }
-    }
-
-    // Generate createTheme exports (class name and optionally vars object)
-    // Note: CSS variables are added to global_styles during remapping
-    let mut themes: Vec<_> = collected.themes.iter().collect();
-    themes.sort_by_key(|(name, _)| *name);
-    for (name, entry) in themes {
-        let prefix = if entry.exported { "export " } else { "" };
-        // If this theme has a vars_name, output as array destructuring
-        if let Some(vars_name) = &entry.vars_name {
-            if let Some(vars_json) = &entry.vars_object_json {
-                code_parts.push(format!(
-                    "{}const [{}, {}] = [\"{}\", {}]",
-                    prefix, name, vars_name, entry.class_name, vars_json
-                ));
-            } else {
-                code_parts.push(format!(
-                    "{}const {} = \"{}\"",
-                    prefix, name, entry.class_name
-                ));
-            }
-        } else {
-            code_parts.push(format!(
-                "{}const {} = \"{}\"",
-                prefix, name, entry.class_name
-            ));
-        }
-    }
-
-    // Generate globalCss calls
-    for (selector, json) in &collected.global_styles {
-        code_parts.push(format!("globalCss({{ \"{selector}\": {json} }})"));
-    }
-
-    // Generate @font-face rules via globalCss fontFaces (sorted for deterministic output)
-    // NOTE: fontFaces are generated in globalCss format here.
-    // The extractor will then parse and extract them as FontFace styles.
-    let mut font_faces_sorted: Vec<_> = collected.font_faces.iter().collect();
-    font_faces_sorted.sort_by_key(|(name, _)| *name);
-    for (_name, (json, font_family, _exported)) in font_faces_sorted {
-        // Parse JSON and build JS object literal - clean single-line format
-        let props = parse_font_face_json(json);
-        let props_str = props
-            .iter()
-            .map(|(k, v)| format!("{k}: {v}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        // Generate clean single-line globalCss call
-        let code = if props_str.is_empty() {
-            format!("globalCss({{ fontFaces: [{{ fontFamily: \"{font_family}\" }}] }})")
-        } else {
-            format!(
-                "globalCss({{ fontFaces: [{{ fontFamily: \"{font_family}\", {props_str} }}] }})"
-            )
-        };
-        code_parts.push(code);
-    }
-
-    // Generate createGlobalTheme CSS variables via globalCss (sorted for deterministic output)
-    let mut global_themes_sorted: Vec<_> = collected.global_themes.iter().collect();
-    global_themes_sorted.sort_by_key(|(name, _)| *name);
-    for (_name, entry) in &global_themes_sorted {
-        if !entry.css_vars.is_empty() {
-            // Build CSS variables object for the selector
-            let vars_str = entry
-                .css_vars
-                .iter()
-                .map(|(var_name, value)| format!("\"{var_name}\": \"{value}\""))
-                .collect::<Vec<_>>()
-                .join(", ");
-            code_parts.push(format!(
-                "globalCss({{ \"{}\": {{ {} }} }})",
-                entry.selector, vars_str
-            ));
-        }
-    }
-
-    // Generate keyframes declarations (sorted for deterministic output)
-    let mut keyframes: Vec<_> = collected.keyframes.iter().collect();
-    keyframes.sort_by_key(|(name, _)| *name);
-    for (name, entry) in keyframes {
-        let prefix = if entry.exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = keyframes({})",
-            prefix, name, entry.json
-        ));
-    }
-
-    // Generate styleVariants - produce an object with variant keys
-    let mut variants: Vec<_> = collected.style_variants.iter().collect();
-    variants.sort_by_key(|(name, _)| *name);
-    for (name, (variant_map, exported)) in variants {
-        // Sort variant keys for deterministic output
-        let mut variant_entries: Vec<_> = variant_map.iter().collect();
-        variant_entries.sort_by_key(|(k, _)| *k);
-
-        let mut object_parts = Vec::new();
-        for (variant_key, variant) in variant_entries {
-            let value = if let Some(base_name) = &variant.base {
-                // Composition: merge base styles + variant styles into single css() call
-                let mut merged_parts = Vec::new();
-
-                // Add base styles
-                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
-                    let inner = base_json
-                        .trim()
-                        .trim_start_matches('{')
-                        .trim_end_matches('}')
-                        .trim();
-                    if !inner.is_empty() {
-                        merged_parts.push(inner.to_string());
-                    }
-                }
-
-                // Add variant's own styles
-                let own_inner = variant
-                    .styles_json
-                    .trim()
-                    .trim_start_matches('{')
-                    .trim_end_matches('}')
-                    .trim();
-                if !own_inner.is_empty() {
-                    merged_parts.push(own_inner.to_string());
-                }
-
-                format!("css({{{}}})", merged_parts.join(","))
-            } else {
-                // No composition, just the styles
-                format!("css({})", variant.styles_json)
-            };
-            object_parts.push(format!("  {variant_key}: {value}"));
-        }
-
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = {{\n{}\n}}",
-            prefix,
-            name,
-            object_parts.join(",\n")
-        ));
-    }
-
-    // Generate createVar declarations (sorted for deterministic output)
-    let mut vars: Vec<_> = collected.vars.iter().collect();
-    vars.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in vars {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate fontFace declarations (sorted for deterministic output)
-    // fontFace returns the font-family name that can be used in style({ fontFamily: ... })
-    let mut font_faces: Vec<_> = collected.font_faces.iter().collect();
-    font_faces.sort_by_key(|(name, _)| *name);
-    for (name, (_, font_family, exported)) in font_faces {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{font_family}\""));
-    }
-
-    // Generate createContainer declarations (sorted for deterministic output)
-    let mut containers: Vec<_> = collected.containers.iter().collect();
-    containers.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in containers {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate layer declarations (sorted for deterministic output)
-    let mut layers: Vec<_> = collected.layers.iter().collect();
-    layers.sort_by_key(|(name, _)| *name);
-    for (name, (value, exported)) in layers {
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!("{prefix}const {name} = \"{value}\""));
-    }
-
-    // Generate createGlobalTheme vars object declarations (sorted for deterministic output)
-    for (name, entry) in &global_themes_sorted {
-        let prefix = if entry.exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = {}",
-            prefix, name, entry.vars_object_json
-        ));
-    }
-
-    // Generate constant exports (sorted for deterministic output)
-    let mut constants: Vec<_> = collected.constant_exports.iter().collect();
-    constants.sort_by_key(|(name, _)| *name);
-    for (name, value) in constants {
-        code_parts.push(format!("export const {name} = {value}"));
-    }
-
-    code_parts.join("\n")
+    collected_styles_to_code_with_classes(collected, package, &FxHashMap::default())
 }
 
 impl Clone for CollectedStyles {

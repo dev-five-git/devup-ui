@@ -375,7 +375,7 @@ fn extract_tailwind_from_class_name<'a>(
     if let Some(Expression::StringLiteral(literal)) = class_name_prop {
         let class_str = literal.value.as_str();
         if has_tailwind_classes(class_str) {
-            let mut tailwind_styles = parse_tailwind_to_styles(class_str, filename);
+            let mut tailwind_styles = parse_tailwind_to_styles(class_str);
             if !tailwind_styles.is_empty() {
                 // Apply style_order to all extracted Tailwind styles
                 apply_style_order_to_styles(&mut tailwind_styles, style_order);
@@ -409,7 +409,7 @@ fn extract_tailwind_from_class_name<'a>(
 
             if !class_mapping.is_empty() {
                 // Collect all styles for CSS generation
-                let mut tailwind_styles = parse_tailwind_to_styles(&all_classes, filename);
+                let mut tailwind_styles = parse_tailwind_to_styles(&all_classes);
                 // Apply style_order to all extracted Tailwind styles
                 apply_style_order_to_styles(&mut tailwind_styles, style_order);
 

@@ -1235,20 +1235,14 @@ fn is_valid_tailwind_value(value: &str) -> bool {
 }
 
 /// Parse a className string into a list of `ExtractStyleValue`
-pub fn parse_tailwind_to_styles(class_str: &str, filename: Option<&str>) -> Vec<ExtractStyleValue> {
-    let classes = class_str.split_whitespace();
-    let mut styles = Vec::with_capacity(classes.clone().count());
+pub fn parse_tailwind_to_styles(class_str: &str) -> Vec<ExtractStyleValue> {
+    let mut styles = Vec::new();
 
-    for class in classes {
+    for class in class_str.split_whitespace() {
         if let Some(parsed) = parse_single_class(class) {
             let static_style = parsed.to_static_style();
             styles.push(ExtractStyleValue::Static(static_style));
         }
-    }
-
-    // Set filename for all styles if provided
-    if filename.is_some() {
-        // The filename is already used in ExtractStaticStyle through the extract() method
     }
 
     styles
@@ -3706,7 +3700,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("bg-red-500 p-4 flex", None);
+        let styles = parse_tailwind_to_styles("bg-red-500 p-4 flex");
         assert_eq!(styles.len(), 3);
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3718,7 +3712,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("sm:bg-blue-500 md:p-8 lg:flex", None);
+        let styles = parse_tailwind_to_styles("sm:bg-blue-500 md:p-8 lg:flex");
         assert_eq!(styles.len(), 3);
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3731,7 +3725,7 @@ mod tests {
         reset_file_map();
 
         let styles =
-            parse_tailwind_to_styles("hover:bg-blue-500 focus:outline-none dark:text-white", None);
+            parse_tailwind_to_styles("hover:bg-blue-500 focus:outline-none dark:text-white");
 
         assert_debug_snapshot!(sort_styles(styles));
     }
@@ -3744,7 +3738,6 @@ mod tests {
 
         let styles = parse_tailwind_to_styles(
             "flex items-center justify-between p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200",
-            None,
         );
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3885,7 +3878,7 @@ mod tests {
 
     #[test]
     fn test_empty_string() {
-        let styles = parse_tailwind_to_styles("", None);
+        let styles = parse_tailwind_to_styles("");
         assert!(styles.is_empty());
     }
 
@@ -5945,7 +5938,6 @@ mod tests {
 
         let styles = parse_tailwind_to_styles(
             "rounded-none rounded-sm rounded-md rounded-lg rounded-xl rounded-2xl rounded-3xl rounded-full",
-            None,
         );
         assert_eq!(styles.len(), 8);
     }
@@ -5957,7 +5949,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8", None);
+        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8");
         assert_eq!(styles.len(), 5);
     }
 
