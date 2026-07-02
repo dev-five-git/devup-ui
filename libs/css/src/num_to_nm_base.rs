@@ -3,27 +3,34 @@ use crate::constant::{M_BASE_ARRAY, N_BASE_ARRAY};
 #[inline]
 pub fn num_to_nm_base(num: usize) -> String {
     if num == 0 {
-        return N_BASE_ARRAY[0].to_string();
+        return String::from(N_BASE_ARRAY[0]);
     }
-
-    let mut n = num;
-    let mut result = String::new();
 
     let first_base = N_BASE_ARRAY.len();
     let other_base = M_BASE_ARRAY.len();
 
+    // Emit ASCII digits least-significant first into a stack buffer,
+    // then build the string in reverse; usize::MAX needs at most 13 digits here.
+    let mut buf = [0u8; 16];
+    let mut len = 0;
+    let mut n = num;
+
     while n > 0 {
         if n < first_base {
-            result.insert(0, N_BASE_ARRAY[n]);
+            buf[len] = N_BASE_ARRAY[n] as u8;
+            len += 1;
             break;
         }
-        result.insert(0, M_BASE_ARRAY[(n - first_base) % other_base]);
+        buf[len] = M_BASE_ARRAY[(n - first_base) % other_base] as u8;
+        len += 1;
         n = (n - first_base) / other_base;
         if n == 0 {
-            result.insert(0, N_BASE_ARRAY[0]);
+            buf[len] = N_BASE_ARRAY[0] as u8;
+            len += 1;
             break;
         }
     }
+    let result: String = buf[..len].iter().rev().map(|&b| char::from(b)).collect();
     if result.ends_with("ad") {
         // avoid g-ad class (google ad)
         result.replace("ad", "a-d")

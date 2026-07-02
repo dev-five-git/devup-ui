@@ -3,8 +3,6 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
-#![allow(dead_code)] // Public API fields/functions for future expansion
-
 use boa_engine::{
     Context, JsArgs, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
     property::Attribute,
@@ -72,7 +70,7 @@ pub struct ThemeEntry {
 }
 
 /// Collected style definitions from vanilla-extract API calls
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CollectedStyles {
     /// `style()` calls: `variable_name` -> (json, exported)
     pub styles: FxHashMap<String, StyleEntry>,
@@ -94,8 +92,6 @@ pub struct CollectedStyles {
     pub global_themes: FxHashMap<String, GlobalThemeEntry>,
     /// `createTheme()` calls: `variable_name` -> `ThemeEntry`
     pub themes: FxHashMap<String, ThemeEntry>,
-    /// Theme vars from array destructuring: `vars_name` -> (`vars_object_json`, exported)
-    pub theme_vars: FxHashMap<String, (String, bool)>,
     /// Non-style constant exports: `variable_name` -> value (as code string)
     pub constant_exports: FxHashMap<String, String>,
 }
@@ -1558,25 +1554,6 @@ fn append_non_style_code(
 /// Convert collected styles to code that can be processed by existing extract logic
 pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
     collected_styles_to_code_with_classes(collected, package, &FxHashMap::default())
-}
-
-impl Clone for CollectedStyles {
-    fn clone(&self) -> Self {
-        Self {
-            styles: self.styles.clone(),
-            global_styles: self.global_styles.clone(),
-            keyframes: self.keyframes.clone(),
-            vars: self.vars.clone(),
-            font_faces: self.font_faces.clone(),
-            style_variants: self.style_variants.clone(),
-            containers: self.containers.clone(),
-            layers: self.layers.clone(),
-            global_themes: self.global_themes.clone(),
-            themes: self.themes.clone(),
-            theme_vars: self.theme_vars.clone(),
-            constant_exports: self.constant_exports.clone(),
-        }
-    }
 }
 
 /// Parse a styleVariants object and extract variant info

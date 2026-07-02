@@ -2977,6 +2977,34 @@ import clsx from 'clsx'
 
     #[test]
     #[serial]
+    fn extract_selector_multibyte_key() {
+        reset_class_map();
+        reset_file_map();
+        // the last comma-separated segment must survive a multi-byte final char
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box selectors={{
+          "&:hover, .한글": {
+            mx: 1
+          }
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn optimize_func() {
         reset_class_map();
         reset_file_map();

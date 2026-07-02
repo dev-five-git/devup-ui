@@ -229,9 +229,9 @@ pub fn extract_style_from_expression<'a>(
                             part_of_selector.push(name[last_idx..idx].trim());
                             last_idx = idx + 1;
                         }
-                        if idx == name.len() - 1 {
-                            part_of_selector.push(name[last_idx..].trim());
-                        }
+                    }
+                    if !name.is_empty() {
+                        part_of_selector.push(name[last_idx..].trim());
                     }
 
                     for sel in part_of_selector.iter().map(|name| {

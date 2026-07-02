@@ -1,4 +1,3 @@
-use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
 use crate::extract_style::{
@@ -100,12 +99,18 @@ impl TryFrom<String> for ExportVariableKind {
 
 impl ExportVariableKind {
     pub fn from_str(value: &str) -> Result<Self, ()> {
-        for kind in ExportVariableKind::iter() {
-            if kind.to_string() == value {
-                return Ok(kind);
-            }
+        match value {
+            "Box" => Ok(Self::Box),
+            "Text" => Ok(Self::Text),
+            "Button" => Ok(Self::Button),
+            "Input" => Ok(Self::Input),
+            "Flex" => Ok(Self::Flex),
+            "VStack" => Ok(Self::VStack),
+            "Center" => Ok(Self::Center),
+            "Image" => Ok(Self::Image),
+            "Grid" => Ok(Self::Grid),
+            _ => Err(()),
         }
-        Err(())
     }
 }
 

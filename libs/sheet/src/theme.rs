@@ -370,6 +370,27 @@ pub type LengthTheme = BTreeMap<String, TokenValues>;
 /// e.g., `{ "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }`
 pub type ShadowTheme = BTreeMap<String, TokenValues>;
 
+/// Collect, per token name, the breakpoint levels that have a value in any theme variant.
+fn token_levels(
+    themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
+) -> BTreeMap<String, Vec<u8>> {
+    themes.values().flat_map(|theme| theme.iter()).fold(
+        BTreeMap::<String, Vec<u8>>::new(),
+        |mut acc, (name, values)| {
+            let entry = acc.entry(name.clone()).or_default();
+            for (idx, value) in values.0.iter().enumerate() {
+                if value.is_some()
+                    && let Ok(level) = u8::try_from(idx)
+                    && !entry.contains(&level)
+                {
+                    entry.push(level);
+                }
+            }
+            acc
+        },
+    )
+}
+
 fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
     themes
         .keys()
@@ -508,40 +529,12 @@ impl Theme {
 
     #[must_use]
     pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
-        self.length.values().flat_map(|theme| theme.iter()).fold(
-            BTreeMap::<String, Vec<u8>>::new(),
-            |mut acc, (name, values)| {
-                let entry = acc.entry(name.clone()).or_default();
-                for (idx, value) in values.0.iter().enumerate() {
-                    if value.is_some()
-                        && let Ok(level) = u8::try_from(idx)
-                        && !entry.contains(&level)
-                    {
-                        entry.push(level);
-                    }
-                }
-                acc
-            },
-        )
+        token_levels(&self.length)
     }
 
     #[must_use]
     pub fn get_shadow_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
-        self.shadows.values().flat_map(|theme| theme.iter()).fold(
-            BTreeMap::<String, Vec<u8>>::new(),
-            |mut acc, (name, values)| {
-                let entry = acc.entry(name.clone()).or_default();
-                for (idx, value) in values.0.iter().enumerate() {
-                    if value.is_some()
-                        && let Ok(level) = u8::try_from(idx)
-                        && !entry.contains(&level)
-                    {
-                        entry.push(level);
-                    }
-                }
-                acc
-            },
-        )
+        token_levels(&self.shadows)
     }
 
     #[must_use]
