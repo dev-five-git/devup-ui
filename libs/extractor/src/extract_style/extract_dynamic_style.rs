@@ -40,6 +40,14 @@ impl Debug for ExtractDynamicStyle {
     }
 }
 
+/// `(closing symbol, " !important" + closing symbol)` probe pairs for `strip_important`.
+const IMPORTANT_SUFFIXES: [(&str, &str); 4] = [
+    ("", " !important"),
+    ("`", " !important`"),
+    ("\"", " !important\""),
+    ("'", " !important'"),
+];
+
 /// Strip ` !important` from a dynamic style identifier, returning the cleaned
 /// identifier and whether `!important` was found.
 ///
@@ -47,10 +55,8 @@ impl Debug for ExtractDynamicStyle {
 /// `!important` text appears before a closing delimiter (backtick, quote) or
 /// at the very end of the string.
 fn strip_important(identifier: &str) -> (String, bool) {
-    for str_symbol in ["", "`", "\"", "'"] {
-        let suffix = format!(" !important{str_symbol}");
-        if identifier.ends_with(&suffix) {
-            let base = &identifier[..identifier.len() - suffix.len()];
+    for (str_symbol, suffix) in IMPORTANT_SUFFIXES {
+        if let Some(base) = identifier.strip_suffix(suffix) {
             return (format!("{base}{str_symbol}"), true);
         }
     }

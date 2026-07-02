@@ -38,6 +38,10 @@ mod prefix_state {
     pub fn get_prefix() -> Option<String> {
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
+    /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
+    pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -56,8 +60,17 @@ mod prefix_state {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
+    /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
+    pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        f(GLOBAL_PREFIX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_deref()
+            .unwrap_or_default())
+    }
 }
 
+use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
 #[must_use]
@@ -199,35 +212,36 @@ fn class_num_for_key(filename_key: &str, key: String) -> String {
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
-    let prefix = get_prefix().unwrap_or_default();
-    if is_debug() {
-        let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
-        result.push_str(&prefix);
-        result.push_str("k-");
-        result.push_str(keyframes);
-        result
-    } else {
-        let mut key = String::with_capacity(2 + keyframes.len());
-        key.push_str("k-");
-        key.push_str(keyframes);
-        let filename_key = filename.unwrap_or_default();
-        let class_num = class_num_for_key(filename_key, key);
-        if let Some(fname) = filename {
-            let file_num = num_to_nm_base(get_file_num_by_filename(fname));
-            let mut result =
-                String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
-            result.push_str(&prefix);
-            result.push_str(&file_num);
-            result.push('-');
-            result.push_str(&class_num);
+    with_prefix(|prefix| {
+        if is_debug() {
+            let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
+            result.push_str(prefix);
+            result.push_str("k-");
+            result.push_str(keyframes);
             result
         } else {
-            let mut result = String::with_capacity(prefix.len() + class_num.len());
-            result.push_str(&prefix);
-            result.push_str(&class_num);
-            result
+            let mut key = String::with_capacity(2 + keyframes.len());
+            key.push_str("k-");
+            key.push_str(keyframes);
+            let filename_key = filename.unwrap_or_default();
+            let class_num = class_num_for_key(filename_key, key);
+            if let Some(fname) = filename {
+                let file_num = num_to_nm_base(get_file_num_by_filename(fname));
+                let mut result =
+                    String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
+                result.push_str(prefix);
+                result.push_str(&file_num);
+                result.push('-');
+                result.push_str(&class_num);
+                result
+            } else {
+                let mut result = String::with_capacity(prefix.len() + class_num.len());
+                result.push_str(prefix);
+                result.push_str(&class_num);
+                result
+            }
         }
-    }
+    })
 }
 
 /// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
@@ -296,7 +310,6 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> String {
-    let prefix = get_prefix().unwrap_or_default();
     // base style
     let filename = if style_order == Some(0) {
         None
@@ -314,24 +327,27 @@ pub fn sheet_to_classname(
         let file_suffix = filename.map(get_file_num_by_filename);
         let order = style_order.unwrap_or(255);
         let prop = property.trim();
-        // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
-        let mut result =
-            String::with_capacity(prefix.len() + prop.len() + optimized.len() + encoded.len() + 16);
-        result.push_str(&prefix);
-        result.push_str(prop);
-        result.push('-');
-        write_u8(&mut result, level);
-        result.push('-');
-        result.push_str(&optimized);
-        result.push('-');
-        result.push_str(&encoded);
-        result.push('-');
-        write_u8(&mut result, order);
-        if let Some(fnum) = file_suffix {
+        with_prefix(|prefix| {
+            // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
+            let mut result = String::with_capacity(
+                prefix.len() + prop.len() + optimized.len() + encoded.len() + 16,
+            );
+            result.push_str(prefix);
+            result.push_str(prop);
             result.push('-');
-            result.push_str(&num_to_nm_base(fnum));
-        }
-        result
+            write_u8(&mut result, level);
+            result.push('-');
+            result.push_str(&optimized);
+            result.push('-');
+            result.push_str(&encoded);
+            result.push('-');
+            write_u8(&mut result, order);
+            if let Some(fnum) = file_suffix {
+                result.push('-');
+                result.push_str(&num_to_nm_base(fnum));
+            }
+            result
+        })
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
         let order = style_order.unwrap_or(255);
@@ -358,19 +374,21 @@ pub fn sheet_to_classname(
 
         let filename_key = filename.unwrap_or_default();
         let clas_num = class_num_for_key(filename_key, key);
-        if let Some(file_num) = file_num {
-            let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
-            result.push_str(&prefix);
-            result.push_str(&num_to_nm_base(file_num));
-            result.push('-');
-            result.push_str(&clas_num);
-            result
-        } else {
-            let mut result = String::with_capacity(prefix.len() + clas_num.len());
-            result.push_str(&prefix);
-            result.push_str(&clas_num);
-            result
-        }
+        with_prefix(|prefix| {
+            if let Some(file_num) = file_num {
+                let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
+                result.push_str(prefix);
+                result.push_str(&num_to_nm_base(file_num));
+                result.push('-');
+                result.push_str(&clas_num);
+                result
+            } else {
+                let mut result = String::with_capacity(prefix.len() + clas_num.len());
+                result.push_str(prefix);
+                result.push_str(&clas_num);
+                result
+            }
+        })
     }
 }
 
@@ -391,7 +409,6 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -399,16 +416,18 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         } else {
             encode_selector(selector)
         };
-        let mut result =
-            String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
-        result.push_str("--");
-        result.push_str(&prefix);
-        result.push_str(property);
-        result.push('-');
-        write_u8(&mut result, level);
-        result.push('-');
-        result.push_str(&encoded);
-        result
+        with_prefix(|prefix| {
+            let mut result =
+                String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
+            result.push_str("--");
+            result.push_str(prefix);
+            result.push_str(property);
+            result.push('-');
+            write_u8(&mut result, level);
+            result.push('-');
+            result.push_str(&encoded);
+            result
+        })
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
         let mut key = String::with_capacity(property.len() + 4 + trimmed_selector.len());
@@ -418,11 +437,13 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         key.push('-');
         key.push_str(trimmed_selector);
         let base_name = class_num_for_key("", key);
-        let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
-        result.push_str("--");
-        result.push_str(&prefix);
-        result.push_str(&base_name);
-        result
+        with_prefix(|prefix| {
+            let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
+            result.push_str("--");
+            result.push_str(prefix);
+            result.push_str(&base_name);
+            result
+        })
     }
 }
 

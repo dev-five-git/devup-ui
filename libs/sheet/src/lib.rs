@@ -368,24 +368,22 @@ impl StyleSheet {
         for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let resolved_value =
+                    let resolved_value: Cow<'_, str> =
                         if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
                             if let Some(token) = st.value().strip_prefix('$') {
                                 match st.property() {
-                                    "box-shadow" => self
-                                        .theme
-                                        .get_default_shadow_value(token)
-                                        .map_or_else(|| st.value().to_string(), str::to_string),
-                                    _ => self
-                                        .theme
-                                        .get_default_length_value(token)
-                                        .map_or_else(|| st.value().to_string(), str::to_string),
+                                    "box-shadow" => self.theme.get_default_shadow_value(token),
+                                    _ => self.theme.get_default_length_value(token),
                                 }
+                                .map_or_else(
+                                    || Cow::Borrowed(st.value()),
+                                    |v| Cow::Owned(v.to_string()),
+                                )
                             } else {
-                                st.value().to_string()
+                                Cow::Borrowed(st.value())
                             }
                         } else {
-                            st.value().to_string()
+                            Cow::Borrowed(st.value())
                         };
 
                     let class_name =
