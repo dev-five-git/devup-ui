@@ -1151,10 +1151,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     && let Identifier(name) = &attr.name
                     && !is_special_property(&name.name)
                 {
-                    let property_name = name.name.to_string();
-                    for name in disassemble_property(&property_name) {
-                        if !duplicate_set.contains(&name) {
-                            duplicate_set.insert(name.clone());
+                    let property_name = name.name.as_str();
+                    for disassembled in disassemble_property(property_name) {
+                        if duplicate_set.insert(disassembled.clone()) {
                             if property_name == "styleOrder" {
                                 if let Some(value) = attr.value.as_ref() {
                                     parsed_style_order =
@@ -1176,7 +1175,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 }
                             } else if let Some(at) = &mut attr.value {
                                 let ExtractResult { styles, tag, .. } =
-                                    extract_style_from_jsx(&self.ast, &name, at);
+                                    extract_style_from_jsx(&self.ast, &disassembled, at);
                                 props_styles.extend(styles.into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }

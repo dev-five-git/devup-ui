@@ -30,6 +30,45 @@ pub fn gen_styles<'a>(
         ast_builder,
     ))
 }
+/// Push `cond ? value : undefined` (`value_when_true`) or `cond ? undefined : value`
+/// object properties for every property generated from `styles`.
+fn push_one_sided_conditional<'a>(
+    ast_builder: &AstBuilder<'a>,
+    properties: &mut Vec<ObjectPropertyKind<'a>>,
+    condition: &Expression<'a>,
+    styles: &ExtractStyleProp<'a>,
+    filename: Option<&str>,
+    value_when_true: bool,
+) {
+    for p in gen_style(ast_builder, styles, filename) {
+        if let ObjectPropertyKind::ObjectProperty(p) = p {
+            let value = p.value.clone_in(ast_builder.allocator());
+            let undefined = Expression::new_identifier(SPAN, "undefined", ast_builder);
+            let (consequent, alternate) = if value_when_true {
+                (value, undefined)
+            } else {
+                (undefined, value)
+            };
+            properties.push(ObjectPropertyKind::new_object_property(
+                SPAN,
+                PropertyKind::Init,
+                p.key.clone_in(ast_builder.allocator()),
+                Expression::new_conditional_expression(
+                    SPAN,
+                    condition.clone_in(ast_builder.allocator()),
+                    consequent,
+                    alternate,
+                    ast_builder,
+                ),
+                false,
+                false,
+                false,
+                ast_builder,
+            ));
+        }
+    }
+}
+
 fn gen_style<'a>(
     ast_builder: &AstBuilder<'a>,
     style: &ExtractStyleProp<'a>,
@@ -79,51 +118,9 @@ fn gen_style<'a>(
     {
         let r = (consequent, alternate);
         if let (None, Some(c)) = r {
-            gen_style(ast_builder, c, filename)
-                .into_iter()
-                .for_each(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ObjectPropertyKind::new_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator()),
-                            Expression::new_conditional_expression(
-                                SPAN,
-                                condition.clone_in(ast_builder.allocator()),
-                                Expression::new_identifier(SPAN, "undefined", ast_builder),
-                                p.value.clone_in(ast_builder.allocator()),
-                                ast_builder,
-                            ),
-                            false,
-                            false,
-                            false,
-                            ast_builder,
-                        ));
-                    }
-                });
+            push_one_sided_conditional(ast_builder, &mut properties, condition, c, filename, false);
         } else if let (Some(c), None) = r {
-            gen_style(ast_builder, c, filename)
-                .into_iter()
-                .for_each(|p| {
-                    if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ObjectPropertyKind::new_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator()),
-                            Expression::new_conditional_expression(
-                                SPAN,
-                                condition.clone_in(ast_builder.allocator()),
-                                p.value.clone_in(ast_builder.allocator()),
-                                Expression::new_identifier(SPAN, "undefined", ast_builder),
-                                ast_builder,
-                            ),
-                            false,
-                            false,
-                            false,
-                            ast_builder,
-                        ));
-                    }
-                });
+            push_one_sided_conditional(ast_builder, &mut properties, condition, c, filename, true);
         } else if let (Some(c), Some(a)) = r {
             let collect_c = gen_style(ast_builder, c, filename);
             let collect_a = gen_style(ast_builder, a, filename);

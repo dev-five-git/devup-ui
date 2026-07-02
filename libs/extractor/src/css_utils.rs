@@ -241,6 +241,12 @@ pub fn css_to_style_literal(
     styles
 }
 
+const AT_RULES: [(&str, AtRuleKind); 3] = [
+    ("@media", AtRuleKind::Media),
+    ("@supports", AtRuleKind::Supports),
+    ("@container", AtRuleKind::Container),
+];
+
 pub fn css_to_style(
     css: &str,
     level: u8,
@@ -250,7 +256,7 @@ pub fn css_to_style(
     let mut input = css;
 
     // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input
-    for at_rule in ["@media", "@supports", "@container"] {
+    for (at_rule, _) in AT_RULES {
         if input.contains(at_rule) {
             let at_inputs = input
                 .split(at_rule)
@@ -341,24 +347,14 @@ pub fn css_to_style(
                 })
             } else {
                 let sel = selector_part.trim().to_string();
-                if sel.starts_with("@media") {
+                if let Some((prefix, kind)) =
+                    AT_RULES.iter().find(|(prefix, _)| sel.starts_with(prefix))
+                {
+                    // The prefix contains neither spaces nor "and(", so it survives both
+                    // replaces unchanged and slicing at `prefix.len()` drops exactly it.
                     Some(StyleSelector::At {
-                        kind: AtRuleKind::Media,
-                        query: sel.replace(' ', "").replace("and(", "and (")["@media".len()..]
-                            .to_string(),
-                        selector: None,
-                    })
-                } else if sel.starts_with("@supports") {
-                    Some(StyleSelector::At {
-                        kind: AtRuleKind::Supports,
-                        query: sel.replace(' ', "").replace("and(", "and (")["@supports".len()..]
-                            .to_string(),
-                        selector: None,
-                    })
-                } else if sel.starts_with("@container") {
-                    Some(StyleSelector::At {
-                        kind: AtRuleKind::Container,
-                        query: sel.replace(' ', "").replace("and(", "and (")["@container".len()..]
+                        kind: *kind,
+                        query: sel.replace(' ', "").replace("and(", "and (")[prefix.len()..]
                             .to_string(),
                         selector: None,
                     })

@@ -351,7 +351,7 @@ pub fn sheet_to_classname(
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
         let order = style_order.unwrap_or(255);
-        let file_num = filename.map(get_file_num_by_filename);
+        let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
         let trimmed_prop = property.trim();
 
         // Build key with pre-allocated capacity
@@ -367,18 +367,18 @@ pub fn sheet_to_classname(
         key.push_str(trimmed_selector);
         key.push('-');
         write_u8(&mut key, order);
-        if let Some(fnum) = file_num {
+        if let Some(fstr) = &file_num_str {
             key.push('-');
-            key.push_str(&num_to_nm_base(fnum));
+            key.push_str(fstr);
         }
 
         let filename_key = filename.unwrap_or_default();
         let clas_num = class_num_for_key(filename_key, key);
         with_prefix(|prefix| {
-            if let Some(file_num) = file_num {
+            if let Some(fstr) = &file_num_str {
                 let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
                 result.push_str(prefix);
-                result.push_str(&num_to_nm_base(file_num));
+                result.push_str(fstr);
                 result.push('-');
                 result.push_str(&clas_num);
                 result

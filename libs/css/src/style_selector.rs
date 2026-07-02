@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    constant::SELECTOR_ORDER_MAP,
+    constant::SELECTOR_ORDER,
     selector_separator::SelectorSeparator,
     to_kebab_case,
     utils::{collapse_whitespace, to_camel_case},
@@ -123,20 +123,18 @@ impl Ord for StyleSelector {
                 }
                 match (a.contains(':'), b.contains(':')) {
                     (true, true) => {
-                        let a_order = a
-                            .split_once(':')
-                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
-                        let b_order = b
-                            .split_once(':')
-                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
+                        // `contains(':')` is true here, so `find` always succeeds;
+                        // the slice equals the former `format!(":{post}")` without allocating.
+                        let a_order = a.find(':').map_or("", |i| &a[i..]);
+                        let b_order = b.find(':').map_or("", |i| &b[i..]);
                         let mut a_order_value = 0;
                         let mut b_order_value = 0;
-                        for (order, order_value) in SELECTOR_ORDER_MAP.iter() {
+                        for (order, order_value) in SELECTOR_ORDER {
                             if a_order.contains(order) {
-                                a_order_value = *order_value;
+                                a_order_value = order_value;
                             }
                             if b_order.contains(order) {
-                                b_order_value = *order_value;
+                                b_order_value = order_value;
                             }
                         }
                         if a_order_value == b_order_value {
@@ -258,8 +256,8 @@ fn get_selector_order(selector: &str) -> u8 {
         selector
     };
 
-    // First, try to find the order in the map (for regular selectors like &:hover)
-    if let Some(order) = SELECTOR_ORDER_MAP.get(t) {
+    // First, try to find the order in the table (for regular selectors like &:hover)
+    if let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == t) {
         return *order;
     }
 
@@ -267,9 +265,9 @@ fn get_selector_order(selector: &str) -> u8 {
     // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
     if selector.ends_with(" &") {
         let before_ampersand = selector.strip_suffix(" &").unwrap_or(selector);
-        for (pseudo, order) in SELECTOR_ORDER_MAP.iter() {
+        for (pseudo, order) in SELECTOR_ORDER {
             if before_ampersand.ends_with(pseudo) {
-                return *order;
+                return order;
             }
         }
     }

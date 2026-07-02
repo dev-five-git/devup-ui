@@ -90,22 +90,21 @@ pub fn extract_style_from_expression<'a>(
                             if let Some(name) = get_string_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
-                                let property_name = name.clone();
-                                for name in disassemble_property(&property_name) {
-                                    if &property_name == "styleOrder" {
+                                for disassembled in disassemble_property(&name) {
+                                    if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
                                             .map(|v| v as u8);
-                                    } else if &property_name == "styleVars" {
+                                    } else if name == "styleVars" {
                                         style_vars =
                                             Some(prop.value.clone_in(ast_builder.allocator()));
-                                    } else if &property_name == "props" {
+                                    } else if name == "props" {
                                         props = Some(prop.value.clone_in(ast_builder.allocator()));
                                     } else {
                                         let ExtractResult {
                                             styles, tag: _tag, ..
                                         } = extract_style_from_expression(
                                             ast_builder,
-                                            Some(&name),
+                                            Some(&disassembled),
                                             &mut prop.value,
                                             0,
                                             &None,

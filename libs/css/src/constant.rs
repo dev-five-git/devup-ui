@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use phf::{phf_map, phf_set};
 use regex_lite::Regex;
 use std::sync::LazyLock;
@@ -9,23 +7,14 @@ fn compile_regex(pattern: &str) -> Regex {
         .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
 }
 
-pub(super) static SELECTOR_ORDER_MAP: LazyLock<HashMap<String, u8>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
-    for (idx, selector) in [
-        "hover",
-        "focus-visible",
-        "focus",
-        "active",
-        "selected",
-        "disabled",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        map.insert(format!(":{selector}"), idx as u8);
-    }
-    map
-});
+pub(super) const SELECTOR_ORDER: [(&str, u8); 6] = [
+    (":hover", 0),
+    (":focus-visible", 1),
+    (":focus", 2),
+    (":active", 3),
+    (":selected", 4),
+    (":disabled", 5),
+];
 
 pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bg" => &["background"],
