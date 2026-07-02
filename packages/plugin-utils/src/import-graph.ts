@@ -172,14 +172,7 @@ export function buildCanonicalMap(
     roots.add(cycleRoot)
   }
 
-  const parents = new Map<string, string>()
-  for (const file of files) {
-    if (roots.has(file)) continue
-    const importers = staticImporters.get(file)
-    if (importers?.size !== 1) continue
-    const [importer] = importers
-    parents.set(file, importer)
-  }
+  const parents = buildParentsMap(files, roots, staticImporters)
 
   const toKey = makeToKey(cwd, opts.keyBy ?? 'cwd-relative')
   const map: Record<string, string> = {}
@@ -911,11 +904,11 @@ function isInsideDir(dir: string, file: string): boolean {
   return relPath === '' || (!relPath.startsWith('..') && !isAbsolute(relPath))
 }
 
-function findClosedCycles(
+function buildParentsMap(
   files: string[],
   roots: Set<string>,
   staticImporters: Map<string, Set<string>>,
-): Set<string> {
+): Map<string, string> {
   const parents = new Map<string, string>()
   for (const file of files) {
     if (roots.has(file)) continue
@@ -924,6 +917,15 @@ function findClosedCycles(
     const [importer] = importers
     parents.set(file, importer)
   }
+  return parents
+}
+
+function findClosedCycles(
+  files: string[],
+  roots: Set<string>,
+  staticImporters: Map<string, Set<string>>,
+): Set<string> {
+  const parents = buildParentsMap(files, roots, staticImporters)
 
   const cycleRoots = new Set<string>()
   const visiting = new Set<string>()

@@ -722,18 +722,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
             let r = css_type.as_ref();
             *it = if matches!(r, UtilType::Css) {
-                let styles = css_to_style_literal(&tag.quasi, 0, &None);
+                let mut style_props = css_to_style_literal(&tag.quasi, 0, &None)
+                    .into_iter()
+                    .map(|ex| ExtractStyleProp::Static(ex.into()))
+                    .collect::<Vec<_>>();
                 let class_name = gen_class_names(
                     &self.ast,
-                    &mut styles
-                        .iter()
-                        .map(|ex| ExtractStyleProp::Static(ex.clone().into()))
-                        .collect::<Vec<_>>(),
+                    &mut style_props,
                     None,
                     self.split_filename.as_deref(),
                 );
 
-                self.styles.extend(styles.into_iter().map(Into::into));
+                for ex in style_props {
+                    // every entry was built as `Static` above
+                    if let ExtractStyleProp::Static(v) = ex {
+                        self.styles.insert(v);
+                    }
+                }
                 if let Some(cls) = class_name {
                     cls
                 } else {

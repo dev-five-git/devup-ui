@@ -38,6 +38,27 @@ pub fn rm_last_semi_colon(code: &str) -> &str {
     code.trim_end_matches(';')
 }
 
+/// Convert a dynamic template-literal expression into identifier code,
+/// wrapping arrow/function expressions in a direct call with `rest` and
+/// trimming the trailing semicolon.
+fn dynamic_expr_code<'a>(expr: &Expression<'a>, allocator: &'a Allocator) -> String {
+    let is_function = matches!(
+        expr,
+        Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+    );
+    let ast_builder = AstBuilder::new(allocator);
+    let code = if is_function {
+        expression_to_code(&wrap_direct_call(
+            &ast_builder,
+            expr,
+            &[Expression::new_identifier(SPAN, "rest", &ast_builder)],
+        ))
+    } else {
+        expression_to_code(expr)
+    };
+    rm_last_semi_colon(&code).to_string()
+}
+
 pub fn css_to_style_literal(
     css: &TemplateLiteral<'_>,
     level: u8,
@@ -153,31 +174,12 @@ pub fn css_to_style_literal(
                     && *idx < css.expressions.len()
                 {
                     // Value is just the expression - use expression code directly
-                    let expr = &css.expressions[*idx];
-
-                    // Check if expression is a function (arrow function or function expression)
-                    let is_function = matches!(
-                        expr,
-                        oxc_ast::ast::Expression::ArrowFunctionExpression(_)
-                            | oxc_ast::ast::Expression::FunctionExpression(_)
-                    );
-
-                    let ast_builder = AstBuilder::new(&shared_allocator);
-                    let identifier = if is_function {
-                        expression_to_code(&wrap_direct_call(
-                            &ast_builder,
-                            expr,
-                            &[Expression::new_identifier(SPAN, "rest", &ast_builder)],
-                        ))
-                    } else {
-                        expression_to_code(expr)
-                    };
-                    let identifier = rm_last_semi_colon(&identifier);
+                    let identifier = dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
 
                     styles.push(CssToStyleResult::Dynamic(ExtractDynamicStyle::new(
                         style.property(),
                         style.level(),
-                        identifier,
+                        &identifier,
                         style.selector().cloned(),
                     )));
                 } else {
@@ -197,27 +199,8 @@ pub fn css_to_style_literal(
                     // Replace each placeholder with the actual expression in template literal format
                     for (placeholder, idx) in &found_placeholders {
                         if *idx < css.expressions.len() {
-                            let expr = &css.expressions[*idx];
-
-                            // Check if expression is a function (arrow function or function expression)
-                            let is_function = matches!(
-                                expr,
-                                oxc_ast::ast::Expression::ArrowFunctionExpression(_)
-                                    | oxc_ast::ast::Expression::FunctionExpression(_)
-                            );
-
-                            let ast_builder = AstBuilder::new(&shared_allocator);
-                            let expr_code = if is_function {
-                                expression_to_code(&wrap_direct_call(
-                                    &ast_builder,
-                                    expr,
-                                    &[Expression::new_identifier(SPAN, "rest", &ast_builder)],
-                                ))
-                            } else {
-                                expression_to_code(expr)
-                            };
-
-                            let expr_code = rm_last_semi_colon(&expr_code);
+                            let expr_code =
+                                dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
                             // Replace placeholder with ${expr} syntax
                             template_literal = template_literal
                                 .replace(placeholder.as_str(), &format!("${{{expr_code}}}"));
@@ -965,6 +948,7 @@ mod tests {
     #[case("`width: ${(props)=>props.b ? \"hello\\\"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world`:`test`)(rest)}px`", None)])]
     #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world\"more`:`test`)(rest)}px`", None)])]
     #[case("`width: ${(props)=>props.b ? \"hello\" + \"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello`+`world`:`test`)(rest)}px`", None)])]
+    #[case("`width: ${function(props){return props.b}}px;`", vec![("width", "`${(function(props){return props.b})(rest)}px`", None)])]
     // wrong cases
     #[case(
         "`@media (min-width: 768px) {

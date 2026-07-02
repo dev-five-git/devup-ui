@@ -343,7 +343,7 @@ pub fn extract_style_from_expression<'a>(
             ExtractResult {
                 styles: if typo {
                     vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
-                        value.clone(),
+                        value,
                     ))]
                 } else if matches!(
                     literal_handling,

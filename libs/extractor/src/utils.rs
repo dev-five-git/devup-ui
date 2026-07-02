@@ -91,35 +91,17 @@ pub(super) fn jsx_expression_to_style_order<'a>(
     expr: &JSXAttributeValue<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // First try static resolution
-    if let Some(n) = jsx_expression_to_number(expr) {
-        return ParsedStyleOrder::Static(n as u8);
+    match expr {
+        JSXAttributeValue::ExpressionContainer(ec) => ec
+            .expression
+            .as_expression()
+            .map_or(ParsedStyleOrder::None, |e| {
+                expression_to_style_order(e, allocator)
+            }),
+        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::None, |n| {
+            ParsedStyleOrder::Static(n as u8)
+        }),
     }
-    // Check for conditional or logical expression
-    if let JSXAttributeValue::ExpressionContainer(ec) = expr {
-        if let Some(Expression::ConditionalExpression(cond)) = ec.expression.as_expression() {
-            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-            return ParsedStyleOrder::Conditional {
-                condition: cond.test.clone_in(allocator),
-                consequent,
-                alternate,
-            };
-        }
-        // Handle logical &&: styleOrder={a === 1 && 5}
-        // truthy → right side (number), falsy → None (no styleOrder)
-        if let Some(Expression::LogicalExpression(logical)) = ec.expression.as_expression()
-            && logical.operator == LogicalOperator::And
-        {
-            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-            return ParsedStyleOrder::Conditional {
-                condition: logical.left.clone_in(allocator),
-                consequent,
-                alternate: None,
-            };
-        }
-    }
-    ParsedStyleOrder::None
 }
 
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
@@ -479,6 +461,16 @@ mod tests {
                 .unwrap()
             ),
             None
+        );
+
+        assert_eq!(
+            jsx_expression_to_number(&JSXAttributeValue::new_expression_container(
+                SPAN,
+                Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
+                    .into(),
+                &builder,
+            )),
+            Some(2.0)
         );
     }
     #[test]
