@@ -199,13 +199,22 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
 /// and variable-name generation.
 fn class_num_for_key(filename_key: &str, key: String) -> String {
     class_map::with_class_map_mut(|map| {
-        let file_entry = map.entry(filename_key.to_string()).or_default();
-        if let Some(&num) = file_entry.get(&key) {
-            num_to_nm_base(num)
+        // Probe first so the owned filename key is only allocated on the
+        // first style for a file, not on every generated name.
+        if let Some(file_entry) = map.get_mut(filename_key) {
+            if let Some(&num) = file_entry.get(&key) {
+                num_to_nm_base(num)
+            } else {
+                let len = file_entry.len();
+                file_entry.insert(key, len);
+                num_to_nm_base(len)
+            }
         } else {
-            let len = file_entry.len();
-            file_entry.insert(key, len);
-            num_to_nm_base(len)
+            map.insert(
+                filename_key.to_string(),
+                std::iter::once((key, 0)).collect(),
+            );
+            num_to_nm_base(0)
         }
     })
 }

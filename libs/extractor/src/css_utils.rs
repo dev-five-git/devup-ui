@@ -526,9 +526,22 @@ fn trim_string_in_place(value: &mut String) {
 }
 
 fn remove_semicolon_before_closing_brace(value: &mut String) {
-    while let Some(idx) = value.find(";}") {
-        value.remove(idx);
+    if !value.contains(";}") {
+        return;
     }
+    // Single forward pass: drop every run of ';' that sits directly before '}'.
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value.as_str();
+    while let Some(pos) = rest.find(';') {
+        out.push_str(&rest[..pos]);
+        let after_run = rest[pos..].trim_start_matches(';');
+        if !after_run.starts_with('}') {
+            out.push_str(&rest[pos..rest.len() - after_run.len()]);
+        }
+        rest = after_run;
+    }
+    out.push_str(rest);
+    *value = out;
 }
 
 #[cfg(test)]
@@ -541,6 +554,19 @@ mod tests {
     use oxc_parser::Parser;
     use oxc_span::SourceType;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("a{color:red;}", "a{color:red}")]
+    #[case("a{color:red;;}", "a{color:red}")]
+    #[case(";}", "}")]
+    #[case(";;;a;}", ";;;a}")]
+    #[case("a{color:red;top:0}", "a{color:red;top:0}")]
+    #[case("", "")]
+    fn test_remove_semicolon_before_closing_brace(#[case] input: &str, #[case] expected: &str) {
+        let mut value = input.to_string();
+        remove_semicolon_before_closing_brace(&mut value);
+        assert_eq!(value, expected);
+    }
 
     #[rstest]
     #[case("`background-color: red;`", vec![("background-color", "red", None)])]

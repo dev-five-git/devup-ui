@@ -148,7 +148,7 @@ pub fn extract_global_style_from_expression<'a>(
                             // Handle @layer property in globalStyle
                             // Extract the layer name if present in the style object
                             let layer_name = if let Expression::ObjectExpression(style_obj) = &o.value
-                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_string_by_property_key(&s.key) == Some("@layer".to_string())))
+                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_string_by_property_key(&s.key).as_deref() == Some("@layer")))
                             {
                                 get_string_by_literal_expression(&sp.value)
                             } else {

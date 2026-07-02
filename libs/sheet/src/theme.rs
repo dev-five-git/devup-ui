@@ -757,6 +757,8 @@ impl Theme {
             if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
         });
 
+        let default_theme = themes.get(default_key.as_str());
+
         for (variant_name, token_theme) in &sorted_variants {
             let is_default = *variant_name == &default_key;
             let selector = if is_default {
@@ -772,8 +774,7 @@ impl Theme {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
                         let is_same_as_default = !is_default
-                            && themes
-                                .get(default_key.as_str())
+                            && default_theme
                                 .and_then(|dt| dt.get(name))
                                 .and_then(|dv| dv.0.get(idx))
                                 .is_some_and(|dval| {

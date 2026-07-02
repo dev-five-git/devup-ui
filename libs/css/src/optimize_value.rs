@@ -169,9 +169,7 @@ pub fn optimize_value(value: &str) -> String {
             }
         }
         if depth < 0 {
-            for _ in 0..(-depth) {
-                ret.insert(0, '(');
-            }
+            ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
         }
         if depth > 0 {
             for _ in 0..depth {
