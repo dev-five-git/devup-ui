@@ -161,11 +161,12 @@ jobs:
         with:
           name: playwright-report-singlecss
           path: playwright-report/
-          retention-days: 30
+          retention-days: 1
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
           path: ./apps/landing/out
+          retention-days: 1
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - uses: actions/deploy-pages@v5
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
