@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
 use css::{
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     rm_css_comment::rm_css_comment,
     style_selector::{AtRuleKind, StyleSelector},
 };
@@ -421,7 +421,7 @@ fn css_to_style_block(
                 let property = property.trim();
                 let value = value.trim();
                 let value = if check_multi_css_optimize(property) {
-                    optimize_mutli_css_value(value)
+                    optimize_multi_css_value(value)
                 } else {
                     value.to_string()
                 };
@@ -502,7 +502,7 @@ pub fn optimize_css_block(css: &str) -> String {
                 .rsplit_once('{')
                 .map_or(property, |(_, property_name)| property_name);
             let optimized_value = if check_multi_css_optimize(property_name) {
-                optimize_mutli_css_value(value)
+                optimize_multi_css_value(value)
             } else {
                 value.to_string()
             };

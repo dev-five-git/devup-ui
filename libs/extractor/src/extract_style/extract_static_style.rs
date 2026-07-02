@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     optimize_value::optimize_value,
     sheet_to_classname,
     style_selector::{StyleSelector, optimize_selector},
@@ -162,14 +162,14 @@ impl ExtractStaticStyle {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.selector.clone().map(|s| s.to_string());
+        let s = self.selector.as_ref().map(ToString::to_string);
         let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
             self.value.clone()
         } else {
             convert_value(&self.value)
         });
         let v = if check_multi_css_optimize(&self.property) {
-            optimize_mutli_css_value(&v)
+            optimize_multi_css_value(&v)
         } else {
             v
         };

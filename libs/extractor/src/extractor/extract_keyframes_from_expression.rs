@@ -39,7 +39,7 @@ pub fn extract_keyframes_from_expression<'a>(
                         _ => None,
                     })
                     .collect::<Vec<_>>();
-                styles.sort_by_key(|a| a.property().to_string());
+                styles.sort_by(|a, b| a.property().cmp(b.property()));
                 keyframes.keyframes.insert(
                     name.parse::<f64>().map(|v| format!("{v}%")).unwrap_or(name),
                     styles,

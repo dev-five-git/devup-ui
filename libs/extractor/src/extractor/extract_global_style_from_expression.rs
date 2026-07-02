@@ -15,7 +15,7 @@ use crate::{
 };
 use css::{
     disassemble_property,
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value, wrap_url},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
     style_selector::StyleSelector,
 };
 use oxc_ast::{
@@ -101,7 +101,7 @@ pub fn extract_global_style_from_expression<'a>(
                                                         {
                                                             let it = disassemble_property(&property_name).into_iter();
                                                             let it = it.map(|p| {
-                                                                let v = if check_multi_css_optimize(&p) { optimize_mutli_css_value(&s) } else { s.clone() };
+                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { s.clone() };
                                                                 if p == "src" { (p, wrap_url(&v)) } else { (p, v) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())

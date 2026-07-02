@@ -116,7 +116,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                                 ast_builder,
                             )),
                             level,
-                            &selector.clone(),
+                            selector,
                         )),
                     );
                 }

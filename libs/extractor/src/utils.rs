@@ -158,9 +158,7 @@ pub(super) fn expression_to_style_order<'a>(
 
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
-        JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
-            &Expression::StringLiteral(sl.clone_in(&Allocator::default())),
-        ),
+        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
         JSXAttributeValue::ExpressionContainer(ec) => ec
             .expression
             .as_expression()
@@ -178,7 +176,7 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
         Expression::TemplateLiteral(tmp) => tmp
             .quasis
             .iter()
-            .map(|q| q.value.raw.to_string())
+            .map(|q| q.value.raw.as_str())
             .collect::<String>()
             .parse::<f64>()
             .ok(),
@@ -203,19 +201,19 @@ pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<Stri
             Expression::StringLiteral(str) => Some(str.value.into()),
             Expression::BooleanLiteral(bool) => Some(bool.value.to_string()),
             Expression::TemplateLiteral(tmp) => {
-                let mut collect = vec![];
+                let mut collect = String::new();
                 for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push(q.value.raw.to_string());
+                    collect.push_str(q.value.raw.as_str());
                     if idx < tmp.expressions.len() {
                         if let Some(value) = get_string_by_literal_expression(&tmp.expressions[idx])
                         {
-                            collect.push(value);
+                            collect.push_str(&value);
                         } else {
                             return None;
                         }
                     }
                 }
-                Some(collect.join(""))
+                Some(collect)
             }
             _ => None,
         })

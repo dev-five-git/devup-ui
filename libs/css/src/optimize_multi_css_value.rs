@@ -1,7 +1,7 @@
 use crate::constant::{CHECK_QUOTES_RE, CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
-pub fn optimize_mutli_css_value(value: &str) -> String {
+pub fn optimize_multi_css_value(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     for (idx, s) in value.split(',').enumerate() {
         if idx > 0 {
@@ -71,8 +71,8 @@ mod tests {
     #[case("url(\"a bc\")", "url(\"a bc\")")]
     #[case("'A', 'B', 'C'", "A,B,C")]
     #[case("\"A\", \"B\", \"C\"", "A,B,C")]
-    fn test_optimize_mutli_css_value(#[case] input: &str, #[case] expected: &str) {
-        assert_eq!(optimize_mutli_css_value(input), expected);
+    fn test_optimize_multi_css_value(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(optimize_multi_css_value(input), expected);
     }
 
     #[rstest]
@@ -103,7 +103,7 @@ mod tests {
     #[case("(hello world)", "url(\"(hello world)\")")]
     fn test_wrap_url(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(
-            super::wrap_url(&super::optimize_mutli_css_value(input)),
+            super::wrap_url(&super::optimize_multi_css_value(input)),
             expected
         );
     }
