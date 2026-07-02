@@ -181,6 +181,22 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
     }
 }
 
+/// Get-or-insert `key` in the per-file class map and return its base-37 name.
+/// Single home for the class naming algorithm shared by keyframes, classname
+/// and variable-name generation.
+fn class_num_for_key(filename_key: &str, key: String) -> String {
+    class_map::with_class_map_mut(|map| {
+        let file_entry = map.entry(filename_key.to_string()).or_default();
+        if let Some(&num) = file_entry.get(&key) {
+            num_to_nm_base(num)
+        } else {
+            let len = file_entry.len();
+            file_entry.insert(key, len);
+            num_to_nm_base(len)
+        }
+    })
+}
+
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
     let prefix = get_prefix().unwrap_or_default();
@@ -195,16 +211,7 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
         key.push_str("k-");
         key.push_str(keyframes);
         let filename_key = filename.unwrap_or_default();
-        let class_num = class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(filename_key.to_string()).or_default();
-            if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
-            }
-        });
+        let class_num = class_num_for_key(filename_key, key);
         if let Some(fname) = filename {
             let file_num = num_to_nm_base(get_file_num_by_filename(fname));
             let mut result =
@@ -350,16 +357,7 @@ pub fn sheet_to_classname(
         }
 
         let filename_key = filename.unwrap_or_default();
-        let clas_num = class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(filename_key.to_string()).or_default();
-            if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
-            }
-        });
+        let clas_num = class_num_for_key(filename_key, key);
         if let Some(file_num) = file_num {
             let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
             result.push_str(&prefix);
@@ -419,21 +417,12 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         write_u8(&mut key, level);
         key.push('-');
         key.push_str(trimmed_selector);
-        class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(String::new()).or_default();
-            let base_name = if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
-            };
-            let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
-            result.push_str("--");
-            result.push_str(&prefix);
-            result.push_str(&base_name);
-            result
-        })
+        let base_name = class_num_for_key("", key);
+        let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
+        result.push_str("--");
+        result.push_str(&prefix);
+        result.push_str(&base_name);
+        result
     }
 }
 

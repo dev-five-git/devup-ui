@@ -611,13 +611,9 @@ impl StyleSheet {
                 Some(
                     self.theme
                         .breakpoints
-                        .iter()
-                        .enumerate()
-                        .find(|(idx, _)| (*idx as u8) == *level)
-                        .map_or_else(
-                            || self.theme.breakpoints.last().copied().unwrap_or(0),
-                            |(_, bp)| *bp,
-                        ),
+                        .get(*level as usize)
+                        .copied()
+                        .unwrap_or_else(|| self.theme.breakpoints.last().copied().unwrap_or(0)),
                 )
             };
 

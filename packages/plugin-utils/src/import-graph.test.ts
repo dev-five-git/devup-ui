@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import {
   __setOxcParserForTest,
   buildCanonicalMap,
+  buildStaticImportGraph,
   computeFileReach,
   computeFileRoutes,
   planAtomHoist,
@@ -791,6 +792,54 @@ describe('computeFileReach', () => {
     expect(reach['src/b.tsx']).toEqual([1])
     // index is not an entry now and nobody it imports... it's not in any entry closure
     expect(reach['src/index.tsx']).toBeUndefined()
+  })
+})
+
+describe('buildStaticImportGraph sharing', () => {
+  let tempRoot: string
+  let cwd: string
+  let srcDir: string
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'devup-ui-shared-graph-'))
+    cwd = join(tempRoot, 'project')
+    srcDir = join(cwd, 'src')
+    mkdirSync(srcDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true })
+  })
+
+  function writeFixture(path: string, code: string): void {
+    const filePath = join(cwd, path)
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, code)
+  }
+
+  it('yields identical results whether builders scan or reuse one graph', () => {
+    writeFixture('src/app/layout.tsx', "import './shared'\n")
+    writeFixture('src/app/shared.tsx', 'export const Shared = 1\n')
+    writeFixture('src/app/a/page.tsx', "import './a-only'\n")
+    writeFixture('src/app/a/a-only.tsx', 'export const A = 1\n')
+    writeFixture('src/app/b/page.tsx', 'export const B = 1\n')
+    writeFixture(
+      'src/lazy-host.tsx',
+      "export const load = () => import('./lazy')\n",
+    )
+    writeFixture('src/lazy.tsx', 'export const L = 1\n')
+
+    const graph = buildStaticImportGraph(srcDir)
+
+    expect(buildCanonicalMap({ cwd, srcDir, graph })).toEqual(
+      buildCanonicalMap({ cwd, srcDir }),
+    )
+    expect(computeFileRoutes({ cwd, srcDir, graph })).toEqual(
+      computeFileRoutes({ cwd, srcDir }),
+    )
+    expect(computeFileReach({ cwd, srcDir, graph })).toEqual(
+      computeFileReach({ cwd, srcDir }),
+    )
   })
 })
 

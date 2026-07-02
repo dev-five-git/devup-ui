@@ -276,13 +276,6 @@ impl<'de> Deserialize<'de> for Typographies {
                     .map_err(D::Error::custom)?
                     .unwrap_or_else(|| vec![None]);
 
-                let font_style = obj
-                    .get("fontStyle")
-                    .map(deserialize_typo_prop)
-                    .transpose()
-                    .map_err(D::Error::custom)?
-                    .unwrap_or_else(|| vec![None]);
-
                 // Find the maximum length among all properties
                 let max_len = [
                     font_family.len(),
@@ -290,7 +283,6 @@ impl<'de> Deserialize<'de> for Typographies {
                     font_weight.len(),
                     line_height.len(),
                     letter_spacing.len(),
-                    font_style.len(),
                 ]
                 .into_iter()
                 .max()
@@ -304,15 +296,9 @@ impl<'de> Deserialize<'de> for Typographies {
                     let fw = font_weight.get(i).cloned().unwrap_or(None);
                     let lh = line_height.get(i).cloned().unwrap_or(None);
                     let ls = letter_spacing.get(i).cloned().unwrap_or(None);
-                    let fst = font_style.get(i).cloned().unwrap_or(None);
 
                     // If all properties are None for this level, push None
-                    if ff.is_none()
-                        && fs.is_none()
-                        && fw.is_none()
-                        && lh.is_none()
-                        && ls.is_none()
-                        && fst.is_none()
+                    if ff.is_none() && fs.is_none() && fw.is_none() && lh.is_none() && ls.is_none()
                     {
                         result.push(None);
                     } else {
