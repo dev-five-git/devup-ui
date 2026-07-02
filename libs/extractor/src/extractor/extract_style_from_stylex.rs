@@ -9,11 +9,30 @@ use crate::stylex::{
 use crate::utils::get_string_by_literal_expression;
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
+use css::style_selector::StyleSelector;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
 use oxc_ast::builder::AstBuilder;
 use rustc_hash::FxHashMap;
 
 use crate::utils::get_string_by_property_key;
+
+/// Construct a static style directly — bypass `convert_value()` to avoid devup-ui
+/// spacing transformations. `StyleX` values are raw CSS, only `optimize_value()`.
+fn raw_static_style<'a>(
+    property: String,
+    value: &str,
+    selector: Option<StyleSelector>,
+) -> ExtractStyleProp<'a> {
+    ExtractStyleProp::Static(ExtractStyleValue::Static(ExtractStaticStyle {
+        property,
+        value: optimize_value(value),
+        level: 0,
+        selector,
+        style_order: None,
+        layer: None,
+        theme_token_resolution: Default::default(),
+    }))
+}
 
 const SHORTHAND_PROPERTIES: &[&str] = &[
     "margin",
@@ -157,17 +176,11 @@ pub fn extract_stylex_namespace_styles<'a>(
                         &parent_selectors,
                     ) {
                         if let Some(css_value) = decomposed.value {
-                            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                                ExtractStaticStyle {
-                                    property: decomposed.property,
-                                    value: optimize_value(&css_value),
-                                    level: 0,
-                                    selector: decomposed.selector,
-                                    style_order: None,
-                                    layer: None,
-                                    theme_token_resolution: Default::default(),
-                                },
-                            )));
+                            styles.push(raw_static_style(
+                                decomposed.property,
+                                &css_value,
+                                decomposed.selector,
+                            ));
                         }
                     }
                 }
@@ -186,17 +199,7 @@ pub fn extract_stylex_namespace_styles<'a>(
             if let Expression::Identifier(ident) = &style_prop.value
                 && let Some(anim_name) = keyframe_names.get(ident.name.as_str())
             {
-                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle {
-                        property: css_property,
-                        value: optimize_value(anim_name),
-                        level: 0,
-                        selector: None,
-                        style_order: None,
-                        layer: None,
-                        theme_token_resolution: Default::default(),
-                    },
-                )));
+                styles.push(raw_static_style(css_property, anim_name, None));
                 continue;
             }
 
@@ -208,17 +211,11 @@ pub fn extract_stylex_namespace_styles<'a>(
                 for decomposed in decompose_value_conditions(&css_property, &style_prop.value, &[])
                 {
                     if let Some(css_value) = decomposed.value {
-                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                            ExtractStaticStyle {
-                                property: decomposed.property,
-                                value: optimize_value(&css_value),
-                                level: 0,
-                                selector: decomposed.selector,
-                                style_order: None,
-                                layer: None,
-                                theme_token_resolution: Default::default(),
-                            },
-                        )));
+                        styles.push(raw_static_style(
+                            decomposed.property,
+                            &css_value,
+                            decomposed.selector,
+                        ));
                     }
                 }
                 continue;
@@ -230,17 +227,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 for arg in call.arguments.iter().rev() {
                     let arg_expr = arg.to_expression();
                     if let Some(s) = get_string_by_literal_expression(arg_expr) {
-                        styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                            ExtractStaticStyle {
-                                property: css_property.clone(),
-                                value: optimize_value(&s),
-                                level: 0,
-                                selector: None,
-                                style_order: None,
-                                layer: None,
-                                theme_token_resolution: Default::default(),
-                            },
-                        )));
+                        styles.push(raw_static_style(css_property.clone(), &s, None));
                     }
                 }
                 continue;
@@ -255,17 +242,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 } else {
                     continue; // Can't resolve inner value
                 };
-                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle {
-                        property: css_property,
-                        value: optimize_value(&css_value),
-                        level: 0,
-                        selector: None,
-                        style_order: None,
-                        layer: None,
-                        theme_token_resolution: Default::default(),
-                    },
-                )));
+                styles.push(raw_static_style(css_property, &css_value, None));
                 continue;
             } else {
                 // Phase 4c: Non-static values in create() are not supported
@@ -277,19 +254,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 continue;
             };
 
-            // Construct directly — bypass convert_value() to avoid devup-ui
-            // spacing transformations. StyleX values are raw CSS, only optimize_value().
-            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                ExtractStaticStyle {
-                    property: css_property,
-                    value: optimize_value(&css_value),
-                    level: 0,
-                    selector: None,
-                    style_order: None,
-                    layer: None,
-                    theme_token_resolution: Default::default(),
-                },
-            )));
+            styles.push(raw_static_style(css_property, &css_value, None));
         }
 
         result.push((ns_name, styles, None, include_refs));
@@ -382,17 +347,7 @@ fn extract_stylex_dynamic_namespace<'a>(
             if let Expression::Identifier(ident) = &prop.value
                 && let Some(anim_name) = keyframe_names.get(ident.name.as_str())
             {
-                styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle {
-                        property: css_property,
-                        value: optimize_value(anim_name),
-                        level: 0,
-                        selector: None,
-                        style_order: None,
-                        layer: None,
-                        theme_token_resolution: Default::default(),
-                    },
-                )));
+                styles.push(raw_static_style(css_property, anim_name, None));
                 continue;
             }
             let css_value = if let Some(s) = get_string_by_literal_expression(&prop.value) {
@@ -400,17 +355,7 @@ fn extract_stylex_dynamic_namespace<'a>(
             } else {
                 continue;
             };
-            styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
-                ExtractStaticStyle {
-                    property: css_property,
-                    value: optimize_value(&css_value),
-                    level: 0,
-                    selector: None,
-                    style_order: None,
-                    layer: None,
-                    theme_token_resolution: Default::default(),
-                },
-            )));
+            styles.push(raw_static_style(css_property, &css_value, None));
         }
     }
 

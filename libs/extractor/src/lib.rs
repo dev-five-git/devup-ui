@@ -252,21 +252,7 @@ pub fn extract(
     let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
     let source_type = SourceType::from_path(filename)?;
-    // Bucket identity for CSS naming/emission (single-importer collapse). Identity
-    // when no canonical map is loaded. Real `filename` is kept for parse/sourcemap.
-    let bucket = canonical(filename);
-    // Global (shared-chunk) files are emitted like single-css: into devup-ui.css
-    // with prefix-less global naming, so styles shared across routes ship once.
-    let global = option.single_css || is_global(filename);
-    let css_file = if global {
-        format!("{}/devup-ui.css", option.css_dir)
-    } else {
-        format!(
-            "{}/devup-ui-{}.css",
-            option.css_dir,
-            get_file_num_by_filename(&bucket)
-        )
-    };
+    let (bucket, global, css_file) = resolve_css_target(filename, &option);
     let mut css_files = vec![css_file.clone()];
     if option.import_main_css && !global {
         css_files.insert(0, format!("{}/devup-ui.css", option.css_dir));
@@ -304,15 +290,15 @@ pub fn extract(
     })
 }
 
-/// Extract class names from generated code for specific style names
-/// Used for two-pass vanilla-extract processing to resolve selector references
-fn extract_class_map_from_code(
-    filename: &str,
-    partial_code: &str,
-    option: &ExtractOption,
-    style_names: &FxHashSet<String>,
-) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
-    let source_type = SourceType::from_path(filename)?;
+/// Resolve the CSS bucket identity, global flag, and target CSS file for a
+/// source file.
+///
+/// The bucket is the identity for CSS naming/emission (single-importer
+/// collapse); identity when no canonical map is loaded. The real `filename` is
+/// kept for parse/sourcemap. Global (shared-chunk) files are emitted like
+/// single-css: into devup-ui.css with prefix-less global naming, so styles
+/// shared across routes ship once.
+fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, String) {
     let bucket = canonical(filename);
     let global = option.single_css || is_global(filename);
     let css_file = if global {
@@ -324,6 +310,19 @@ fn extract_class_map_from_code(
             get_file_num_by_filename(&bucket)
         )
     };
+    (bucket, global, css_file)
+}
+
+/// Extract class names from generated code for specific style names
+/// Used for two-pass vanilla-extract processing to resolve selector references
+fn extract_class_map_from_code(
+    filename: &str,
+    partial_code: &str,
+    option: &ExtractOption,
+    style_names: &FxHashSet<String>,
+) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
+    let source_type = SourceType::from_path(filename)?;
+    let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
 

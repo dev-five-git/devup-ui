@@ -337,8 +337,7 @@ impl StyleSheet {
         if self
             .properties
             .get(&property_key)
-            .and_then(|v| if v.is_empty() { None } else { Some(()) })
-            .is_none()
+            .is_none_or(BTreeMap::is_empty)
         {
             self.properties.remove(&property_key);
         }
@@ -601,9 +600,7 @@ impl StyleSheet {
                 let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
                 for prop in at_rules {
                     if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
-                        map.entry((*kind, query))
-                            .or_insert_with(Vec::new)
-                            .push(prop);
+                        map.entry((*kind, query)).or_default().push(prop);
                     }
                 }
                 map
@@ -749,7 +746,7 @@ impl StyleSheet {
     /// because they are already emitted globally and shared by every chunk.
     fn compute_hoisted_atoms(&self, threshold: usize) -> FxHashSet<String> {
         // atom class_name -> set of files that reference it (order != 0)
-        let mut atom_files: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
+        let mut atom_files: FxHashMap<&str, FxHashSet<&str>> = FxHashMap::default();
         for (filename, property_map) in &self.properties {
             for (style_order, level_map) in property_map {
                 if *style_order == 0 {
@@ -758,7 +755,7 @@ impl StyleSheet {
                 for props in level_map.values() {
                     for prop in props {
                         atom_files
-                            .entry(prop.class_name.clone())
+                            .entry(prop.class_name.as_str())
                             .or_default()
                             .insert(filename.as_str());
                     }
@@ -768,7 +765,7 @@ impl StyleSheet {
         atom_files
             .into_iter()
             .filter(|(_, files)| route_count_for_files(files.iter().copied()) >= threshold)
-            .map(|(class_name, _)| class_name)
+            .map(|(class_name, _)| class_name.to_string())
             .collect()
     }
 
