@@ -12,7 +12,7 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-phf = { version = "0.13", features = ["macros"] }
+phf = { version = "0.14", features = ["macros"] }
 serde = { version = "1.0.228", features = ["derive"] }
 regex-lite = "0.1"
 bimap = { version = "0.6.3" }

@@ -1,8 +1,11 @@
 use crate::ExtractStyleProp;
 use crate::extract_style::style_property::StyleProperty;
-use oxc_allocator::CloneIn;
-use oxc_ast::AstBuilder;
-use oxc_ast::ast::{Expression, ObjectPropertyKind, PropertyKey, PropertyKind};
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
+use oxc_ast::ast::{
+    ComputedMemberExpression, Expression, ObjectPropertyKind, PropertyKey, PropertyKind, Str,
+    StringLiteral,
+};
+use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
@@ -21,9 +24,10 @@ pub fn gen_styles<'a>(
     if properties.is_empty() {
         return None;
     }
-    Some(ast_builder.expression_object(
+    Some(Expression::new_object_expression(
         SPAN,
-        oxc_allocator::Vec::from_iter_in(properties, ast_builder.allocator),
+        oxc_allocator::Vec::from_iter_in(properties, ast_builder),
+        ast_builder,
     ))
 }
 fn gen_style<'a>(
@@ -39,18 +43,24 @@ fn gen_style<'a>(
             ..
         }) = st.extract(filename)
         {
-            properties.push(ast_builder.object_property_kind_object_property(
+            properties.push(ObjectPropertyKind::new_object_property(
                 SPAN,
                 PropertyKind::Init,
-                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                PropertyKey::StringLiteral(StringLiteral::boxed(
                     SPAN,
-                    ast_builder.str(&variable_name),
+                    Str::from_in(&variable_name, ast_builder.allocator()),
                     None,
+                    ast_builder,
                 )),
-                ast_builder.expression_identifier(SPAN, ast_builder.str(&identifier)),
+                Expression::new_identifier(
+                    SPAN,
+                    Str::from_in(&identifier, ast_builder.allocator()),
+                    ast_builder,
+                ),
                 false,
                 false,
                 false,
+                ast_builder,
             ));
         }
     } else if let ExtractStyleProp::StaticArray(res) = style {
@@ -73,19 +83,21 @@ fn gen_style<'a>(
                 .into_iter()
                 .for_each(|p| {
                     if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ast_builder.object_property_kind_object_property(
+                        properties.push(ObjectPropertyKind::new_object_property(
                             SPAN,
                             PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator),
-                            ast_builder.expression_conditional(
+                            p.key.clone_in(ast_builder.allocator()),
+                            Expression::new_conditional_expression(
                                 SPAN,
-                                condition.clone_in(ast_builder.allocator),
-                                ast_builder.expression_identifier(SPAN, "undefined"),
-                                p.value.clone_in(ast_builder.allocator),
+                                condition.clone_in(ast_builder.allocator()),
+                                Expression::new_identifier(SPAN, "undefined", ast_builder),
+                                p.value.clone_in(ast_builder.allocator()),
+                                ast_builder,
                             ),
                             false,
                             false,
                             false,
+                            ast_builder,
                         ));
                     }
                 });
@@ -94,19 +106,21 @@ fn gen_style<'a>(
                 .into_iter()
                 .for_each(|p| {
                     if let ObjectPropertyKind::ObjectProperty(p) = p {
-                        properties.push(ast_builder.object_property_kind_object_property(
+                        properties.push(ObjectPropertyKind::new_object_property(
                             SPAN,
                             PropertyKind::Init,
-                            p.key.clone_in(ast_builder.allocator),
-                            ast_builder.expression_conditional(
+                            p.key.clone_in(ast_builder.allocator()),
+                            Expression::new_conditional_expression(
                                 SPAN,
-                                condition.clone_in(ast_builder.allocator),
-                                p.value.clone_in(ast_builder.allocator),
-                                ast_builder.expression_identifier(SPAN, "undefined"),
+                                condition.clone_in(ast_builder.allocator()),
+                                p.value.clone_in(ast_builder.allocator()),
+                                Expression::new_identifier(SPAN, "undefined", ast_builder),
+                                ast_builder,
                             ),
                             false,
                             false,
                             false,
+                            ast_builder,
                         ));
                     }
                 });
@@ -123,19 +137,20 @@ fn gen_style<'a>(
                         && let ObjectPropertyKind::ObjectProperty(q) = q
                         && r
                     {
-                        properties.push(ast_builder.object_property_kind_object_property(SPAN, PropertyKind::Init, p.key.clone_in(ast_builder.allocator), ast_builder.expression_conditional(SPAN, condition.clone_in(ast_builder.allocator), p.value.clone_in(ast_builder.allocator), q.value.clone_in(ast_builder.allocator)), false, false, false));
+                        properties.push(ObjectPropertyKind::new_object_property(SPAN, PropertyKind::Init, p.key.clone_in(ast_builder.allocator()), Expression::new_conditional_expression(SPAN, condition.clone_in(ast_builder.allocator()), p.value.clone_in(ast_builder.allocator()), q.value.clone_in(ast_builder.allocator()), ast_builder), false, false, false, ast_builder));
                     }
                     r
                 });
                 if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
-                    properties.push(ast_builder.object_property_kind_object_property(
+                    properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
-                        p.key.clone_in(ast_builder.allocator),
-                        p.value.clone_in(ast_builder.allocator),
+                        p.key.clone_in(ast_builder.allocator()),
+                        p.value.clone_in(ast_builder.allocator()),
                         false,
                         false,
                         false,
+                        ast_builder,
                     ));
                 }
             }
@@ -143,14 +158,15 @@ fn gen_style<'a>(
             for q in &collect_a {
                 let found = collect_c.iter().any(|p| matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name()));
                 if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
-                    properties.push(ast_builder.object_property_kind_object_property(
+                    properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
-                        q.key.clone_in(ast_builder.allocator),
-                        q.value.clone_in(ast_builder.allocator),
+                        q.key.clone_in(ast_builder.allocator()),
+                        q.value.clone_in(ast_builder.allocator()),
                         false,
                         false,
                         false,
+                        ast_builder,
                     ));
                 }
             }
@@ -176,44 +192,60 @@ fn gen_style<'a>(
         for (key, value) in tmp_map {
             let v = if value.len() == 1 {
                 // do not create object expression when property is single
-                ast_builder.expression_identifier(SPAN, ast_builder.str(&value[0].1))
-            } else {
-                Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
+                Expression::new_identifier(
                     SPAN,
-                    ast_builder.expression_object(
+                    Str::from_in(&value[0].1, ast_builder.allocator()),
+                    ast_builder,
+                )
+            } else {
+                Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+                    SPAN,
+                    Expression::new_object_expression(
                         SPAN,
                         oxc_allocator::Vec::from_iter_in(
                             value.into_iter().map(|(k, v)| {
-                                ast_builder.object_property_kind_object_property(
+                                ObjectPropertyKind::new_object_property(
                                     SPAN,
                                     PropertyKind::Init,
-                                    ast_builder
-                                        .property_key_static_identifier(SPAN, ast_builder.str(&k)),
-                                    ast_builder.expression_identifier(SPAN, ast_builder.str(&v)),
+                                    PropertyKey::new_static_identifier(
+                                        SPAN,
+                                        Str::from_in(&k, ast_builder.allocator()),
+                                        ast_builder,
+                                    ),
+                                    Expression::new_identifier(
+                                        SPAN,
+                                        Str::from_in(&v, ast_builder.allocator()),
+                                        ast_builder,
+                                    ),
                                     false,
                                     false,
                                     false,
+                                    ast_builder,
                                 )
                             }),
-                            ast_builder.allocator,
+                            ast_builder,
                         ),
+                        ast_builder,
                     ),
-                    expression.clone_in(ast_builder.allocator),
+                    expression.clone_in(ast_builder.allocator()),
                     false,
+                    ast_builder,
                 ))
             };
-            properties.push(ast_builder.object_property_kind_object_property(
+            properties.push(ObjectPropertyKind::new_object_property(
                 SPAN,
                 PropertyKind::Init,
-                PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                PropertyKey::StringLiteral(StringLiteral::boxed(
                     SPAN,
-                    ast_builder.str(&key),
+                    Str::from_in(&key, ast_builder.allocator()),
                     None,
+                    ast_builder,
                 )),
                 v,
                 false,
                 false,
                 false,
+                ast_builder,
             ));
         }
     }

@@ -1,7 +1,10 @@
-use oxc_allocator::{Allocator, CloneIn};
+use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
-    ast::{Argument, Expression, JSXAttributeValue, PropertyKey, Statement},
+    ast::{
+        Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
+        JSXAttributeValue, ObjectPropertyKind, PropertyKey, Statement, StaticMemberExpression,
+    },
+    builder::AstBuilder,
 };
 
 use oxc_codegen::{Codegen, CodegenOptions};
@@ -19,12 +22,14 @@ pub(super) fn convert_value(value: &str) -> String {
 pub(super) fn expression_to_code(expression: &Expression) -> String {
     let allocator = Allocator::default();
     let mut parsed = Parser::new(&allocator, "", SourceType::d_ts()).parse();
+    let builder = oxc_ast::builder::AstBuilder::new(&allocator);
     parsed.program.body.insert(
         0,
-        Statement::ExpressionStatement(
-            oxc_ast::AstBuilder::new(&allocator)
-                .alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
-        ),
+        Statement::ExpressionStatement(ExpressionStatement::boxed(
+            SPAN,
+            expression.clone_in(&allocator),
+            &builder,
+        )),
     );
 
     Codegen::new()
@@ -224,64 +229,62 @@ pub(super) fn wrap_array_filter<'a>(
         return None;
     }
     if expr.len() == 1 {
-        return Some(expr[0].clone_in(builder.allocator));
+        return Some(expr[0].clone_in(builder.allocator()));
     }
 
     // 1. Create ArrayExpression: [a, b, ...]
     let array_elements = oxc_allocator::Vec::from_iter_in(
-        expr.iter().map(|e| e.clone_in(builder.allocator).into()),
-        builder.allocator,
+        expr.iter().map(|e| e.clone_in(builder.allocator()).into()),
+        builder,
     );
-    let array_expr = builder.expression_array(SPAN, array_elements);
+    let array_expr = Expression::new_array_expression(SPAN, array_elements, builder);
 
     // 2. Create StaticMemberExpression: array.filter
-    let filter_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+    let filter_member = Expression::StaticMemberExpression(StaticMemberExpression::boxed(
         SPAN,
         array_expr,
-        builder.identifier_name(SPAN, builder.str("filter")),
+        IdentifierName::new(SPAN, "filter", builder),
         false,
+        builder,
     ));
 
     // 3. Create CallExpression: array.filter(Boolean)
-    let filter_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
-        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
-    >>(
+    let filter_call = Expression::CallExpression(CallExpression::boxed(
         SPAN,
         filter_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
         oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(
-                builder.expression_identifier(SPAN, builder.str("Boolean")),
-            )],
-            builder.allocator,
+            vec![Argument::from(Expression::new_identifier(
+                SPAN, "Boolean", builder,
+            ))],
+            builder,
         ),
         false,
+        builder,
     ));
 
     // 4. Create StaticMemberExpression: array.filter(Boolean).join
-    let join_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+    let join_member = Expression::StaticMemberExpression(StaticMemberExpression::boxed(
         SPAN,
         filter_call,
-        builder.identifier_name(SPAN, builder.str("join")),
+        IdentifierName::new(SPAN, "join", builder),
         false,
+        builder,
     ));
 
     // 5. Create CallExpression: array.filter(Boolean).join()
-    let join_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
-        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
-    >>(
+    let join_call = Expression::CallExpression(CallExpression::boxed(
         SPAN,
         join_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
         oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(builder.expression_string_literal(
-                SPAN,
-                builder.str(" "),
-                None,
+            vec![Argument::from(Expression::new_string_literal(
+                SPAN, " ", None, builder,
             ))],
-            builder.allocator,
+            builder,
         ),
         false,
+        builder,
     ));
 
     Some(join_call)
@@ -292,7 +295,17 @@ pub(super) fn wrap_direct_call<'a>(
     expr: &Expression<'a>,
     args: &[Expression<'a>],
 ) -> Expression<'a> {
-    builder.expression_call::<Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>>(SPAN, expr.clone_in(builder.allocator), None, oxc_allocator::Vec::from_iter_in(args.iter().map(|e| e.clone_in(builder.allocator).into()), builder.allocator), false)
+    Expression::new_call_expression(
+        SPAN,
+        expr.clone_in(builder.allocator()),
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        oxc_allocator::Vec::from_iter_in(
+            args.iter().map(|e| e.clone_in(builder.allocator()).into()),
+            builder,
+        ),
+        false,
+        builder,
+    )
 }
 /// merge expressions to object expression
 pub(super) fn merge_object_expressions<'a>(
@@ -303,17 +316,21 @@ pub(super) fn merge_object_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator));
+        return Some(expressions[0].clone_in(ast_builder.allocator()));
     }
-    Some(ast_builder.expression_object(
+    Some(Expression::new_object_expression(
         SPAN,
         oxc_allocator::Vec::from_iter_in(
             expressions.iter().map(|ex| {
-                ast_builder
-                    .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator))
+                ObjectPropertyKind::new_spread_property(
+                    SPAN,
+                    ex.clone_in(ast_builder.allocator()),
+                    ast_builder,
+                )
             }),
-            ast_builder.allocator,
+            ast_builder,
         ),
+        ast_builder,
     ))
 }
 
@@ -336,8 +353,11 @@ pub fn gcd(a: u32, b: u32) -> u32 {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
-    use oxc_allocator::Vec;
-    use oxc_ast::ast::NumberBase;
+    use oxc_allocator::{FromIn, Vec};
+    use oxc_ast::ast::{
+        JSXAttribute, JSXAttributeName, JSXClosingElement, JSXElementName, JSXOpeningElement,
+        NumberBase, Str, TSTypeParameterInstantiation, TemplateElement,
+    };
 
     use super::*;
 
@@ -410,49 +430,55 @@ mod tests {
     #[test]
     fn test_jsx_expression_to_number() {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
             jsx_expression_to_number(
-                builder
-                    .jsx_attribute(
-                        SPAN,
-                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
-                        Some(builder.jsx_attribute_value_string_literal(SPAN, "1", None)),
-                    )
-                    .value
-                    .as_ref()
-                    .unwrap()
+                JSXAttribute::new(
+                    SPAN,
+                    JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
+                    Some(JSXAttributeValue::new_string_literal(
+                        SPAN, "1", None, &builder
+                    )),
+                    &builder,
+                )
+                .value
+                .as_ref()
+                .unwrap()
             ),
             Some(1.0)
         );
 
         assert_eq!(
             jsx_expression_to_number(
-                builder
-                    .jsx_attribute(
+                JSXAttribute::new(
+                    SPAN,
+                    JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
+                    Some(JSXAttributeValue::new_element(
                         SPAN,
-                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
-                        Some(builder.jsx_attribute_value_element(
+                        JSXOpeningElement::new(
                             SPAN,
-                            builder.jsx_opening_element(
+                            JSXElementName::new_identifier(SPAN, "div", &builder),
+                            Some(TSTypeParameterInstantiation::new(
                                 SPAN,
-                                builder.jsx_element_name_identifier(SPAN, "div"),
-                                Some(builder.ts_type_parameter_instantiation(
-                                    SPAN,
-                                    Vec::new_in(&allocator)
-                                )),
-                                Vec::new_in(&allocator),
-                            ),
-                            Vec::new_in(&allocator),
-                            Some(builder.jsx_closing_element(
-                                SPAN,
-                                builder.jsx_element_name_identifier(SPAN, "div"),
+                                Vec::new_in(&builder),
+                                &builder,
                             )),
-                        ))
-                    )
-                    .value
-                    .as_ref()
-                    .unwrap()
+                            Vec::new_in(&builder),
+                            &builder,
+                        ),
+                        Vec::new_in(&builder),
+                        Some(JSXClosingElement::new(
+                            SPAN,
+                            JSXElementName::new_identifier(SPAN, "div", &builder),
+                            &builder,
+                        )),
+                        &builder,
+                    )),
+                    &builder,
+                )
+                .value
+                .as_ref()
+                .unwrap()
             ),
             None
         );
@@ -460,81 +486,83 @@ mod tests {
     #[test]
     fn test_get_string_by_literal_expression() {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
 
-        let expr = builder.expression_string_literal(SPAN, "hello", None);
+        let expr = Expression::new_string_literal(SPAN, "hello", None, &builder);
         assert_eq!(
             super::get_string_by_literal_expression(&expr),
             Some("hello".to_string())
         );
 
-        let expr = builder.expression_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal);
+        let expr = Expression::new_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal, &builder);
         assert_eq!(
             super::get_string_by_literal_expression(&expr),
             Some("42".to_string())
         );
 
-        let expr = builder.expression_boolean_literal(SPAN, true);
+        let expr = Expression::new_boolean_literal(SPAN, true, &builder);
         assert_eq!(
             super::get_string_by_literal_expression(&expr),
             Some("true".to_string())
         );
 
-        let expr = builder.expression_template_literal(
+        let expr = Expression::new_template_literal(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
-                vec![builder.template_element(
+                vec![TemplateElement::new(
                     SPAN,
                     oxc_ast::ast::TemplateElementValue {
-                        cooked: Some("template".into()),
-                        raw: "template".into(),
+                        cooked: Some(Str::from("template")),
+                        raw: Str::from("template"),
                     },
                     true,
-                    false,
+                    &builder,
                 )],
-                &allocator,
+                &builder,
             ),
-            oxc_allocator::Vec::new_in(&allocator),
+            oxc_allocator::Vec::new_in(&builder),
+            &builder,
         );
         assert_eq!(
             super::get_string_by_literal_expression(&expr),
             Some("template".to_string())
         );
 
-        let expr = builder.expression_template_literal(
+        let expr = Expression::new_template_literal(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
                 vec![
-                    builder.template_element(
+                    TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some("a".into()),
-                            raw: "a".into(),
+                            cooked: Some(Str::from("a")),
+                            raw: Str::from("a"),
                         },
                         false,
-                        false,
+                        &builder,
                     ),
-                    builder.template_element(
+                    TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some("b".into()),
-                            raw: "b".into(),
+                            cooked: Some(Str::from("b")),
+                            raw: Str::from("b"),
                         },
                         true,
-                        false,
+                        &builder,
                     ),
                 ],
-                &allocator,
+                &builder,
             ),
             oxc_allocator::Vec::from_iter_in(
-                vec![builder.expression_identifier(SPAN, builder.str("x"))],
-                &allocator,
+                vec![Expression::new_identifier(SPAN, "x", &builder)],
+                &builder,
             ),
+            &builder,
         );
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
 
         // Identifier 등 기타 타입 - None 반환
-        let expr = builder.expression_identifier(SPAN, builder.str("foo"));
+        let expr = Expression::new_identifier(SPAN, "foo", &builder);
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
     }
 
@@ -548,7 +576,7 @@ mod tests {
     #[case::identifier_and_string(&["className", "\"class-name\""], Some("[className, \"class-name\"].filter(Boolean).join()"))]
     fn test_wrap_array_filter(#[case] input: &[&str], #[case] _expected: Option<&str>) {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
 
         // Create expressions from input strings
         let expressions: std::vec::Vec<oxc_ast::ast::Expression> = input
@@ -557,10 +585,19 @@ mod tests {
                 if s.starts_with('"') && s.ends_with('"') {
                     // String literal
                     let value = s.trim_matches('"');
-                    builder.expression_string_literal(SPAN, builder.str(value), None)
+                    Expression::new_string_literal(
+                        SPAN,
+                        Str::from_in(value, builder.allocator()),
+                        None,
+                        &builder,
+                    )
                 } else {
                     // Identifier
-                    builder.expression_identifier(SPAN, builder.str(s))
+                    Expression::new_identifier(
+                        SPAN,
+                        Str::from_in(*s, builder.allocator()),
+                        &builder,
+                    )
                 }
             })
             .collect();

@@ -10,7 +10,9 @@ use oxc_allocator::Allocator;
 use oxc_span::SPAN;
 
 use crate::utils::expression_to_code;
+use oxc_ast::ast::Expression;
 use oxc_ast::ast::TemplateLiteral;
+use oxc_ast::builder::AstBuilder;
 
 use crate::extract_style::{
     extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
@@ -160,12 +162,12 @@ pub fn css_to_style_literal(
                             | oxc_ast::ast::Expression::FunctionExpression(_)
                     );
 
-                    let ast_builder = oxc_ast::AstBuilder::new(&shared_allocator);
+                    let ast_builder = AstBuilder::new(&shared_allocator);
                     let identifier = if is_function {
                         expression_to_code(&wrap_direct_call(
                             &ast_builder,
                             expr,
-                            &[ast_builder.expression_identifier(SPAN, ast_builder.str("rest"))],
+                            &[Expression::new_identifier(SPAN, "rest", &ast_builder)],
                         ))
                     } else {
                         expression_to_code(expr)
@@ -204,13 +206,12 @@ pub fn css_to_style_literal(
                                     | oxc_ast::ast::Expression::FunctionExpression(_)
                             );
 
-                            let ast_builder = oxc_ast::AstBuilder::new(&shared_allocator);
+                            let ast_builder = AstBuilder::new(&shared_allocator);
                             let expr_code = if is_function {
                                 expression_to_code(&wrap_direct_call(
                                     &ast_builder,
                                     expr,
-                                    &[ast_builder
-                                        .expression_identifier(SPAN, ast_builder.str("rest"))],
+                                    &[Expression::new_identifier(SPAN, "rest", &ast_builder)],
                                 ))
                             } else {
                                 expression_to_code(expr)

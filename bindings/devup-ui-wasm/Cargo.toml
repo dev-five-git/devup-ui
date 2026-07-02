@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 default = []
 
 [dependencies]
-wasm-bindgen = "0.2.122"
+wasm-bindgen = "0.2.126"
 extractor = { path = "../../libs/extractor" }
 sheet = { path = "../../libs/sheet" }
 css = { path = "../../libs/css" }
@@ -29,15 +29,15 @@ rustc-hash = "2"
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
 bimap = { version = "0.6.3", features = ["serde"] }
-js-sys = "0.3.99"
+js-sys = "0.3.103"
 serde_json = "1.0.150"
 serde-wasm-bindgen = "0.6.5"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.72"
+wasm-bindgen-test = "0.3.76"
 serial_test = "3.5.0"
-insta = "1.47.2"
+insta = "1.48.0"
 rstest = "0.26.1"
 
 [lints]

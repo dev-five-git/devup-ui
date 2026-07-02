@@ -14374,13 +14374,15 @@ export { c as Lib };"#,
     fn test_combine_conditional_class_name() {
         use crate::prop_modify_utils::combine_conditional_class_name;
         use crate::utils::expression_to_code;
+        use oxc_ast::ast::{Expression, Str};
+        use oxc_ast::builder::AstBuilder;
         use oxc_span::SPAN;
 
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = AstBuilder::new(&allocator);
 
-        let make_cond = || builder.expression_identifier(SPAN, builder.str("cond"));
-        let make_str = |s| builder.expression_string_literal(SPAN, builder.str(s), None);
+        let make_cond = || Expression::new_identifier(SPAN, "cond", &builder);
+        let make_str = |s| Expression::new_string_literal(SPAN, Str::from(s), None, &builder);
 
         // (Some, Some) — both branches have classNames
         let result = combine_conditional_class_name(

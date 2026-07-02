@@ -12,10 +12,10 @@ use crate::{
     },
 };
 use css::style_selector::StyleSelector;
-use oxc_allocator::CloneIn;
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
     ast::{ArrayExpressionElement, ComputedMemberExpression, Expression, ObjectPropertyKind},
+    builder::AstBuilder,
 };
 use oxc_span::SPAN;
 use std::collections::BTreeMap;
@@ -27,14 +27,16 @@ pub(super) fn extract_style_from_member_expression<'a>(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> ExtractResult<'a> {
-    let mem_expression = &mem.expression.clone_in(ast_builder.allocator);
+    let mem_expression = &mem.expression.clone_in(ast_builder.allocator());
     let mut ret: Vec<ExtractStyleProp> = vec![];
 
     // Unwrap type assertions and parenthesized expressions (e.g., `({...} as const)[key]`)
     while let Some(inner) = match &mem.object {
-        Expression::TSAsExpression(ts_as) => Some(ts_as.expression.clone_in(ast_builder.allocator)),
+        Expression::TSAsExpression(ts_as) => {
+            Some(ts_as.expression.clone_in(ast_builder.allocator()))
+        }
         Expression::ParenthesizedExpression(p) => {
-            Some(p.expression.clone_in(ast_builder.allocator))
+            Some(p.expression.clone_in(ast_builder.allocator()))
         }
         _ => None,
     } {
@@ -52,7 +54,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             let selected_index = (num.fract() == 0.0).then_some(num as usize);
             for (idx, p) in array.elements.iter_mut().enumerate() {
                 if let ArrayExpressionElement::SpreadElement(sp) = p {
-                    etc = Some(sp.argument.clone_in(ast_builder.allocator));
+                    etc = Some(sp.argument.clone_in(ast_builder.allocator()));
                 } else if Some(idx) == selected_index
                     && let Some(p) = p.as_expression_mut()
                 {
@@ -77,14 +79,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
                         vec![dynamic_style(
                             ast_builder,
                             name,
-                            &Expression::ComputedMemberExpression(
-                                ast_builder.alloc_computed_member_expression(
-                                    SPAN,
-                                    etc,
-                                    mem_expression.clone_in(ast_builder.allocator),
-                                    false,
-                                ),
-                            ),
+                            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+                                SPAN,
+                                etc,
+                                mem_expression.clone_in(ast_builder.allocator()),
+                                false,
+                                ast_builder,
+                            )),
                             level,
                             selector,
                         )]
@@ -107,14 +108,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
                         Box::new(dynamic_style(
                             ast_builder,
                             name,
-                            &Expression::ComputedMemberExpression(
-                                ast_builder.alloc_computed_member_expression(
-                                    SPAN,
-                                    sp.argument.clone_in(ast_builder.allocator),
-                                    mem_expression.clone_in(ast_builder.allocator),
-                                    false,
-                                ),
-                            ),
+                            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+                                SPAN,
+                                sp.argument.clone_in(ast_builder.allocator()),
+                                mem_expression.clone_in(ast_builder.allocator()),
+                                false,
+                                ast_builder,
+                            )),
                             level,
                             &selector.clone(),
                         )),
@@ -139,7 +139,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
         }
 
         ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator),
+            expression: mem_expression.clone_in(ast_builder.allocator()),
             map,
         });
     } else if let Expression::ObjectExpression(obj) = &mut mem.object
@@ -167,7 +167,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
                         };
                     }
                 } else if let ObjectPropertyKind::SpreadProperty(sp) = p {
-                    etc = Some(sp.argument.clone_in(ast_builder.allocator));
+                    etc = Some(sp.argument.clone_in(ast_builder.allocator()));
                 }
             }
 
@@ -175,14 +175,13 @@ pub(super) fn extract_style_from_member_expression<'a>(
                 (Some(etc), Some(name)) => ret.push(dynamic_style(
                     ast_builder,
                     name,
-                    &Expression::ComputedMemberExpression(
-                        ast_builder.alloc_computed_member_expression(
-                            SPAN,
-                            etc,
-                            mem_expression.clone_in(ast_builder.allocator),
-                            false,
-                        ),
-                    ),
+                    &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
+                        SPAN,
+                        etc,
+                        mem_expression.clone_in(ast_builder.allocator()),
+                        false,
+                        ast_builder,
+                    )),
                     level,
                     selector,
                 )),
@@ -213,7 +212,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             }
         }
         ret.push(ExtractStyleProp::MemberExpression {
-            expression: mem_expression.clone_in(ast_builder.allocator),
+            expression: mem_expression.clone_in(ast_builder.allocator()),
             map,
         });
     } else if let Expression::Identifier(_) = &mut mem.object
@@ -224,11 +223,12 @@ pub(super) fn extract_style_from_member_expression<'a>(
         ret.push(dynamic_style(
             ast_builder,
             name,
-            &Expression::ComputedMemberExpression(ast_builder.alloc_computed_member_expression(
+            &Expression::ComputedMemberExpression(ComputedMemberExpression::boxed(
                 SPAN,
-                mem.object.clone_in(ast_builder.allocator),
-                mem_expression.clone_in(ast_builder.allocator),
+                mem.object.clone_in(ast_builder.allocator()),
+                mem_expression.clone_in(ast_builder.allocator()),
                 false,
+                ast_builder,
             )),
             level,
             selector,

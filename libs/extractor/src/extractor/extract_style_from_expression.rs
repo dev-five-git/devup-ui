@@ -19,13 +19,13 @@ use css::{
     is_special_property::is_special_property, style_selector::StyleSelector,
     theme_tokens::get_responsive_theme_token, utils::to_kebab_case,
 };
-use oxc_allocator::CloneIn;
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
     ast::{
-        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, TemplateElementValue,
-        UnaryOperator,
+        BinaryOperator, Expression, LogicalOperator, ObjectPropertyKind, Str, TemplateElement,
+        TemplateElementValue, UnaryOperator,
     },
+    builder::AstBuilder,
 };
 use oxc_span::SPAN;
 
@@ -97,9 +97,9 @@ pub fn extract_style_from_expression<'a>(
                                             .map(|v| v as u8);
                                     } else if &property_name == "styleVars" {
                                         style_vars =
-                                            Some(prop.value.clone_in(ast_builder.allocator));
+                                            Some(prop.value.clone_in(ast_builder.allocator()));
                                     } else if &property_name == "props" {
-                                        props = Some(prop.value.clone_in(ast_builder.allocator));
+                                        props = Some(prop.value.clone_in(ast_builder.allocator()));
                                     } else {
                                         let ExtractResult {
                                             styles, tag: _tag, ..
@@ -150,7 +150,7 @@ pub fn extract_style_from_expression<'a>(
             Expression::ConditionalExpression(conditional) => ExtractResult {
                 props: None,
                 styles: vec![ExtractStyleProp::Conditional {
-                    condition: conditional.test.clone_in(ast_builder.allocator),
+                    condition: conditional.test.clone_in(ast_builder.allocator()),
                     consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                         extract_style_from_expression(
                             ast_builder,
@@ -200,7 +200,7 @@ pub fn extract_style_from_expression<'a>(
     if let Some(name) = name {
         if name == "as" {
             return ExtractResult {
-                tag: Some(expression.clone_in(ast_builder.allocator)),
+                tag: Some(expression.clone_in(ast_builder.allocator())),
                 ..ExtractResult::default()
             };
         }
@@ -459,30 +459,36 @@ pub fn extract_style_from_expression<'a>(
                 // returning empty styles.
                 styles: if typo {
                     vec![ExtractStyleProp::Expression {
-                        expression: ast_builder.expression_template_literal(
+                        expression: Expression::new_template_literal(
                             SPAN,
-                            ast_builder.vec_from_array([
-                                ast_builder.template_element(
-                                    SPAN,
-                                    TemplateElementValue {
-                                        raw: ast_builder.str("typo-"),
-                                        cooked: None,
-                                    },
-                                    false,
-                                    false,
-                                ),
-                                ast_builder.template_element(
-                                    SPAN,
-                                    TemplateElementValue {
-                                        raw: ast_builder.str(""),
-                                        cooked: None,
-                                    },
-                                    true,
-                                    false,
-                                ),
-                            ]),
-                            ast_builder
-                                .vec_from_array([expression.clone_in(ast_builder.allocator)]),
+                            oxc_allocator::Vec::from_array_in(
+                                [
+                                    TemplateElement::new(
+                                        SPAN,
+                                        TemplateElementValue {
+                                            raw: Str::from("typo-"),
+                                            cooked: None,
+                                        },
+                                        false,
+                                        ast_builder,
+                                    ),
+                                    TemplateElement::new(
+                                        SPAN,
+                                        TemplateElementValue {
+                                            raw: Str::from(""),
+                                            cooked: None,
+                                        },
+                                        true,
+                                        ast_builder,
+                                    ),
+                                ],
+                                ast_builder,
+                            ),
+                            oxc_allocator::Vec::from_array_in(
+                                [expression.clone_in(ast_builder.allocator())],
+                                ast_builder,
+                            ),
+                            ast_builder,
                         ),
                         styles: vec![],
                     }]
@@ -513,37 +519,46 @@ pub fn extract_style_from_expression<'a>(
                     if typo {
                         ExtractResult {
                             styles: vec![ExtractStyleProp::Expression {
-                                expression: ast_builder.expression_conditional(
+                                expression: Expression::new_conditional_expression(
                                     SPAN,
-                                    ast_builder
-                                        .expression_identifier(SPAN, identifier.name.as_str()),
-                                    ast_builder.expression_template_literal(
+                                    Expression::new_identifier(
                                         SPAN,
-                                        ast_builder.vec_from_array([
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.str("typo-"),
-                                                    cooked: None,
-                                                },
-                                                false,
-                                                false,
-                                            ),
-                                            ast_builder.template_element(
-                                                SPAN,
-                                                TemplateElementValue {
-                                                    raw: ast_builder.str(""),
-                                                    cooked: None,
-                                                },
-                                                true,
-                                                false,
-                                            ),
-                                        ]),
-                                        ast_builder.vec_from_array([
-                                            expression.clone_in(ast_builder.allocator)
-                                        ]),
+                                        identifier.name.as_str(),
+                                        ast_builder,
                                     ),
-                                    ast_builder.expression_string_literal(SPAN, "", None),
+                                    Expression::new_template_literal(
+                                        SPAN,
+                                        oxc_allocator::Vec::from_array_in(
+                                            [
+                                                TemplateElement::new(
+                                                    SPAN,
+                                                    TemplateElementValue {
+                                                        raw: Str::from("typo-"),
+                                                        cooked: None,
+                                                    },
+                                                    false,
+                                                    ast_builder,
+                                                ),
+                                                TemplateElement::new(
+                                                    SPAN,
+                                                    TemplateElementValue {
+                                                        raw: Str::from(""),
+                                                        cooked: None,
+                                                    },
+                                                    true,
+                                                    ast_builder,
+                                                ),
+                                            ],
+                                            ast_builder,
+                                        ),
+                                        oxc_allocator::Vec::from_array_in(
+                                            [expression.clone_in(ast_builder.allocator())],
+                                            ast_builder,
+                                        ),
+                                        ast_builder,
+                                    ),
+                                    Expression::new_string_literal(SPAN, "", None, ast_builder),
+                                    ast_builder,
                                 ),
                                 styles: vec![],
                             }],
@@ -580,7 +595,7 @@ pub fn extract_style_from_expression<'a>(
                 match logical.operator {
                     LogicalOperator::Or => ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
-                            condition: logical.left.clone_in(ast_builder.allocator),
+                            condition: logical.left.clone_in(ast_builder.allocator()),
                             consequent: None,
                             alternate: res,
                         }],
@@ -588,7 +603,7 @@ pub fn extract_style_from_expression<'a>(
                     },
                     LogicalOperator::And => ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
-                            condition: logical.left.clone_in(ast_builder.allocator),
+                            condition: logical.left.clone_in(ast_builder.allocator()),
                             consequent: res,
                             alternate: None,
                         }],
@@ -596,21 +611,24 @@ pub fn extract_style_from_expression<'a>(
                     },
                     LogicalOperator::Coalesce => ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
-                            condition: ast_builder.expression_logical(
+                            condition: Expression::new_logical_expression(
                                 SPAN,
-                                ast_builder.expression_binary(
+                                Expression::new_binary_expression(
                                     SPAN,
-                                    logical.left.clone_in(ast_builder.allocator),
+                                    logical.left.clone_in(ast_builder.allocator()),
                                     BinaryOperator::StrictInequality,
-                                    ast_builder.expression_null_literal(SPAN),
+                                    Expression::new_null_literal(SPAN, ast_builder),
+                                    ast_builder,
                                 ),
                                 LogicalOperator::And,
-                                ast_builder.expression_binary(
+                                Expression::new_binary_expression(
                                     SPAN,
-                                    logical.left.clone_in(ast_builder.allocator),
+                                    logical.left.clone_in(ast_builder.allocator()),
                                     BinaryOperator::StrictInequality,
-                                    ast_builder.expression_identifier(SPAN, "undefined"),
+                                    Expression::new_identifier(SPAN, "undefined", ast_builder),
+                                    ast_builder,
                                 ),
+                                ast_builder,
                             ),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 extract_style_from_expression(
@@ -676,7 +694,7 @@ pub fn extract_style_from_expression<'a>(
                 } else {
                     ExtractResult {
                         styles: vec![ExtractStyleProp::Conditional {
-                            condition: conditional.test.clone_in(ast_builder.allocator),
+                            condition: conditional.test.clone_in(ast_builder.allocator()),
                             consequent: Some(Box::new(ExtractStyleProp::StaticArray(
                                 extract_style_from_expression(
                                     ast_builder,
@@ -776,7 +794,7 @@ pub fn dynamic_style<'a>(
 ) -> ExtractStyleProp<'a> {
     if let Some(map) = get_enum_property_map(name) {
         ExtractStyleProp::Enum {
-            condition: expression.clone_in(ast_builder.allocator),
+            condition: expression.clone_in(ast_builder.allocator()),
             map: map
                 .into_iter()
                 .map(|(k, v)| {

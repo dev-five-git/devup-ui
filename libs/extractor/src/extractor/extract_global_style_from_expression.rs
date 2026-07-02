@@ -19,8 +19,8 @@ use css::{
     style_selector::StyleSelector,
 };
 use oxc_ast::{
-    AstBuilder,
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
+    builder::AstBuilder,
 };
 
 pub fn extract_global_style_from_expression<'a>(

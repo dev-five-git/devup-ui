@@ -5,13 +5,14 @@ use crate::gen_style::gen_styles;
 use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
 use crate::utils::{get_string_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
-use oxc_allocator::CloneIn;
-use oxc_ast::AstBuilder;
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, JSXAttributeItem, JSXAttributeValue, LogicalOperator, ObjectPropertyKind,
-    PropertyKey, PropertyKind, TemplateElementValue,
+    Expression, IdentifierName, JSXAttributeItem, JSXAttributeName, JSXAttributeValue,
+    LogicalOperator, ObjectPropertyKind, PropertyKey, PropertyKind, StaticMemberExpression, Str,
+    StringLiteral, TemplateElement, TemplateElementValue, TemplateLiteral,
 };
+use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
 
@@ -25,20 +26,26 @@ pub(crate) fn combine_conditional_class_name<'a>(
     alt_expr: Option<Expression<'a>>,
 ) -> Option<Expression<'a>> {
     match (con_expr, alt_expr) {
-        (Some(con), Some(alt)) => {
-            Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
-        }
-        (Some(con), None) => Some(ast_builder.expression_conditional(
+        (Some(con), Some(alt)) => Some(Expression::new_conditional_expression(
             SPAN,
             condition,
             con,
-            ast_builder.expression_string_literal(SPAN, "", None),
+            alt,
+            ast_builder,
         )),
-        (None, Some(alt)) => Some(ast_builder.expression_conditional(
+        (Some(con), None) => Some(Expression::new_conditional_expression(
             SPAN,
             condition,
-            ast_builder.expression_string_literal(SPAN, "", None),
+            con,
+            Expression::new_string_literal(SPAN, "", None, ast_builder),
+            ast_builder,
+        )),
+        (None, Some(alt)) => Some(Expression::new_conditional_expression(
+            SPAN,
+            condition,
+            Expression::new_string_literal(SPAN, "", None, ast_builder),
             alt,
+            ast_builder,
         )),
         (None, None) => None,
     }
@@ -68,9 +75,9 @@ pub fn modify_prop_object<'a>(
             ObjectPropertyKind::ObjectProperty(attr) => {
                 if let Some(name) = get_string_by_property_key(&attr.key) {
                     if name == "className" {
-                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator()));
                     } else if name == "style" {
-                        style_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        style_prop = Some(attr.value.clone_in(ast_builder.allocator()));
                     } else {
                         props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                     }
@@ -79,7 +86,7 @@ pub fn modify_prop_object<'a>(
                 }
             }
             ObjectPropertyKind::SpreadProperty(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
                 props.insert(idx, ObjectPropertyKind::SpreadProperty(spread));
             }
         }
@@ -98,7 +105,7 @@ pub fn modify_prop_object<'a>(
             );
             let alt_class_name_prop = class_name_prop
                 .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator));
+                .map(|c| c.clone_in(ast_builder.allocator()));
             let (alt_expr, alt_tailwind) = get_class_name_expression(
                 ast_builder,
                 &alt_class_name_prop,
@@ -126,14 +133,15 @@ pub fn modify_prop_object<'a>(
         };
 
     if let Some(ex) = class_name_expr {
-        props.push(ast_builder.object_property_kind_object_property(
+        props.push(ObjectPropertyKind::new_object_property(
             SPAN,
             PropertyKind::Init,
-            ast_builder.property_key_static_identifier(SPAN, "className"),
+            PropertyKey::new_static_identifier(SPAN, "className", ast_builder),
             ex,
             false,
             false,
             false,
+            ast_builder,
         ));
     }
     if let Some(ex) = get_style_expression(
@@ -144,21 +152,23 @@ pub fn modify_prop_object<'a>(
         &spread_props,
         filename,
     ) {
-        props.push(ast_builder.object_property_kind_object_property(
+        props.push(ObjectPropertyKind::new_object_property(
             SPAN,
             PropertyKind::Init,
-            ast_builder.property_key_static_identifier(SPAN, "style"),
+            PropertyKey::new_static_identifier(SPAN, "style", ast_builder),
             ex,
             false,
             false,
             false,
+            ast_builder,
         ));
     }
     if let Some(ex) = props_prop {
-        props.push(
-            ast_builder
-                .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator)),
-        );
+        props.push(ObjectPropertyKind::new_spread_property(
+            SPAN,
+            ex.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ));
     }
     tailwind_styles
 }
@@ -194,10 +204,14 @@ pub fn modify_props<'a>(
                         res = container
                             .expression
                             .as_expression()
-                            .map(|expression| expression.clone_in(ast_builder.allocator));
+                            .map(|expression| expression.clone_in(ast_builder.allocator()));
                     } else if let JSXAttributeValue::StringLiteral(literal) = &value {
-                        res =
-                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None));
+                        res = Some(Expression::new_string_literal(
+                            SPAN,
+                            literal.value,
+                            None,
+                            ast_builder,
+                        ));
                     }
                     let name = ident.name.as_str();
                     if name == "className" {
@@ -210,7 +224,7 @@ pub fn modify_props<'a>(
                 }
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
                 props.insert(idx, JSXAttributeItem::SpreadAttribute(spread));
             }
         }
@@ -228,7 +242,7 @@ pub fn modify_props<'a>(
             );
             let alt_class_name_prop = class_name_prop
                 .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator));
+                .map(|c| c.clone_in(ast_builder.allocator()));
             let (alt_expr, alt_tailwind) = get_class_name_expression(
                 ast_builder,
                 &alt_class_name_prop,
@@ -255,14 +269,15 @@ pub fn modify_props<'a>(
             )
         };
     if let Some(ex) = class_name_expr {
-        props.push(ast_builder.jsx_attribute_item_attribute(
+        props.push(JSXAttributeItem::new_attribute(
             SPAN,
-            ast_builder.jsx_attribute_name_identifier(SPAN, "className"),
+            JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
             Some(if let Expression::StringLiteral(literal) = ex {
                 JSXAttributeValue::StringLiteral(literal)
             } else {
-                ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())
+                JSXAttributeValue::new_expression_container(SPAN, ex.into(), ast_builder)
             }),
+            ast_builder,
         ));
     }
     if let Some(ex) = get_style_expression(
@@ -273,19 +288,23 @@ pub fn modify_props<'a>(
         &spread_props,
         filename,
     ) {
-        props.push(ast_builder.jsx_attribute_item_attribute(
+        props.push(JSXAttributeItem::new_attribute(
             SPAN,
-            ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
-            Some(ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())),
+            JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+            Some(JSXAttributeValue::new_expression_container(
+                SPAN,
+                ex.into(),
+                ast_builder,
+            )),
+            ast_builder,
         ));
     }
     if let Some(props_prop) = props_prop {
-        props.push(
-            ast_builder.jsx_attribute_item_spread_attribute(
-                SPAN,
-                props_prop.clone_in(ast_builder.allocator),
-            ),
-        );
+        props.push(JSXAttributeItem::new_spread_attribute(
+            SPAN,
+            props_prop.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ));
     }
     tailwind_styles
 }
@@ -328,11 +347,12 @@ pub fn get_class_name_expression<'a>(
         class_expressions.extend(spread_props.iter().map(|ex| {
             convert_class_name(
                 ast_builder,
-                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                &Expression::StaticMemberExpression(StaticMemberExpression::boxed(
                     SPAN,
-                    ex.clone_in(ast_builder.allocator),
-                    ast_builder.identifier_name(SPAN, ast_builder.str("className")),
+                    ex.clone_in(ast_builder.allocator()),
+                    IdentifierName::new(SPAN, "className", ast_builder),
                     true,
+                    ast_builder,
                 )),
             )
         }));
@@ -449,16 +469,16 @@ fn rebuild_template_literal_with_mapping<'a>(
         let replaced = replace_classes_in_string(raw, class_mapping);
         let cooked = quasi.value.cooked.as_ref().map(|c| {
             let replaced_cooked = replace_classes_in_string(c.as_str(), class_mapping);
-            ast_builder.str(&replaced_cooked)
+            Str::from_in(&replaced_cooked, ast_builder.allocator())
         });
-        ast_builder.template_element(
+        TemplateElement::new(
             quasi.span,
             TemplateElementValue {
-                raw: ast_builder.str(&replaced),
+                raw: Str::from_in(&replaced, ast_builder.allocator()),
                 cooked,
             },
             quasi.tail,
-            false, // escape_raw
+            ast_builder,
         )
     });
 
@@ -468,10 +488,11 @@ fn rebuild_template_literal_with_mapping<'a>(
         .iter()
         .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, class_mapping));
 
-    ast_builder.expression_template_literal(
+    Expression::new_template_literal(
         template.span,
-        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder.allocator),
-        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder.allocator),
+        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder),
+        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder),
+        ast_builder,
     )
 }
 
@@ -497,35 +518,41 @@ fn rebuild_expression_with_mapping<'a>(
     match expr {
         Expression::StringLiteral(lit) => {
             let replaced = replace_classes_in_string(lit.value.as_str(), class_mapping);
-            ast_builder.expression_string_literal(SPAN, ast_builder.str(&replaced), None)
+            Expression::new_string_literal(
+                SPAN,
+                Str::from_in(&replaced, ast_builder.allocator()),
+                None,
+                ast_builder,
+            )
         }
         Expression::ConditionalExpression(cond) => {
             let consequent =
                 rebuild_expression_with_mapping(ast_builder, &cond.consequent, class_mapping);
             let alternate =
                 rebuild_expression_with_mapping(ast_builder, &cond.alternate, class_mapping);
-            ast_builder.expression_conditional(
+            Expression::new_conditional_expression(
                 cond.span,
-                cond.test.clone_in(ast_builder.allocator),
+                cond.test.clone_in(ast_builder.allocator()),
                 consequent,
                 alternate,
+                ast_builder,
             )
         }
         Expression::LogicalExpression(logic) => {
             let left = rebuild_expression_with_mapping(ast_builder, &logic.left, class_mapping);
             let right = rebuild_expression_with_mapping(ast_builder, &logic.right, class_mapping);
-            ast_builder.expression_logical(logic.span, left, logic.operator, right)
+            Expression::new_logical_expression(logic.span, left, logic.operator, right, ast_builder)
         }
         Expression::ParenthesizedExpression(paren) => {
             let inner =
                 rebuild_expression_with_mapping(ast_builder, &paren.expression, class_mapping);
-            ast_builder.expression_parenthesized(paren.span, inner)
+            Expression::new_parenthesized_expression(paren.span, inner, ast_builder)
         }
         Expression::TemplateLiteral(inner_template) => {
             rebuild_template_literal_with_mapping(ast_builder, inner_template, class_mapping)
         }
         // For other expressions (variables, etc.), keep as-is
-        _ => expr.clone_in(ast_builder.allocator),
+        _ => expr.clone_in(ast_builder.allocator()),
     }
 }
 
@@ -607,16 +634,17 @@ pub fn get_style_expression<'a>(
     {
         style_expressions.push(style_vars);
     }
-    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator) {
+    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator()) {
         style_expressions.push(style_prop);
     }
     if style_prop.is_none() {
         style_expressions.extend(spread_props.iter().map(|ex| {
-            Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
                 SPAN,
-                ex.clone_in(ast_builder.allocator),
-                ast_builder.identifier_name(SPAN, ast_builder.str("style")),
+                ex.clone_in(ast_builder.allocator()),
+                IdentifierName::new(SPAN, "style", ast_builder),
                 true,
+                ast_builder,
             ))
         }));
     }
@@ -637,7 +665,7 @@ fn merge_string_expressions<'a>(
             Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
         )
     {
-        return Some(expression.clone_in(ast_builder.allocator));
+        return Some(expression.clone_in(ast_builder.allocator()));
     }
 
     let mut string_literals: std::vec::Vec<String> = vec![];
@@ -678,7 +706,7 @@ fn merge_string_expressions<'a>(
                     prev_str = q.value.raw.trim().to_string();
                 }
             }
-            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
+            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator()));
         } else {
             let target_prev = prev_str.trim();
             string_literals.push(format!(
@@ -691,7 +719,7 @@ fn merge_string_expressions<'a>(
                 target_prev,
                 if target_prev.is_empty() { "" } else { " " }
             ));
-            other_expressions.push(ex.clone_in(ast_builder.allocator));
+            other_expressions.push(ex.clone_in(ast_builder.allocator()));
             prev_str = String::new();
         }
     }
@@ -701,40 +729,40 @@ fn merge_string_expressions<'a>(
         prev_str.trim(),
     ));
     if other_expressions.is_empty() {
-        return Some(ast_builder.expression_string_literal(
+        return Some(Expression::new_string_literal(
             SPAN,
-            ast_builder.str(string_literals.join("").trim()),
+            Str::from_in(string_literals.join("").trim(), ast_builder.allocator()),
             None,
+            ast_builder,
         ));
     }
 
     let q = oxc_allocator::Vec::from_iter_in(
         string_literals.iter().enumerate().map(|(idx, s)| {
             let tail = idx == string_literals.len() - 1;
-            ast_builder.template_element(
+            TemplateElement::new(
                 SPAN,
                 TemplateElementValue {
-                    raw: ast_builder.str(s),
+                    raw: Str::from_in(s, ast_builder.allocator()),
                     cooked: None,
                 },
                 tail,
-                false,
+                ast_builder,
             )
         }),
-        ast_builder.allocator,
+        ast_builder,
     );
-    Some(
-        ast_builder.expression_template_literal(
-            SPAN,
-            q,
-            oxc_allocator::Vec::from_iter_in(
-                other_expressions
-                    .into_iter()
-                    .map(|ex| ex.clone_in(ast_builder.allocator)),
-                ast_builder.allocator,
-            ),
+    Some(Expression::new_template_literal(
+        SPAN,
+        q,
+        oxc_allocator::Vec::from_iter_in(
+            other_expressions
+                .into_iter()
+                .map(|ex| ex.clone_in(ast_builder.allocator())),
+            ast_builder,
         ),
-    )
+        ast_builder,
+    ))
 }
 
 pub fn convert_class_name<'a>(
@@ -747,15 +775,20 @@ pub fn convert_class_name<'a>(
             | Expression::TemplateLiteral(_)
             | Expression::NumericLiteral(_)
     ) {
-        return class_name.clone_in(ast_builder.allocator);
+        return class_name.clone_in(ast_builder.allocator());
     }
 
     // wrap ( and ?? ''
-    ast_builder.expression_logical(
+    Expression::new_logical_expression(
         SPAN,
-        ast_builder.expression_parenthesized(SPAN, class_name.clone_in(ast_builder.allocator)),
+        Expression::new_parenthesized_expression(
+            SPAN,
+            class_name.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ),
         LogicalOperator::Or,
-        ast_builder.expression_string_literal(SPAN, "", None),
+        Expression::new_string_literal(SPAN, "", None, ast_builder),
+        ast_builder,
     )
 }
 
@@ -763,7 +796,7 @@ pub fn convert_style_vars<'a>(
     ast_builder: &AstBuilder<'a>,
     style_vars: &Expression<'a>,
 ) -> Expression<'a> {
-    let mut style_vars = style_vars.clone_in(ast_builder.allocator);
+    let mut style_vars = style_vars.clone_in(ast_builder.allocator());
     if let Expression::ObjectExpression(obj) = &mut style_vars {
         for idx in (0..obj.properties.len()).rev() {
             let mut prop = obj.properties.remove(idx);
@@ -774,43 +807,45 @@ pub fn convert_style_vars<'a>(
                 } else {
                     obj.properties.insert(
                         idx,
-                        ast_builder.object_property_kind_object_property(
+                        ObjectPropertyKind::new_object_property(
                             SPAN,
                             PropertyKind::Init,
-                            PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
+                            PropertyKey::TemplateLiteral(TemplateLiteral::boxed(
                                 SPAN,
                                 oxc_allocator::Vec::from_array_in(
                                     [
-                                        ast_builder.template_element(
+                                        TemplateElement::new(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.str("--"),
+                                                raw: Str::from("--"),
                                                 cooked: None,
                                             },
                                             false,
-                                            false,
+                                            ast_builder,
                                         ),
-                                        ast_builder.template_element(
+                                        TemplateElement::new(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.str(""),
+                                                raw: Str::from(""),
                                                 cooked: None,
                                             },
                                             true,
-                                            false,
+                                            ast_builder,
                                         ),
                                     ],
-                                    ast_builder.allocator,
+                                    ast_builder,
                                 ),
                                 oxc_allocator::Vec::from_array_in(
-                                    [p.key.to_expression().clone_in(ast_builder.allocator)],
-                                    ast_builder.allocator,
+                                    [p.key.to_expression().clone_in(ast_builder.allocator())],
+                                    ast_builder,
                                 ),
+                                ast_builder,
                             )),
-                            p.value.clone_in(ast_builder.allocator),
+                            p.value.clone_in(ast_builder.allocator()),
                             false,
                             false,
                             true,
+                            ast_builder,
                         ),
                     );
                     None
@@ -818,10 +853,11 @@ pub fn convert_style_vars<'a>(
 
                 if let Some(name) = name {
                     if !name.starts_with("--") {
-                        p.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                        p.key = PropertyKey::StringLiteral(StringLiteral::boxed(
                             SPAN,
-                            ast_builder.str(&format!("--{name}")),
+                            Str::from_in(&format!("--{name}"), ast_builder.allocator()),
                             None,
+                            ast_builder,
                         ));
                     }
                     obj.properties.insert(idx, prop);

@@ -20,7 +20,7 @@ extractor = { path = "../extractor" }
 rustc-hash = "2"
 
 [dev-dependencies]
-insta = "1.47.2"
+insta = "1.48.0"
 criterion = { version = "0.8", features = ["html_reports"] }
 rstest = "0.26.1"
 serial_test = "3.5.0"

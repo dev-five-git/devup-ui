@@ -18,12 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Cache cargo registry + target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -37,7 +37,7 @@ jobs:
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-benchmark-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
@@ -68,7 +68,7 @@ jobs:
         run: cargo binstall cargo-tarpaulin --no-confirm --force
 
       - name: Cache cargo registry + target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index/
@@ -83,7 +83,7 @@ jobs:
         name: Install bun
 
       - name: Cache bun dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
@@ -126,7 +126,7 @@ jobs:
           bun run --filter landing build
       - name: Cache Playwright Browsers
         id: playwright-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-publish-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/deploy-pages@v5
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true

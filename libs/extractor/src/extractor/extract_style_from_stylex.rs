@@ -9,8 +9,8 @@ use crate::stylex::{
 use crate::utils::get_string_by_literal_expression;
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
-use oxc_ast::AstBuilder;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
+use oxc_ast::builder::AstBuilder;
 use rustc_hash::FxHashMap;
 
 use crate::utils::get_string_by_property_key;

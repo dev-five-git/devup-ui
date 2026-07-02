@@ -8,8 +8,8 @@ use crate::{
     utils::get_string_by_property_key,
 };
 use oxc_ast::{
-    AstBuilder,
     ast::{Expression, ObjectPropertyKind},
+    builder::AstBuilder,
 };
 
 pub fn extract_keyframes_from_expression<'a>(

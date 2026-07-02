@@ -13,10 +13,14 @@ use crate::{
     gen_style::gen_styles,
     utils::{merge_object_expressions, wrap_array_filter},
 };
-use oxc_allocator::CloneIn;
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
-    ast::{Argument, Expression, FormalParameterKind},
+    ast::{
+        Argument, BindingPattern, BindingProperty, BindingRestElement, Expression, FormalParameter,
+        FormalParameterKind, FormalParameters, FunctionBody, JSXAttributeItem, JSXAttributeName,
+        JSXAttributeValue, JSXElementName, JSXOpeningElement, PropertyKey, Statement, Str,
+    },
+    builder::AstBuilder,
 };
 use oxc_span::SPAN;
 
@@ -91,10 +95,11 @@ pub fn extract_style_from_styled<'a>(
 
         let result = ExtractResult {
             styles: props_styles,
-            tag: Some(ast_builder.expression_string_literal(
+            tag: Some(Expression::new_string_literal(
                 SPAN,
-                ast_builder.str(&tag_name),
+                Str::from_in(&tag_name, ast_builder.allocator()),
                 None,
+                ast_builder,
             )),
             style_order: None,
             style_vars: None,
@@ -155,7 +160,7 @@ pub fn extract_style_from_styled<'a>(
     };
     (
         result.unwrap_or_else(ExtractResult::default),
-        new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator)),
+        new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
     )
 }
 
@@ -165,173 +170,178 @@ fn create_styled_component<'a>(
     class_name: &Option<Expression<'a>>,
     style_vars: &Option<Expression<'a>>,
 ) -> Expression<'a> {
-    let params =
-        ast_builder.formal_parameters(
-            SPAN,
-            FormalParameterKind::ArrowFormalParameters,
-            oxc_allocator::Vec::from_iter_in(
-                vec![ast_builder.formal_parameter(
-                    SPAN,
-                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
-                    ast_builder.binding_pattern_object_pattern(
-                        SPAN,
-                        oxc_allocator::Vec::from_iter_in(
-                            vec![
-                                ast_builder.binding_property(
-                                    SPAN,
-                                    ast_builder.property_key_static_identifier(SPAN, "style"),
-                                    ast_builder.binding_pattern_binding_identifier(SPAN, "style"),
-                                    true,
-                                    false,
-                                ),
-                                ast_builder.binding_property(
-                                    SPAN,
-                                    ast_builder.property_key_static_identifier(SPAN, "className"),
-                                    ast_builder
-                                        .binding_pattern_binding_identifier(SPAN, "className"),
-                                    true,
-                                    false,
-                                ),
-                            ],
-                            ast_builder.allocator,
-                        ),
-                        Some(
-                            ast_builder.binding_rest_element(
-                                SPAN,
-                                ast_builder.binding_pattern_binding_identifier(
-                                    SPAN,
-                                    ast_builder.str("rest"),
-                                ),
-                            ),
-                        ),
-                    ),
-                    None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
-                    None::<oxc_allocator::Box<Expression<'a>>>,
-                    false,
-                    None,
-                    false,
-                    false,
-                )],
-                ast_builder.allocator,
-            ),
-            None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
-        );
-    let body = ast_builder.alloc_function_body(
+    let params = FormalParameters::new(
         SPAN,
-        oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+        FormalParameterKind::ArrowFormalParameters,
         oxc_allocator::Vec::from_iter_in(
-            vec![ast_builder.statement_expression(
+            vec![FormalParameter::new(
                 SPAN,
-                ast_builder.expression_jsx_element(
+                oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
+                BindingPattern::new_object_pattern(
                     SPAN,
-                    ast_builder.alloc_jsx_opening_element(
+                    oxc_allocator::Vec::from_iter_in(
+                        vec![
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(SPAN, "style", ast_builder),
+                                BindingPattern::new_binding_identifier(SPAN, "style", ast_builder),
+                                true,
+                                false,
+                                ast_builder,
+                            ),
+                            BindingProperty::new(
+                                SPAN,
+                                PropertyKey::new_static_identifier(SPAN, "className", ast_builder),
+                                BindingPattern::new_binding_identifier(
+                                    SPAN,
+                                    "className",
+                                    ast_builder,
+                                ),
+                                true,
+                                false,
+                                ast_builder,
+                            ),
+                        ],
+                        ast_builder,
+                    ),
+                    Some(BindingRestElement::new(
                         SPAN,
-                        ast_builder.jsx_element_name_identifier(SPAN, ast_builder.str(tag_name)),
+                        BindingPattern::new_binding_identifier(SPAN, "rest", ast_builder),
+                        ast_builder,
+                    )),
+                    ast_builder,
+                ),
+                None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+                None::<oxc_allocator::Box<Expression<'a>>>,
+                false,
+                None,
+                false,
+                false,
+                ast_builder,
+            )],
+            ast_builder,
+        ),
+        None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+        ast_builder,
+    );
+    let body = FunctionBody::boxed(
+        SPAN,
+        oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
+        oxc_allocator::Vec::from_iter_in(
+            vec![Statement::new_expression_statement(
+                SPAN,
+                Expression::new_jsx_element(
+                    SPAN,
+                    JSXOpeningElement::boxed(
+                        SPAN,
+                        JSXElementName::new_identifier(
+                            SPAN,
+                            Str::from_in(tag_name, ast_builder.allocator()),
+                            ast_builder,
+                        ),
                         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
                         oxc_allocator::Vec::from_iter_in(
                             vec![
-                                    ast_builder.jsx_attribute_item_spread_attribute(
+                                JSXAttributeItem::new_spread_attribute(
+                                    SPAN,
+                                    Expression::new_identifier(SPAN, "rest", ast_builder),
+                                    ast_builder,
+                                ),
+                                JSXAttributeItem::new_attribute(
+                                    SPAN,
+                                    JSXAttributeName::new_identifier(
                                         SPAN,
-                                        ast_builder
-                                            .expression_identifier(SPAN, ast_builder.str("rest")),
+                                        "className",
+                                        ast_builder,
                                     ),
-                                    ast_builder.jsx_attribute_item_attribute(
+                                    Some(JSXAttributeValue::new_expression_container(
                                         SPAN,
-                                        ast_builder.jsx_attribute_name_identifier(
-                                            SPAN,
-                                            ast_builder.str("className"),
-                                        ),
-                                        Some(
-                                            ast_builder.jsx_attribute_value_expression_container(
-                                                SPAN,
-                                                class_name
-                                                    .as_ref()
-                                                    .map_or_else(
-                                                        || {
-                                                            ast_builder.expression_identifier(
-                                                                SPAN,
-                                                                ast_builder.str("className"),
-                                                            )
-                                                        },
-                                                        |name| {
-                                                            wrap_array_filter(
-                                                                ast_builder,
-                                                                &[
-                                                                    name.clone_in(
-                                                                        ast_builder.allocator,
-                                                                    ),
-                                                                    ast_builder
-                                                                        .expression_identifier(
-                                                                            SPAN,
-                                                                            ast_builder
-                                                                                .str("className"),
-                                                                        ),
-                                                                ],
-                                                            )
-                                                            .unwrap_or_else(|| {
-                                                                name.clone_in(ast_builder.allocator)
-                                                            })
-                                                        },
+                                        class_name
+                                            .as_ref()
+                                            .map_or_else(
+                                                || {
+                                                    Expression::new_identifier(
+                                                        SPAN,
+                                                        "className",
+                                                        ast_builder,
                                                     )
-                                                    .into(),
-                                            ),
-                                        ),
-                                    ),
-                                    ast_builder.jsx_attribute_item_attribute(
-                                        SPAN,
-                                        ast_builder.jsx_attribute_name_identifier(
-                                            SPAN,
-                                            ast_builder.str("style"),
-                                        ),
-                                        Some(
-                                            ast_builder.jsx_attribute_value_expression_container(
-                                                SPAN,
-                                                style_vars
-                                                    .as_ref()
-                                                    .map_or_else(
-                                                        || {
-                                                            ast_builder.expression_identifier(
+                                                },
+                                                |name| {
+                                                    wrap_array_filter(
+                                                        ast_builder,
+                                                        &[
+                                                            name.clone_in(ast_builder.allocator()),
+                                                            Expression::new_identifier(
                                                                 SPAN,
-                                                                ast_builder.str("style"),
-                                                            )
-                                                        },
-                                                        |style_vars| {
-                                                            merge_object_expressions(
+                                                                "className",
                                                                 ast_builder,
-                                                                &[
-                                                                    style_vars.clone_in(
-                                                                        ast_builder.allocator,
-                                                                    ),
-                                                                    ast_builder
-                                                                        .expression_identifier(
-                                                                            SPAN,
-                                                                            ast_builder
-                                                                                .str("style"),
-                                                                        ),
-                                                                ],
-                                                            )
-                                                            .unwrap_or_else(|| {
-                                                                style_vars
-                                                                    .clone_in(ast_builder.allocator)
-                                                            })
-                                                        },
+                                                            ),
+                                                        ],
                                                     )
-                                                    .into(),
-                                            ),
-                                        ),
-                                    ),
-                                ],
-                            ast_builder.allocator,
+                                                    .unwrap_or_else(|| {
+                                                        name.clone_in(ast_builder.allocator())
+                                                    })
+                                                },
+                                            )
+                                            .into(),
+                                        ast_builder,
+                                    )),
+                                    ast_builder,
+                                ),
+                                JSXAttributeItem::new_attribute(
+                                    SPAN,
+                                    JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+                                    Some(JSXAttributeValue::new_expression_container(
+                                        SPAN,
+                                        style_vars
+                                            .as_ref()
+                                            .map_or_else(
+                                                || {
+                                                    Expression::new_identifier(
+                                                        SPAN,
+                                                        "style",
+                                                        ast_builder,
+                                                    )
+                                                },
+                                                |style_vars| {
+                                                    merge_object_expressions(
+                                                        ast_builder,
+                                                        &[
+                                                            style_vars
+                                                                .clone_in(ast_builder.allocator()),
+                                                            Expression::new_identifier(
+                                                                SPAN,
+                                                                "style",
+                                                                ast_builder,
+                                                            ),
+                                                        ],
+                                                    )
+                                                    .unwrap_or_else(|| {
+                                                        style_vars.clone_in(ast_builder.allocator())
+                                                    })
+                                                },
+                                            )
+                                            .into(),
+                                        ast_builder,
+                                    )),
+                                    ast_builder,
+                                ),
+                            ],
+                            ast_builder,
                         ),
+                        ast_builder,
                     ),
-                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder.allocator),
+                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
                     None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
+                    ast_builder,
                 ),
+                ast_builder,
             )],
-            ast_builder.allocator,
+            ast_builder,
         ),
+        ast_builder,
     );
-    ast_builder.expression_arrow_function(
+    Expression::new_arrow_function_expression(
         SPAN,
         true,
         false,
@@ -339,5 +349,6 @@ fn create_styled_component<'a>(
         params,
         None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
         body,
+        ast_builder,
     )
 }

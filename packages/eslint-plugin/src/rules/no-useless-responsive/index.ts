@@ -64,9 +64,7 @@ export const noUselessResponsive = createRule({
   create(context) {
     const importStorage = new ImportStorage()
     let devupContext:
-      | TSESTree.CallExpression
-      | TSESTree.JSXOpeningElement
-      | null = null
+      TSESTree.CallExpression | TSESTree.JSXOpeningElement | null = null
     return {
       ImportDeclaration(node) {
         importStorage.addImportByDeclaration(node)
