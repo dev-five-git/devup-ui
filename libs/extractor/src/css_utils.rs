@@ -405,7 +405,7 @@ pub fn css_to_style(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_by_key(|a| a.property().to_string());
+    styles.sort_by(|a, b| a.property().cmp(b.property()));
     styles
 }
 
@@ -451,7 +451,7 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
             let block = &rest[..end];
             let mut styles = css_to_style(block, 0, &None);
 
-            styles.sort_by_key(|a| a.property().to_string());
+            styles.sort_by(|a, b| a.property().cmp(b.property()));
             map.insert(key, styles);
             input = &rest[end + 1..];
         } else {

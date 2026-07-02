@@ -51,6 +51,58 @@ pub(crate) fn combine_conditional_class_name<'a>(
     }
 }
 
+/// Resolve the final className expression (and extracted Tailwind styles),
+/// handling the optional conditional styleOrder branch:
+/// `condition ? consequent_class : alternate_class`.
+fn resolve_class_name_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name_prop: &Option<Expression<'a>>,
+    styles: &mut [ExtractStyleProp<'a>],
+    style_order: Option<u8>,
+    spread_props: &[Expression<'a>],
+    filename: Option<&str>,
+    conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
+) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
+    if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
+        // Conditional styleOrder: generate className for both branches
+        let (con_expr, con_tailwind) = get_class_name_expression(
+            ast_builder,
+            class_name_prop,
+            styles,
+            style_order,
+            spread_props,
+            filename,
+        );
+        let alt_class_name_prop = class_name_prop
+            .as_ref()
+            .map(|c| c.clone_in(ast_builder.allocator()));
+        let (alt_expr, alt_tailwind) = get_class_name_expression(
+            ast_builder,
+            &alt_class_name_prop,
+            alt_styles,
+            alt_style_order,
+            spread_props,
+            filename,
+        );
+
+        let combined_expr =
+            combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
+
+        let mut all_tailwind = con_tailwind;
+        all_tailwind.extend(alt_tailwind);
+        (combined_expr, all_tailwind)
+    } else {
+        get_class_name_expression(
+            ast_builder,
+            class_name_prop,
+            styles,
+            style_order,
+            spread_props,
+            filename,
+        )
+    }
+}
+
 /// modify object props
 /// Returns extracted Tailwind styles from static className strings
 /// `conditional_branch`: If Some, contains (condition, `alternate_styles`, `alternate_style_order`)
@@ -92,45 +144,15 @@ pub fn modify_prop_object<'a>(
         }
     }
 
-    let (class_name_expr, tailwind_styles) =
-        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-            // Conditional styleOrder: generate className for both branches
-            let (con_expr, con_tailwind) = get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            );
-            let alt_class_name_prop = class_name_prop
-                .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator()));
-            let (alt_expr, alt_tailwind) = get_class_name_expression(
-                ast_builder,
-                &alt_class_name_prop,
-                alt_styles,
-                alt_style_order,
-                &spread_props,
-                filename,
-            );
-
-            let combined_expr =
-                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
-
-            let mut all_tailwind = con_tailwind;
-            all_tailwind.extend(alt_tailwind);
-            (combined_expr, all_tailwind)
-        } else {
-            get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            )
-        };
+    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+        filename,
+        conditional_branch,
+    );
 
     if let Some(ex) = class_name_expr {
         props.push(ObjectPropertyKind::new_object_property(
@@ -229,45 +251,15 @@ pub fn modify_props<'a>(
             }
         }
     }
-    let (class_name_expr, tailwind_styles) =
-        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-            // Conditional styleOrder: generate className for both branches
-            let (con_expr, con_tailwind) = get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            );
-            let alt_class_name_prop = class_name_prop
-                .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator()));
-            let (alt_expr, alt_tailwind) = get_class_name_expression(
-                ast_builder,
-                &alt_class_name_prop,
-                alt_styles,
-                alt_style_order,
-                &spread_props,
-                filename,
-            );
-
-            let combined_expr =
-                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
-
-            let mut all_tailwind = con_tailwind;
-            all_tailwind.extend(alt_tailwind);
-            (combined_expr, all_tailwind)
-        } else {
-            get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            )
-        };
+    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+        filename,
+        conditional_branch,
+    );
     if let Some(ex) = class_name_expr {
         props.push(JSXAttributeItem::new_attribute(
             SPAN,

@@ -193,8 +193,10 @@ pub fn extract(
     }
 
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
+    // `processed_code` is Some only when vanilla-extract generation succeeded;
+    // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let is_ve_file = vanilla_extract::is_vanilla_extract_file(filename);
-    let (processed_code, is_vanilla_extract) = if is_ve_file {
+    let processed_code: Option<String> = if is_ve_file {
         // Use transformed code (with imports already pointing to @devup-ui/react)
         match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
         {
@@ -204,9 +206,10 @@ pub fn extract(
 
                 if referenced.is_empty() {
                     // No selector references, use simple code generation
-                    let generated =
-                        vanilla_extract::collected_styles_to_code(&collected, &option.package);
-                    (generated, true)
+                    Some(vanilla_extract::collected_styles_to_code(
+                        &collected,
+                        &option.package,
+                    ))
                 } else {
                     // Two-pass extraction: first extract referenced styles to get their class names
                     let partial_code = vanilla_extract::collected_styles_to_code_partial(
@@ -223,25 +226,21 @@ pub fn extract(
                     };
 
                     // Generate full code with class names substituted into selectors
-                    let generated = vanilla_extract::collected_styles_to_code_with_classes(
+                    Some(vanilla_extract::collected_styles_to_code_with_classes(
                         &collected,
                         &option.package,
                         &class_map,
-                    );
-                    (generated, true)
+                    ))
                 }
             }
-            Err(_) => {
-                // Fall back to treating as regular file if execution fails
-                (transformed_code.clone(), false)
-            }
+            // Fall back to treating as regular file if execution fails
+            Err(_) => None,
         }
     } else {
-        (transformed_code.clone(), false)
+        None
     };
-
     // For vanilla-extract files, if no styles were collected, return early
-    if is_vanilla_extract && processed_code.is_empty() {
+    if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
             styles: FxHashSet::default(),
             code: code.to_string(),
@@ -250,11 +249,7 @@ pub fn extract(
         });
     }
 
-    let code_to_parse = if is_vanilla_extract {
-        &processed_code
-    } else {
-        &transformed_code
-    };
+    let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
     let source_type = SourceType::from_path(filename)?;
     // Bucket identity for CSS naming/emission (single-importer collapse). Identity

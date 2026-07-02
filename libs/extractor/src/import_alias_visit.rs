@@ -12,6 +12,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// Transform source code by rewriting aliased imports to the target package
@@ -24,15 +25,15 @@ use std::collections::HashMap;
 ///
 /// # Returns
 /// The transformed source code, or the original code if no transformations were needed
-pub fn transform_import_aliases(
-    code: &str,
+pub fn transform_import_aliases<'a>(
+    code: &'a str,
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
-) -> String {
+) -> Cow<'a, str> {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
-        return code.to_string();
+        return Cow::Borrowed(code);
     }
 
     let allocator = Allocator::default();
@@ -59,7 +60,7 @@ pub fn transform_import_aliases(
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return code.to_string();
+        return Cow::Borrowed(code);
     }
 
     let mut result = code.to_string();
@@ -67,7 +68,7 @@ pub fn transform_import_aliases(
         result.replace_range(start..end, &replacement);
     }
 
-    result
+    Cow::Owned(result)
 }
 
 /// Generate the transformed import statement

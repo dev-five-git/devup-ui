@@ -602,19 +602,19 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
 
         if let Expression::CallExpression(call) = it {
-            let util_import_key = if let Expression::Identifier(ident) = &call.callee {
-                Some(ident.name.to_string())
+            let util_type = if let Expression::Identifier(ident) = &call.callee {
+                self.util_imports.get(ident.name.as_str())
             } else if let Expression::StaticMemberExpression(member) = &call.callee
                 && let Expression::Identifier(ident) = &member.object
+                && !self.util_imports.is_empty()
             {
-                Some(format!("{}.{}", ident.name, member.property.name))
+                self.util_imports
+                    .get(format!("{}.{}", ident.name, member.property.name).as_str())
             } else {
                 None
             };
 
-            if let Some(util_import_key) = util_import_key
-                && let Some(util_type) = self.util_imports.get(&util_import_key)
-            {
+            if let Some(util_type) = util_type {
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
                     *it = if matches!(r, UtilType::Css) {
@@ -1124,8 +1124,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
         // after run to convert css literal
-        let component_name = &elem.opening_element.name.to_string();
-        if let Some(kind) = self.imports.get(component_name) {
+        let kind = match &elem.opening_element.name {
+            // Fast path: probe with `&str` directly, no allocation
+            JSXElementName::Identifier(id) => self.imports.get(id.name.as_str()),
+            JSXElementName::IdentifierReference(id) => self.imports.get(id.name.as_str()),
+            name => self.imports.get(name.to_string().as_str()),
+        };
+        if let Some(kind) = kind {
             let attrs = &mut elem.opening_element.attributes;
             let mut tag_name = Expression::new_string_literal(
                 SPAN,

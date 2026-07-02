@@ -6,6 +6,14 @@ use crate::{
     },
 };
 
+/// (symbol, ";{symbol}", ";{symbol})") — compile-time constants, zero probe allocation
+const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
+    ("", ";", ";)"),
+    ("`", ";`", ";`)"),
+    ("\"", ";\"", ";\")"),
+    ("'", ";'", ";')"),
+];
+
 pub fn optimize_value(value: &str) -> String {
     let trimmed = value.trim();
     let mut ret = String::with_capacity(trimmed.len() + 8);
@@ -134,33 +142,15 @@ pub fn optimize_value(value: &str) -> String {
         }
     }
     // remove ; from dynamic value
-    // Check suffix patterns directly without format! allocation
-    for str_symbol in ["", "`", "\"", "'"] {
-        let suffix_with_paren = if str_symbol.is_empty() {
-            ";)".to_string()
-        } else {
-            let mut s = String::with_capacity(str_symbol.len() + 2);
-            s.push(';');
-            s.push_str(str_symbol);
-            s.push(')');
-            s
-        };
-        let suffix_without_paren = if str_symbol.is_empty() {
-            ";".to_string()
-        } else {
-            let mut s = String::with_capacity(str_symbol.len() + 1);
-            s.push(';');
-            s.push_str(str_symbol);
-            s
-        };
-        if ret.ends_with(&suffix_without_paren) {
-            let base = ret[..ret.len() - suffix_without_paren.len()].trim_end_matches(';');
+    for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
+        if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
+            let base = stripped.trim_end_matches(';');
             let mut new_ret = String::with_capacity(base.len() + str_symbol.len());
             new_ret.push_str(base);
             new_ret.push_str(str_symbol);
             ret = new_ret;
-        } else if ret.ends_with(&suffix_with_paren) {
-            let base = ret[..ret.len() - suffix_with_paren.len()].trim_end_matches(';');
+        } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
+            let base = stripped.trim_end_matches(';');
             let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
             new_ret.push_str(base);
             new_ret.push_str(str_symbol);
