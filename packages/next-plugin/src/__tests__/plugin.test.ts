@@ -226,7 +226,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,js,mjs}': {
+            '*.{tsx,ts,jsx,js,mjs}': {
               loaders: [
                 {
                   loader: '@devup-ui/next-plugin/loader',
@@ -310,7 +310,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,js,mjs}': {
+            '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
                   path: new RegExp(
@@ -402,7 +402,7 @@ describe('DevupUINextPlugin', () => {
                 },
               },
             ],
-            '*.{tsx,ts,js,mjs}': {
+            '*.{tsx,ts,jsx,js,mjs}': {
               condition: {
                 not: {
                   path: new RegExp(

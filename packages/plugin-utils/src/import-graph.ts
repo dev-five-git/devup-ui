@@ -715,6 +715,23 @@ function stripComments(source: string): string {
     const next = source[index + 1]
 
     if (quote) {
+      // Template-literal CONTENTS are blanked (delimiters and newlines kept):
+      // embedded code snippets (docs sites, codegen templates) would otherwise
+      // look like real import statements to the scanners below and create
+      // phantom graph edges for files the bundler never loads. Contents of
+      // '/" strings are preserved — import specifiers themselves are read from
+      // those literals by the scan regexes.
+      if (quote === '`') {
+        if (char === '\\') {
+          result += '  '
+          index += 2
+          continue
+        }
+        result += char === '`' || char === '\n' ? char : ' '
+        if (char === '`') quote = false
+        index += 1
+        continue
+      }
       result += char
       if (char === '\\') {
         result += next ?? ''

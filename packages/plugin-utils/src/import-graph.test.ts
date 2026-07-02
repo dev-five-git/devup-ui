@@ -474,6 +474,31 @@ describe('buildCanonicalMap', () => {
     })
   })
 
+  it('ignores import-like code snippets inside template literals', () => {
+    // A docs/codegen file embedding example code in a template literal must
+    // NOT create a graph edge: the bundler never loads './b', so counting it
+    // would make it a phantom bucket member (the coordinator-stall class).
+    writeFixture(
+      'src/a.tsx',
+      [
+        'const snippet = `',
+        "import { Box } from './b'",
+        "import './b'",
+        '`',
+        "const escaped = `mid \\` import './b' `",
+        "import './c'",
+        'export const a = 1',
+      ].join('\n'),
+    )
+    writeFixture('src/b.tsx', 'export const b = 1\n')
+    writeFixture('src/c.tsx', 'export const c = 1\n')
+
+    // Only the real import ('./c') collapses; './b' stays edge-free.
+    expect(buildCanonicalMap({ cwd, srcDir })).toEqual({
+      'src/c.tsx': 'src/a.tsx',
+    })
+  })
+
   it('parses imports while stripping comments and string escapes', () => {
     writeFixture(
       'src/a.tsx',
