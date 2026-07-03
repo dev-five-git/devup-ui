@@ -88,7 +88,10 @@ pub fn route_count_for_files<'a>(files: impl IntoIterator<Item = &'a str>) -> us
         match sets.next() {
             None => first.len(),
             Some(second) => {
-                let mut routes: HashSet<u32> = first.iter().copied().collect();
+                // Pre-size the scratch set to hold at least the first two route sets so the
+                // initial `extend` of `second` does not trigger a rehash-growth reallocation.
+                let mut routes: HashSet<u32> = HashSet::with_capacity(first.len() + second.len());
+                routes.extend(first.iter().copied());
                 routes.extend(second.iter().copied());
                 for set in sets {
                     routes.extend(set.iter().copied());

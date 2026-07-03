@@ -588,6 +588,18 @@ impl Theme {
             } else {
                 None
             };
+            // The default variant's optimized color values are invariant across variants, yet the
+            // non-default (`theme_key.is_some()`, 3+ theme) branch re-optimizes them once per
+            // variant. Precompute them once so each `optimize_value` runs a single time per color.
+            let default_optimized_colors: HashMap<&str, String> = self
+                .colors
+                .get(&default_theme_key)
+                .map(|d| {
+                    d.css_entries()
+                        .map(|(k, v)| (k.as_str(), optimize_value(v)))
+                        .collect()
+                })
+                .unwrap_or_default();
             for (theme_name, theme_properties) in entries {
                 let mut theme_contents = String::new();
                 let theme_key = if *theme_name == *default_theme_key {
@@ -610,15 +622,14 @@ impl Theme {
                     let optimized_value = optimize_value(value);
                     if theme_key.is_some() {
                         if other_theme_key.is_none()
-                            && let Some(default_value) =
-                                self.colors.get(&default_theme_key).and_then(|v| {
-                                    v.get(prop).and_then(|v| {
-                                        if optimize_value(v) == optimized_value {
-                                            None
-                                        } else {
-                                            Some(optimized_value)
-                                        }
-                                    })
+                            && let Some(default_value) = default_optimized_colors
+                                .get(prop.as_str())
+                                .and_then(|default_optimized| {
+                                    if *default_optimized == optimized_value {
+                                        None
+                                    } else {
+                                        Some(optimized_value)
+                                    }
                                 })
                         {
                             push_css_variable(&mut theme_contents, prop, &default_value);
@@ -759,6 +770,22 @@ impl Theme {
 
         let default_theme = themes.get(default_key.as_str());
 
+        // The default variant's optimized token values are invariant across variants, yet the
+        // `is_same_as_default` check below re-optimizes them once per non-default variant.
+        // Precompute them once so each `optimize_value` on a default value runs a single time.
+        let default_optimized: HashMap<(&str, usize), String> = default_theme
+            .map(|dt| {
+                dt.iter()
+                    .flat_map(|(name, values)| {
+                        values.0.iter().enumerate().filter_map(move |(idx, dval)| {
+                            dval.as_ref()
+                                .map(|d| ((name.as_str(), idx), optimize_value(d)))
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         for (variant_name, token_theme) in &sorted_variants {
             let is_default = *variant_name == &default_key;
             let selector = if is_default {
@@ -774,13 +801,9 @@ impl Theme {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
                         let is_same_as_default = !is_default
-                            && default_theme
-                                .and_then(|dt| dt.get(name))
-                                .and_then(|dv| dv.0.get(idx))
-                                .is_some_and(|dval| {
-                                    dval.as_ref()
-                                        .is_some_and(|d| optimize_value(d) == optimized)
-                                });
+                            && default_optimized
+                                .get(&(name.as_str(), idx))
+                                .is_some_and(|d| *d == optimized);
                         if !is_same_as_default {
                             let vars = level_map.entry(idx).or_default();
                             if !vars.is_empty() {
