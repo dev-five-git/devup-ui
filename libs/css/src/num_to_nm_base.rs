@@ -3,7 +3,7 @@ use crate::constant::{M_BASE_ARRAY, N_BASE_ARRAY};
 #[inline]
 pub fn num_to_nm_base(num: usize) -> String {
     if num == 0 {
-        return String::from(N_BASE_ARRAY[0]);
+        return String::from(N_BASE_ARRAY[0] as char);
     }
 
     let first_base = N_BASE_ARRAY.len();
@@ -17,15 +17,15 @@ pub fn num_to_nm_base(num: usize) -> String {
 
     while n > 0 {
         if n < first_base {
-            buf[len] = N_BASE_ARRAY[n] as u8;
+            buf[len] = N_BASE_ARRAY[n];
             len += 1;
             break;
         }
-        buf[len] = M_BASE_ARRAY[(n - first_base) % other_base] as u8;
+        buf[len] = M_BASE_ARRAY[(n - first_base) % other_base];
         len += 1;
         n = (n - first_base) / other_base;
         if n == 0 {
-            buf[len] = N_BASE_ARRAY[0] as u8;
+            buf[len] = N_BASE_ARRAY[0];
             len += 1;
             break;
         }

@@ -193,22 +193,22 @@ pub fn optimize_value(value: &str) -> String {
         }
     }
 
-    if ret.contains('(') || ret.contains(')') {
-        let mut depth: i32 = 0;
-        for ch in ret.chars() {
-            if ch == '(' {
-                depth += 1;
-            } else if ch == ')' {
-                depth -= 1;
-            }
+    // Single pass to detect unbalanced parens: accumulate depth over the whole
+    // string. A value with no paren leaves `depth == 0` → no fixup, matching the
+    // prior two-`contains`-probe + separate depth-loop behavior byte-for-byte.
+    let mut depth: i32 = 0;
+    for ch in ret.chars() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            depth -= 1;
         }
-        if depth < 0 {
-            ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
-        }
-        if depth > 0 {
-            for _ in 0..depth {
-                ret.push(')');
-            }
+    }
+    if depth < 0 {
+        ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
+    } else if depth > 0 {
+        for _ in 0..depth {
+            ret.push(')');
         }
     }
     ret
