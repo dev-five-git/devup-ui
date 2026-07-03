@@ -157,21 +157,24 @@ pub fn optimize_value(value: &str) -> String {
             }
         }
     }
-    // remove ; from dynamic value
-    for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
-        if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
-            let base = stripped.trim_end_matches(';');
-            let mut new_ret = String::with_capacity(base.len() + str_symbol.len());
-            new_ret.push_str(base);
-            new_ret.push_str(str_symbol);
-            ret = new_ret;
-        } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
-            let base = stripped.trim_end_matches(';');
-            let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
-            new_ret.push_str(base);
-            new_ret.push_str(str_symbol);
-            new_ret.push(')');
-            ret = new_ret;
+    // remove ; from dynamic value. Every SEMI_SUFFIXES entry contains `;`, so a
+    // value with no `;` can never match — skip the 4 strip_suffix probes entirely.
+    if ret.contains(';') {
+        for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
+            if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
+                let base = stripped.trim_end_matches(';');
+                let mut new_ret = String::with_capacity(base.len() + str_symbol.len());
+                new_ret.push_str(base);
+                new_ret.push_str(str_symbol);
+                ret = new_ret;
+            } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
+                let base = stripped.trim_end_matches(';');
+                let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
+                new_ret.push_str(base);
+                new_ret.push_str(str_symbol);
+                new_ret.push(')');
+                ret = new_ret;
+            }
         }
     }
 

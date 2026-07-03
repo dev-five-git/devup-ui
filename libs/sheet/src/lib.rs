@@ -394,43 +394,43 @@ impl StyleSheet {
         for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let resolved_value: Cow<'_, str> =
-                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
-                            if let Some(token) = st.value().strip_prefix('$') {
-                                match st.property() {
-                                    "box-shadow" => self.theme.get_default_shadow_value(token),
-                                    _ => self.theme.get_default_length_value(token),
-                                }
-                                .map_or_else(
-                                    || Cow::Borrowed(st.value()),
-                                    |v| Cow::Owned(v.to_string()),
-                                )
-                            } else {
-                                Cow::Borrowed(st.value())
+                    let is_first_value =
+                        st.theme_token_resolution() == ThemeTokenResolution::FirstValue;
+                    let resolved_value: Cow<'_, str> = if is_first_value {
+                        if let Some(token) = st.value().strip_prefix('$') {
+                            match st.property() {
+                                "box-shadow" => self.theme.get_default_shadow_value(token),
+                                _ => self.theme.get_default_length_value(token),
                             }
-                        } else {
-                            Cow::Borrowed(st.value())
-                        };
-
-                    let class_name =
-                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
-                            let selector = st.selector().map(ToString::to_string);
-                            sheet_to_classname(
-                                st.property(),
-                                st.level(),
-                                Some(&resolved_value),
-                                selector.as_deref(),
-                                st.style_order(),
-                                name_scope,
+                            .map_or_else(
+                                || Cow::Borrowed(st.value()),
+                                |v| Cow::Owned(v.to_string()),
                             )
                         } else {
-                            match st.extract(name_scope) {
-                                StyleProperty::ClassName(cls)
-                                | StyleProperty::Variable {
-                                    class_name: cls, ..
-                                } => cls,
-                            }
-                        };
+                            Cow::Borrowed(st.value())
+                        }
+                    } else {
+                        Cow::Borrowed(st.value())
+                    };
+
+                    let class_name = if is_first_value {
+                        let selector = st.selector().map(ToString::to_string);
+                        sheet_to_classname(
+                            st.property(),
+                            st.level(),
+                            Some(&resolved_value),
+                            selector.as_deref(),
+                            st.style_order(),
+                            name_scope,
+                        )
+                    } else {
+                        match st.extract(name_scope) {
+                            StyleProperty::ClassName(cls)
+                            | StyleProperty::Variable {
+                                class_name: cls, ..
+                            } => cls,
+                        }
+                    };
 
                     if self.add_property_with_layer(
                         &class_name,
@@ -1026,21 +1026,32 @@ impl StyleSheet {
                 // Under atom hoisting, hoisted atoms were emitted globally; the
                 // per-route chunk keeps only its route-private atoms.
                 let current_css = if let Some(hoisted) = &hoisted_atoms {
-                    let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
-                        .iter()
-                        .filter_map(|(level, props)| {
-                            let kept: FxHashSet<StyleSheetProperty> = props
-                                .iter()
-                                .filter(|prop| !hoisted.contains(&prop.class_name))
-                                .cloned()
-                                .collect();
-                            (!kept.is_empty()).then_some((*level, kept))
-                        })
-                        .collect();
-                    if filtered.is_empty() {
-                        continue;
+                    // Common case: none of this map's atoms were hoisted, so the
+                    // filtered map would equal the original — skip the clone-collect
+                    // entirely and borrow `map` directly.
+                    let any_hoisted = map
+                        .values()
+                        .flatten()
+                        .any(|prop| hoisted.contains(&prop.class_name));
+                    if any_hoisted {
+                        let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
+                            .iter()
+                            .filter_map(|(level, props)| {
+                                let kept: FxHashSet<StyleSheetProperty> = props
+                                    .iter()
+                                    .filter(|prop| !hoisted.contains(&prop.class_name))
+                                    .cloned()
+                                    .collect();
+                                (!kept.is_empty()).then_some((*level, kept))
+                            })
+                            .collect();
+                        if filtered.is_empty() {
+                            continue;
+                        }
+                        self.create_style(&filtered)
+                    } else {
+                        self.create_style(map)
                     }
-                    self.create_style(&filtered)
                 } else {
                     self.create_style(map)
                 };
