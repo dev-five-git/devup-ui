@@ -620,7 +620,10 @@ impl StyleSheet {
             // as non-allocating `Vec::new()` and avoids the second full scan.
             let mut global_props: Vec<_> = Vec::new();
             let mut at_rules: Vec<_> = Vec::new();
-            let mut sorted_props: Vec<_> = Vec::new();
+            // Plain (non-Global, non-At) selectors dominate: presize this bucket
+            // to `props.len()` to avoid its 1→4→8→… grow-reallocs. `global_props`
+            // / `at_rules` stay `Vec::new()` so empty buckets never allocate.
+            let mut sorted_props: Vec<_> = Vec::with_capacity(props.len());
             for prop in props {
                 match prop.selector {
                     Some(StyleSelector::Global(_, _)) => global_props.push(prop),

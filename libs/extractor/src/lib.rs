@@ -105,16 +105,21 @@ impl<'a> ExtractStyleProp<'a> {
                 consequent,
                 alternate,
                 ..
-            } => {
-                let mut styles = vec![];
-                if let Some(consequent) = consequent {
-                    styles.append(&mut consequent.extract());
+            } => match (consequent, alternate) {
+                // Exactly one branch: return its `extract()` directly, skipping
+                // the throwaway accumulator `Vec` and the drain-into-it copy.
+                (Some(branch), None) | (None, Some(branch)) => branch.extract(),
+                // Both branches present: preserve consequent-then-alternate
+                // order, presizing the accumulator to hold both results.
+                (Some(consequent), Some(alternate)) => {
+                    let mut consequent = consequent.extract();
+                    let mut alternate = alternate.extract();
+                    consequent.reserve(alternate.len());
+                    consequent.append(&mut alternate);
+                    consequent
                 }
-                if let Some(alternate) = alternate {
-                    styles.append(&mut alternate.extract());
-                }
-                styles
-            }
+                (None, None) => vec![],
+            },
             ExtractStyleProp::StaticArray(array) => {
                 array.iter().flat_map(ExtractStyleProp::extract).collect()
             }
