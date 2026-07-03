@@ -122,13 +122,15 @@ fn convert_interface_key(key: &str) -> String {
 
 fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
     if value.contains('$') {
-        Cow::Owned(
-            VAR_RE
-                .replace_all(value, |caps: &regex_lite::Captures| {
-                    format!("var(--{})", &caps[0][1..].replace('.', "-"))
-                })
-                .into_owned(),
-        )
+        // `replace_all` already returns a `Cow`; forward the owned result directly and, on the
+        // borrowed arm (a `$` with no `VAR_RE` match), re-borrow the input instead of allocating
+        // an owned copy. The borrow must be tied to `value`, not the `replace_all` temporary.
+        match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
+            format!("var(--{})", &caps[0][1..].replace('.', "-"))
+        }) {
+            Cow::Owned(s) => Cow::Owned(s),
+            Cow::Borrowed(_) => Cow::Borrowed(value),
+        }
     } else {
         Cow::Borrowed(value)
     }
@@ -228,26 +230,25 @@ impl StyleSheet {
             self.global_css_files.insert(file.clone());
         }
 
-        // Avoid allocating an owned key when the file bucket already exists (the common case).
+        // Look the file bucket up once (one probe on the common existing-file path) and only
+        // allocate the owned key `String` when the bucket has to be created for the first time.
         let filename_key = filename.unwrap_or_default();
-        if !self.properties.contains_key(filename_key) {
-            self.properties
-                .insert(filename_key.to_string(), BTreeMap::new());
-        }
-        self.properties.get_mut(filename_key).is_some_and(|bucket| {
-            bucket
-                .entry(style_order.unwrap_or(255))
-                .or_default()
-                .entry(level)
-                .or_default()
-                .insert(StyleSheetProperty {
-                    class_name: class_name.to_string(),
-                    property: property.to_string(),
-                    value: value.to_string(),
-                    selector: selector.cloned(),
-                    layer: layer.map(ToString::to_string),
-                })
-        })
+        let bucket = match self.properties.get_mut(filename_key) {
+            Some(bucket) => bucket,
+            None => self.properties.entry(filename_key.to_string()).or_default(),
+        };
+        bucket
+            .entry(style_order.unwrap_or(255))
+            .or_default()
+            .entry(level)
+            .or_default()
+            .insert(StyleSheetProperty {
+                class_name: class_name.to_string(),
+                property: property.to_string(),
+                value: value.to_string(),
+                selector: selector.cloned(),
+                layer: layer.map(ToString::to_string),
+            })
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
@@ -261,9 +262,8 @@ impl StyleSheet {
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
-        if !self.global_css_files.contains(file) {
-            self.global_css_files.insert(file.to_string());
-        }
+        // `BTreeSet::insert` is idempotent, so the separate `contains` probe is redundant.
+        self.global_css_files.insert(file.to_string());
         self.font_faces
             .entry(file.to_string())
             .or_default()
