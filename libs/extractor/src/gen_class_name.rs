@@ -181,7 +181,12 @@ pub fn merge_expression_for_class_name<'a>(
         if let Expression::StringLiteral(str) = &expr {
             let value = str.value.trim();
             if !value.is_empty() {
-                if !class_name.is_empty() {
+                if class_name.is_empty() {
+                    // First fragment: reserve up front so appending the initial static
+                    // classes does not trigger an early grow-realloc. Subsequent
+                    // fragments rely on amortized growth.
+                    class_name.reserve(value.len() + 4);
+                } else {
                     class_name.push(' ');
                 }
                 class_name.push_str(value);

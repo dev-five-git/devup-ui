@@ -174,7 +174,7 @@ impl ExtractStaticStyle {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.selector.as_ref().map(ToString::to_string);
+        let s = self.selector.as_ref().map(StyleSelector::as_class_str);
         // `self.value` is already the result of `optimize_value(convert_value(..))`
         // (computed in the constructors), so re-running convert_value + optimize_value
         // here is redundant. Only the multi-css optimization is not applied at construction.

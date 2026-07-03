@@ -237,6 +237,24 @@ impl Display for StyleSelector {
     }
 }
 
+impl StyleSelector {
+    /// The selector string used for class-name generation, borrowing when possible.
+    ///
+    /// `Selector`/`Global` variants have a `Display` impl that writes their inner
+    /// `String` verbatim, so they can be handed out as a borrowed `&str` with zero
+    /// allocation. Only the `At` variant needs the formatted owned string. This
+    /// yields bytes identical to `self.to_string()` for every variant.
+    #[must_use]
+    pub fn as_class_str(&self) -> std::borrow::Cow<'_, str> {
+        match self {
+            StyleSelector::Selector(value) | StyleSelector::Global(value, _) => {
+                std::borrow::Cow::Borrowed(value)
+            }
+            StyleSelector::At { .. } => std::borrow::Cow::Owned(self.to_string()),
+        }
+    }
+}
+
 /// Rank a `Global` selector's pseudo suffix by scanning `SELECTOR_ORDER` once.
 ///
 /// "Last matching entry wins": the value of the last table token contained in

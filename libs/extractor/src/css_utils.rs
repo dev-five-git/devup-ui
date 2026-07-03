@@ -125,11 +125,13 @@ pub fn css_to_style_literal(
             continue;
         }
 
-        // Find all placeholders in this value
-        let mut found_placeholders = Vec::new();
+        // Find all placeholders in this value. Borrow the placeholder key from
+        // `expression_map` (owned + alive for this iteration) instead of cloning it;
+        // it is only read back as `&str` in the literal-substitution loop below.
+        let mut found_placeholders: Vec<(&str, usize)> = Vec::new();
         for (placeholder, &idx) in &expression_map {
             if value.contains(placeholder) {
-                found_placeholders.push((placeholder.clone(), idx));
+                found_placeholders.push((placeholder.as_str(), idx));
             }
         }
 
@@ -167,8 +169,7 @@ pub fn css_to_style_literal(
                 for (placeholder, idx) in &found_placeholders {
                     if let Some((_, literal_value)) = literal_values.iter().find(|(i, _)| i == idx)
                     {
-                        static_value =
-                            static_value.replace(placeholder.as_str(), literal_value.as_str());
+                        static_value = static_value.replace(*placeholder, literal_value.as_str());
                     }
                 }
                 // Create a new static style with the evaluated value
@@ -183,7 +184,7 @@ pub fn css_to_style_literal(
                 // Check if value is just a placeholder (no surrounding text)
                 if found_placeholders.len() == 1
                     && let (placeholder, idx) = &found_placeholders[0]
-                    && value.trim() == placeholder.as_str()
+                    && value.trim() == *placeholder
                     && *idx < css.expressions.len()
                 {
                     // Value is just the expression - use expression code directly
@@ -205,8 +206,8 @@ pub fn css_to_style_literal(
                     // Sort placeholders by their position in reverse order to avoid index shifting
                     found_placeholders.sort_by(|(a_placeholder, _), (b_placeholder, _)| {
                         template_literal
-                            .rfind(a_placeholder)
-                            .cmp(&template_literal.rfind(b_placeholder))
+                            .rfind(*a_placeholder)
+                            .cmp(&template_literal.rfind(*b_placeholder))
                     });
 
                     // Replace each placeholder with the actual expression in template literal format
@@ -216,7 +217,7 @@ pub fn css_to_style_literal(
                                 dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
                             // Replace placeholder with ${expr} syntax
                             template_literal = template_literal
-                                .replace(placeholder.as_str(), &format!("${{{expr_code}}}"));
+                                .replace(*placeholder, &format!("${{{expr_code}}}"));
                         }
                     }
 
