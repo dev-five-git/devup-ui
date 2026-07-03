@@ -783,10 +783,16 @@ impl Theme {
 
         for (variant_name, token_theme) in &sorted_variants {
             let is_default = *variant_name == default_key;
-            let selector = if is_default {
-                ":root".to_string()
-            } else {
-                format!(":root[data-theme={variant_name}]")
+            // Write the `:root` / `:root[data-theme=<name>]` prefix directly into
+            // `css` at each use site instead of allocating one owned `String` per
+            // variant. Emitted bytes are identical to the former `format!`.
+            let write_selector = |css: &mut String| {
+                css.push_str(":root");
+                if !is_default {
+                    css.push_str("[data-theme=");
+                    css.push_str(variant_name);
+                    css.push(']');
+                }
             };
 
             // Group variables by breakpoint level without allocating one String per variable.
@@ -816,14 +822,14 @@ impl Theme {
             for (level, vars) in &level_map {
                 if !vars.is_empty() {
                     if *level == 0 {
-                        css.push_str(&selector);
+                        write_selector(css);
                         css.push('{');
                         css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
                         write!(css, "@media(min-width:{bp}px){{")
                             .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
-                        css.push_str(&selector);
+                        write_selector(css);
                         css.push('{');
                         css.push_str(vars);
                         css.push_str("}}");

@@ -16,8 +16,11 @@ use crate::{
 };
 use css::{
     add_selector_params, disassemble_property, get_enum_property_map, get_enum_property_value,
-    is_enum_property, is_special_property::is_special_property, style_selector::StyleSelector,
-    theme_tokens::get_responsive_theme_token, utils::to_kebab_case,
+    is_enum_property,
+    is_special_property::is_special_property,
+    style_selector::StyleSelector,
+    theme_tokens::{get_responsive_theme_token, is_responsive_theme_token},
+    utils::to_kebab_case,
 };
 use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
@@ -374,7 +377,7 @@ pub fn extract_style_from_expression<'a>(
                             ThemeTokenResolution::CssVariable,
                         )
                     }
-                } else if get_responsive_theme_token(&value).is_some() {
+                } else if is_responsive_theme_token(&value) {
                     create_static_styles(
                         name,
                         &value,

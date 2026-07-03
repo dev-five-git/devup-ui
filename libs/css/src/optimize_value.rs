@@ -26,6 +26,12 @@ pub fn optimize_value(value: &str) -> String {
         ret.push(')');
     }
 
+    // Scan once for `--` after the var()-wrap (which keeps any `--` inside
+    // `var(--x)`); reused below to skip RM_MINUS_ZERO_RE. INNER_TRIM_RE only
+    // wraps its capture in parens and cannot add or remove `--`, so the flag
+    // stays valid across that replacement.
+    let has_custom_prop = ret.contains("--");
+
     // Use Cow-aware replacement: only allocate when regex matches
     let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
     if let std::borrow::Cow::Owned(s) = replaced {
@@ -34,7 +40,7 @@ pub fn optimize_value(value: &str) -> String {
 
     // Skip RM_MINUS_ZERO_RE for values containing CSS custom property references
     // to preserve names like --var-0 (the -0 should not be converted to 0)
-    if !ret.contains("--") {
+    if !has_custom_prop {
         let replaced = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;

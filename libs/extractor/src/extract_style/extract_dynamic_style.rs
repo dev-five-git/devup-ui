@@ -57,6 +57,11 @@ const IMPORTANT_SUFFIXES: [(&str, &str); 4] = [
 fn strip_important(identifier: &str) -> (String, bool) {
     for (str_symbol, suffix) in IMPORTANT_SUFFIXES {
         if let Some(base) = identifier.strip_suffix(suffix) {
+            // The bare-identifier case (`str_symbol == ""`, the most common) needs
+            // no formatting machinery — a plain owned copy of `base` suffices.
+            if str_symbol.is_empty() {
+                return (base.to_string(), true);
+            }
             return (format!("{base}{str_symbol}"), true);
         }
     }
