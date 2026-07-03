@@ -9,20 +9,18 @@ impl TryFrom<String> for UtilType {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        UtilType::from_str(&value).map_err(|()| value)
+        UtilType::from_str_opt(&value).ok_or(value)
     }
 }
 
 impl UtilType {
-    pub fn from_str(value: &str) -> Result<Self, ()> {
-        if value == "css" {
-            Ok(UtilType::Css)
-        } else if value == "globalCss" {
-            Ok(UtilType::GlobalCss)
-        } else if value == "keyframes" {
-            Ok(UtilType::Keyframes)
-        } else {
-            Err(())
+    #[must_use]
+    pub fn from_str_opt(value: &str) -> Option<Self> {
+        match value {
+            "css" => Some(UtilType::Css),
+            "globalCss" => Some(UtilType::GlobalCss),
+            "keyframes" => Some(UtilType::Keyframes),
+            _ => None,
         }
     }
 }

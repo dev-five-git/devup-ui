@@ -163,15 +163,13 @@ impl ExtractStaticStyle {
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
         let s = self.selector.as_ref().map(ToString::to_string);
-        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
-            self.value.clone()
-        } else {
-            convert_value(&self.value)
-        });
+        // `self.value` is already the result of `optimize_value(convert_value(..))`
+        // (computed in the constructors), so re-running convert_value + optimize_value
+        // here is redundant. Only the multi-css optimization is not applied at construction.
         let v = if check_multi_css_optimize(&self.property) {
-            optimize_multi_css_value(&v)
+            optimize_multi_css_value(&self.value)
         } else {
-            v
+            self.value.clone()
         };
         StyleProperty::ClassName(sheet_to_classname(
             &self.property,

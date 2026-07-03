@@ -1045,7 +1045,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         if let Ok(kind) = ExportVariableKind::from_str(&imported_str) {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
-                        } else if let Ok(kind) = UtilType::from_str(&imported_str) {
+                        } else if let Some(kind) = UtilType::from_str_opt(&imported_str) {
                             self.util_imports
                                 .insert(import.local.to_string(), Rc::new(kind));
                             specifiers.remove(i);

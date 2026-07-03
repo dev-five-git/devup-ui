@@ -18,6 +18,9 @@ pub fn to_kebab_case(value: &str) -> String {
 #[inline]
 #[must_use]
 pub fn to_camel_case(value: &str) -> String {
+    if !value.contains('-') {
+        return value.to_string();
+    }
     let mut result = String::with_capacity(value.len());
     for (i, s) in value.split('-').enumerate() {
         if i == 0 {
