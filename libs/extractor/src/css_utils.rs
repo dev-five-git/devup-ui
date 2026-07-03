@@ -408,7 +408,13 @@ pub fn css_to_style(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_unstable_by(|a, b| a.property().cmp(b.property()));
+    // A single declaration (or none) is trivially ordered, so skip the comparison
+    // sort's setup entirely for the very common single-property case. The multi-source
+    // merge (multiple `@rule`/`{}` segments) and the multi-declaration block still need
+    // the property sort to keep the emitted CSS order byte-identical.
+    if styles.len() > 1 {
+        styles.sort_unstable_by(|a, b| a.property().cmp(b.property()));
+    }
     styles
 }
 
@@ -468,23 +474,23 @@ pub fn optimize_css_block(css: &str) -> String {
 
     // Second pass: trim around {, }, ; and optimize declarations in one go
     let mut result = String::with_capacity(cleaned.len());
-    // Split by ; then process, preserving { and }
+    // Trim whitespace around every `{` and `}` boundary in ONE pass, writing into a
+    // single buffer. This is equivalent to the previous split('{')-then-split('}')
+    // rebuild but avoids the intermediate whole-string allocation: each segment between
+    // two structural chars is trimmed once and the consumed `{`/`}` is re-emitted.
     let trimmed = {
-        let mut s = String::with_capacity(cleaned.len());
-        for part in cleaned.split('{') {
-            if !s.is_empty() {
-                s.push('{');
+        let mut buf = String::with_capacity(cleaned.len());
+        let mut segment_start = 0;
+        let bytes = cleaned.as_bytes();
+        for (idx, &b) in bytes.iter().enumerate() {
+            if b == b'{' || b == b'}' {
+                buf.push_str(cleaned[segment_start..idx].trim());
+                buf.push(b as char);
+                segment_start = idx + 1;
             }
-            s.push_str(part.trim());
         }
-        let mut s2 = String::with_capacity(s.len());
-        for part in s.split('}') {
-            if !s2.is_empty() {
-                s2.push('}');
-            }
-            s2.push_str(part.trim());
-        }
-        s2
+        buf.push_str(cleaned[segment_start..].trim());
+        buf
     };
 
     let mut first_segment = true;
