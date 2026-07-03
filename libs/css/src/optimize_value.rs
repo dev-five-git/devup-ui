@@ -186,7 +186,10 @@ pub fn optimize_value(value: &str) -> String {
 }
 
 fn optimize_color(value: &str) -> String {
-    let mut ret = value.to_uppercase();
+    // `value` is an ASCII hex capture (`COLOR_HASH` = `#([0-9a-fA-F]+)`), so
+    // ASCII-only uppercasing is correct and skips the Unicode-aware casing tables.
+    let mut ret = value.to_string();
+    ret.make_ascii_uppercase();
 
     if ret.len() == 6 {
         let b = ret.as_bytes();

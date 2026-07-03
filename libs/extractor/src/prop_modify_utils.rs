@@ -455,12 +455,26 @@ fn rebuild_template_literal_with_mapping<'a>(
     template: &oxc_ast::ast::TemplateLiteral<'a>,
     class_mapping: &FxHashMap<String, String>,
 ) -> Expression<'a> {
+    // Sort the mapping ONCE by key length descending (avoids partial replacements,
+    // e.g. "text-3xl" before "text-3") and reuse the sorted slice for every quasi
+    // and nested expression instead of re-sorting per call.
+    let mut sorted_classes: Vec<(&String, &String)> = class_mapping.iter().collect();
+    sorted_classes.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
+    rebuild_template_literal_with_sorted(ast_builder, template, &sorted_classes)
+}
+
+/// Rebuild a template literal using a pre-sorted class mapping slice.
+fn rebuild_template_literal_with_sorted<'a>(
+    ast_builder: &AstBuilder<'a>,
+    template: &oxc_ast::ast::TemplateLiteral<'a>,
+    sorted_classes: &[(&String, &String)],
+) -> Expression<'a> {
     // Rebuild quasis with replaced class names
     let new_quasis = template.quasis.iter().map(|quasi| {
         let raw = quasi.value.raw.as_str();
-        let replaced = replace_classes_in_string(raw, class_mapping);
+        let replaced = replace_classes_in_string(raw, sorted_classes);
         let cooked = quasi.value.cooked.as_ref().map(|c| {
-            let replaced_cooked = replace_classes_in_string(c.as_str(), class_mapping);
+            let replaced_cooked = replace_classes_in_string(c.as_str(), sorted_classes);
             Str::from_in(&replaced_cooked, ast_builder.allocator())
         });
         TemplateElement::new(
@@ -478,7 +492,7 @@ fn rebuild_template_literal_with_mapping<'a>(
     let new_expressions = template
         .expressions
         .iter()
-        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, class_mapping));
+        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, sorted_classes));
 
     Expression::new_template_literal(
         template.span,
@@ -488,15 +502,14 @@ fn rebuild_template_literal_with_mapping<'a>(
     )
 }
 
-/// Replace Tailwind class names in a string with generated class names
-fn replace_classes_in_string(s: &str, class_mapping: &FxHashMap<String, String>) -> String {
+/// Replace Tailwind class names in a string with generated class names.
+///
+/// `sorted_classes` MUST already be sorted by key length descending so longer
+/// class names are replaced before their prefixes (e.g. "text-3xl" before "text-3").
+fn replace_classes_in_string(s: &str, sorted_classes: &[(&String, &String)]) -> String {
     let mut result = s.to_string();
-    // Sort by length descending to avoid partial replacements (e.g., "text-3xl" before "text-3")
-    let mut sorted_classes: Vec<_> = class_mapping.iter().collect();
-    sorted_classes.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
-
     for (tailwind_class, generated_class) in sorted_classes {
-        result = result.replace(tailwind_class, generated_class);
+        result = result.replace(tailwind_class.as_str(), generated_class);
     }
     result
 }
@@ -505,11 +518,11 @@ fn replace_classes_in_string(s: &str, class_mapping: &FxHashMap<String, String>)
 fn rebuild_expression_with_mapping<'a>(
     ast_builder: &AstBuilder<'a>,
     expr: &Expression<'a>,
-    class_mapping: &FxHashMap<String, String>,
+    sorted_classes: &[(&String, &String)],
 ) -> Expression<'a> {
     match expr {
         Expression::StringLiteral(lit) => {
-            let replaced = replace_classes_in_string(lit.value.as_str(), class_mapping);
+            let replaced = replace_classes_in_string(lit.value.as_str(), sorted_classes);
             Expression::new_string_literal(
                 SPAN,
                 Str::from_in(&replaced, ast_builder.allocator()),
@@ -519,9 +532,9 @@ fn rebuild_expression_with_mapping<'a>(
         }
         Expression::ConditionalExpression(cond) => {
             let consequent =
-                rebuild_expression_with_mapping(ast_builder, &cond.consequent, class_mapping);
+                rebuild_expression_with_mapping(ast_builder, &cond.consequent, sorted_classes);
             let alternate =
-                rebuild_expression_with_mapping(ast_builder, &cond.alternate, class_mapping);
+                rebuild_expression_with_mapping(ast_builder, &cond.alternate, sorted_classes);
             Expression::new_conditional_expression(
                 cond.span,
                 cond.test.clone_in(ast_builder.allocator()),
@@ -531,17 +544,17 @@ fn rebuild_expression_with_mapping<'a>(
             )
         }
         Expression::LogicalExpression(logic) => {
-            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, class_mapping);
-            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, class_mapping);
+            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, sorted_classes);
+            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, sorted_classes);
             Expression::new_logical_expression(logic.span, left, logic.operator, right, ast_builder)
         }
         Expression::ParenthesizedExpression(paren) => {
             let inner =
-                rebuild_expression_with_mapping(ast_builder, &paren.expression, class_mapping);
+                rebuild_expression_with_mapping(ast_builder, &paren.expression, sorted_classes);
             Expression::new_parenthesized_expression(paren.span, inner, ast_builder)
         }
         Expression::TemplateLiteral(inner_template) => {
-            rebuild_template_literal_with_mapping(ast_builder, inner_template, class_mapping)
+            rebuild_template_literal_with_sorted(ast_builder, inner_template, sorted_classes)
         }
         // For other expressions (variables, etc.), keep as-is
         _ => expr.clone_in(ast_builder.allocator()),

@@ -50,7 +50,7 @@ fn create_static_styles<'a>(
         if let Some(map) = get_enum_property_value(name, value) {
             styles.extend(map.into_iter().map(|(k, v)| {
                 ExtractStyleProp::Static(ExtractStyleValue::Static(
-                    ExtractStaticStyle::new(&k, &v, level, selector.clone())
+                    ExtractStaticStyle::new(k, v, level, selector.clone())
                         .with_theme_token_resolution(resolution),
                 ))
             }));

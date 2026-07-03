@@ -2,12 +2,14 @@ use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectPropertyKind, PropertyKey, Statement, StaticMemberExpression,
+        JSXAttributeValue, ObjectPropertyKind, Program, PropertyKey, Statement,
+        StaticMemberExpression,
     },
     builder::AstBuilder,
 };
 
 use oxc_codegen::{Codegen, CodegenOptions};
+#[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
@@ -21,15 +23,24 @@ pub(super) fn convert_value(value: &str) -> String {
 
 pub(super) fn expression_to_code(expression: &Expression) -> String {
     let allocator = Allocator::default();
-    let mut parsed = Parser::new(&allocator, "", SourceType::d_ts()).parse();
     let builder = oxc_ast::builder::AstBuilder::new(&allocator);
-    parsed.program.body.insert(
-        0,
-        Statement::ExpressionStatement(ExpressionStatement::boxed(
-            SPAN,
-            expression.clone_in(&allocator),
-            &builder,
-        )),
+    // Build the one-statement `Program` directly instead of parsing an empty
+    // source and inserting into it — skips a full parse round-trip per call.
+    let mut body = oxc_allocator::Vec::with_capacity_in(1, &builder);
+    body.push(Statement::ExpressionStatement(ExpressionStatement::boxed(
+        SPAN,
+        expression.clone_in(&allocator),
+        &builder,
+    )));
+    let program = Program::new(
+        SPAN,
+        SourceType::d_ts(),
+        "",
+        oxc_allocator::Vec::new_in(&builder),
+        None,
+        oxc_allocator::Vec::new_in(&builder),
+        body,
+        &builder,
     );
 
     Codegen::new()
@@ -37,7 +48,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
             minify: true,
             ..Default::default()
         })
-        .build(&parsed.program)
+        .build(&program)
         .code
 }
 

@@ -80,23 +80,38 @@ fn dot_class(class_name: &str) -> String {
     result
 }
 
-#[must_use]
-pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
+/// Write the merged selector directly into `out`.
+///
+/// Avoids the throwaway `String` that [`merge_selector`] returns: the common
+/// no-selector path pushes `".<class_name>"` in place, while the `&`-replacement
+/// cases still build a temporary.
+pub fn write_merge_selector(out: &mut String, class_name: &str, selector: Option<&StyleSelector>) {
     if let Some(selector) = selector {
         match selector {
-            StyleSelector::Selector(value) => value.replace('&', &dot_class(class_name)),
+            StyleSelector::Selector(value) => {
+                out.push_str(&value.replace('&', &dot_class(class_name)));
+            }
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
-                    s.replace('&', &dot_class(class_name))
+                    out.push_str(&s.replace('&', &dot_class(class_name)));
                 } else {
-                    dot_class(class_name)
+                    out.push('.');
+                    out.push_str(class_name);
                 }
             }
-            StyleSelector::Global(v, _) => v.clone(),
+            StyleSelector::Global(v, _) => out.push_str(v),
         }
     } else {
-        dot_class(class_name)
+        out.push('.');
+        out.push_str(class_name);
     }
+}
+
+#[must_use]
+pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
+    let mut result = String::new();
+    write_merge_selector(&mut result, class_name, selector);
+    result
 }
 
 #[must_use]
@@ -154,14 +169,13 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
 }
 
 #[must_use]
-pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(String, String)>> {
+pub fn get_enum_property_value(
+    property: &str,
+    value: &str,
+) -> Option<Vec<(&'static str, &'static str)>> {
     if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
         if let Some(map) = map.get(value) {
-            Some(
-                map.entries()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect(),
-            )
+            Some(map.entries().map(|(k, v)| (*k, *v)).collect())
         } else {
             Some(vec![])
         }

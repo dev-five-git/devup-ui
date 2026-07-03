@@ -5,9 +5,10 @@ use css::{
     atom_hoist::{atom_hoist_threshold, is_atom_hoist},
     file_map::canonical,
     file_routes::route_count_for_files,
-    merge_selector, sheet_to_classname,
+    sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector},
     theme_tokens::set_theme_token_levels,
+    write_merge_selector,
 };
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_static_style::ThemeTokenResolution;
@@ -79,7 +80,7 @@ impl Ord for StyleSheetProperty {
 
 impl StyleSheetProperty {
     fn write_extract(&self, css: &mut String) {
-        css.push_str(&merge_selector(&self.class_name, self.selector.as_ref()));
+        write_merge_selector(css, &self.class_name, self.selector.as_ref());
         css.push('{');
         css.push_str(&self.property);
         css.push(':');
