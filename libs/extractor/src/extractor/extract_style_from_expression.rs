@@ -16,7 +16,7 @@ use crate::{
 };
 use css::{
     add_selector_params, disassemble_property, get_enum_property_map, get_enum_property_value,
-    is_special_property::is_special_property, style_selector::StyleSelector,
+    is_enum_property, is_special_property::is_special_property, style_selector::StyleSelector,
     theme_tokens::get_responsive_theme_token, utils::to_kebab_case,
 };
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -46,15 +46,23 @@ fn create_static_styles<'a>(
 ) -> Vec<ExtractStyleProp<'a>> {
     let mut styles = Vec::new();
 
-    for &level in levels {
-        if let Some(map) = get_enum_property_value(name, value) {
-            styles.extend(map.into_iter().map(|(k, v)| {
+    // `name`/`value` are invariant across `levels`, so resolve the enum
+    // expansion once instead of re-doing the phf lookup per breakpoint level.
+    // Three cases, preserving prior behavior exactly:
+    //   - known enum prop with a mapped value  -> expand into per-(k,v) styles
+    //   - known enum prop, value NOT mapped     -> drop (emit nothing)
+    //   - not an enum prop                       -> emit the single fallback style
+    if let Some(map) = get_enum_property_value(name, value) {
+        for &level in levels {
+            styles.extend(map.iter().map(|&(k, v)| {
                 ExtractStyleProp::Static(ExtractStyleValue::Static(
                     ExtractStaticStyle::new(k, v, level, selector.clone())
                         .with_theme_token_resolution(resolution),
                 ))
             }));
-        } else {
+        }
+    } else if !is_enum_property(name) {
+        for &level in levels {
             styles.push(ExtractStyleProp::Static(ExtractStyleValue::Static(
                 ExtractStaticStyle::new(name, value, level, selector.clone())
                     .with_theme_token_resolution(resolution),

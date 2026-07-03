@@ -173,37 +173,34 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
     }
 }
 
+/// True when `property` is a known enum style property (e.g. `display`).
+///
+/// Holds regardless of whether a specific value maps to an expansion. Cheap
+/// phf `contains_key`; lets callers distinguish "not an enum prop" from
+/// "enum prop, value not mapped" without materializing an empty `Vec`.
+#[must_use]
+pub fn is_enum_property(property: &str) -> bool {
+    GLOBAL_ENUM_STYLE_PROPERTY.contains_key(property)
+}
+
 #[must_use]
 pub fn get_enum_property_value(
     property: &str,
     value: &str,
 ) -> Option<Vec<(&'static str, &'static str)>> {
-    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
-        if let Some(map) = map.get(value) {
-            Some(map.entries().map(|(k, v)| (*k, *v)).collect())
-        } else {
-            Some(vec![])
-        }
-    } else {
-        None
-    }
+    GLOBAL_ENUM_STYLE_PROPERTY
+        .get(property)
+        .and_then(|map| map.get(value))
+        .map(|map| map.entries().map(|(k, v)| (*k, *v)).collect())
 }
 
 #[must_use]
 pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&str, &str>>> {
-    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
-        let mut ret = BTreeMap::new();
-        for (k, v) in map.entries() {
-            let mut tmp = BTreeMap::new();
-            v.entries().for_each(|(k, v)| {
-                tmp.insert(*k, *v);
-            });
-            ret.insert(*k, tmp);
-        }
-        Some(ret)
-    } else {
-        None
-    }
+    GLOBAL_ENUM_STYLE_PROPERTY.get(property).map(|map| {
+        map.entries()
+            .map(|(k, v)| (*k, v.entries().map(|(k, v)| (*k, *v)).collect()))
+            .collect()
+    })
 }
 
 /// Get-or-insert `key` in the per-file class map and return its base-37 name.
