@@ -197,10 +197,10 @@ pub fn optimize_value(value: &str) -> String {
     // string. A value with no paren leaves `depth == 0` → no fixup, matching the
     // prior two-`contains`-probe + separate depth-loop behavior byte-for-byte.
     let mut depth: i32 = 0;
-    for ch in ret.chars() {
-        if ch == '(' {
+    for b in ret.bytes() {
+        if b == b'(' {
             depth += 1;
-        } else if ch == ')' {
+        } else if b == b')' {
             depth -= 1;
         }
     }

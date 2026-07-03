@@ -615,13 +615,22 @@ impl StyleSheet {
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
         let mut current_css = String::with_capacity(prop_count * 64);
         for (level, props) in map {
-            let (mut global_props, rest): (Vec<_>, Vec<_>) = props
-                .iter()
-                .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
+            // Single pass bucketing: the two prior `partition` calls always
+            // heap-allocated all four output `Vec`s even when the Global/At
+            // buckets stay empty (the common case). One scan pushing each
+            // `&prop` into one of three pre-declared `Vec`s leaves empty buckets
+            // as non-allocating `Vec::new()` and avoids the second full scan.
+            let mut global_props: Vec<_> = Vec::new();
+            let mut at_rules: Vec<_> = Vec::new();
+            let mut sorted_props: Vec<_> = Vec::new();
+            for prop in props {
+                match prop.selector {
+                    Some(StyleSelector::Global(_, _)) => global_props.push(prop),
+                    Some(StyleSelector::At { .. }) => at_rules.push(prop),
+                    _ => sorted_props.push(prop),
+                }
+            }
             global_props.sort();
-            let (mut at_rules, mut sorted_props): (Vec<_>, Vec<_>) = rest
-                .into_iter()
-                .partition(|prop| matches!(prop.selector, Some(StyleSelector::At { .. })));
             sorted_props.sort();
             at_rules.sort();
             let at_rules = {
