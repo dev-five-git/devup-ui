@@ -1,6 +1,7 @@
 use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
@@ -640,8 +641,10 @@ impl Theme {
                     }
                 }
                 for (prop, value) in theme_properties.css_entries() {
-                    let optimized_value = optimize_value(value);
                     if theme_key.is_some() {
+                        // Non-default variant: the map may not contain `prop` (a color present in
+                        // this variant but absent from the default), so optimize it here.
+                        let optimized_value = optimize_value(value);
                         if other_theme_key.is_none()
                             && let Some(default_value) = default_optimized_colors
                                 .get(prop.as_str())
@@ -656,6 +659,16 @@ impl Theme {
                             push_css_variable(&mut theme_contents, prop, &default_value);
                         }
                     } else {
+                        // Default variant: `default_optimized_colors` was built from this same
+                        // variant, so it already holds `optimize_value(value)` keyed by `prop`.
+                        // Borrow it instead of recomputing (saves one `optimize_value` call and
+                        // one `String` allocation per default-variant color).
+                        let optimized_value: Cow<str> =
+                            default_optimized_colors.get(prop.as_str()).map_or_else(
+                                || Cow::Owned(optimize_value(value)),
+                                |v| Cow::Borrowed(v.as_str()),
+                            );
+                        let optimized_value: &str = &optimized_value;
                         let other_theme_value =
                             other_theme_key.as_ref().and_then(|other_theme_key| {
                                 self.colors.get(other_theme_key).and_then(|v| {
@@ -678,12 +691,12 @@ impl Theme {
                         theme_contents.push(':');
                         if let Some(other_theme_value) = other_theme_value {
                             theme_contents.push_str("light-dark(");
-                            theme_contents.push_str(&optimized_value);
+                            theme_contents.push_str(optimized_value);
                             theme_contents.push(',');
                             theme_contents.push_str(&other_theme_value);
                             theme_contents.push(')');
                         } else {
-                            theme_contents.push_str(&optimized_value);
+                            theme_contents.push_str(optimized_value);
                         }
                     }
                 }

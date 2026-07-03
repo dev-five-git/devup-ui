@@ -4,6 +4,7 @@ use std::hint::black_box;
 use css::class_map::reset_class_map;
 use css::debug::set_debug;
 use css::file_map::reset_file_map;
+use css::optimize_multi_css_value::optimize_multi_css_value;
 use css::optimize_value::optimize_value;
 use css::set_prefix;
 use css::utils::to_kebab_case;
@@ -126,6 +127,28 @@ fn bench_optimize_value(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_optimize_multi_css_value(c: &mut Criterion) {
+    let mut group = c.benchmark_group("optimize_multi_css_value");
+
+    group.bench_function("bare_family", |b| {
+        b.iter(|| optimize_multi_css_value(black_box("Roboto")));
+    });
+
+    group.bench_function("quoted_with_space", |b| {
+        b.iter(|| optimize_multi_css_value(black_box("'Roboto Hello', sans-serif")));
+    });
+
+    group.bench_function("comma_list", |b| {
+        b.iter(|| optimize_multi_css_value(black_box("'A', 'B', 'C'")));
+    });
+
+    group.bench_function("url_value", |b| {
+        b.iter(|| optimize_multi_css_value(black_box("url('/f.ttf')")));
+    });
+
+    group.finish();
+}
+
 fn bench_to_kebab_case(c: &mut Criterion) {
     let mut group = c.benchmark_group("to_kebab_case");
 
@@ -173,6 +196,7 @@ fn bench_merge_selector(c: &mut Criterion) {
 fn criterion_benchmark(c: &mut Criterion) {
     bench_sheet_to_classname(c);
     bench_optimize_value(c);
+    bench_optimize_multi_css_value(c);
     bench_to_kebab_case(c);
     bench_merge_selector(c);
 }
