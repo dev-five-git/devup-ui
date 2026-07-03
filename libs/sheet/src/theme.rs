@@ -613,15 +613,22 @@ impl Theme {
             // The default variant's optimized color values are invariant across variants, yet the
             // non-default (`theme_key.is_some()`, 3+ theme) branch re-optimizes them once per
             // variant. Precompute them once so each `optimize_value` runs a single time per color.
-            let default_optimized_colors: HashMap<&str, String> = self
-                .colors
-                .get(&default_theme_key)
-                .map(|d| {
-                    d.css_entries()
-                        .map(|(k, v)| (k.as_str(), optimize_value(v)))
-                        .collect()
-                })
-                .unwrap_or_default();
+            // Only worth materializing when a second variant re-reads the map: for a single
+            // variant each value is used exactly once, so building the intermediate `HashMap`
+            // (extra hashing + one allocation) buys nothing over the default arm's inline
+            // `Cow::Owned(optimize_value(value))` map-miss fallback. Skip it entirely then.
+            let default_optimized_colors: HashMap<&str, String> = if single_theme {
+                HashMap::new()
+            } else {
+                self.colors
+                    .get(&default_theme_key)
+                    .map(|d| {
+                        d.css_entries()
+                            .map(|(k, v)| (k.as_str(), optimize_value(v)))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
             for (theme_name, theme_properties) in entries {
                 let mut theme_contents = String::new();
                 let theme_key = if *theme_name == *default_theme_key {
@@ -642,11 +649,18 @@ impl Theme {
                 }
                 for (prop, value) in theme_properties.css_entries() {
                     if theme_key.is_some() {
-                        // Non-default variant: the map may not contain `prop` (a color present in
-                        // this variant but absent from the default), so optimize it here.
-                        let optimized_value = optimize_value(value);
-                        if other_theme_key.is_none()
-                            && let Some(default_value) = default_optimized_colors
+                        // Non-default variant. When a light-dark partner exists
+                        // (`other_theme_key.is_some()`, the 2-theme case) the default variant
+                        // already emits this variant's value inside its `light-dark(...)`, so
+                        // nothing is pushed here. Guard the whole per-color pass on
+                        // `other_theme_key.is_none()` to skip the always-discarded
+                        // `optimize_value(value)` + compare in that case (one fewer `String`
+                        // alloc per default-shared color).
+                        if other_theme_key.is_none() {
+                            // The map may not contain `prop` (a color present in this variant but
+                            // absent from the default), so optimize it here.
+                            let optimized_value = optimize_value(value);
+                            if let Some(default_value) = default_optimized_colors
                                 .get(prop.as_str())
                                 .and_then(|default_optimized| {
                                     if *default_optimized == optimized_value {
@@ -655,8 +669,9 @@ impl Theme {
                                         Some(optimized_value)
                                     }
                                 })
-                        {
-                            push_css_variable(&mut theme_contents, prop, &default_value);
+                            {
+                                push_css_variable(&mut theme_contents, prop, &default_value);
+                            }
                         }
                     } else {
                         // Default variant: `default_optimized_colors` was built from this same
