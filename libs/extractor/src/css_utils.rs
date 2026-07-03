@@ -112,6 +112,15 @@ pub fn css_to_style_literal(
     for style in static_styles {
         let value = style.value();
 
+        // Fast path: every placeholder is `__EXPR_{i}__`, so a single shared-prefix probe
+        // proves this declaration is purely static. Skip the per-style Vec allocation and the
+        // full `expression_map` scan for the common no-placeholder case. This reproduces the
+        // existing "found_placeholders empty && property has no placeholder" branch below.
+        if !value.contains("__EXPR_") && !style.property().contains("__EXPR_") {
+            styles.push(CssToStyleResult::Static(style));
+            continue;
+        }
+
         // Find all placeholders in this value
         let mut found_placeholders = Vec::new();
         for (placeholder, &idx) in &expression_map {

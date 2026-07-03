@@ -20,16 +20,6 @@ fn make_option() -> ExtractOption {
     }
 }
 
-fn make_vanilla_option() -> ExtractOption {
-    ExtractOption {
-        package: "@devup-ui/react".to_string(),
-        css_dir: "@devup-ui/react".to_string(),
-        single_css: true,
-        import_main_css: false,
-        import_aliases: HashMap::new(),
-    }
-}
-
 fn reset_state() {
     reset_class_map();
     reset_file_map();
@@ -93,6 +83,18 @@ export const button = style([base, interactive, { background: 'blue', color: 'wh
 export const danger = style([button, { background: 'red', color: 'white' }])
 export const ghost = style([base, { background: 'transparent', color: 'blue' }])";
 
+const CSS_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  color: red;
+  background-color: blue;
+  padding: 4px;
+  margin: 0;
+  border: 1px solid #000;
+  font-size: 16px;
+  width: ${dynamicWidth}px;
+  border-radius: 8px;
+`";
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("extract_small", |b| {
         b.iter(|| {
@@ -138,7 +140,19 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("styles.css.ts"),
                 black_box(VANILLA_INPUT),
-                make_vanilla_option(),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_css_template", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_TEMPLATE_INPUT),
+                make_option(),
             )
             .unwrap()
         });
