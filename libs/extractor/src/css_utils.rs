@@ -46,8 +46,8 @@ fn dynamic_expr_code<'a>(expr: &Expression<'a>, allocator: &'a Allocator) -> Str
         expr,
         Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
     );
-    let ast_builder = AstBuilder::new(allocator);
     let code = if is_function {
+        let ast_builder = AstBuilder::new(allocator);
         expression_to_code(&wrap_direct_call(
             &ast_builder,
             expr,

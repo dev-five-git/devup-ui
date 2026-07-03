@@ -221,7 +221,6 @@ pub fn extract_style_from_expression<'a>(
                     let Some(key_name) = o.key.name() else {
                         continue;
                     };
-                    let key_name = key_name.to_string();
                     let name = key_name.trim();
                     let mut part_of_selector = vec![];
 
