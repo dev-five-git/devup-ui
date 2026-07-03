@@ -250,7 +250,9 @@ impl StyleSheet {
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
-        self.global_css_files.insert(file.to_string());
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.imports
             .entry(file.to_string())
             .or_default()
@@ -258,7 +260,9 @@ impl StyleSheet {
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
-        self.global_css_files.insert(file.to_string());
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.font_faces
             .entry(file.to_string())
             .or_default()
@@ -266,7 +270,9 @@ impl StyleSheet {
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
-        self.global_css_files.insert(file.to_string());
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.css
             .entry(file.to_string())
             .or_default()

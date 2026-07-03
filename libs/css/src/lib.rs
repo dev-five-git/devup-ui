@@ -73,36 +73,29 @@ mod prefix_state {
 use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
+fn dot_class(class_name: &str) -> String {
+    let mut result = String::with_capacity(1 + class_name.len());
+    result.push('.');
+    result.push_str(class_name);
+    result
+}
+
 #[must_use]
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
     if let Some(selector) = selector {
         match selector {
-            StyleSelector::Selector(value) => {
-                let mut dot_class = String::with_capacity(1 + class_name.len());
-                dot_class.push('.');
-                dot_class.push_str(class_name);
-                value.replace('&', &dot_class)
-            }
+            StyleSelector::Selector(value) => value.replace('&', &dot_class(class_name)),
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
-                    let mut dot_class = String::with_capacity(1 + class_name.len());
-                    dot_class.push('.');
-                    dot_class.push_str(class_name);
-                    s.replace('&', &dot_class)
+                    s.replace('&', &dot_class(class_name))
                 } else {
-                    let mut result = String::with_capacity(1 + class_name.len());
-                    result.push('.');
-                    result.push_str(class_name);
-                    result
+                    dot_class(class_name)
                 }
             }
             StyleSelector::Global(v, _) => v.clone(),
         }
     } else {
-        let mut result = String::with_capacity(1 + class_name.len());
-        result.push('.');
-        result.push_str(class_name);
-        result
+        dot_class(class_name)
     }
 }
 

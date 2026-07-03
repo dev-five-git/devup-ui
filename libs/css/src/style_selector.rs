@@ -250,7 +250,7 @@ impl Display for StyleSelector {
 
 fn get_selector_order(selector: &str) -> u8 {
     // Extract the part after the single '&' (avoid String allocation)
-    let t: &str = if selector.chars().filter(|c| *c == '&').count() == 1 {
+    let t: &str = if selector.bytes().filter(|b| *b == b'&').take(2).count() == 1 {
         selector.split('&').next_back().unwrap_or(selector)
     } else {
         selector

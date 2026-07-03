@@ -246,13 +246,14 @@ fn gen_style<'a>(
             ));
         }
     }
-    properties.sort_by_key(|p| {
-        if let ObjectPropertyKind::ObjectProperty(p) = p {
-            p.key.name()
-        } else {
-            None
-        }
-    });
-    properties.reverse();
+    properties.sort_by(|a, b| object_property_key(b).cmp(&object_property_key(a)));
     properties
+}
+
+fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Cow<'k, str>> {
+    if let ObjectPropertyKind::ObjectProperty(p) = p {
+        p.key.name()
+    } else {
+        None
+    }
 }
