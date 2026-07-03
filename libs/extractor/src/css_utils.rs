@@ -251,27 +251,32 @@ pub fn css_to_style(
     let mut styles = vec![];
     let mut input = css;
 
-    // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input
-    for (at_rule, _) in AT_RULES {
-        // Only the multi-segment case recurses. Walk the non-empty trimmed `@rule` segments with
-        // a single `split` pass (dropping the earlier separate `count` scan + identical `collect`
-        // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
-        // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
-        // outer recursion level) still skips materializing a throwaway `Vec<String>`.
-        if input.contains(at_rule) {
-            let mut segments = input.split(at_rule).filter_map(|s| {
-                let s = s.trim();
-                (!s.is_empty()).then_some(s)
-            });
-            if let Some(first) = segments.next()
-                && let Some(second) = segments.next()
-            {
-                styles.extend(css_to_style(&format!("{at_rule}{first}"), level, selector));
-                styles.extend(css_to_style(&format!("{at_rule}{second}"), level, selector));
-                for rest in segments {
-                    styles.extend(css_to_style(&format!("{at_rule}{rest}"), level, selector));
+    // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input.
+    // Every at-rule prefix begins with `@`, so a single `@` byte scan is a sound necessary-condition
+    // guard: if the input has no `@` at all (the overwhelmingly common declaration block), none of the
+    // three prefixes can match, so skip all three `input.contains(at_rule)` substring scans entirely.
+    if input.contains('@') {
+        for (at_rule, _) in AT_RULES {
+            // Only the multi-segment case recurses. Walk the non-empty trimmed `@rule` segments with
+            // a single `split` pass (dropping the earlier separate `count` scan + identical `collect`
+            // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
+            // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
+            // outer recursion level) still skips materializing a throwaway `Vec<String>`.
+            if input.contains(at_rule) {
+                let mut segments = input.split(at_rule).filter_map(|s| {
+                    let s = s.trim();
+                    (!s.is_empty()).then_some(s)
+                });
+                if let Some(first) = segments.next()
+                    && let Some(second) = segments.next()
+                {
+                    styles.extend(css_to_style(&format!("{at_rule}{first}"), level, selector));
+                    styles.extend(css_to_style(&format!("{at_rule}{second}"), level, selector));
+                    for rest in segments {
+                        styles.extend(css_to_style(&format!("{at_rule}{rest}"), level, selector));
+                    }
+                    return styles;
                 }
-                return styles;
             }
         }
     }
@@ -427,30 +432,33 @@ fn css_to_style_block(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
-    rm_css_comment(css)
-        .split(';')
-        .filter_map(|s| {
-            let s = s.trim();
-            if s.is_empty() {
-                None
-            } else {
-                let (property, value) = s.split_once(':')?;
-                let property = property.trim();
-                let value = value.trim();
-                let value = if check_multi_css_optimize(property) {
-                    optimize_multi_css_value(value)
-                } else {
-                    value.to_string()
-                };
-                Some(ExtractStaticStyle::new(
-                    property,
-                    &value,
-                    level,
-                    selector.clone(),
-                ))
-            }
-        })
-        .collect()
+    let cleaned = rm_css_comment(css);
+    // Presize to an upper bound (`;`-count + 1 = max declarations) via one cheap byte scan on the
+    // already-cleaned string, so multi-declaration blocks skip the intermediate grow-reallocs.
+    let mut styles = Vec::with_capacity(cleaned.matches(';').count() + 1);
+    for s in cleaned.split(';') {
+        let s = s.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let Some((property, value)) = s.split_once(':') else {
+            continue;
+        };
+        let property = property.trim();
+        let value = value.trim();
+        let value = if check_multi_css_optimize(property) {
+            optimize_multi_css_value(value)
+        } else {
+            value.to_string()
+        };
+        styles.push(ExtractStaticStyle::new(
+            property,
+            &value,
+            level,
+            selector.clone(),
+        ));
+    }
+    styles
 }
 
 pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<ExtractStaticStyle>> {

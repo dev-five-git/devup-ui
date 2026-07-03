@@ -482,18 +482,16 @@ impl StyleSheet {
                             .keyframes
                             .iter()
                             .map(|(key, value)| {
-                                (
-                                    key.clone(),
-                                    value
-                                        .iter()
-                                        .map(|style| {
-                                            (
-                                                style.property().to_string(),
-                                                style.value().to_string(),
-                                            )
-                                        })
-                                        .collect::<Vec<(String, String)>>(),
-                                )
+                                // Presize the per-step Vec to the known property count so
+                                // multi-property keyframe steps skip the intermediate grow-reallocs.
+                                let mut props = Vec::with_capacity(value.len());
+                                for style in value {
+                                    props.push((
+                                        style.property().to_string(),
+                                        style.value().to_string(),
+                                    ));
+                                }
+                                (key.clone(), props)
                             })
                             .collect(),
                         bucket_scope,
