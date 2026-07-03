@@ -95,6 +95,14 @@ const cls = css`
   border-radius: 8px;
 `";
 
+const STYLED_INPUT: &str = r"import { styled } from '@devup-ui/react'
+const Card = styled('div', { bg: 'red', p: 4, borderRadius: '8px', _hover: { bg: 'blue' } })
+const Button = styled('button', { px: 4, py: 2, bg: 'green', color: 'white', _hover: { bg: 'darkgreen' }, _focus: { outline: 'none' } })";
+
+const STYLEX_INPUT: &str = r"import stylex from '@stylexjs/stylex'
+const s = stylex.create({ base: { color: 'red', padding: 4 }, hovered: { color: 'blue' } })
+const c = stylex.props(s.base, s.hovered)";
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("extract_small", |b| {
         b.iter(|| {
@@ -152,6 +160,30 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("test.tsx"),
                 black_box(CSS_TEMPLATE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_styled", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(STYLED_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_stylex", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(STYLEX_INPUT),
                 make_option(),
             )
             .unwrap()

@@ -608,8 +608,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 && let Expression::Identifier(ident) = &member.object
                 && !self.util_imports.is_empty()
             {
-                self.util_imports
-                    .get(format!("{}.{}", ident.name, member.property.name).as_str())
+                let obj = ident.name.as_str();
+                let prop = member.property.name.as_str();
+                let mut key = String::with_capacity(obj.len() + 1 + prop.len());
+                key.push_str(obj);
+                key.push('.');
+                key.push_str(prop);
+                self.util_imports.get(key.as_str())
             } else {
                 None
             };
