@@ -807,7 +807,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 && let Expression::Identifier(ident) = &member.object
                 && self.import_object.as_deref() == Some(ident.name.as_str())
             {
-                ExportVariableKind::try_from(member.property.name.to_string()).ok()
+                ExportVariableKind::from_str(member.property.name.as_str()).ok()
             } else {
                 None
             };

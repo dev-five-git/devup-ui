@@ -53,25 +53,34 @@ impl Debug for ExtractStaticStyle {
 }
 
 impl ExtractStaticStyle {
-    /// create a new `ExtractStaticStyle`
-    pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
-        Self {
-            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                if property == "aspect-ratio" && value.contains('/') {
-                    if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
-                        Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
-                    }) {
-                        let gcd = gcd(a, b);
-                        format!("{}/{}", a / gcd, b / gcd)
-                    } else {
-                        value.to_string()
-                    }
+    /// Normalize a static style value, shared by `new` and `new_basic`.
+    ///
+    /// When `apply_aspect_ratio` is `true`, the `aspect-ratio` value is reduced
+    /// by its GCD (the behavior of `new`); when `false`, the raw value is kept
+    /// verbatim for `MAINTAIN_VALUE_PROPERTIES` (the behavior of `new_basic`).
+    fn normalize_static_value(property: &str, value: &str, apply_aspect_ratio: bool) -> String {
+        optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+            if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
+                if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
+                    Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
+                }) {
+                    let gcd = gcd(a, b);
+                    format!("{}/{}", a / gcd, b / gcd)
                 } else {
                     value.to_string()
                 }
             } else {
-                convert_value(value)
-            }),
+                value.to_string()
+            }
+        } else {
+            convert_value(value)
+        })
+    }
+
+    /// create a new `ExtractStaticStyle`
+    pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
+        Self {
+            value: Self::normalize_static_value(property, value, true),
             property: property.to_string(),
             level,
             selector: selector.map(optimize_selector),
@@ -103,11 +112,7 @@ impl ExtractStaticStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         Self {
-            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                value.to_string()
-            } else {
-                convert_value(value)
-            }),
+            value: Self::normalize_static_value(property, value, false),
             property: property.to_string(),
             level,
             selector,
