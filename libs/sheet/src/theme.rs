@@ -833,18 +833,26 @@ impl Theme {
         // The default variant's optimized token values are invariant across variants, yet the
         // `is_same_as_default` check below re-optimizes them once per non-default variant.
         // Precompute them once so each `optimize_value` on a default value runs a single time.
-        let default_optimized: HashMap<(&str, usize), String> = default_theme
-            .map(|dt| {
-                dt.iter()
-                    .flat_map(|(name, values)| {
-                        values.0.iter().enumerate().filter_map(move |(idx, dval)| {
-                            dval.as_ref()
-                                .map(|d| ((name.as_str(), idx), optimize_value(d)))
+        // The map is read only inside `is_same_as_default` (`!is_default && …`), which is never
+        // true when there is a single variant — mirroring the color path's `single_theme` guard,
+        // skip building it entirely then so its `optimize_value` calls and owned `String`s (one
+        // per default token value) are not allocated just to be discarded.
+        let default_optimized: HashMap<(&str, usize), String> = if sorted_variants.len() <= 1 {
+            HashMap::new()
+        } else {
+            default_theme
+                .map(|dt| {
+                    dt.iter()
+                        .flat_map(|(name, values)| {
+                            values.0.iter().enumerate().filter_map(move |(idx, dval)| {
+                                dval.as_ref()
+                                    .map(|d| ((name.as_str(), idx), optimize_value(d)))
+                            })
                         })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
 
         for (variant_name, token_theme) in &sorted_variants {
             let is_default = *variant_name == default_key;
