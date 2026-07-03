@@ -124,14 +124,27 @@ pub fn optimize_value(value: &str) -> String {
         // case-insensitive pre-scan (formerly `any(contains_ci)`) would only
         // duplicate the work it does.
         if ret.contains('(') {
-            let mut lower = ret.to_lowercase();
+            // Lowercase ONCE for case-insensitive function-name matching. The
+            // previous version re-lowercased `ret` after every modified token
+            // (a full-string heap allocation per math function), which is pure
+            // churn on multi-function values like `clamp(...) + min(...)`.
+            //
+            // Instead, collect every zero position to convert across ALL matched
+            // functions against this single immutable `lower`, then apply them to
+            // `ret` in one back-to-front pass. This is byte-identical to the old
+            // per-token refresh: replacements only ever insert a `%` immediately
+            // after a top-level `0`, and a convertible `0` is by construction never
+            // digit-adjacent (a `0` next to another digit is skipped), so an
+            // inserted `%` can never sit beside another convertible `0` nor change
+            // any later depth/zero scan. Applying the collected indices highest-first
+            // keeps every earlier (lower) index valid despite the +1 byte growth.
+            let lower = ret.to_lowercase();
+            let bytes = lower.as_bytes();
+            let mut zero_idx: Vec<usize> = Vec::new();
             for f in &ZERO_PERCENT_FUNCTION {
                 if let Some(start) = lower.find(f) {
                     let index = start + f.len();
-                    let mut zero_idx = Vec::with_capacity(4);
                     let mut depth: i32 = 0;
-                    let bytes = lower.as_bytes();
-
                     for i in index..bytes.len() {
                         match bytes[i] {
                             b'(' => depth += 1,
@@ -145,14 +158,16 @@ pub fn optimize_value(value: &str) -> String {
                             _ => {}
                         }
                     }
-                    // In-place replacement: replace each '0' with '0%' from back to front
-                    for i in zero_idx.iter().rev() {
-                        ret.replace_range((*i)..=(*i), "0%");
-                    }
-                    if !zero_idx.is_empty() {
-                        // Refresh lowercase only when modification occurred
-                        lower = ret.to_lowercase();
-                    }
+                }
+            }
+            if !zero_idx.is_empty() {
+                // Apply highest-index-first so earlier indices stay valid as each
+                // `0` grows to `0%` (+1 byte). Dedup guards against the same top-level
+                // `0` being collected by two overlapping function matches.
+                zero_idx.sort_unstable();
+                zero_idx.dedup();
+                for i in zero_idx.iter().rev() {
+                    ret.replace_range((*i)..=(*i), "0%");
                 }
             }
         }

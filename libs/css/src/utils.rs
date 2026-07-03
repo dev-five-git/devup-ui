@@ -2,8 +2,14 @@
 #[must_use]
 pub fn to_kebab_case(value: &str) -> String {
     let mut result = String::with_capacity(value.len() + 4);
+    // Inputs here are always ASCII CSS property / selector identifiers. Use the
+    // ASCII-only uppercase check (a single byte compare) instead of
+    // `char::is_uppercase()`, which consults the Unicode uppercase tables. This
+    // matches the sibling `to_camel_case` (which already uses `to_ascii_uppercase`)
+    // and keeps output byte-identical: any non-ASCII char (never ASCII-uppercase)
+    // is copied through verbatim, exactly as before.
     for (i, c) in value.chars().enumerate() {
-        if c.is_uppercase() {
+        if c.is_ascii_uppercase() {
             if i != 0 {
                 result.push('-');
             }

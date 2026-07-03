@@ -374,21 +374,41 @@ pub type ShadowTheme = BTreeMap<String, TokenValues>;
 fn token_levels(
     themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
 ) -> BTreeMap<String, Vec<u8>> {
-    themes.values().flat_map(|theme| theme.iter()).fold(
-        BTreeMap::<String, Vec<u8>>::new(),
+    // Accumulate presence per name in a `u16` bitmask over levels instead of an
+    // `entry.contains(&level)` linear rescan of a growing `Vec<u8>` (bounded O(k²)
+    // per token). Levels index breakpoints (realistically < 16), so a `u16` mask
+    // covers every reachable level; any level >= 16 falls back to the linear probe
+    // so behavior is preserved for out-of-range inputs. The ascending `Vec<u8>` is
+    // materialized at the end, keeping the existing output ordering byte-identical.
+    let masks = themes.values().flat_map(|theme| theme.iter()).fold(
+        BTreeMap::<String, (u16, Vec<u8>)>::new(),
         |mut acc, (name, values)| {
-            let entry = acc.entry(name.clone()).or_default();
+            let (mask, overflow) = acc.entry(name.clone()).or_default();
             for (idx, value) in values.0.iter().enumerate() {
                 if value.is_some()
                     && let Ok(level) = u8::try_from(idx)
-                    && !entry.contains(&level)
                 {
-                    entry.push(level);
+                    if level < 16 {
+                        *mask |= 1u16 << level;
+                    } else if !overflow.contains(&level) {
+                        overflow.push(level);
+                    }
                 }
             }
             acc
         },
-    )
+    );
+    masks
+        .into_iter()
+        .map(|(name, (mask, mut overflow))| {
+            let mut levels: Vec<u8> = (0u8..16).filter(|l| mask & (1u16 << l) != 0).collect();
+            if !overflow.is_empty() {
+                overflow.sort_unstable();
+                levels.extend(overflow);
+            }
+            (name, levels)
+        })
+        .collect()
 }
 
 fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
