@@ -85,17 +85,13 @@ impl ExportVariableKind {
             }
         }
     }
-
-    pub fn from_str(value: &str) -> Result<Self, ()> {
-        value.parse().map_err(|_| ())
-    }
 }
 
 impl TryFrom<String> for ExportVariableKind {
     type Error = ();
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        ExportVariableKind::from_str(&value)
+        value.parse().map_err(|_| ())
     }
 }
 

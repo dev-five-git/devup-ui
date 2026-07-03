@@ -240,7 +240,16 @@ pub fn css_to_style(
 
     // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input
     for (at_rule, _) in AT_RULES {
-        if input.contains(at_rule) {
+        // Only the multi-segment case recurses; pre-count non-empty segments without
+        // allocating so the common single-`@media`/`@supports`/`@container` block (already
+        // dispatched by an outer recursion level) skips materializing a throwaway `Vec<String>`.
+        if input.contains(at_rule)
+            && input
+                .split(at_rule)
+                .filter(|s| !s.trim().is_empty())
+                .count()
+                > 1
+        {
             let at_inputs = input
                 .split(at_rule)
                 .filter_map(|s| {
@@ -252,12 +261,10 @@ pub fn css_to_style(
                     }
                 })
                 .collect::<Vec<_>>();
-            if at_inputs.len() > 1 {
-                for at_input in at_inputs {
-                    styles.extend(css_to_style(&at_input, level, selector));
-                }
-                return styles;
+            for at_input in at_inputs {
+                styles.extend(css_to_style(&at_input, level, selector));
             }
+            return styles;
         }
     }
 

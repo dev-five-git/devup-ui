@@ -807,7 +807,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 && let Expression::Identifier(ident) = &member.object
                 && self.import_object.as_deref() == Some(ident.name.as_str())
             {
-                ExportVariableKind::from_str(member.property.name.as_str()).ok()
+                member
+                    .property
+                    .name
+                    .as_str()
+                    .parse::<ExportVariableKind>()
+                    .ok()
             } else {
                 None
             };
@@ -1042,7 +1047,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 match &specifiers[i] {
                     ImportSpecifier(import) => {
                         let imported_str = import.imported.to_string();
-                        if let Ok(kind) = ExportVariableKind::from_str(&imported_str) {
+                        if let Ok(kind) = imported_str.parse::<ExportVariableKind>() {
                             self.imports.insert(import.local.to_string(), kind);
                             specifiers.remove(i);
                         } else if let Some(kind) = UtilType::from_str_opt(&imported_str) {
