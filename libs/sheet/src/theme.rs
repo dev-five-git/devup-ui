@@ -392,12 +392,13 @@ fn token_levels(
 }
 
 fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
-    themes
-        .keys()
-        .find(|k| *k == "default")
-        .or_else(|| themes.keys().find(|k| *k == "light"))
-        .or_else(|| themes.keys().next())
-        .map(String::as_str)
+    if themes.contains_key("default") {
+        Some("default")
+    } else if themes.contains_key("light") {
+        Some("light")
+    } else {
+        themes.keys().next().map(String::as_str)
+    }
 }
 
 /// Convert a JSON number to a length value: `n * 4` + "px".
@@ -449,9 +450,9 @@ where
     let mut result = BTreeMap::new();
     for (variant, tokens) in raw {
         let mut theme = BTreeMap::new();
-        for (name, value) in &tokens {
-            let tv = deserialize_length_value(value).map_err(serde::de::Error::custom)?;
-            theme.insert(name.clone(), tv);
+        for (name, value) in tokens {
+            let tv = deserialize_length_value(&value).map_err(serde::de::Error::custom)?;
+            theme.insert(name, tv);
         }
         result.insert(variant, theme);
     }
@@ -750,25 +751,19 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
-        let Some(default_key) = themes
-            .keys()
-            .find(|k| *k == "default")
-            .or_else(|| themes.keys().next())
-            .cloned()
-        else {
+        let Some(default_key) = default_variant_key(themes) else {
             return;
         };
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        let dk = &default_key;
         sorted_variants.sort_by(|a, b| {
-            let ad = a.0 == dk;
-            let bd = b.0 == dk;
+            let ad = a.0 == default_key;
+            let bd = b.0 == default_key;
             if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
         });
 
-        let default_theme = themes.get(default_key.as_str());
+        let default_theme = themes.get(default_key);
 
         // The default variant's optimized token values are invariant across variants, yet the
         // `is_same_as_default` check below re-optimizes them once per non-default variant.
@@ -787,7 +782,7 @@ impl Theme {
             .unwrap_or_default();
 
         for (variant_name, token_theme) in &sorted_variants {
-            let is_default = *variant_name == &default_key;
+            let is_default = *variant_name == default_key;
             let selector = if is_default {
                 ":root".to_string()
             } else {
