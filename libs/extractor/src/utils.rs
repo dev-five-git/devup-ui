@@ -168,13 +168,51 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => tmp
-            .quasis
-            .iter()
-            .map(|q| q.value.raw.as_str())
-            .collect::<String>()
-            .parse::<f64>()
-            .ok(),
+        Expression::TemplateLiteral(tmp) => {
+            // `f64::from_str` succeeds only when every byte belongs to the
+            // float grammar: ASCII digits, sign/exponent punctuation, or the
+            // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
+            // scan that is STRICTLY more permissive than the parser lets us bail
+            // out (returning `None`) on the common non-numeric case — e.g. a
+            // `${x}px` template's quasis containing `p`/`x` — without collecting
+            // the quasis into a throwaway `String`. Whenever the parser would
+            // have returned `Some`, every byte passes this scan, so the result
+            // stays byte-identical.
+            let can_be_float = tmp.quasis.iter().all(|q| {
+                q.value.raw.bytes().all(|b| {
+                    b.is_ascii_digit()
+                        || matches!(
+                            b,
+                            b'.' | b'+'
+                                | b'-'
+                                | b'e'
+                                | b'E'
+                                | b'i'
+                                | b'I'
+                                | b'n'
+                                | b'N'
+                                | b'f'
+                                | b'F'
+                                | b'a'
+                                | b'A'
+                                | b't'
+                                | b'T'
+                                | b'y'
+                                | b'Y'
+                        )
+                })
+            });
+            if can_be_float {
+                tmp.quasis
+                    .iter()
+                    .map(|q| q.value.raw.as_str())
+                    .collect::<String>()
+                    .parse::<f64>()
+                    .ok()
+            } else {
+                None
+            }
+        }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
             .and_then(|num| match unary.operator {

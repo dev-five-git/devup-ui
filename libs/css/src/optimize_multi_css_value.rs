@@ -2,7 +2,10 @@ use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
 pub fn optimize_multi_css_value(value: &str) -> String {
-    let mut result = String::with_capacity(value.len());
+    // `+ 2` headroom: a bare (unquoted-in-source) family name that contains a
+    // space gets re-wrapped in `"…"`, adding a quote pair beyond the input
+    // length. Presizing for the common single-wrap case avoids a grow-realloc.
+    let mut result = String::with_capacity(value.len() + 2);
     for (idx, s) in value.split(',').enumerate() {
         if idx > 0 {
             result.push(',');
