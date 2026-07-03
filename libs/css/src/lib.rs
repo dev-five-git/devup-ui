@@ -130,22 +130,13 @@ pub fn disassemble_property(property: &str) -> Vec<Cow<'static, str>> {
             vec![Cow::Owned(
                 if (property.starts_with("Webkit")
                     && property.len() > 6
-                    && property
-                        .as_bytes()
-                        .get(6)
-                        .is_some_and(u8::is_ascii_uppercase))
+                    && property.as_bytes()[6].is_ascii_uppercase())
                     || (property.starts_with("Moz")
                         && property.len() > 3
-                        && property
-                            .as_bytes()
-                            .get(3)
-                            .is_some_and(u8::is_ascii_uppercase))
+                        && property.as_bytes()[3].is_ascii_uppercase())
                     || (property.starts_with("ms")
                         && property.len() > 2
-                        && property
-                            .as_bytes()
-                            .get(2)
-                            .is_some_and(u8::is_ascii_uppercase))
+                        && property.as_bytes()[2].is_ascii_uppercase())
                 {
                     // Build `-<kebab>` in one pre-sized String instead of
                     // `format!("-{}", …)`, which would allocate a second String
