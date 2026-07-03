@@ -16,11 +16,13 @@ pub fn gen_styles<'a>(
     if style_props.is_empty() {
         return None;
     }
-    let properties: Vec<_> = style_props
-        .iter()
-        .flat_map(|style| gen_style(ast_builder, style, filename))
-        .rev()
-        .collect();
+    let mut properties: Vec<_> = Vec::with_capacity(style_props.len());
+    properties.extend(
+        style_props
+            .iter()
+            .flat_map(|style| gen_style(ast_builder, style, filename))
+            .rev(),
+    );
     if properties.is_empty() {
         return None;
     }

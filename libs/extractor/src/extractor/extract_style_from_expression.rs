@@ -47,7 +47,7 @@ fn create_static_styles<'a>(
     selector: &Option<StyleSelector>,
     resolution: ThemeTokenResolution,
 ) -> Vec<ExtractStyleProp<'a>> {
-    let mut styles = Vec::new();
+    let mut styles = Vec::with_capacity(levels.len());
 
     // `name`/`value` are invariant across `levels`, so resolve the enum
     // expansion once instead of re-doing the phf lookup per breakpoint level.
