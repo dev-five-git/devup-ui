@@ -1,11 +1,11 @@
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumIter, EnumString};
 
 use crate::extract_style::{
     extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
 };
 
 /// devup-ui export variable kind
-#[derive(Debug, PartialEq, Eq, Clone, EnumIter, Display)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumIter, Display, EnumString)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -20,7 +20,7 @@ pub enum ExportVariableKind {
 
 impl ExportVariableKind {
     /// Convert the kind to a tag
-    pub const fn to_tag(&self) -> &str {
+    pub const fn to_tag(&self) -> &'static str {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack
@@ -99,18 +99,7 @@ impl TryFrom<String> for ExportVariableKind {
 
 impl ExportVariableKind {
     pub fn from_str(value: &str) -> Result<Self, ()> {
-        match value {
-            "Box" => Ok(Self::Box),
-            "Text" => Ok(Self::Text),
-            "Button" => Ok(Self::Button),
-            "Input" => Ok(Self::Input),
-            "Flex" => Ok(Self::Flex),
-            "VStack" => Ok(Self::VStack),
-            "Center" => Ok(Self::Center),
-            "Image" => Ok(Self::Image),
-            "Grid" => Ok(Self::Grid),
-            _ => Err(()),
-        }
+        value.parse().map_err(|_| ())
     }
 }
 

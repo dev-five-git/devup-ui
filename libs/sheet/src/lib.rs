@@ -542,11 +542,15 @@ impl StyleSheet {
         } else {
             let dollar_keys = |keys: BTreeSet<String>| {
                 let mut contents = String::new();
+                let mut dollar_key = String::new();
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');
                     }
-                    contents.push_str(&convert_interface_key(&format!("${key}")));
+                    dollar_key.clear();
+                    dollar_key.push('$');
+                    dollar_key.push_str(&key);
+                    contents.push_str(&convert_interface_key(&dollar_key));
                     contents.push_str(":null");
                 }
                 contents
