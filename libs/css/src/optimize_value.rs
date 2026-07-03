@@ -14,27 +14,6 @@ const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
     ("'", ";'", ";')"),
 ];
 
-/// ASCII case-insensitive substring check against a lowercase `needle`.
-///
-/// Every `ZERO_PERCENT_FUNCTION` token is lowercase ASCII, so lowercasing only
-/// the haystack bytes (not `needle`) is sufficient and avoids allocating a
-/// lowercase copy of the whole value just to probe for a token.
-fn contains_ci(haystack: &str, needle: &str) -> bool {
-    let hay = haystack.as_bytes();
-    let need = needle.as_bytes();
-    if need.is_empty() {
-        return true;
-    }
-    if hay.len() < need.len() {
-        return false;
-    }
-    hay.windows(need.len()).any(|w| {
-        w.iter()
-            .zip(need)
-            .all(|(h, n)| h.to_ascii_lowercase() == *n)
-    })
-}
-
 pub fn optimize_value(value: &str) -> String {
     let trimmed = value.trim();
     let mut ret = String::with_capacity(trimmed.len() + 8);
@@ -133,11 +112,12 @@ pub fn optimize_value(value: &str) -> String {
         // Every ZERO_PERCENT_FUNCTION token ends in '(', so a value with no '('
         // can never match. Skip the lowercase allocation and scan entirely on the
         // common no-paren path (colors like #FF0000, plain lengths like `10px 0`).
-        // Even when a '(' is present, only allocate the lowercase copy when at
-        // least one CSS math-function token is actually present (case-insensitive
-        // scan on the borrowed value), so values like var(--x) / rgb(...) that
-        // merely contain '(' never pay for a `to_lowercase()` allocation.
-        if ret.contains('(') && ZERO_PERCENT_FUNCTION.iter().any(|f| contains_ci(&ret, f)) {
+        // When a '(' is present, allocate the lowercase copy once and let the
+        // per-token `lower.find(f)` loop below no-op on non-matching tokens —
+        // that loop already performs the definitive scan, so a separate
+        // case-insensitive pre-scan (formerly `any(contains_ci)`) would only
+        // duplicate the work it does.
+        if ret.contains('(') {
             let mut lower = ret.to_lowercase();
             for f in &ZERO_PERCENT_FUNCTION {
                 if let Some(start) = lower.find(f) {

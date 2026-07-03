@@ -148,6 +148,8 @@ pub struct StyleSheetCss {
 
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
 type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
+/// layer name -> Vec<(selector, property, value)> collected for `@layer` output.
+type LayeredStyles = BTreeMap<String, Vec<(String, String, String)>>;
 
 fn deserialize_btree_map_u8<'de, D>(
     deserializer: D,
@@ -598,13 +600,16 @@ impl StyleSheet {
         }
     }
     fn create_style(&self, map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>) -> String {
-        self.create_style_with_layers(map, &mut BTreeMap::new())
+        // Callers here discard layered output, so pass `None` to skip the
+        // throwaway `BTreeMap` allocation (and the per-prop `String` clones it
+        // would collect) entirely.
+        self.create_style_with_layers(map, None)
     }
 
     fn create_style_with_layers(
         &self,
         map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>,
-        layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
+        mut layered_styles: Option<&mut LayeredStyles>,
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
@@ -642,23 +647,32 @@ impl StyleSheet {
             };
 
             if !global_props.is_empty() {
-                // Separate layered and non-layered global props
-                let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
-                    .into_iter()
-                    .partition(|prop| prop.layer.is_some());
+                // Separate layered and non-layered global props. Only pay the
+                // partition + clone-into-map cost when the caller actually
+                // consumes the layered output (base/global path); callers that
+                // discard layers pass `None` and keep every global prop inline.
+                let non_layered_props = if let Some(layered_styles) = layered_styles.as_deref_mut()
+                {
+                    let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
+                        .into_iter()
+                        .partition(|prop| prop.layer.is_some());
 
-                // Collect layered props for later processing
-                for prop in layered_props {
-                    if let Some(layer) = &prop.layer
-                        && let Some(StyleSelector::Global(selector, _)) = &prop.selector
-                    {
-                        layered_styles.entry(layer.clone()).or_default().push((
-                            selector.clone(),
-                            prop.property.clone(),
-                            prop.value.clone(),
-                        ));
+                    // Collect layered props for later processing
+                    for prop in layered_props {
+                        if let Some(layer) = &prop.layer
+                            && let Some(StyleSelector::Global(selector, _)) = &prop.selector
+                        {
+                            layered_styles.entry(layer.clone()).or_default().push((
+                                selector.clone(),
+                                prop.property.clone(),
+                                prop.value.clone(),
+                            ));
+                        }
                     }
-                }
+                    non_layered_props
+                } else {
+                    global_props
+                };
 
                 // Process non-layered global props as before
                 if !non_layered_props.is_empty() {
@@ -890,9 +904,8 @@ impl StyleSheet {
             }
 
             // Collect layered styles while creating base CSS
-            let mut layered_styles: BTreeMap<String, Vec<(String, String, String)>> =
-                BTreeMap::new();
-            let base_css = self.create_style_with_layers(&base_styles, &mut layered_styles);
+            let mut layered_styles: LayeredStyles = BTreeMap::new();
+            let base_css = self.create_style_with_layers(&base_styles, Some(&mut layered_styles));
             if !base_css.is_empty() {
                 push_fmt!(&mut css, "@layer b{{{base_css}}}");
             }

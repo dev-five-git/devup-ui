@@ -124,16 +124,8 @@ impl Ord for StyleSelector {
                         // the slice equals the former `format!(":{post}")` without allocating.
                         let a_order = a.find(':').map_or("", |i| &a[i..]);
                         let b_order = b.find(':').map_or("", |i| &b[i..]);
-                        let mut a_order_value = 0;
-                        let mut b_order_value = 0;
-                        for (order, order_value) in SELECTOR_ORDER {
-                            if a_order.contains(order) {
-                                a_order_value = order_value;
-                            }
-                            if b_order.contains(order) {
-                                b_order_value = order_value;
-                            }
-                        }
+                        let a_order_value = global_selector_order(a_order);
+                        let b_order_value = global_selector_order(b_order);
                         if a_order_value == b_order_value {
                             a.cmp(b)
                         } else {
@@ -243,6 +235,21 @@ impl Display for StyleSelector {
             }
         }
     }
+}
+
+/// Rank a `Global` selector's pseudo suffix by scanning `SELECTOR_ORDER` once.
+///
+/// "Last matching entry wins": the value of the last table token contained in
+/// `order_suffix` (default 0). Computes each side's order in a single pass
+/// instead of re-scanning the table per comparison.
+fn global_selector_order(order_suffix: &str) -> u8 {
+    let mut order_value = 0;
+    for (order, value) in SELECTOR_ORDER {
+        if order_suffix.contains(order) {
+            order_value = value;
+        }
+    }
+    order_value
 }
 
 fn get_selector_order(selector: &str) -> u8 {
