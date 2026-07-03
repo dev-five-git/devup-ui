@@ -150,7 +150,11 @@ pub fn disassemble_property(property: &str) -> Vec<String> {
                 to_kebab_case(property)
             }]
         },
-        |v| v.iter().map(ToString::to_string).collect(),
+        |v| {
+            let mut out = Vec::with_capacity(v.len());
+            out.extend(v.iter().map(ToString::to_string));
+            out
+        },
     )
 }
 

@@ -103,12 +103,10 @@ fn gen_style<'a>(
             ));
         }
     } else if let ExtractStyleProp::StaticArray(res) = style {
-        properties.append(
-            &mut res
-                .iter()
+        properties.extend(
+            res.iter()
                 .flat_map(|r| gen_style(ast_builder, r, filename))
-                .rev()
-                .collect(),
+                .rev(),
         );
     } else if let ExtractStyleProp::Conditional {
         condition,
