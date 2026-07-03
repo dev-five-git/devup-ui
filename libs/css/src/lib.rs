@@ -147,7 +147,14 @@ pub fn disassemble_property(property: &str) -> Vec<Cow<'static, str>> {
                             .get(2)
                             .is_some_and(u8::is_ascii_uppercase))
                 {
-                    format!("-{}", to_kebab_case(property))
+                    // Build `-<kebab>` in one pre-sized String instead of
+                    // `format!("-{}", …)`, which would allocate a second String
+                    // just to prepend the `-`. Output byte-identical.
+                    let kebab = to_kebab_case(property);
+                    let mut s = String::with_capacity(kebab.len() + 1);
+                    s.push('-');
+                    s.push_str(&kebab);
+                    s
                 } else {
                     to_kebab_case(property)
                 },

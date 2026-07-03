@@ -32,10 +32,17 @@ pub fn optimize_value(value: &str) -> String {
     // stays valid across that replacement.
     let has_custom_prop = ret.contains("--");
 
-    // Use Cow-aware replacement: only allocate when regex matches
-    let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    // Use Cow-aware replacement: only allocate when regex matches.
+    // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code
+    // that can introduce a `(` before here is the var() wrap above. Probe the
+    // post-wrap buffer so we skip the regex-engine setup on the common no-paren
+    // values (`red`, `14px`, `$primary`, `0px`) — matching the existing
+    // `if ret.contains(',')` / `if ret.contains("rgba(")` guard style below.
+    if ret.contains('(') {
+        let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
 
     // Skip RM_MINUS_ZERO_RE for values containing CSS custom property references
@@ -46,9 +53,14 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    let replaced = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}");
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    // NUM_TRIM_RE = `(\d(unit)?)\s+(\d)` needs `\s+` to match. `value` was
+    // trim()-ed above so only interior whitespace can remain; a value with none
+    // (`red`, `14px`, `0px`, `$primary`) can never match — skip the regex pass.
+    if ret.contains(char::is_whitespace) {
+        let replaced = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}");
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
 
     if ret.contains(',') {
