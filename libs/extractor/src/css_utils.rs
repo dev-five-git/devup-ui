@@ -340,12 +340,19 @@ pub fn css_to_style(
                 if let Some((prefix, kind)) =
                     AT_RULES.iter().find(|(prefix, _)| sel.starts_with(prefix))
                 {
-                    // The prefix contains neither spaces nor "and(", so it survives both
-                    // replaces unchanged and slicing at `prefix.len()` drops exactly it.
+                    // The prefix contains neither spaces nor "and(", so slicing it off
+                    // first is equivalent to slicing after the replaces. Strip spaces into
+                    // one pre-sized buffer, then a single "and(" -> "and (" normalization.
+                    let rest = &sel[prefix.len()..];
+                    let mut query = String::with_capacity(rest.len());
+                    for ch in rest.chars() {
+                        if ch != ' ' {
+                            query.push(ch);
+                        }
+                    }
                     Some(StyleSelector::At {
                         kind: *kind,
-                        query: sel.replace(' ', "").replace("and(", "and (")[prefix.len()..]
-                            .to_string(),
+                        query: query.replace("and(", "and ("),
                         selector: None,
                     })
                 } else if sel.is_empty() {

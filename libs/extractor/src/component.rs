@@ -33,9 +33,7 @@ impl ExportVariableKind {
             ExportVariableKind::Input => "input",
         }
     }
-}
 
-impl ExportVariableKind {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
             ExportVariableKind::Input
@@ -87,6 +85,10 @@ impl ExportVariableKind {
             }
         }
     }
+
+    pub fn from_str(value: &str) -> Result<Self, ()> {
+        value.parse().map_err(|_| ())
+    }
 }
 
 impl TryFrom<String> for ExportVariableKind {
@@ -94,12 +96,6 @@ impl TryFrom<String> for ExportVariableKind {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         ExportVariableKind::from_str(&value)
-    }
-}
-
-impl ExportVariableKind {
-    pub fn from_str(value: &str) -> Result<Self, ()> {
-        value.parse().map_err(|_| ())
     }
 }
 

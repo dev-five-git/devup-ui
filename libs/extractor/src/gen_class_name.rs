@@ -175,7 +175,7 @@ pub fn merge_expression_for_class_name<'a>(
     ast_builder: &AstBuilder<'a>,
     expressions: impl IntoIterator<Item = Expression<'a>>,
 ) -> Option<Expression<'a>> {
-    let mut unknown_expr = vec![];
+    let mut unknown_expr: Vec<Expression<'a>> = Vec::new();
     let mut class_name = String::new();
     for expr in expressions {
         if let Expression::StringLiteral(str) = &expr {
