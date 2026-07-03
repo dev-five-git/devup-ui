@@ -15,6 +15,7 @@ use oxc_ast::ast::{
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
+use std::borrow::Cow;
 
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
@@ -507,11 +508,13 @@ fn rebuild_template_literal_with_sorted<'a>(
 /// `sorted_classes` MUST already be sorted by key length descending so longer
 /// class names are replaced before their prefixes (e.g. "text-3xl" before "text-3").
 fn replace_classes_in_string(s: &str, sorted_classes: &[(&String, &String)]) -> String {
-    let mut result = s.to_string();
+    let mut result = Cow::Borrowed(s);
     for (tailwind_class, generated_class) in sorted_classes {
-        result = result.replace(tailwind_class.as_str(), generated_class);
+        if result.contains(tailwind_class.as_str()) {
+            result = Cow::Owned(result.replace(tailwind_class.as_str(), generated_class));
+        }
     }
-    result
+    result.into_owned()
 }
 
 /// Rebuild an expression, replacing Tailwind classes in string literals

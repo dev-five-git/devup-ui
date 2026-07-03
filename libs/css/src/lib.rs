@@ -73,27 +73,35 @@ mod prefix_state {
 use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
-fn dot_class(class_name: &str) -> String {
-    let mut result = String::with_capacity(1 + class_name.len());
-    result.push('.');
-    result.push_str(class_name);
-    result
+/// Write `value` into `out`, replacing every `&` with `".<class_name>"` in place.
+///
+/// Equivalent to `out.push_str(&value.replace('&', &format!(".{class_name}")))`
+/// but avoids both the throwaway `".<class>"` String and the intermediate
+/// `str::replace` result String.
+fn write_ampersand_expansion(out: &mut String, value: &str, class_name: &str) {
+    for (i, seg) in value.split('&').enumerate() {
+        if i > 0 {
+            out.push('.');
+            out.push_str(class_name);
+        }
+        out.push_str(seg);
+    }
 }
 
 /// Write the merged selector directly into `out`.
 ///
 /// Avoids the throwaway `String` that [`merge_selector`] returns: the common
 /// no-selector path pushes `".<class_name>"` in place, while the `&`-replacement
-/// cases still build a temporary.
+/// cases expand `&` into `out` in place via [`write_ampersand_expansion`].
 pub fn write_merge_selector(out: &mut String, class_name: &str, selector: Option<&StyleSelector>) {
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => {
-                out.push_str(&value.replace('&', &dot_class(class_name)));
+                write_ampersand_expansion(out, value, class_name);
             }
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
-                    out.push_str(&s.replace('&', &dot_class(class_name)));
+                    write_ampersand_expansion(out, s, class_name);
                 } else {
                     out.push('.');
                     out.push_str(class_name);
