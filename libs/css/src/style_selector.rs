@@ -246,11 +246,12 @@ impl Display for StyleSelector {
 }
 
 fn get_selector_order(selector: &str) -> u8 {
-    // Extract the part after the single '&' (avoid String allocation)
-    let t: &str = if selector.bytes().filter(|b| *b == b'&').take(2).count() == 1 {
-        selector.split('&').next_back().unwrap_or(selector)
-    } else {
-        selector
+    // Extract the part after the single '&' (avoid String allocation).
+    // Single scan: find the first '&' and, only when there is no second '&'
+    // after it, slice the tail directly (exactly one '&' ⇒ part after it).
+    let t: &str = match selector.find('&') {
+        Some(i) if !selector[i + 1..].contains('&') => &selector[i + 1..],
+        _ => selector,
     };
 
     // First, try to find the order in the table (for regular selectors like &:hover)

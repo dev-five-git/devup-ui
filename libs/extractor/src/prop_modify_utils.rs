@@ -681,14 +681,16 @@ fn merge_string_expressions<'a>(
     let mut prev_str = String::new();
     for ex in expressions {
         if let Expression::StringLiteral(literal) = ex {
-            let target_prev = prev_str.trim();
+            // Reuse the `prev_str` buffer instead of allocating a fresh String via
+            // `format!` each iteration. `prev_str` is only ever built here from trimmed
+            // pieces, so it never carries leading whitespace; trim only its trailing end.
+            let trimmed_len = prev_str.trim_end().len();
+            prev_str.truncate(trimmed_len);
             let target = literal.value.trim();
-            prev_str = format!(
-                "{}{}{}",
-                target_prev,
-                if target_prev.is_empty() { "" } else { " " },
-                target
-            );
+            if !prev_str.is_empty() {
+                prev_str.push(' ');
+            }
+            prev_str.push_str(target);
         } else if let Expression::TemplateLiteral(template) = ex {
             for (idx, q) in template.quasis.iter().enumerate() {
                 let target_prev = prev_str.trim();
