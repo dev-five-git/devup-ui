@@ -110,7 +110,7 @@ impl ExtractDynamicStyle {
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = self.selector.clone().map(|s| s.to_string());
+        let selector = self.selector.as_ref().map(ToString::to_string);
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),

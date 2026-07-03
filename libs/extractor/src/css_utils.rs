@@ -266,24 +266,31 @@ pub fn css_to_style(
             // Check if there are properties before the selector
             let before_brace = &input[..start].trim();
 
-            // Split by semicolon to find the last part which should be the selector
-            let parts: Vec<&str> = before_brace.split(';').map(str::trim).collect();
+            // The overwhelmingly common case has no `;`-separated plain props before the
+            // selector (e.g. `&:hover { ... }`), which maps to the single-part `else`
+            // branch below. Only build the `Vec<&str>` split when a `;` is actually present.
+            let (plain_props, selector_part) = if before_brace.contains(';') {
+                // Split by semicolon to find the last part which should be the selector
+                let parts: Vec<&str> = before_brace.split(';').map(str::trim).collect();
 
-            // Find the selector part (the last part that doesn't contain ':')
-            // or if all parts contain ':', then the last part is the selector
-            let (plain_props, selector_part) = if parts.len() > 1 {
-                // Check if any part doesn't contain ':' (which would be a selector)
-                let mut selector_idx = parts.len();
-                for (i, part) in parts.iter().enumerate().rev() {
-                    if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
-                        selector_idx = i;
-                        break;
+                // Find the selector part (the last part that doesn't contain ':')
+                // or if all parts contain ':', then the last part is the selector
+                if parts.len() > 1 {
+                    // Check if any part doesn't contain ':' (which would be a selector)
+                    let mut selector_idx = parts.len();
+                    for (i, part) in parts.iter().enumerate().rev() {
+                        if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
+                            selector_idx = i;
+                            break;
+                        }
                     }
-                }
 
-                // Math.min
-                let (props, sel) = parts.split_at(parts.len().min(selector_idx));
-                (props.join(";"), sel.join(";"))
+                    // Math.min
+                    let (props, sel) = parts.split_at(parts.len().min(selector_idx));
+                    (props.join(";"), sel.join(";"))
+                } else {
+                    (String::new(), before_brace.to_string())
+                }
             } else {
                 (String::new(), before_brace.to_string())
             };

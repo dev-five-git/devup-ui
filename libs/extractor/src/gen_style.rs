@@ -246,7 +246,13 @@ fn gen_style<'a>(
             ));
         }
     }
-    properties.sort_unstable_by(|a, b| object_property_key(b).cmp(&object_property_key(a)));
+    // Cache each property's key once (`PropertyKey::name()` may allocate for computed
+    // keys) instead of recomputing it twice per comparison. `sort_by_cached_key` keeps
+    // the existing descending order via `Reverse`, so the generated property order is
+    // byte-identical.
+    properties.sort_by_cached_key(|p| {
+        std::cmp::Reverse(object_property_key(p).map(std::borrow::Cow::into_owned))
+    });
     properties
 }
 
