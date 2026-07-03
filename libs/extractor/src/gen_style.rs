@@ -246,7 +246,7 @@ fn gen_style<'a>(
             ));
         }
     }
-    properties.sort_by(|a, b| object_property_key(b).cmp(&object_property_key(a)));
+    properties.sort_unstable_by(|a, b| object_property_key(b).cmp(&object_property_key(a)));
     properties
 }
 

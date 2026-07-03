@@ -30,13 +30,21 @@ pub fn num_to_nm_base(num: usize) -> String {
             break;
         }
     }
-    let result: String = buf[..len].iter().rev().map(|&b| char::from(b)).collect();
-    if result.ends_with("ad") {
-        // avoid g-ad class (google ad)
-        result.replace("ad", "a-d")
-    } else {
-        result
+    // Reversed bytes are all ASCII; build directly into a pre-sized String.
+    // The class must never end in "ad" (avoids g-ad / google-ad blocking), so
+    // when the final two chars would be "a","d" we splice a '-' between them.
+    // Exact capacity: `len` bytes, plus 1 for the possible "a-d" fixup.
+    let needs_fixup = len >= 2 && buf[0] == b'd' && buf[1] == b'a';
+    let mut result = String::with_capacity(len + usize::from(needs_fixup));
+    for (i, &b) in buf[..len].iter().rev().enumerate() {
+        // buf is stored least-significant-first, so the reversed suffix "ad"
+        // corresponds to buf[0]=='d' (last emitted char) preceded by buf[1]=='a'.
+        if needs_fixup && i == len - 1 {
+            result.push('-');
+        }
+        result.push(char::from(b));
     }
+    result
 }
 
 #[cfg(test)]

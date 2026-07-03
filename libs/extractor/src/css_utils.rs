@@ -384,7 +384,7 @@ pub fn css_to_style(
         styles.extend(css_to_style_block(input, level, selector));
     }
 
-    styles.sort_by(|a, b| a.property().cmp(b.property()));
+    styles.sort_unstable_by(|a, b| a.property().cmp(b.property()));
     styles
 }
 

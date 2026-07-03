@@ -109,34 +109,39 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
 
-        let mut lower = ret.to_lowercase();
-        for f in &ZERO_PERCENT_FUNCTION {
-            if let Some(start) = lower.find(f) {
-                let index = start + f.len();
-                let mut zero_idx = Vec::with_capacity(4);
-                let mut depth: i32 = 0;
-                let bytes = lower.as_bytes();
+        // Every ZERO_PERCENT_FUNCTION token ends in '(', so a value with no '('
+        // can never match. Skip the lowercase allocation and scan entirely on the
+        // common no-paren path (colors like #FF0000, plain lengths like `10px 0`).
+        if ret.contains('(') {
+            let mut lower = ret.to_lowercase();
+            for f in &ZERO_PERCENT_FUNCTION {
+                if let Some(start) = lower.find(f) {
+                    let index = start + f.len();
+                    let mut zero_idx = Vec::with_capacity(4);
+                    let mut depth: i32 = 0;
+                    let bytes = lower.as_bytes();
 
-                for i in index..bytes.len() {
-                    match bytes[i] {
-                        b'(' => depth += 1,
-                        b')' => depth -= 1,
-                        b'0' if depth == 0
-                            && (i == 0 || !bytes[i - 1].is_ascii_digit())
-                            && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
-                        {
-                            zero_idx.push(i);
+                    for i in index..bytes.len() {
+                        match bytes[i] {
+                            b'(' => depth += 1,
+                            b')' => depth -= 1,
+                            b'0' if depth == 0
+                                && (i == 0 || !bytes[i - 1].is_ascii_digit())
+                                && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
+                            {
+                                zero_idx.push(i);
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
-                // In-place replacement: replace each '0' with '0%' from back to front
-                for i in zero_idx.iter().rev() {
-                    ret.replace_range((*i)..=(*i), "0%");
-                }
-                if !zero_idx.is_empty() {
-                    // Refresh lowercase only when modification occurred
-                    lower = ret.to_lowercase();
+                    // In-place replacement: replace each '0' with '0%' from back to front
+                    for i in zero_idx.iter().rev() {
+                        ret.replace_range((*i)..=(*i), "0%");
+                    }
+                    if !zero_idx.is_empty() {
+                        // Refresh lowercase only when modification occurred
+                        lower = ret.to_lowercase();
+                    }
                 }
             }
         }

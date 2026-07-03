@@ -285,7 +285,7 @@ const SELECTOR_ENCODE: [Option<&str>; 128] = {
 
 fn encode_selector(selector: &str) -> String {
     use std::fmt::Write;
-    let mut result = String::with_capacity(selector.len() * 3);
+    let mut result = String::with_capacity(selector.len() + 8);
     for c in selector.chars() {
         if c.is_ascii() {
             let byte = c as u8;
