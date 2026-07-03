@@ -176,7 +176,7 @@ fn create_styled_component<'a>(
         oxc_allocator::Vec::from_iter_in(
             vec![FormalParameter::new(
                 SPAN,
-                oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
+                oxc_allocator::Vec::new_in(ast_builder),
                 BindingPattern::new_object_pattern(
                     SPAN,
                     oxc_allocator::Vec::from_iter_in(
@@ -226,7 +226,7 @@ fn create_styled_component<'a>(
     );
     let body = FunctionBody::boxed(
         SPAN,
-        oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
+        oxc_allocator::Vec::new_in(ast_builder),
         oxc_allocator::Vec::from_iter_in(
             vec![Statement::new_expression_statement(
                 SPAN,
@@ -331,7 +331,7 @@ fn create_styled_component<'a>(
                         ),
                         ast_builder,
                     ),
-                    oxc_allocator::Vec::from_iter_in(vec![], ast_builder),
+                    oxc_allocator::Vec::new_in(ast_builder),
                     None::<oxc_allocator::Box<oxc_ast::ast::JSXClosingElement<'a>>>,
                     ast_builder,
                 ),

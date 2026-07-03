@@ -246,12 +246,13 @@ pub(super) fn wrap_array_filter<'a>(
         SPAN,
         filter_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(Expression::new_identifier(
+        {
+            let mut args = oxc_allocator::Vec::with_capacity_in(1, builder);
+            args.push(Argument::from(Expression::new_identifier(
                 SPAN, "Boolean", builder,
-            ))],
-            builder,
-        ),
+            )));
+            args
+        },
         false,
         builder,
     ));
@@ -270,12 +271,13 @@ pub(super) fn wrap_array_filter<'a>(
         SPAN,
         join_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(Expression::new_string_literal(
+        {
+            let mut args = oxc_allocator::Vec::with_capacity_in(1, builder);
+            args.push(Argument::from(Expression::new_string_literal(
                 SPAN, " ", None, builder,
-            ))],
-            builder,
-        ),
+            )));
+            args
+        },
         false,
         builder,
     ));
@@ -292,10 +294,13 @@ pub(super) fn wrap_direct_call<'a>(
         SPAN,
         expr.clone_in(builder.allocator()),
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        oxc_allocator::Vec::from_iter_in(
-            args.iter().map(|e| e.clone_in(builder.allocator()).into()),
-            builder,
-        ),
+        {
+            let mut call_args = oxc_allocator::Vec::with_capacity_in(args.len(), builder);
+            for e in args {
+                call_args.push(e.clone_in(builder.allocator()).into());
+            }
+            call_args
+        },
         false,
         builder,
     )
@@ -313,16 +318,17 @@ pub(super) fn merge_object_expressions<'a>(
     }
     Some(Expression::new_object_expression(
         SPAN,
-        oxc_allocator::Vec::from_iter_in(
-            expressions.iter().map(|ex| {
-                ObjectPropertyKind::new_spread_property(
+        {
+            let mut props = oxc_allocator::Vec::with_capacity_in(expressions.len(), ast_builder);
+            for ex in expressions {
+                props.push(ObjectPropertyKind::new_spread_property(
                     SPAN,
                     ex.clone_in(ast_builder.allocator()),
                     ast_builder,
-                )
-            }),
-            ast_builder,
-        ),
+                ));
+            }
+            props
+        },
         ast_builder,
     ))
 }
