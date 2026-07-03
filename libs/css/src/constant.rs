@@ -158,7 +158,6 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
 pub(super) static F_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\s*,\s*"));
 pub(super) static CSS_FUNCTION_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"^[a-zA-Z-]+(\(.*\))"));
-pub(super) static CHECK_QUOTES_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"[()\s]"));
 
 pub(super) static CSS_COMMENT_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"/\*[\s\S]*?\*/"));

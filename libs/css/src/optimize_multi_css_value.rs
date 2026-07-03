@@ -1,4 +1,4 @@
-use crate::constant::{CHECK_QUOTES_RE, CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
+use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
 pub fn optimize_multi_css_value(value: &str) -> String {
@@ -18,7 +18,13 @@ pub fn optimize_multi_css_value(value: &str) -> String {
             s
         };
 
-        if CHECK_QUOTES_RE.is_match(unquoted) && !CSS_FUNCTION_RE.is_match(unquoted) {
+        // Byte-scan equivalent of the `[()\s]` regex: `\s` in `regex_lite`
+        // matches `[ \t\n\r\x0b\x0c]`, so the vertical-tab (0x0b) and form-feed
+        // (0x0c) bytes MUST be included to stay byte-identical.
+        let needs_quotes = unquoted
+            .bytes()
+            .any(|b| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c));
+        if needs_quotes && !CSS_FUNCTION_RE.is_match(unquoted) {
             result.push('"');
             result.push_str(unquoted);
             result.push('"');
