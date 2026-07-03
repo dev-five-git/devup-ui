@@ -285,8 +285,7 @@ pub fn css_to_style(
                         }
                     }
 
-                    // Math.min
-                    let (props, sel) = parts.split_at(parts.len().min(selector_idx));
+                    let (props, sel) = parts.split_at(selector_idx);
                     (props.join(";"), sel.join(";"))
                 } else {
                     (String::new(), before_brace.to_string())

@@ -227,31 +227,24 @@ fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
         return None;
     }
 
-    let pseudos: Vec<&str> = parts
-        .iter()
-        .filter_map(|p| match p {
-            SelectorPart::Pseudo(s) => Some(s.as_str()),
-            SelectorPart::AtRule { .. } => None,
-        })
-        .collect();
+    let mut pseudo_str: Option<String> = None;
+    for p in parts {
+        if let SelectorPart::Pseudo(s) = p {
+            pseudo_str
+                .get_or_insert_with(|| String::from("&"))
+                .push_str(s);
+        }
+    }
 
-    let at_rules: Vec<(AtRuleKind, &str)> = parts
-        .iter()
-        .filter_map(|p| match p {
-            SelectorPart::AtRule { kind, query } => Some((*kind, query.as_str())),
-            SelectorPart::Pseudo(_) => None,
-        })
-        .collect();
+    // Last at-rule wins; read it with a reverse scan (no intermediate Vec).
+    let last_at_rule = parts.iter().rev().find_map(|p| match p {
+        SelectorPart::AtRule { kind, query } => Some((*kind, query.as_str())),
+        SelectorPart::Pseudo(_) => None,
+    });
 
-    let pseudo_str = if pseudos.is_empty() {
-        None
-    } else {
-        Some(format!("&{}", pseudos.join("")))
-    };
-
-    if let Some((kind, query)) = at_rules.last() {
+    if let Some((kind, query)) = last_at_rule {
         Some(StyleSelector::At {
-            kind: *kind,
+            kind,
             query: query.to_string(),
             selector: pseudo_str,
         })
