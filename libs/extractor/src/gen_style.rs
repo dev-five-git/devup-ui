@@ -247,12 +247,12 @@ fn gen_style<'a>(
         }
     }
     // Cache each property's key once (`PropertyKey::name()` may allocate for computed
-    // keys) instead of recomputing it twice per comparison. `sort_by_cached_key` keeps
-    // the existing descending order via `Reverse`, so the generated property order is
-    // byte-identical.
-    properties.sort_by_cached_key(|p| {
-        std::cmp::Reverse(object_property_key(p).map(std::borrow::Cow::into_owned))
-    });
+    // keys) instead of recomputing it twice per comparison. The cached key stays a
+    // borrowed `Cow<str>` for the common `StaticIdentifier` props (`color`, `padding`,
+    // ...), so sorting no longer heap-allocates an owned `String` per property.
+    // `Cow<str>: Ord` compares by contents, and `Reverse` keeps the existing descending
+    // order, so the generated property order is byte-identical.
+    properties.sort_by_cached_key(|p| std::cmp::Reverse(object_property_key(p)));
     properties
 }
 

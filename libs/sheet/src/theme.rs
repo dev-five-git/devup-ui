@@ -382,7 +382,7 @@ fn token_levels(
     // so behavior is preserved for out-of-range inputs. The ascending `Vec<u8>` is
     // materialized at the end, keeping the existing output ordering byte-identical.
     let masks = themes.values().flat_map(|theme| theme.iter()).fold(
-        BTreeMap::<String, (u16, Vec<u8>)>::new(),
+        BTreeMap::<String, (u16, Option<Vec<u8>>)>::new(),
         |mut acc, (name, values)| {
             let (mask, overflow) = acc.entry(name.clone()).or_default();
             for (idx, value) in values.0.iter().enumerate() {
@@ -391,8 +391,15 @@ fn token_levels(
                 {
                     if level < 16 {
                         *mask |= 1u16 << level;
-                    } else if !overflow.contains(&level) {
-                        overflow.push(level);
+                    } else {
+                        // Levels >= 16 never occur for realistic themes
+                        // (breakpoints < 16), so the overflow `Vec` is only
+                        // allocated on first use, keeping the common case
+                        // allocation-free instead of a per-token empty `Vec`.
+                        let overflow = overflow.get_or_insert_with(Vec::new);
+                        if !overflow.contains(&level) {
+                            overflow.push(level);
+                        }
                     }
                 }
             }
@@ -401,9 +408,9 @@ fn token_levels(
     );
     masks
         .into_iter()
-        .map(|(name, (mask, mut overflow))| {
+        .map(|(name, (mask, overflow))| {
             let mut levels: Vec<u8> = (0u8..16).filter(|l| mask & (1u16 << l) != 0).collect();
-            if !overflow.is_empty() {
+            if let Some(mut overflow) = overflow {
                 overflow.sort_unstable();
                 levels.extend(overflow);
             }

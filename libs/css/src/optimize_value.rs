@@ -206,21 +206,26 @@ pub fn optimize_value(value: &str) -> String {
     }
 
     // Single pass to detect unbalanced parens: accumulate depth over the whole
-    // string. A value with no paren leaves `depth == 0` → no fixup, matching the
-    // prior two-`contains`-probe + separate depth-loop behavior byte-for-byte.
-    let mut depth: i32 = 0;
-    for b in ret.bytes() {
-        if b == b'(' {
-            depth += 1;
-        } else if b == b')' {
-            depth -= 1;
+    // string. A value with no paren can never be unbalanced (`depth == 0`), so
+    // guard the byte scan behind a fast `contains` probe — matching the
+    // `contains`-guard style every other branch in this function uses — and skip
+    // the per-byte loop entirely on the common no-paren values (`red`, `14px`,
+    // `$primary`, `0px`, `#FF0000`). Byte-identical output.
+    if ret.contains('(') || ret.contains(')') {
+        let mut depth: i32 = 0;
+        for b in ret.bytes() {
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+            }
         }
-    }
-    if depth < 0 {
-        ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
-    } else if depth > 0 {
-        for _ in 0..depth {
-            ret.push(')');
+        if depth < 0 {
+            ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
+        } else if depth > 0 {
+            for _ in 0..depth {
+                ret.push(')');
+            }
         }
     }
     ret
