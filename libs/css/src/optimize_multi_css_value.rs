@@ -21,12 +21,29 @@ pub fn optimize_multi_css_value(value: &str) -> String {
             s
         };
 
+        // Fast path for empty/single-char segments (`''`/`""` strip to empty, the
+        // lone `'`/`"` cases stay one char): `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
+        // can NEVER match a string shorter than 2 bytes (it needs a name byte plus
+        // a `(`), so a single quote-worthy byte is always wrapped and everything
+        // else is pushed bare. Deciding this from the single byte skips both the
+        // `.any()` scan and the regex-engine setup while staying byte-identical.
+        let quote_byte =
+            |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
+        if unquoted.len() <= 1 {
+            if unquoted.len() == 1 && quote_byte(unquoted.as_bytes()[0]) {
+                result.push('"');
+                result.push_str(unquoted);
+                result.push('"');
+            } else {
+                result.push_str(unquoted);
+            }
+            continue;
+        }
+
         // Byte-scan equivalent of the `[()\s]` regex: `\s` in `regex_lite`
         // matches `[ \t\n\r\x0b\x0c]`, so the vertical-tab (0x0b) and form-feed
         // (0x0c) bytes MUST be included to stay byte-identical.
-        let needs_quotes = unquoted
-            .bytes()
-            .any(|b| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c));
+        let needs_quotes = unquoted.bytes().any(quote_byte);
         if needs_quotes && !CSS_FUNCTION_RE.is_match(unquoted) {
             result.push('"');
             result.push_str(unquoted);

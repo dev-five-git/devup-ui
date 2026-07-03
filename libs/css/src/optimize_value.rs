@@ -106,14 +106,22 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    if ret.contains('#') {
+    // Detect `#` and `0` in a SINGLE byte pass, replacing the two back-to-back
+    // full-string `contains('#')` / `contains('0')` scans below. Both booleans
+    // gate the same branches as before, so output is byte-identical; the fold
+    // just avoids a redundant O(n) traversal on every value (e.g. `14px` used to
+    // pay two scans to find neither, `#FF0000` two scans that overlap).
+    let (has_hash, has_zero) = ret
+        .bytes()
+        .fold((false, false), |(h, z), b| (h || b == b'#', z || b == b'0'));
+    if has_hash {
         let replaced =
             COLOR_HASH.replace_all(&ret, |c: &regex_lite::Captures| optimize_color(&c[1]));
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }
     }
-    if ret.contains('0') {
+    if has_zero {
         let replaced = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
@@ -211,20 +219,24 @@ pub fn optimize_value(value: &str) -> String {
     }
 
     // Single pass to detect unbalanced parens: accumulate depth over the whole
-    // string. A value with no paren can never be unbalanced (`depth == 0`), so
-    // guard the byte scan behind a fast `contains` probe — matching the
-    // `contains`-guard style every other branch in this function uses — and skip
-    // the per-byte loop entirely on the common no-paren values (`red`, `14px`,
-    // `$primary`, `0px`, `#FF0000`). Byte-identical output.
-    if ret.contains('(') || ret.contains(')') {
-        let mut depth: i32 = 0;
-        for b in ret.bytes() {
-            if b == b'(' {
-                depth += 1;
-            } else if b == b')' {
-                depth -= 1;
-            }
+    // string while tracking whether any paren was seen. This folds the former
+    // two-probe guard (`ret.contains('(') || ret.contains(')')` — up to two full
+    // byte scans) into the SAME loop that already scans every byte, so the common
+    // no-paren values (`red`, `14px`, `$primary`, `0px`, `#FF0000`) pay exactly
+    // one scan instead of two, and the `saw_paren` fast-out preserves the "no
+    // paren ⇒ no mutation" behavior. Byte-identical output.
+    let mut depth: i32 = 0;
+    let mut saw_paren = false;
+    for b in ret.bytes() {
+        if b == b'(' {
+            depth += 1;
+            saw_paren = true;
+        } else if b == b')' {
+            depth -= 1;
+            saw_paren = true;
         }
+    }
+    if saw_paren {
         if depth < 0 {
             ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
         } else if depth > 0 {
