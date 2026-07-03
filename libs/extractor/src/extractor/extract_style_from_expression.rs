@@ -10,8 +10,8 @@ use crate::{
         ExtractResult, extract_style_from_member_expression::extract_style_from_member_expression,
     },
     utils::{
-        expression_to_code, get_number_by_literal_expression, get_string_by_literal_expression,
-        get_string_by_property_key, is_same_expression,
+        expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
+        get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
     },
 };
 use css::{
@@ -95,7 +95,7 @@ pub fn extract_style_from_expression<'a>(
                     let mut prop = obj.properties.remove(idx);
                     if !match &mut prop {
                         ObjectPropertyKind::ObjectProperty(prop) => {
-                            if let Some(name) = get_string_by_property_key(&prop.key)
+                            if let Some(name) = get_str_by_property_key(&prop.key)
                                 && !is_special_property(&name)
                             {
                                 for disassembled in disassemble_property(&name) {

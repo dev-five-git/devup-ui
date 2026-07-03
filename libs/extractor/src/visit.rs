@@ -40,8 +40,8 @@ use oxc_ast_visit::walk_mut::{
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, expression_to_style_order, get_string_by_property_key,
-    jsx_expression_to_style_order,
+    ParsedStyleOrder, expression_to_style_order, get_str_by_property_key,
+    get_string_by_property_key, jsx_expression_to_style_order,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -820,7 +820,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     if let Expression::ObjectExpression(obj) = it.arguments[1].to_expression() {
                         obj.properties.iter().find_map(|prop| {
                             if let ObjectPropertyKind::ObjectProperty(p) = prop
-                                && let Some(name) = get_string_by_property_key(&p.key)
+                                && let Some(name) = get_str_by_property_key(&p.key)
                                 && name == "styleOrder"
                             {
                                 Some(expression_to_style_order(&p.value, self.ast.allocator()))

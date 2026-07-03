@@ -8,18 +8,20 @@ pub enum SelectorSeparator {
     Space,
     None,
 }
+impl SelectorSeparator {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            SelectorSeparator::Single => ":",
+            SelectorSeparator::Double => "::",
+            SelectorSeparator::Space => " ",
+            SelectorSeparator::None => "",
+        }
+    }
+}
 impl Display for SelectorSeparator {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SelectorSeparator::Single => ":",
-                SelectorSeparator::Double => "::",
-                SelectorSeparator::Space => " ",
-                SelectorSeparator::None => "",
-            }
-        )
+        f.write_str(self.as_str())
     }
 }
 impl From<&str> for SelectorSeparator {

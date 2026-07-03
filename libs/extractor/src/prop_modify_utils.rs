@@ -3,7 +3,7 @@ use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
-use crate::utils::{get_string_by_property_key, merge_object_expressions};
+use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::JSXAttributeName::Identifier;
@@ -126,7 +126,7 @@ pub fn modify_prop_object<'a>(
         let prop = props.remove(idx);
         match prop {
             ObjectPropertyKind::ObjectProperty(attr) => {
-                if let Some(name) = get_string_by_property_key(&attr.key) {
+                if let Some(name) = get_str_by_property_key(&attr.key) {
                     if name == "className" {
                         class_name_prop = Some(attr.value.clone_in(ast_builder.allocator()));
                     } else if name == "style" {
@@ -810,7 +810,7 @@ pub fn convert_style_vars<'a>(
             let mut prop = obj.properties.remove(idx);
 
             if let ObjectPropertyKind::ObjectProperty(p) = &mut prop {
-                let name = if let Some(name) = get_string_by_property_key(&p.key) {
+                let name = if let Some(name) = get_str_by_property_key(&p.key) {
                     Some(name)
                 } else {
                     obj.properties.insert(

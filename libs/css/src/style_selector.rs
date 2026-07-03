@@ -58,9 +58,6 @@ pub enum StyleSelector {
     Global(String, String),
 }
 
-fn optimize_selector_string(selector: &str) -> String {
-    collapse_whitespace(selector)
-}
 #[must_use]
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
@@ -71,13 +68,13 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| optimize_selector_string(&s)),
+            selector: selector.map(|s| collapse_whitespace(&s)),
         },
         StyleSelector::Selector(selector) => {
-            StyleSelector::Selector(optimize_selector_string(&selector))
+            StyleSelector::Selector(collapse_whitespace(&selector))
         }
         StyleSelector::Global(selector, file) => {
-            StyleSelector::Global(optimize_selector_string(&selector), file)
+            StyleSelector::Global(collapse_whitespace(&selector), file)
         }
     }
 }
@@ -163,7 +160,7 @@ impl From<&str> for StyleSelector {
             StyleSelector::Selector(value)
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
-            let sep = SelectorSeparator::from(post.as_str()).to_string();
+            let sep = SelectorSeparator::from(post.as_str()).as_str();
             // Match both the legacy `role="group"` attribute (deprecated, removal
             // planned for v2) and the new `data-group` attribute with a single
             // `:is()` clause. `:is()` adopts its highest-specificity argument, so

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
@@ -325,16 +327,26 @@ pub(super) fn merge_object_expressions<'a>(
     ))
 }
 
-pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
+/// Borrowing variant of [`get_string_by_property_key`].
+///
+/// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
+/// allocation the owned variant pays on every prop just to read its key name.
+/// The literal fallback still allocates (`Cow::Owned`) because
+/// `get_string_by_literal_expression` builds an owned `String`.
+pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
-        Some(ident.name.to_string())
+        Some(Cow::Borrowed(ident.name.as_str()))
     } else if let Some(s) = key.as_expression()
         && let Some(s) = get_string_by_literal_expression(s)
     {
-        Some(s)
+        Some(Cow::Owned(s))
     } else {
         None
     }
+}
+
+pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
+    get_str_by_property_key(key).map(Cow::into_owned)
 }
 
 pub fn gcd(a: u32, b: u32) -> u32 {
