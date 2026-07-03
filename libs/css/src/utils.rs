@@ -18,9 +18,9 @@ pub fn to_kebab_case(value: &str) -> String {
 #[inline]
 #[must_use]
 pub fn to_camel_case(value: &str) -> String {
-    if !value.contains('-') {
-        return value.to_string();
-    }
+    // The split-based body below already yields the input verbatim for a
+    // dash-free string (a single segment pushed as-is), so we skip the extra
+    // `contains('-')` pre-scan and rebuild in one pass.
     let mut result = String::with_capacity(value.len());
     for (i, s) in value.split('-').enumerate() {
         if i == 0 {
@@ -38,6 +38,9 @@ pub fn to_camel_case(value: &str) -> String {
 pub(crate) fn collapse_whitespace(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     for part in value.split_whitespace() {
+        // Suppress the separating space immediately after a comma so that
+        // `"a, b"` collapses to `"a,b"` (comma-delimited value lists stay tight);
+        // do NOT "simplify" this `ends_with(',')` guard away.
         if !result.is_empty() && !result.ends_with(',') {
             result.push(' ');
         }

@@ -193,39 +193,56 @@ pub fn optimize_value(value: &str) -> String {
 fn optimize_color(value: &str) -> String {
     // `value` is an ASCII hex capture (`COLOR_HASH` = `#([0-9a-fA-F]+)`), so
     // ASCII-only uppercasing is correct and skips the Unicode-aware casing tables.
-    let mut ret = value.to_string();
-    ret.make_ascii_uppercase();
+    // Build the result in one pass into a fresh buffer seeded with '#', so the
+    // collapse branches push the final bytes directly and we avoid both the
+    // clear/re-push churn and the front `insert(0, '#')` memmove.
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len() + 1);
+    out.push('#');
 
-    if ret.len() == 6 {
-        let b = ret.as_bytes();
-        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] {
-            let (c0, c2, c4) = (b[0], b[2], b[4]);
-            ret.clear();
-            ret.push(c0 as char);
-            ret.push(c2 as char);
-            ret.push(c4 as char);
+    // Uppercase a single ASCII hex byte (a-f -> A-F, digits/A-F unchanged).
+    let up = |b: u8| b.to_ascii_uppercase();
+
+    match bytes.len() {
+        6 if bytes[0].eq_ignore_ascii_case(&bytes[1])
+            && bytes[2].eq_ignore_ascii_case(&bytes[3])
+            && bytes[4].eq_ignore_ascii_case(&bytes[5]) =>
+        {
+            out.push(up(bytes[0]) as char);
+            out.push(up(bytes[2]) as char);
+            out.push(up(bytes[4]) as char);
         }
-    } else if ret.len() == 8 {
-        let b = ret.as_bytes();
-        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] && b[6] == b[7] {
-            let (c0, c2, c4, c6) = (b[0], b[2], b[4], b[6]);
-            let has_trailing_f = c6 == b'F';
-            ret.clear();
-            ret.push(c0 as char);
-            ret.push(c2 as char);
-            ret.push(c4 as char);
-            if !has_trailing_f {
-                ret.push(c6 as char);
+        8 if bytes[0].eq_ignore_ascii_case(&bytes[1])
+            && bytes[2].eq_ignore_ascii_case(&bytes[3])
+            && bytes[4].eq_ignore_ascii_case(&bytes[5])
+            && bytes[6].eq_ignore_ascii_case(&bytes[7]) =>
+        {
+            out.push(up(bytes[0]) as char);
+            out.push(up(bytes[2]) as char);
+            out.push(up(bytes[4]) as char);
+            // A trailing `F` alpha pair (fully opaque) collapses away entirely.
+            if up(bytes[6]) != b'F' {
+                out.push(up(bytes[6]) as char);
             }
-        } else if ret.ends_with("FF") {
-            ret.truncate(ret.len() - 2);
         }
-    } else if ret.len() == 4 && ret.ends_with('F') {
-        ret.truncate(ret.len() - 1);
+        8 if up(bytes[6]) == b'F' && up(bytes[7]) == b'F' => {
+            for &b in &bytes[..6] {
+                out.push(up(b) as char);
+            }
+        }
+        4 if up(bytes[3]) == b'F' => {
+            for &b in &bytes[..3] {
+                out.push(up(b) as char);
+            }
+        }
+        _ => {
+            for &b in bytes {
+                out.push(up(b) as char);
+            }
+        }
     }
 
-    ret.insert(0, '#');
-    ret
+    out
 }
 
 #[cfg(test)]
