@@ -126,7 +126,12 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
         // borrowed arm (a `$` with no `VAR_RE` match), re-borrow the input instead of allocating
         // an owned copy. The borrow must be tied to `value`, not the `replace_all` temporary.
         match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
-            format!("var(--{})", &caps[0][1..].replace('.', "-"))
+            let tok = &caps[0][1..];
+            if tok.contains('.') {
+                format!("var(--{})", tok.replace('.', "-"))
+            } else {
+                format!("var(--{tok})")
+            }
         }) {
             Cow::Owned(s) => Cow::Owned(s),
             Cow::Borrowed(_) => Cow::Borrowed(value),

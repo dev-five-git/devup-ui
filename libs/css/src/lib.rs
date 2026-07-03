@@ -14,6 +14,7 @@ pub mod style_selector;
 pub mod theme_tokens;
 pub mod utils;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::constant::{
@@ -123,38 +124,36 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
 }
 
 #[must_use]
-pub fn disassemble_property(property: &str) -> Vec<String> {
+pub fn disassemble_property(property: &str) -> Vec<Cow<'static, str>> {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
-            vec![if (property.starts_with("Webkit")
-                && property.len() > 6
-                && property
-                    .as_bytes()
-                    .get(6)
-                    .is_some_and(u8::is_ascii_uppercase))
-                || (property.starts_with("Moz")
-                    && property.len() > 3
+            vec![Cow::Owned(
+                if (property.starts_with("Webkit")
+                    && property.len() > 6
                     && property
                         .as_bytes()
-                        .get(3)
+                        .get(6)
                         .is_some_and(u8::is_ascii_uppercase))
-                || (property.starts_with("ms")
-                    && property.len() > 2
-                    && property
-                        .as_bytes()
-                        .get(2)
-                        .is_some_and(u8::is_ascii_uppercase))
-            {
-                format!("-{}", to_kebab_case(property))
-            } else {
-                to_kebab_case(property)
-            }]
+                    || (property.starts_with("Moz")
+                        && property.len() > 3
+                        && property
+                            .as_bytes()
+                            .get(3)
+                            .is_some_and(u8::is_ascii_uppercase))
+                    || (property.starts_with("ms")
+                        && property.len() > 2
+                        && property
+                            .as_bytes()
+                            .get(2)
+                            .is_some_and(u8::is_ascii_uppercase))
+                {
+                    format!("-{}", to_kebab_case(property))
+                } else {
+                    to_kebab_case(property)
+                },
+            )]
         },
-        |v| {
-            let mut out = Vec::with_capacity(v.len());
-            out.extend(v.iter().map(ToString::to_string));
-            out
-        },
+        |v| v.iter().copied().map(Cow::Borrowed).collect(),
     )
 }
 

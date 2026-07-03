@@ -11,7 +11,9 @@ use crate::{
         GlobalExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
-    utils::{get_string_by_literal_expression, get_string_by_property_key},
+    utils::{
+        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+    },
 };
 use css::{
     disassemble_property,
@@ -96,13 +98,13 @@ pub fn extract_global_style_from_expression<'a>(
                                                     .iter()
                                                     .filter_map(|p| {
                                                         if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                            && let Some(property_name) = get_string_by_property_key(&o.key)
+                                                            && let Some(property_name) = get_str_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
                                                             let it = disassemble_property(&property_name).into_iter();
                                                             let it = it.map(|p| {
                                                                 let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { s.clone() };
-                                                                if p == "src" { (p, wrap_url(&v)) } else { (p, v) }
+                                                                if p == "src" { (p.into_owned(), wrap_url(&v)) } else { (p.into_owned(), v) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())
                                                         } else {
@@ -148,7 +150,7 @@ pub fn extract_global_style_from_expression<'a>(
                             // Handle @layer property in globalStyle
                             // Extract the layer name if present in the style object
                             let layer_name = if let Expression::ObjectExpression(style_obj) = &o.value
-                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_string_by_property_key(&s.key).as_deref() == Some("@layer")))
+                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_str_by_property_key(&s.key).as_deref() == Some("@layer")))
                             {
                                 get_string_by_literal_expression(&sp.value)
                             } else {

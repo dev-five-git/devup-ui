@@ -99,6 +99,7 @@ pub fn extract_style_from_expression<'a>(
                                 && !is_special_property(&name)
                             {
                                 for disassembled in disassemble_property(&name) {
+                                    let disassembled: &str = &disassembled;
                                     if name == "styleOrder" {
                                         style_order = get_number_by_literal_expression(&prop.value)
                                             .map(|v| v as u8);
@@ -112,7 +113,7 @@ pub fn extract_style_from_expression<'a>(
                                             styles, tag: _tag, ..
                                         } = extract_style_from_expression(
                                             ast_builder,
-                                            Some(&disassembled),
+                                            Some(disassembled),
                                             &mut prop.value,
                                             0,
                                             &None,
@@ -768,10 +769,11 @@ pub fn extract_style_from_expression<'a>(
                         && key_name != "params"
                     {
                         for name in disassemble_property(&key_name) {
+                            let name: &str = &name;
                             props.extend(
                                 extract_style_from_expression(
                                     ast_builder,
-                                    Some(&name),
+                                    Some(name),
                                     &mut o.value,
                                     level,
                                     &selector,
