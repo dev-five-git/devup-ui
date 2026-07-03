@@ -384,7 +384,16 @@ fn token_levels(
     let masks = themes.values().flat_map(|theme| theme.iter()).fold(
         BTreeMap::<String, (u16, Option<Vec<u8>>)>::new(),
         |mut acc, (name, values)| {
-            let (mask, overflow) = acc.entry(name.clone()).or_default();
+            // Borrow-probe before allocating an owned key: only clone `name`
+            // into a new entry on a genuine miss. Re-inserting the same token
+            // name across every theme variant would otherwise clone ~N·K owned
+            // `String` keys for only ~K distinct entries (the standard
+            // "borrow-probe before owned-key insert" pattern used elsewhere in
+            // this repo, e.g. `class_num_for_key`, `add_property`).
+            let (mask, overflow) = match acc.get_mut(name) {
+                Some(entry) => entry,
+                None => acc.entry(name.clone()).or_default(),
+            };
             for (idx, value) in values.0.iter().enumerate() {
                 if value.is_some()
                     && let Ok(level) = u8::try_from(idx)
@@ -596,14 +605,15 @@ impl Theme {
         if let Some(default_theme_key) = default_theme_key {
             let entries = {
                 let mut col: Vec<_> = self.colors.iter().collect();
+                // Default variant sorts first, remaining variants sort by name.
+                // Expressed as a bool-tuple compare (`is-not-default`, name):
+                // `false < true` puts the default key ahead of every other,
+                // then names order the rest — same ordering as the previous
+                // hand-rolled 3-way branch, with no extra allocation.
                 col.sort_by(|a, b| {
-                    if *a.0 == default_theme_key {
-                        std::cmp::Ordering::Less
-                    } else if *b.0 == default_theme_key {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        a.0.cmp(b.0)
-                    }
+                    (*a.0 != default_theme_key)
+                        .cmp(&(*b.0 != default_theme_key))
+                        .then_with(|| a.0.cmp(b.0))
                 });
                 col
             };

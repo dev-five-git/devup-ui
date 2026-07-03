@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
 use css::{
@@ -59,22 +60,28 @@ impl ExtractStaticStyle {
     /// by its GCD (the behavior of `new`); when `false`, the raw value is kept
     /// verbatim for `MAINTAIN_VALUE_PROPERTIES` (the behavior of `new_basic`).
     fn normalize_static_value(property: &str, value: &str, apply_aspect_ratio: bool) -> String {
-        optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+        // Build a `Cow<str>` so the common "kept-verbatim" `MAINTAIN_VALUE_PROPERTIES`
+        // branch borrows `value` instead of allocating a throwaway `String` that is
+        // immediately re-copied by `optimize_value` (which takes `&str` and owns its
+        // own result). Only the aspect-ratio reduction and the `convert_value` branch
+        // must own; both already produce owned `String`s. Byte-identical output.
+        let normalized: Cow<str> = if MAINTAIN_VALUE_PROPERTIES.contains(property) {
             if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
                 if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
                     Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
                 }) {
                     let gcd = gcd(a, b);
-                    format!("{}/{}", a / gcd, b / gcd)
+                    Cow::Owned(format!("{}/{}", a / gcd, b / gcd))
                 } else {
-                    value.to_string()
+                    Cow::Borrowed(value)
                 }
             } else {
-                value.to_string()
+                Cow::Borrowed(value)
             }
         } else {
-            convert_value(value)
-        })
+            Cow::Owned(convert_value(value))
+        };
+        optimize_value(normalized.as_ref())
     }
 
     /// create a new `ExtractStaticStyle`
