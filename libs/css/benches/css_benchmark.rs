@@ -124,6 +124,13 @@ fn bench_optimize_value(c: &mut Criterion) {
         b.iter(|| optimize_value(black_box("$primary")));
     });
 
+    // Semicolon-terminated values exercise the SEMI_SUFFIXES strip loop. The
+    // quoted-single case matches the LAST probe entry, so it walks every probe
+    // in the loop — the worst case the `break` short-circuits.
+    group.bench_function("semi_quoted", |b| {
+        b.iter(|| optimize_value(black_box("'red;'")));
+    });
+
     group.finish();
 }
 

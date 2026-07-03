@@ -194,6 +194,10 @@ pub fn optimize_value(value: &str) -> String {
                 new_ret.push_str(base);
                 new_ret.push_str(str_symbol);
                 ret = new_ret;
+                // Entries are mutually exclusive at a string's end; the rebuilt
+                // `ret` now ends in `str_symbol` (never `;`), so no later probe
+                // can match. Stop scanning the remaining suffixes.
+                break;
             } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
                 let base = stripped.trim_end_matches(';');
                 let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
@@ -201,6 +205,7 @@ pub fn optimize_value(value: &str) -> String {
                 new_ret.push_str(str_symbol);
                 new_ret.push(')');
                 ret = new_ret;
+                break;
             }
         }
     }

@@ -418,7 +418,16 @@ fn token_levels(
     masks
         .into_iter()
         .map(|(name, (mask, overflow))| {
-            let mut levels: Vec<u8> = (0u8..16).filter(|l| mask & (1u16 << l) != 0).collect();
+            // Expand only the SET bits (lowest-first) instead of scanning the
+            // full 0..16 range per token, and presize the Vec exactly. Bits are
+            // still visited ascending, so the output order is byte-identical.
+            let overflow_len = overflow.as_ref().map_or(0, Vec::len);
+            let mut levels: Vec<u8> = Vec::with_capacity(mask.count_ones() as usize + overflow_len);
+            let mut m = mask;
+            while m != 0 {
+                levels.push(m.trailing_zeros() as u8);
+                m &= m - 1;
+            }
             if let Some(mut overflow) = overflow {
                 overflow.sort_unstable();
                 levels.extend(overflow);

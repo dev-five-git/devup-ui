@@ -633,8 +633,13 @@ impl StyleSheet {
             }
             global_props.sort();
             sorted_props.sort();
-            at_rules.sort();
-            let at_rules = {
+            // The common level has no `@`-rule atoms, so `at_rules` is empty.
+            // Skip the `sort()` no-op and the per-level `BTreeMap` construction
+            // entirely in that case; only regroup when there is actually work.
+            let at_rules: BTreeMap<(AtRuleKind, &String), Vec<_>> = if at_rules.is_empty() {
+                BTreeMap::new()
+            } else {
+                at_rules.sort();
                 let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
                 for prop in at_rules {
                     if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
