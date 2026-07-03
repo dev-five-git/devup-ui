@@ -257,8 +257,11 @@ impl StyleSheet {
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
-        // `BTreeSet::insert` is idempotent, so the separate `contains` probe is redundant.
-        self.global_css_files.insert(file.to_string());
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.imports
             .entry(file.to_string())
             .or_default()
@@ -266,8 +269,11 @@ impl StyleSheet {
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
-        // `BTreeSet::insert` is idempotent, so the separate `contains` probe is redundant.
-        self.global_css_files.insert(file.to_string());
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.font_faces
             .entry(file.to_string())
             .or_default()
@@ -275,8 +281,11 @@ impl StyleSheet {
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
-        // `BTreeSet::insert` is idempotent, so the separate `contains` probe is redundant.
-        self.global_css_files.insert(file.to_string());
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
         self.css
             .entry(file.to_string())
             .or_default()

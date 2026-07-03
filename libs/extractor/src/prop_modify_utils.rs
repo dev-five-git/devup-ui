@@ -733,11 +733,17 @@ fn merge_string_expressions<'a>(
             prev_str = String::new();
         }
     }
-    string_literals.push(format!(
-        "{}{}",
-        if prev_str.trim().is_empty() { "" } else { " " },
-        prev_str.trim(),
-    ));
+    {
+        let tail = prev_str.trim();
+        if tail.is_empty() {
+            string_literals.push(String::new());
+        } else {
+            let mut buf = String::with_capacity(tail.len() + 1);
+            buf.push(' ');
+            buf.push_str(tail);
+            string_literals.push(buf);
+        }
+    }
     if other_expressions.is_empty() {
         return Some(Expression::new_string_literal(
             SPAN,
