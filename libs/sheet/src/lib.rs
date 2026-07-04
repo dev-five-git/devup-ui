@@ -554,7 +554,6 @@ impl StyleSheet {
         let typography_keys = collect_keys(&mut self.theme.typography.keys());
         let length_keys = collect_keys(&mut self.theme.length.values().flat_map(|t| t.keys()));
         let shadows_keys = collect_keys(&mut self.theme.shadows.values().flat_map(|t| t.keys()));
-        let theme_keys = collect_keys(&mut self.theme.colors.keys());
 
         if color_keys.is_empty()
             && typography_keys.is_empty()
@@ -563,6 +562,10 @@ impl StyleSheet {
         {
             String::new()
         } else {
+            // `theme_keys` (a full clone of `colors.keys()` into a `BTreeSet<String>`) is
+            // only consumed by the `emit_keys(theme_keys, false)` below, so collect it lazily
+            // here — the empty-theme early-return above no longer allocates a set just to drop it.
+            let theme_keys = collect_keys(&mut self.theme.colors.keys());
             // Single emitter parameterized by whether each key is prefixed with
             // `$` (color/length/shadow interfaces) or not (typography/theme).
             // The `$` path reuses one scratch `String` across keys; the plain

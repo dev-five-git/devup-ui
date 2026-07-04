@@ -754,14 +754,19 @@ impl Theme {
         // backing capacity alive so populated levels amortize to ~1 allocation total
         // instead of one allocate→grow→copy→free cycle per non-empty level.
         let mut css_content = String::new();
-        // Loop-invariant: `resolve` captures no loop variable (it only calls the free fns
-        // `optimize_value` / `format!`), so define it once instead of reconstructing the
-        // closure on every typography entry×level iteration.
-        let resolve = |v: &str| -> String {
+        // Loop-invariant: `resolve_into` captures no loop variable (it only calls the free fn
+        // `optimize_value`), so define it once instead of reconstructing the closure on every
+        // typography entry×level iteration. For the `$token` path it writes `var(--token)`
+        // byte-for-byte straight into the target buffer, avoiding the throwaway `format!`
+        // `String` the old `resolve` allocated per themed property; only the non-`$` path
+        // still needs `optimize_value`'s owned `String`.
+        let resolve_into = |out: &mut String, v: &str| {
             if let Some(token) = v.strip_prefix('$') {
-                format!("var(--{token})")
+                out.push_str("var(--");
+                out.push_str(token);
+                out.push(')');
             } else {
-                optimize_value(v)
+                out.push_str(&optimize_value(v));
             }
         };
         for ty in &self.typography {
@@ -772,31 +777,31 @@ impl Theme {
                         &mut css_content,
                         "font-family",
                         t.font_family.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "font-size",
                         t.font_size.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "font-weight",
                         t.font_weight.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "line-height",
                         t.line_height.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "letter-spacing",
                         t.letter_spacing.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
 
                     if !css_content.is_empty() {
@@ -886,12 +891,15 @@ impl Theme {
             // Group variables by breakpoint level without allocating one String per variable.
             let mut level_map = BTreeMap::<usize, String>::new();
             for (name, values) in *token_theme {
+                // `name` is invariant across the `idx` iteration, so borrow it as `&str`
+                // once here instead of re-`as_str()`ing it inside every value probe/push.
+                let name_str = name.as_str();
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
                         let is_same_as_default = !is_default
                             && default_optimized
-                                .get(&(name.as_str(), idx))
+                                .get(&(name_str, idx))
                                 .is_some_and(|d| *d == optimized);
                         if !is_same_as_default {
                             let vars = level_map.entry(idx).or_default();
@@ -899,7 +907,7 @@ impl Theme {
                                 vars.push(';');
                             }
                             vars.push_str("--");
-                            vars.push_str(name);
+                            vars.push_str(name_str);
                             vars.push(':');
                             vars.push_str(&optimized);
                         }
@@ -932,7 +940,7 @@ fn push_typography_property(
     css_content: &mut String,
     property: &str,
     value: Option<&str>,
-    resolve: &impl Fn(&str) -> String,
+    resolve_into: &impl Fn(&mut String, &str),
 ) {
     let Some(value) = value else {
         return;
@@ -946,7 +954,7 @@ fn push_typography_property(
     }
     css_content.push_str(property);
     css_content.push(':');
-    css_content.push_str(&resolve(value));
+    resolve_into(css_content, value);
 }
 
 fn push_css_declaration(css_content: &mut String, declaration: &str) {
@@ -2532,7 +2540,12 @@ mod tests {
     fn test_push_typography_property_none_value() {
         // Covers early return when value is None
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", None, &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            None,
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
     }
 
@@ -2540,12 +2553,22 @@ mod tests {
     fn test_push_typography_property_empty_value() {
         // Covers early return when trimmed value is empty
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some(""), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some(""),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
 
         // Whitespace-only also returns early
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some("   "), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some("   "),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
     }
 
@@ -2553,11 +2576,21 @@ mod tests {
     fn test_push_typography_property_appends_separator() {
         // Empty css → no leading semicolon
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some("Arial"), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some("Arial"),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "font-family:Arial");
 
         // Non-empty css → prepends ';' before declaration
-        push_typography_property(&mut css, "font-size", Some("16px"), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-size",
+            Some("16px"),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "font-family:Arial;font-size:16px");
     }
 
