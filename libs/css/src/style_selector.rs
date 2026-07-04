@@ -260,7 +260,8 @@ impl StyleSelector {
 /// "Last matching entry wins": the value of the last table token contained in
 /// `order_suffix` (default 0). Computes each side's order in a single pass
 /// instead of re-scanning the table per comparison.
-fn global_selector_order(order_suffix: &str) -> u8 {
+#[must_use]
+pub fn global_selector_order(order_suffix: &str) -> u8 {
     let mut order_value = 0;
     for (order, value) in SELECTOR_ORDER {
         if order_suffix.contains(order) {

@@ -6,7 +6,7 @@ use css::{
     file_map::canonical,
     file_routes::route_count_for_files,
     sheet_to_classname,
-    style_selector::{AtRuleKind, StyleSelector, get_selector_order},
+    style_selector::{AtRuleKind, StyleSelector, get_selector_order, global_selector_order},
     theme_tokens::set_theme_token_levels,
     write_merge_selector,
 };
@@ -638,7 +638,45 @@ impl StyleSheet {
                     _ => sorted_props.push(prop),
                 }
             }
-            global_props.sort();
+            // Decorate-sort-undecorate for the Global bucket, mirroring the
+            // plain-selector `keyed` sort below. `global_props.sort()` compares via
+            // `StyleSheetProperty::cmp` → `StyleSelector::cmp`'s Global arm, which for
+            // EACH comparison re-runs `global_selector_order` (a `SELECTOR_ORDER` table
+            // walk) on BOTH operands — O(n log n) redundant re-scans of the same
+            // selector strings. Compute each prop's Global order key ONCE. The key
+            // `(has_colon, order, selector_str, property, value)` reproduces the Global
+            // arm byte-for-byte: equal selector strings ⇒ `Ordering::Equal` there, so
+            // `StyleSheetProperty::cmp` falls through to (property, value); no-colon
+            // props (`has_colon=false`) sort before colon props and tie on the selector
+            // string; colon props sort by (order, selector string).
+            let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
+                Vec::with_capacity(global_props.len());
+            global_keyed.extend(global_props.into_iter().map(|prop| match &prop.selector {
+                Some(StyleSelector::Global(selector, _)) => {
+                    if let Some(i) = selector.find(':') {
+                        (
+                            true,
+                            global_selector_order(&selector[i..]),
+                            selector.as_str(),
+                            prop,
+                        )
+                    } else {
+                        (false, 0u8, selector.as_str(), prop)
+                    }
+                }
+                _ => (false, 0u8, "", prop),
+            }));
+            global_keyed.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.cmp(&b.1))
+                    .then_with(|| a.2.cmp(b.2))
+                    .then_with(|| a.3.property.cmp(&b.3.property))
+                    .then_with(|| a.3.value.cmp(&b.3.value))
+            });
+            let global_props: Vec<&StyleSheetProperty> = global_keyed
+                .into_iter()
+                .map(|(_, _, _, prop)| prop)
+                .collect();
             // Decorate-sort-undecorate for the plain-selector bucket: sorting via
             // `StyleSheetProperty::cmp` re-runs `get_selector_order` (a byte scan +
             // linear `SELECTOR_ORDER` probe) on BOTH operands of every comparison,
