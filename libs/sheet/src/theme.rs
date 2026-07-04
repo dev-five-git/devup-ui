@@ -610,7 +610,7 @@ impl Theme {
     pub fn to_css(&self) -> String {
         let mut theme_declaration = String::new();
 
-        let default_theme_key = self.get_default_theme();
+        let default_theme_key = default_variant_key(&self.colors);
         if let Some(default_theme_key) = default_theme_key {
             let entries = {
                 let mut col: Vec<_> = self.colors.iter().collect();
@@ -631,7 +631,7 @@ impl Theme {
             let other_theme_key = if entries.len() == 2 {
                 entries
                     .iter()
-                    .find(|(k, _)| *k != &default_theme_key)
+                    .find(|(k, _)| **k != default_theme_key)
                     .map(|(k, _)| (*k).clone())
             } else {
                 None
@@ -647,7 +647,7 @@ impl Theme {
                 HashMap::new()
             } else {
                 self.colors
-                    .get(&default_theme_key)
+                    .get(default_theme_key)
                     .map(|d| {
                         d.css_entries()
                             .map(|(k, v)| (k.as_str(), optimize_value(v)))
@@ -657,7 +657,7 @@ impl Theme {
             };
             for (theme_name, theme_properties) in entries {
                 let mut theme_contents = String::new();
-                let theme_key = if *theme_name == *default_theme_key {
+                let theme_key = if *theme_name == default_theme_key {
                     None
                 } else {
                     Some(theme_name)
