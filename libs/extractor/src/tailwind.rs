@@ -7,6 +7,8 @@
 // Using if-let chains would make the code harder to read and modify.
 #![allow(clippy::collapsible_if)]
 
+use std::borrow::Cow;
+
 use css::style_selector::StyleSelector;
 use phf::{phf_map, phf_set};
 
@@ -332,14 +334,16 @@ impl TailwindClass {
     /// Convert to `ExtractStaticStyle`
     pub fn to_static_style(&self) -> ExtractStaticStyle {
         // For transform property, negative is already incorporated into the value
-        // (e.g., translateX(-1rem)), so don't add prefix again
-        let value = if self.negative && self.property != "transform" {
+        // (e.g., translateX(-1rem)), so don't add prefix again. Only the negative
+        // branch needs an owned String for the `-` prefix; the common non-negative
+        // path borrows `self.value` directly, dropping one allocation per class.
+        let value: Cow<str> = if self.negative && self.property != "transform" {
             let mut v = String::with_capacity(self.value.len() + 1);
             v.push('-');
             v.push_str(&self.value);
-            v
+            Cow::Owned(v)
         } else {
-            self.value.clone()
+            Cow::Borrowed(self.value.as_str())
         };
 
         let selector = if self.variants.is_empty() {
@@ -349,7 +353,7 @@ impl TailwindClass {
             Some(self.combine_selectors())
         };
 
-        ExtractStaticStyle::new(&self.property, &value, self.responsive, selector)
+        ExtractStaticStyle::new(&self.property, value.as_ref(), self.responsive, selector)
     }
 
     /// Combine multiple variant selectors
@@ -379,7 +383,13 @@ impl TailwindClass {
                         for part in s.split('&') {
                             selector_str.push_str(part);
                         }
-                        if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
+                        // `remove_all_substr` above stripped every " &" and each
+                        // appended `part` comes from `s.split('&')`, so NO '&' char
+                        // remains in the accumulator here — hence `contains(" &")`
+                        // is provably always false and the only live check is the
+                        // trailing-space one. Output stays byte-identical (locked by
+                        // `test_combine_selectors_byte_identical_to_prior_impl`).
+                        if !selector_str.ends_with(" &") {
                             selector_str.push_str(" &");
                         }
                     }
