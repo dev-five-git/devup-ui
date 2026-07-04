@@ -51,10 +51,13 @@ const IMPORTANT_SUFFIXES: [(&str, &str); 4] = [
 /// Strip ` !important` from a dynamic style identifier, returning the cleaned
 /// identifier and whether `!important` was found.
 ///
+/// Takes the identifier by value so the overwhelmingly common no-match path can
+/// move the owned string straight through without allocating a fresh copy.
+///
 /// Handles JS expression code produced by `expression_to_code`, where the
 /// `!important` text appears before a closing delimiter (backtick, quote) or
 /// at the very end of the string.
-fn strip_important(identifier: &str) -> (String, bool) {
+fn strip_important(identifier: String) -> (String, bool) {
     for (str_symbol, suffix) in IMPORTANT_SUFFIXES {
         if let Some(base) = identifier.strip_suffix(suffix) {
             // The bare-identifier case (`str_symbol == ""`, the most common) needs
@@ -65,7 +68,8 @@ fn strip_important(identifier: &str) -> (String, bool) {
             return (format!("{base}{str_symbol}"), true);
         }
     }
-    (identifier.to_string(), false)
+    // No `!important` suffix — move the owned string through unchanged (zero alloc).
+    (identifier, false)
 }
 
 impl ExtractDynamicStyle {
@@ -77,7 +81,7 @@ impl ExtractDynamicStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         let optimized = optimize_value(identifier);
-        let (identifier, important) = strip_important(&optimized);
+        let (identifier, important) = strip_important(optimized);
         Self {
             property: property.to_string(),
             level,
@@ -115,7 +119,7 @@ impl ExtractDynamicStyle {
 
 impl ExtractStyleProperty for ExtractDynamicStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let selector = self.selector.as_ref().map(ToString::to_string);
+        let selector = self.selector.as_ref().map(StyleSelector::as_class_str);
         StyleProperty::Variable {
             class_name: sheet_to_classname(
                 self.property.as_str(),
@@ -152,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_strip_important_plain() {
-        let (id, important) = strip_important("color");
+        let (id, important) = strip_important("color".to_string());
         assert_eq!(id, "color");
         assert!(!important);
     }
@@ -160,28 +164,28 @@ mod tests {
     #[test]
     fn test_strip_important_template_literal() {
         // Template literal: `${color} !important`
-        let (id, important) = strip_important("`${color} !important`");
+        let (id, important) = strip_important("`${color} !important`".to_string());
         assert_eq!(id, "`${color}`");
         assert!(important);
     }
 
     #[test]
     fn test_strip_important_double_quote() {
-        let (id, important) = strip_important("\"red !important\"");
+        let (id, important) = strip_important("\"red !important\"".to_string());
         assert_eq!(id, "\"red\"");
         assert!(important);
     }
 
     #[test]
     fn test_strip_important_single_quote() {
-        let (id, important) = strip_important("'red !important'");
+        let (id, important) = strip_important("'red !important'".to_string());
         assert_eq!(id, "'red'");
         assert!(important);
     }
 
     #[test]
     fn test_strip_important_bare() {
-        let (id, important) = strip_important("something !important");
+        let (id, important) = strip_important("something !important".to_string());
         assert_eq!(id, "something");
         assert!(important);
     }
