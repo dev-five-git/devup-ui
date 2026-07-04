@@ -301,8 +301,7 @@ pub fn get_selector_order(selector: &str) -> u8 {
 
     // For group selectors like ":is([role=group],[data-group]):hover &", the pseudo-selector is before &
     // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
-    if selector.ends_with(" &") {
-        let before_ampersand = selector.strip_suffix(" &").unwrap_or(selector);
+    if let Some(before_ampersand) = selector.strip_suffix(" &") {
         for (pseudo, order) in SELECTOR_ORDER {
             if before_ampersand.ends_with(pseudo) {
                 return order;
