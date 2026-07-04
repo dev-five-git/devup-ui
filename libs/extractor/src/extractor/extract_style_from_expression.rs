@@ -273,26 +273,30 @@ pub fn extract_style_from_expression<'a>(
                         part_of_selector.push(name[last_idx..].trim());
                     }
 
+                    // The parent selector's owned string is invariant across every
+                    // comma-part, so materialize it ONCE here instead of calling
+                    // `selector.to_string()` up to 3× per part inside the closure.
+                    let parent_sel = selector.as_ref().map(ToString::to_string);
                     for sel in part_of_selector.iter().map(|name| {
-                        if let Some(selector) = selector {
+                        if let Some(parent_sel) = parent_sel.as_deref() {
                             if name.starts_with('_') {
                                 if name.starts_with("_theme") {
                                     StyleSelector::from([
                                         to_kebab_case(name.strip_prefix("_").unwrap_or(name))
                                             .as_str(),
-                                        &selector.to_string(),
+                                        parent_sel,
                                     ])
                                     .to_string()
                                 } else {
                                     StyleSelector::from([
-                                        &selector.to_string(),
+                                        parent_sel,
                                         to_kebab_case(name.strip_prefix("_").unwrap_or(name))
                                             .as_str(),
                                     ])
                                     .to_string()
                                 }
                             } else {
-                                name.replace('&', &selector.to_string())
+                                name.replace('&', parent_sel)
                             }
                         } else if name.starts_with('_') {
                             StyleSelector::from(

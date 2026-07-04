@@ -68,13 +68,13 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| collapse_whitespace(&s)),
+            selector: selector.map(|s| collapse_whitespace(&s).into_owned()),
         },
         StyleSelector::Selector(selector) => {
-            StyleSelector::Selector(collapse_whitespace(&selector))
+            StyleSelector::Selector(collapse_whitespace(&selector).into_owned())
         }
         StyleSelector::Global(selector, file) => {
-            StyleSelector::Global(collapse_whitespace(&selector), file)
+            StyleSelector::Global(collapse_whitespace(&selector).into_owned(), file)
         }
     }
 }
@@ -149,7 +149,7 @@ impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
         let value = collapse_whitespace(value);
         if value.contains('&') {
-            StyleSelector::Selector(value)
+            StyleSelector::Selector(value.into_owned())
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
             let sep = SelectorSeparator::from(post.as_str()).as_str();
@@ -162,10 +162,10 @@ impl From<&str> for StyleSelector {
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
-        } else if matches!(value.as_str(), "print" | "screen" | "speech" | "all") {
+        } else if matches!(value.as_ref(), "print" | "screen" | "speech" | "all") {
             StyleSelector::At {
                 kind: AtRuleKind::Media,
-                query: value,
+                query: value.into_owned(),
                 selector: None,
             }
         } else {

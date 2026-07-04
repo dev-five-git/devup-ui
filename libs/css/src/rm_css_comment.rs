@@ -9,14 +9,14 @@ pub fn rm_css_comment(value: &str) -> String {
     // would return `Cow::Borrowed` for the same input, hitting the same
     // `collapse_whitespace(value)` branch below.
     if !value.contains("/*") {
-        return collapse_whitespace(value);
+        return collapse_whitespace(value).into_owned();
     }
     // On the common no-comment path `replace_all` returns `Cow::Borrowed`
     // (an alias of `value`), so collapse whitespace on the original slice and
     // skip materializing the borrowed-equal temporary.
     match CSS_COMMENT_RE.replace_all(value, "") {
-        Cow::Borrowed(_) => collapse_whitespace(value),
-        Cow::Owned(s) => collapse_whitespace(&s),
+        Cow::Borrowed(_) => collapse_whitespace(value).into_owned(),
+        Cow::Owned(s) => collapse_whitespace(&s).into_owned(),
     }
 }
 

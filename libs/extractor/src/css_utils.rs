@@ -496,9 +496,17 @@ pub fn css_to_style(
                             query.push(ch);
                         }
                     }
+                    // `and(` only appears in multi-condition media queries. Skip the
+                    // second-buffer allocation of `replace` on the common
+                    // single-condition path where the normalization is a no-op.
+                    let query = if query.contains("and(") {
+                        query.replace("and(", "and (")
+                    } else {
+                        query
+                    };
                     Some(StyleSelector::At {
                         kind: *kind,
-                        query: query.replace("and(", "and ("),
+                        query,
                         selector: None,
                     })
                 } else if sel.is_empty() {

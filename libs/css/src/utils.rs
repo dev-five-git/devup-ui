@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[inline]
 #[must_use]
 pub fn to_kebab_case(value: &str) -> String {
@@ -45,7 +47,37 @@ pub fn to_camel_case(value: &str) -> String {
 
 #[inline]
 #[must_use]
-pub(crate) fn collapse_whitespace(value: &str) -> String {
+pub(crate) fn collapse_whitespace(value: &str) -> Cow<'_, str> {
+    // Fast path: the dominant selector inputs (`"hover"`, `"focusVisible"`,
+    // `"active"`, already-tight `"a,b"`) need NO collapsing, so their output
+    // equals the input verbatim. Detect that and BORROW instead of allocating a
+    // fresh `String`. Collapsing is required only when the value has a leading /
+    // trailing / doubled ASCII whitespace run, OR a `", "` (space right after a
+    // comma) that the comma-tightening rule below would strip. This scan is
+    // byte-wise (all whitespace here is ASCII) and stays byte-identical with the
+    // allocating slow path.
+    let bytes = value.as_bytes();
+    let mut needs_collapse = false;
+    let mut prev_ws = true; // treat start-of-string as preceding whitespace so a leading run is caught
+    let mut prev_comma = false;
+    for &b in bytes {
+        let is_ws = b.is_ascii_whitespace();
+        if is_ws && (prev_ws || prev_comma) {
+            // leading run, doubled whitespace, or a space right after a comma
+            needs_collapse = true;
+            break;
+        }
+        prev_ws = is_ws;
+        prev_comma = b == b',';
+    }
+    // a trailing whitespace run also needs collapsing
+    if !needs_collapse && prev_ws && !value.is_empty() {
+        needs_collapse = true;
+    }
+    if !needs_collapse {
+        return Cow::Borrowed(value);
+    }
+
     let mut result = String::with_capacity(value.len());
     for part in value.split_whitespace() {
         // Suppress the separating space immediately after a comma so that
@@ -56,7 +88,7 @@ pub(crate) fn collapse_whitespace(value: &str) -> String {
         }
         result.push_str(part);
     }
-    result
+    Cow::Owned(result)
 }
 
 #[cfg(test)]
