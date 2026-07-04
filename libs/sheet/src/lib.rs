@@ -563,28 +563,26 @@ impl StyleSheet {
         {
             String::new()
         } else {
-            let dollar_keys = |keys: BTreeSet<String>| {
+            // Single emitter parameterized by whether each key is prefixed with
+            // `$` (color/length/shadow interfaces) or not (typography/theme).
+            // The `$` path reuses one scratch `String` across keys; the plain
+            // path feeds the key straight to `convert_interface_key` so its
+            // allocation profile stays identical to the former `plain_keys`.
+            let emit_keys = |keys: BTreeSet<String>, dollar: bool| {
                 let mut contents = String::new();
                 let mut dollar_key = String::new();
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');
                     }
-                    dollar_key.clear();
-                    dollar_key.push('$');
-                    dollar_key.push_str(&key);
-                    contents.push_str(&convert_interface_key(&dollar_key));
-                    contents.push_str(":null");
-                }
-                contents
-            };
-            let plain_keys = |keys: BTreeSet<String>| {
-                let mut contents = String::new();
-                for key in keys {
-                    if !contents.is_empty() {
-                        contents.push(';');
+                    if dollar {
+                        dollar_key.clear();
+                        dollar_key.push('$');
+                        dollar_key.push_str(&key);
+                        contents.push_str(&convert_interface_key(&dollar_key));
+                    } else {
+                        contents.push_str(&convert_interface_key(&key));
                     }
-                    contents.push_str(&convert_interface_key(&key));
                     contents.push_str(":null");
                 }
                 contents
@@ -594,15 +592,15 @@ impl StyleSheet {
                 package_name,
                 package_name,
                 color_interface_name,
-                dollar_keys(color_keys),
+                emit_keys(color_keys, true),
                 typography_interface_name,
-                plain_keys(typography_keys),
+                emit_keys(typography_keys, false),
                 length_interface_name,
-                dollar_keys(length_keys),
+                emit_keys(length_keys, true),
                 shadows_interface_name,
-                dollar_keys(shadows_keys),
+                emit_keys(shadows_keys, true),
                 theme_interface_name,
-                plain_keys(theme_keys)
+                emit_keys(theme_keys, false)
             )
         }
     }

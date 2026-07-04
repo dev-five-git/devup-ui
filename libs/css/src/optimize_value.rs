@@ -17,14 +17,20 @@ const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
 pub fn optimize_value(value: &str) -> String {
     let trimmed = value.trim();
     let mut ret = String::with_capacity(trimmed.len() + 8);
-    ret.push_str(trimmed);
 
     // Wrap CSS custom property names in var() when used as values
-    // e.g., "--var-0" becomes "var(--var-0)"
-    let wrapped_custom_prop = ret.starts_with("--") && !ret.contains(' ') && !ret.contains(',');
+    // e.g., "--var-0" becomes "var(--var-0)". Probe `trimmed` up front so the
+    // buffer is built FORWARD (`var(` + trimmed + `)`) instead of pushing
+    // `trimmed` then `insert_str(0, "var(")` — the latter memmoves the whole
+    // buffer right by 4 bytes on every custom-prop value. Output is byte-identical.
+    let wrapped_custom_prop =
+        trimmed.starts_with("--") && !trimmed.contains(' ') && !trimmed.contains(',');
     if wrapped_custom_prop {
-        ret.insert_str(0, "var(");
+        ret.push_str("var(");
+        ret.push_str(trimmed);
         ret.push(')');
+    } else {
+        ret.push_str(trimmed);
     }
 
     // Determine whether `ret` holds any `--` (used below to skip RM_MINUS_ZERO_RE).
