@@ -111,6 +111,40 @@ const cls = css`
   transform: translate(${offsetX}px, ${offsetY}px);
 `";
 
+// Tagged-template `globalCss` block: exercises the `optimize_css_block` hot path
+// (comment removal -> brace-trim pass -> per-decl `split(';')` -> per-value
+// `optimize_multi_css_value` on `font-family`) which the object-form globalCss
+// and the `css`-template benches do NOT cover. Includes a comment, a
+// multi-value `font-family` declaration, nested rules and an `@media` block so
+// every pass in `optimize_css_block` is walked.
+const GLOBAL_CSS_INPUT: &str = r"import { globalCss } from '@devup-ui/react'
+globalCss`
+  /* reset + base typography */
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Roboto Hello', 'Segoe UI', Arial, sans-serif;
+    line-height: 1.5;
+    background-color: #ffffff;
+  }
+  a {
+    color: #0070f3;
+    text-decoration: none;
+  }
+  .card {
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  @media (max-width: 600px) {
+    .card {
+      padding: 8px;
+      font-family: 'Roboto Hello', sans-serif;
+    }
+  }
+`";
+
 const STYLED_INPUT: &str = r"import { styled } from '@devup-ui/react'
 const Card = styled('div', { bg: 'red', p: 4, borderRadius: '8px', _hover: { bg: 'blue' } })
 const Button = styled('button', { px: 4, py: 2, bg: 'green', color: 'white', _hover: { bg: 'darkgreen' }, _focus: { outline: 'none' } })";
@@ -212,6 +246,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("test.tsx"),
                 black_box(STYLEX_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_global_css", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(GLOBAL_CSS_INPUT),
                 make_option(),
             )
             .unwrap()

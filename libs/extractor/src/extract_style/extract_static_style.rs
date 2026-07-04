@@ -179,7 +179,7 @@ impl ExtractStyleProperty for ExtractStaticStyle {
         // (computed in the constructors), so re-running convert_value + optimize_value
         // here is redundant. Only the multi-css optimization is not applied at construction.
         let v = if check_multi_css_optimize(&self.property) {
-            std::borrow::Cow::Owned(optimize_multi_css_value(&self.value))
+            optimize_multi_css_value(&self.value)
         } else {
             std::borrow::Cow::Borrowed(self.value.as_str())
         };

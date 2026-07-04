@@ -58,6 +58,13 @@ const IMPORTANT_SUFFIXES: [(&str, &str); 4] = [
 /// `!important` text appears before a closing delimiter (backtick, quote) or
 /// at the very end of the string.
 fn strip_important(identifier: String) -> (String, bool) {
+    // Overwhelmingly common case: no `!important` anywhere. A single substring
+    // scan short-circuits before the 4-probe `strip_suffix` loop (each of which
+    // scans from the string end). Byte-identical: any string that would match a
+    // suffix necessarily contains `!important`, so no match is ever skipped.
+    if !identifier.contains("!important") {
+        return (identifier, false);
+    }
     for (str_symbol, suffix) in IMPORTANT_SUFFIXES {
         if let Some(base) = identifier.strip_suffix(suffix) {
             // The bare-identifier case (`str_symbol == ""`, the most common) needs

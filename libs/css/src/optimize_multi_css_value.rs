@@ -3,7 +3,34 @@ use std::borrow::Cow;
 use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
-pub fn optimize_multi_css_value(value: &str) -> String {
+pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
+    // Borrow fast path: a single bare segment (no comma) whose trimmed form is
+    // already the exact output. This is the common `Roboto` / `sans-serif` case.
+    // It qualifies only when trimming does not slice (the trimmed slice IS a
+    // suffix-and-prefix of `value` — we return that borrowed slice), the segment
+    // is NOT surrounded by strippable quotes, and it needs no re-quoting. Every
+    // other shape (comma list, quoted, requote-needed, <=1 byte) falls through to
+    // the owning builder below and stays byte-identical.
+    if !value.as_bytes().contains(&b',') {
+        let s = value.trim();
+        if s.len() >= 2 {
+            let quoted = (s.starts_with('\'') && s.ends_with('\''))
+                || (s.starts_with('"') && s.ends_with('"'));
+            if !quoted {
+                let quote_byte =
+                    |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
+                let needs_quotes = s.bytes().any(quote_byte);
+                if !needs_quotes || CSS_FUNCTION_RE.is_match(s) {
+                    // Output would be exactly `s` pushed bare -> borrow it.
+                    return Cow::Borrowed(s);
+                }
+            }
+        }
+    }
+    Cow::Owned(optimize_multi_css_value_owned(value))
+}
+
+fn optimize_multi_css_value_owned(value: &str) -> String {
     // Headroom for re-wrapped segments: EACH comma-separated segment may gain a
     // `"…"` quote pair (+2 bytes), so a multi-segment list like `'A B', 'C D', E`
     // → `"A B","C D",E` can add up to one pair per segment. Budget `2` per comma

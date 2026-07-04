@@ -118,12 +118,19 @@ pub fn write_merge_selector(out: &mut String, class_name: &str, selector: Option
 
 #[must_use]
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
-    // Presize to avoid the first-`push_str` grow-realloc in `write_merge_selector`.
-    // Upper-bound estimate: the `&`-expansion cases push `".<class_name>"` per `&`
-    // segment plus the selector body, so `class_name.len() + selector-len + 2`
-    // covers the common (`.a`, `.a:hover`, themed) shapes without under-sizing them.
+    // Presize to avoid grow-reallocs in `write_merge_selector`.
+    // The `&`-expansion cases push `".<class_name>"` once per `&` in the selector.
+    // The base `class_name.len() + selector-len + 2` covers a SINGLE `&` (the
+    // common `.a`, `.a:hover`, themed shapes); a selector with N `&` segments
+    // (e.g. `:root[data-theme=dark]:hover &` chained variants) would grow-realloc
+    // the buffer, so reserve `class_name.len()` extra per additional `&`.
     // Capacity-only: output stays byte-identical.
-    let cap = class_name.len() + selector.map_or(0, |s| s.as_class_str().len()) + 2;
+    let sel = selector.map(StyleSelector::as_class_str);
+    let extra_amps = sel.as_deref().map_or(0, |s| {
+        s.bytes().filter(|&b| b == b'&').count().saturating_sub(1)
+    });
+    let cap =
+        class_name.len() + sel.as_deref().map_or(0, str::len) + class_name.len() * extra_amps + 2;
     let mut result = String::with_capacity(cap);
     write_merge_selector(&mut result, class_name, selector);
     result

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::{
@@ -111,8 +112,8 @@ pub fn extract_global_style_from_expression<'a>(
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
                                                             let it = disassemble_property(&property_name).map(|p| {
-                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { s.clone() };
-                                                                if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v) }
+                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { Cow::Borrowed(s.as_str()) };
+                                                                if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v.into_owned()) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())
                                                         } else {

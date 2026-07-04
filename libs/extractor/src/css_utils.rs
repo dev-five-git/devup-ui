@@ -570,7 +570,7 @@ fn css_to_style_block(
         let property = property.trim();
         let value = value.trim();
         let value: Cow<str> = if check_multi_css_optimize(property) {
-            Cow::Owned(optimize_multi_css_value(value))
+            optimize_multi_css_value(value)
         } else {
             Cow::Borrowed(value)
         };
@@ -652,7 +652,7 @@ pub fn optimize_css_block(css: &str) -> String {
             let optimized_value = if check_multi_css_optimize(property_name) {
                 optimize_multi_css_value(value)
             } else {
-                value.to_string()
+                Cow::Borrowed(value)
             };
             result.push_str(property);
             result.push(':');

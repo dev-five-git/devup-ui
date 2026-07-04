@@ -713,7 +713,11 @@ fn merge_string_expressions<'a>(
                         }
                     ));
                 } else {
-                    prev_str = q.value.raw.trim().to_string();
+                    // Reuse the existing heap buffer instead of dropping it and
+                    // allocating a fresh String: one fewer allocation per template
+                    // quasi. Output stays byte-identical (same trimmed contents).
+                    prev_str.clear();
+                    prev_str.push_str(q.value.raw.trim());
                 }
             }
             other_expressions.extend(template.expressions.clone_in(ast_builder.allocator()));
@@ -730,7 +734,9 @@ fn merge_string_expressions<'a>(
                 if target_prev.is_empty() { "" } else { " " }
             ));
             other_expressions.push(ex.clone_in(ast_builder.allocator()));
-            prev_str = String::new();
+            // Reuse the backing capacity instead of allocating a fresh empty
+            // String; `clear()` keeps the buffer, byte-identical behavior.
+            prev_str.clear();
         }
     }
     {
