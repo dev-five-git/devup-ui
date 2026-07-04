@@ -652,15 +652,12 @@ impl StyleSheet {
             // (is_some=0, order=0, selector_str="") sort by (property, value); `Selector`
             // props (is_some=1) sort by (order, selector_str, property, value) — matching
             // `StyleSelector::cmp`'s `get_selector_order` then string tie-break.
-            let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> = sorted_props
-                .into_iter()
-                .map(|prop| match &prop.selector {
-                    Some(StyleSelector::Selector(s)) => {
-                        (1u8, get_selector_order(s), s.as_str(), prop)
-                    }
-                    _ => (0u8, 0u8, "", prop),
-                })
-                .collect();
+            let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> =
+                Vec::with_capacity(sorted_props.len());
+            keyed.extend(sorted_props.into_iter().map(|prop| match &prop.selector {
+                Some(StyleSelector::Selector(s)) => (1u8, get_selector_order(s), s.as_str(), prop),
+                _ => (0u8, 0u8, "", prop),
+            }));
             keyed.sort_by(|a, b| {
                 a.0.cmp(&b.0)
                     .then_with(|| a.1.cmp(&b.1))
@@ -668,8 +665,6 @@ impl StyleSheet {
                     .then_with(|| a.3.property.cmp(&b.3.property))
                     .then_with(|| a.3.value.cmp(&b.3.value))
             });
-            let sorted_props: Vec<&StyleSheetProperty> =
-                keyed.into_iter().map(|(_, _, _, prop)| prop).collect();
             // The common level has no `@`-rule atoms, so `at_rules` is empty.
             // Skip the `sort()` no-op and the per-level `BTreeMap` construction
             // entirely in that case; only regroup when there is actually work.
@@ -731,7 +726,10 @@ impl StyleSheet {
                     let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
                     for prop in non_layered_props {
                         if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map.entry(selector).or_default().push(prop);
+                            selector_map
+                                .entry(selector)
+                                .or_insert_with(|| Vec::with_capacity(1))
+                                .push(prop);
                         }
                     }
                     if let Some(break_point) = break_point {
@@ -758,11 +756,11 @@ impl StyleSheet {
                 }
             }
 
-            if !sorted_props.is_empty() {
+            if !keyed.is_empty() {
                 if let Some(break_point) = break_point {
                     push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
                 }
-                for prop in sorted_props {
+                for (_, _, _, prop) in &keyed {
                     prop.write_extract(&mut current_css);
                 }
                 if break_point.is_some() {
