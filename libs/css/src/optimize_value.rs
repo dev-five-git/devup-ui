@@ -23,8 +23,17 @@ pub fn optimize_value(value: &str) -> String {
     // buffer is built FORWARD (`var(` + trimmed + `)`) instead of pushing
     // `trimmed` then `insert_str(0, "var(")` — the latter memmoves the whole
     // buffer right by 4 bytes on every custom-prop value. Output is byte-identical.
-    let wrapped_custom_prop =
-        trimmed.starts_with("--") && !trimmed.contains(' ') && !trimmed.contains(',');
+    // `--`-prefixed values are wrapped in `var()` only when they hold no space and no
+    // comma. Fold the former two independent full-string scans (`contains(' ')` then
+    // `contains(',')`) into ONE `bytes()` pass that raises both flags together, mirroring
+    // the `(has_open_paren, saw_close_paren, ...)` fold below. Gated on `starts_with("--")`
+    // so non-custom-prop values (the common case) pay nothing. Byte-identical.
+    let wrapped_custom_prop = trimmed.starts_with("--") && {
+        let (has_space, has_comma) = trimmed.bytes().fold((false, false), |(sp, cm), b| {
+            (sp || b == b' ', cm || b == b',')
+        });
+        !has_space && !has_comma
+    };
     if wrapped_custom_prop {
         ret.push_str("var(");
         ret.push_str(trimmed);

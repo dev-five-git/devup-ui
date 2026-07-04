@@ -645,9 +645,16 @@ impl StyleSheet {
         self.create_style_with_layers(map, None)
     }
 
-    fn create_style_with_layers(
+    // Generic over the per-level set element `P: Borrow<StyleSheetProperty>` so this one
+    // implementation serves BOTH the owned `FxHashSet<StyleSheetProperty>` callers and the
+    // borrowed `FxHashSet<&StyleSheetProperty>` base-style path in `create_css` — the latter
+    // aggregates cross-file base props by reference (deduped by value in the set) instead of
+    // deep-cloning every `StyleSheetProperty` (3 owned `String`s + `Option<StyleSelector>`).
+    // Each `prop` here is a `&P`; `.borrow()` yields the `&StyleSheetProperty` all downstream
+    // buckets already hold. Output is byte-identical.
+    fn create_style_with_layers<P: std::borrow::Borrow<StyleSheetProperty>>(
         &self,
-        map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>,
+        map: &BTreeMap<u8, FxHashSet<P>>,
         mut layered_styles: Option<&mut LayeredStyles>,
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
@@ -664,8 +671,9 @@ impl StyleSheet {
             // Plain (non-Global, non-At) selectors dominate: presize this bucket
             // to `props.len()` to avoid its 1→4→8→… grow-reallocs. `global_props`
             // / `at_rules` stay `Vec::new()` so empty buckets never allocate.
-            let mut sorted_props: Vec<_> = Vec::with_capacity(props.len());
+            let mut sorted_props: Vec<&StyleSheetProperty> = Vec::with_capacity(props.len());
             for prop in props {
+                let prop: &StyleSheetProperty = prop.borrow();
                 match prop.selector {
                     Some(StyleSelector::Global(_, _)) => global_props.push(prop),
                     Some(StyleSelector::At { .. }) => at_rules.push(prop),
@@ -955,7 +963,12 @@ impl StyleSheet {
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
-            let mut base_styles = BTreeMap::<u8, FxHashSet<StyleSheetProperty>>::new();
+            // Aggregate the `order == 0` base props by BORROWED reference rather than
+            // deep-cloning each `StyleSheetProperty` (3 owned `String`s + selector) just to
+            // hand `create_style_with_layers` refs it would only borrow. The set element is
+            // `&StyleSheetProperty`, so cross-file dedup is preserved (values hash/eq the same
+            // as the owned set), and the emitted CSS stays byte-identical.
+            let mut base_styles = BTreeMap::<u8, FxHashSet<&StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
                 // Single walk of the top-level order map: record non-empty style
                 // orders AND fold the `order == 0` base bucket in the same pass,
@@ -970,7 +983,7 @@ impl StyleSheet {
                             base_styles
                                 .entry(*prop.0)
                                 .or_default()
-                                .extend(prop.1.iter().cloned());
+                                .extend(prop.1.iter());
                         });
                     }
                 }

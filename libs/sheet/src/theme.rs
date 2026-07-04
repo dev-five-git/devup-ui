@@ -634,12 +634,19 @@ impl Theme {
 
         let default_theme_key = default_variant_key(&self.colors);
         if let Some(default_theme_key) = default_theme_key {
-            let entries = {
+            let single_theme = self.colors.len() <= 1;
+            // For a single (or zero) color variant the `default`-first sort is a no-op, so the
+            // intermediate `Vec` collect + `sort_variants_default_first` only reproduces the
+            // map's own iteration order. Skip the sort call entirely then; iterate the map
+            // straight into the Vec. The multi-variant path still sorts (order matters there).
+            // Byte-identical: a single-element BTreeMap yields the same lone `(name, theme)`.
+            let entries: Vec<(&String, &ColorTheme)> = if single_theme {
+                self.colors.iter().collect()
+            } else {
                 let mut col: Vec<_> = self.colors.iter().collect();
                 sort_variants_default_first(&mut col, default_theme_key);
                 col
             };
-            let single_theme = entries.len() <= 1;
             // if other theme is exists, should use light-dark function
             let other_theme_key: Option<&str> = if entries.len() == 2 {
                 entries

@@ -339,22 +339,31 @@ pub fn css_to_style(
     // guard: if the input has no `@` at all (the overwhelmingly common declaration block), none of the
     // three prefixes can match, so skip all three `input.contains(at_rule)` substring scans entirely.
     if input.contains('@') {
-        for (at_rule, _) in AT_RULES {
+        // Classify which of the three at-rule prefixes are present in ONE pass over the
+        // `@`-anchored positions, instead of re-scanning the whole input with a separate
+        // `input.contains(at_rule)` per prefix inside the loop. For an `@`-bearing block
+        // carrying just one kind (the common single-`@media`/`@supports`/`@container` case),
+        // the two absent kinds previously each paid a full substring scan; now every
+        // `@`-run is examined once here and the loop reads a precomputed `bool`. The
+        // presence check keys off the byte right after `@` (`m`/`s`/`c`), matching the
+        // prefixes' first distinguishing letter, so it is byte-identical to `contains`.
+        let mut present = [false; AT_RULES.len()];
+        for (pos, _) in input.match_indices('@') {
+            let rest = &input[pos..];
+            for (i, (at_rule, _)) in AT_RULES.iter().enumerate() {
+                if !present[i] && rest.starts_with(at_rule) {
+                    present[i] = true;
+                }
+            }
+        }
+        for (idx, (at_rule, _)) in AT_RULES.iter().enumerate() {
             // Only the multi-segment case recurses. Walk the non-empty trimmed `@rule` segments with
             // a single `split` pass (dropping the earlier separate `count` scan + identical `collect`
             // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
             // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
             // outer recursion level) still skips materializing a throwaway `Vec<String>`.
-            // A single `contains` probe short-circuits absent prefixes for ONE
-            // `memchr`-style scan, versus building a `Split`+`filter_map` and pulling
-            // two `next()` values (which trims + emptiness-checks every leading segment)
-            // just to discover the prefix never appears. When the `@`-bearing input carries
-            // a DIFFERENT at-rule kind (e.g. `@media` present, `@supports`/`@container`
-            // absent), those two absent kinds now cost one scan each instead of a full
-            // split walk. When the prefix IS present, `split` still does the authoritative
-            // scan below — the extra `contains` is one redundant scan only on the matching
-            // kind, dwarfed by the recursion it guards. Byte-identical behavior.
-            if !input.contains(at_rule) {
+            // Absent prefixes are skipped via the precomputed `present` flags (no re-scan).
+            if !present[idx] {
                 continue;
             }
             let mut segments = input.split(at_rule).filter_map(|s| {

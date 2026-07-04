@@ -126,8 +126,15 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     // the buffer, so reserve `class_name.len()` extra per additional `&`.
     // Capacity-only: output stays byte-identical.
     let sel = selector.map(StyleSelector::as_class_str);
-    let extra_amps = sel.as_deref().map_or(0, |s| {
-        s.bytes().filter(|&b| b == b'&').count().saturating_sub(1)
+    // `extra_amps` is `(&-count - 1)`, nonzero ONLY for the rare multi-`&` selector.
+    // Locate the FIRST `&` with a `memchr`-backed `find` (bailing to 0 for the common
+    // zero/one-`&` selectors — `.a`, `.a:hover`, `theme-dark` — without spinning up the
+    // `filter(...).count()` iterator over the whole string), then count only the `&`s in
+    // the tail AFTER it. That tail count already excludes the first `&`, so it equals
+    // `count - 1` directly, dropping the `saturating_sub`. Byte-identical capacity.
+    let extra_amps = sel.as_deref().map_or(0, |s| match s.find('&') {
+        Some(first) => s[first + 1..].bytes().filter(|&b| b == b'&').count(),
+        None => 0,
     });
     let cap =
         class_name.len() + sel.as_deref().map_or(0, str::len) + class_name.len() * extra_amps + 2;
