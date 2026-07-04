@@ -149,9 +149,16 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
             let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
             out.push_str("var(--");
             if tok.contains('.') {
-                // Translate `.`→`-` inline while copying.
-                for b in tok.chars() {
-                    out.push(if b == '.' { '-' } else { b });
+                // Translate `.`→`-` by copying dot-free runs with `push_str` and a
+                // `-` between them — no per-char UTF-8 decode. The token is an ASCII
+                // identifier, so this is byte-identical to the former `chars()` copy.
+                let mut runs = tok.split('.');
+                if let Some(first) = runs.next() {
+                    out.push_str(first);
+                    for run in runs {
+                        out.push('-');
+                        out.push_str(run);
+                    }
                 }
             } else {
                 out.push_str(tok);

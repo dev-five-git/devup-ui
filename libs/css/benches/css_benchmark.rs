@@ -7,6 +7,7 @@ use css::disassemble_property;
 use css::file_map::reset_file_map;
 use css::optimize_multi_css_value::optimize_multi_css_value;
 use css::optimize_value::optimize_value;
+use css::rm_css_comment::rm_css_comment;
 use css::set_prefix;
 use css::style_selector::{get_selector_order, global_selector_order};
 use css::utils::{to_camel_case, to_kebab_case};
@@ -322,6 +323,34 @@ fn bench_to_camel_case(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_rm_css_comment(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rm_css_comment");
+
+    // Overwhelmingly common declaration block: no `/*`, so it takes the
+    // `!contains("/*")` fast path that skips the regex-engine NFA setup and
+    // collapses whitespace directly. Locks that guard against regression.
+    group.bench_function("no_comment", |b| {
+        b.iter(|| rm_css_comment(black_box("color:red;padding:4px")));
+    });
+
+    // Single comment: exercises the regex `replace_all` strip path plus the
+    // `Cow::Owned` whitespace-collapse arm.
+    group.bench_function("single_comment", |b| {
+        b.iter(|| rm_css_comment(black_box("color:red;/* c */padding:4px")));
+    });
+
+    // Two comment blocks: the multi-match regex path, the worst realistic case.
+    group.bench_function("multi_comment", |b| {
+        b.iter(|| {
+            rm_css_comment(black_box(
+                "color:red;/* c1 */padding:4px;/* c2 */margin:2px",
+            ))
+        });
+    });
+
+    group.finish();
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     bench_sheet_to_classname(c);
     bench_optimize_value(c);
@@ -332,6 +361,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench_get_selector_order(c);
     bench_disassemble_property(c);
     bench_to_camel_case(c);
+    bench_rm_css_comment(c);
 }
 
 criterion_group!(benches, criterion_benchmark);
