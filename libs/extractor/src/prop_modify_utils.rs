@@ -869,9 +869,17 @@ pub fn convert_style_vars<'a>(
 
                 if let Some(name) = name {
                     if !name.starts_with("--") {
+                        // Build the `--`-prefixed key directly into a presized owned
+                        // buffer instead of going through `format!`'s `Arguments`
+                        // machinery; `Str::from_in` copies the bytes into the arena
+                        // regardless, so this is the same single owned allocation
+                        // minus the formatting overhead. Output is byte-identical.
+                        let mut prefixed = String::with_capacity(name.len() + 2);
+                        prefixed.push_str("--");
+                        prefixed.push_str(&name);
                         p.key = PropertyKey::StringLiteral(StringLiteral::boxed(
                             SPAN,
-                            Str::from_in(&format!("--{name}"), ast_builder.allocator()),
+                            Str::from_in(&prefixed, ast_builder.allocator()),
                             None,
                             ast_builder,
                         ));

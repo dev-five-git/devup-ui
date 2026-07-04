@@ -65,7 +65,14 @@ pub fn wrap_url(s: &str) -> Cow<'_, str> {
         // instead of cloning the whole value onto the heap.
         Cow::Borrowed(s)
     } else {
-        Cow::Owned(format!("url({s})"))
+        // Build `url(<s>)` into a presized buffer instead of routing through
+        // `format!`'s `Arguments` machinery; the single owned allocation is
+        // unavoidable but the formatting overhead is not. Byte-identical output.
+        let mut out = String::with_capacity(s.len() + 5);
+        out.push_str("url(");
+        out.push_str(s);
+        out.push(')');
+        Cow::Owned(out)
     }
 }
 
