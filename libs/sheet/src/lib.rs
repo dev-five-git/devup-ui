@@ -128,7 +128,16 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
         match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
             let tok = &caps[0][1..];
             if tok.contains('.') {
-                format!("var(--{})", tok.replace('.', "-"))
+                // Single allocation: build the expansion in one pre-sized buffer, replacing
+                // `.`→`-` inline, instead of allocating a throwaway `tok.replace('.', "-")`
+                // String and then a second String for the `format!`.
+                let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
+                out.push_str("var(--");
+                for b in tok.chars() {
+                    out.push(if b == '.' { '-' } else { b });
+                }
+                out.push(')');
+                out
             } else {
                 format!("var(--{tok})")
             }
