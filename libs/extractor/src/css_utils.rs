@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
 use css::{
@@ -99,10 +100,11 @@ pub fn css_to_style_literal(
 
         // Add expression placeholder if not the last quasi
         if i < css.expressions.len() {
-            // Use a unique placeholder format that CSS parser won't modify
-            let placeholder = format!("__EXPR_{i}__");
-            combined_css.push_str(&placeholder);
-            expression_map.insert(placeholder, i);
+            // Use a unique placeholder format that CSS parser won't modify.
+            // Write the placeholder straight into `combined_css` (no throwaway
+            // `String`); only the owned map key needs a heap allocation, built once.
+            let _ = write!(&mut combined_css, "__EXPR_{i}__");
+            expression_map.insert(format!("__EXPR_{i}__"), i);
         }
     }
 
@@ -203,12 +205,18 @@ pub fn css_to_style_literal(
 
                     let mut template_literal = value.to_string();
 
-                    // Sort placeholders by their position in reverse order to avoid index shifting
-                    found_placeholders.sort_by(|(a_placeholder, _), (b_placeholder, _)| {
-                        template_literal
-                            .rfind(*a_placeholder)
-                            .cmp(&template_literal.rfind(*b_placeholder))
-                    });
+                    // Sort placeholders by their position in reverse order to avoid index shifting.
+                    // Decorate each placeholder with its `rfind` position ONCE (P scans total),
+                    // sort by that precomputed key, then undecorate — instead of recomputing two
+                    // full `rfind` scans inside every O(P log P) comparison.
+                    let mut decorated: Vec<(Option<usize>, (&str, usize))> = found_placeholders
+                        .iter()
+                        .map(|entry| (template_literal.rfind(entry.0), *entry))
+                        .collect();
+                    decorated.sort_by_key(|(pos, _)| *pos);
+                    for (dst, (_, entry)) in found_placeholders.iter_mut().zip(decorated) {
+                        *dst = entry;
+                    }
 
                     // Replace each placeholder with the actual expression in template literal format
                     for (placeholder, idx) in &found_placeholders {
