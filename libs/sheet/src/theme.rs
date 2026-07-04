@@ -447,6 +447,19 @@ fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
     }
 }
 
+/// Sort variant `(name, value)` entries so the `default_key` variant sorts first, with the
+/// remaining variants ordered by name. Encoded as a bool-tuple compare (`is-not-default`, name):
+/// `false < true` places the default key ahead of every other, then names order the rest.
+/// This is the single authoritative definition of the "default first, then name" variant order
+/// shared by the color and length/shadow CSS-variable emitters. Allocation-free.
+fn sort_variants_default_first<T>(entries: &mut [(&String, T)], default_key: &str) {
+    entries.sort_by(|a, b| {
+        (a.0.as_str() != default_key)
+            .cmp(&(b.0.as_str() != default_key))
+            .then_with(|| a.0.cmp(b.0))
+    });
+}
+
 /// Convert a JSON number to a length value: `n * 4` + "px".
 fn number_to_length(n: &serde_json::Number) -> String {
     // as_f64() covers both integer and float JSON numbers
@@ -614,16 +627,7 @@ impl Theme {
         if let Some(default_theme_key) = default_theme_key {
             let entries = {
                 let mut col: Vec<_> = self.colors.iter().collect();
-                // Default variant sorts first, remaining variants sort by name.
-                // Expressed as a bool-tuple compare (`is-not-default`, name):
-                // `false < true` puts the default key ahead of every other,
-                // then names order the rest — same ordering as the previous
-                // hand-rolled 3-way branch, with no extra allocation.
-                col.sort_by(|a, b| {
-                    (*a.0 != default_theme_key)
-                        .cmp(&(*b.0 != default_theme_key))
-                        .then_with(|| a.0.cmp(b.0))
-                });
+                sort_variants_default_first(&mut col, default_theme_key);
                 col
             };
             let single_theme = entries.len() <= 1;
@@ -747,17 +751,24 @@ impl Theme {
         }
         let mut css = theme_declaration;
         let mut level_map = BTreeMap::<u8, String>::new();
+        // Reuse a single buffer across every typography entry×level: `clear()` keeps the
+        // backing capacity alive so populated levels amortize to ~1 allocation total
+        // instead of one allocate→grow→copy→free cycle per non-empty level.
+        let mut css_content = String::new();
+        // Loop-invariant: `resolve` captures no loop variable (it only calls the free fns
+        // `optimize_value` / `format!`), so define it once instead of reconstructing the
+        // closure on every typography entry×level iteration.
+        let resolve = |v: &str| -> String {
+            if let Some(token) = v.strip_prefix('$') {
+                format!("var(--{token})")
+            } else {
+                optimize_value(v)
+            }
+        };
         for ty in &self.typography {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
-                    let resolve = |v: &str| -> String {
-                        if let Some(token) = v.strip_prefix('$') {
-                            format!("var(--{token})")
-                        } else {
-                            optimize_value(v)
-                        }
-                    };
-                    let mut css_content = String::new();
+                    css_content.clear();
                     push_typography_property(
                         &mut css_content,
                         "font-family",
@@ -831,11 +842,7 @@ impl Theme {
 
         // Sort variants: default first, then alphabetical
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sorted_variants.sort_by(|a, b| {
-            let ad = a.0 == default_key;
-            let bd = b.0 == default_key;
-            if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
-        });
+        sort_variants_default_first(&mut sorted_variants, default_key);
 
         let default_theme = themes.get(default_key);
 
