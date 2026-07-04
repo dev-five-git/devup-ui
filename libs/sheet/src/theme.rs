@@ -675,6 +675,22 @@ impl Theme {
                     })
                     .unwrap_or_default()
             };
+            // `single_theme` is loop-invariant across every default-variant color, so decide the
+            // optimized-value source ONCE here instead of re-testing the branch per color inside the
+            // inner loop below. In the `single_theme` case `default_optimized_colors` is empty, so
+            // the probe would always miss and fall through to `optimize_value` anyway — collapse it
+            // to a direct owned optimize. Otherwise borrow the precomputed value, recomputing only on
+            // the rare map miss. Emitted bytes are identical to the old per-color branch.
+            let resolve_default_optimized = |prop: &str, value: &str| -> Cow<str> {
+                if single_theme {
+                    Cow::Owned(optimize_value(value))
+                } else {
+                    default_optimized_colors.get(prop).map_or_else(
+                        || Cow::Owned(optimize_value(value)),
+                        |v| Cow::Borrowed(v.as_str()),
+                    )
+                }
+            };
             for (theme_name, theme_properties) in entries {
                 let mut theme_contents = String::new();
                 let theme_key = if *theme_name == default_theme_key {
@@ -720,21 +736,13 @@ impl Theme {
                             }
                         }
                     } else {
-                        // Default variant. When `single_theme` is true, `default_optimized_colors`
-                        // was deliberately left EMPTY (see above), so the map probe below would
-                        // always miss and fall through to `optimize_value(value)` anyway — skip the
-                        // hashing entirely and optimize directly. Otherwise `default_optimized_colors`
-                        // was built from this same variant, so it already holds `optimize_value(value)`
-                        // keyed by `prop`; borrow it instead of recomputing (saves one
-                        // `optimize_value` call and one `String` allocation per default-variant color).
-                        let optimized_value: Cow<str> = if single_theme {
-                            Cow::Owned(optimize_value(value))
-                        } else {
-                            default_optimized_colors.get(prop.as_str()).map_or_else(
-                                || Cow::Owned(optimize_value(value)),
-                                |v| Cow::Borrowed(v.as_str()),
-                            )
-                        };
+                        // Default variant. The `single_theme`-invariant source selection is decided
+                        // once by `resolve_default_optimized` (hoisted above the entries loop): for
+                        // the single-variant case it optimizes directly (the map is empty, so the
+                        // probe would always miss); otherwise it borrows the precomputed value keyed
+                        // by `prop`, recomputing only on a rare miss (saves one `optimize_value` call
+                        // and one `String` allocation per default-variant color).
+                        let optimized_value = resolve_default_optimized(prop.as_str(), value);
                         let optimized_value: &str = &optimized_value;
                         let other_theme_value = other_theme_key.and_then(|other_theme_key| {
                             self.colors.get(other_theme_key).and_then(|v| {
