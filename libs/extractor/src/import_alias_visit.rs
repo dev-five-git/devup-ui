@@ -9,7 +9,7 @@
 
 use crate::ImportAlias;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::ImportDeclarationSpecifier;
+use oxc_ast::ast::{ImportDeclarationSpecifier, ModuleExportName};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use std::borrow::Cow;
@@ -141,12 +141,36 @@ fn generate_transformed_import(
             if !parts.is_empty() {
                 parts.push_str(", ");
             }
-            let imported = spec.imported.to_string();
             let local = spec.local.name.as_str();
-            parts.push_str(&imported);
-            if imported != local {
-                parts.push_str(" as ");
-                parts.push_str(local);
+            // Borrow the imported name for the common identifier cases to avoid a
+            // per-specifier heap allocation. Only the rare string-literal export
+            // name (`import { "x" as y }`) needs an owned `String`, and its
+            // `Display` output is quoted — matching the prior `to_string()` bytes.
+            match &spec.imported {
+                ModuleExportName::IdentifierName(id) => {
+                    let imported = id.name.as_str();
+                    parts.push_str(imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
+                ModuleExportName::IdentifierReference(id) => {
+                    let imported = id.name.as_str();
+                    parts.push_str(imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
+                ModuleExportName::StringLiteral(_) => {
+                    let imported = spec.imported.to_string();
+                    parts.push_str(&imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
             }
         }
     }
