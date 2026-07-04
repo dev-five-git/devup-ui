@@ -367,7 +367,8 @@ fn extract_class_map_from_code(
 
         // Parse the output code to extract class name assignments
         // Format: const styleName = "className" or const styleName = "className1 className2"
-        let mut class_map = FxHashMap::default();
+        let mut class_map =
+            FxHashMap::with_capacity_and_hasher(style_names.len(), rustc_hash::FxBuildHasher);
         for line in result.code.lines() {
             let line = line.trim();
             if line.starts_with("const ") || line.starts_with("export const ") {

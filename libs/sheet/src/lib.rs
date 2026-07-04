@@ -541,8 +541,9 @@ impl StyleSheet {
         // near-identical key-collection blocks (color/typography/length/shadow
         // + the theme-variant set) so which keys go into which set stays
         // byte-identical while removing the copy-paste.
-        let collect_keys =
-            |keys: &mut dyn Iterator<Item = &String>| keys.cloned().collect::<BTreeSet<String>>();
+        fn collect_keys<'k>(keys: &mut dyn Iterator<Item = &'k String>) -> BTreeSet<&'k str> {
+            keys.map(String::as_str).collect::<BTreeSet<&'k str>>()
+        }
 
         let color_keys = collect_keys(
             &mut self
@@ -571,7 +572,7 @@ impl StyleSheet {
             // The `$` path reuses one scratch `String` across keys; the plain
             // path feeds the key straight to `convert_interface_key` so its
             // allocation profile stays identical to the former `plain_keys`.
-            let emit_keys = |keys: BTreeSet<String>, dollar: bool| {
+            let emit_keys = |keys: BTreeSet<&str>, dollar: bool| {
                 let mut contents = String::new();
                 let mut dollar_key = String::new();
                 for key in keys {
@@ -581,10 +582,10 @@ impl StyleSheet {
                     if dollar {
                         dollar_key.clear();
                         dollar_key.push('$');
-                        dollar_key.push_str(&key);
+                        dollar_key.push_str(key);
                         contents.push_str(&convert_interface_key(&dollar_key));
                     } else {
-                        contents.push_str(&convert_interface_key(&key));
+                        contents.push_str(&convert_interface_key(key));
                     }
                     contents.push_str(":null");
                 }

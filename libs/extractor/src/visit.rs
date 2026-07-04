@@ -228,7 +228,7 @@ impl<'a> DevupVisitor<'a> {
                 &self.ast,
             );
 
-            let mut props = vec![];
+            let mut props = Vec::with_capacity(info.css_vars.len());
             for (param_idx, var_name) in &info.css_vars {
                 if let Some(arg) = call.arguments.get(*param_idx) {
                     let arg_expr = arg.to_expression().clone_in(self.ast.allocator());
