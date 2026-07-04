@@ -272,10 +272,23 @@ fn global_selector_order(order_suffix: &str) -> u8 {
 
 fn get_selector_order(selector: &str) -> u8 {
     // Extract the part after the single '&' (avoid String allocation).
-    // Single scan: find the first '&' and, only when there is no second '&'
-    // after it, slice the tail directly (exactly one '&' ⇒ part after it).
-    let t: &str = match selector.find('&') {
-        Some(i) if !selector[i + 1..].contains('&') => &selector[i + 1..],
+    // Single fused scan: record the first '&' byte index and detect a second '&'
+    // in the same pass; slice the tail directly only when exactly one '&' was
+    // seen (exactly one '&' ⇒ part after it), else use the whole selector.
+    let mut first_amp: Option<usize> = None;
+    let mut saw_second = false;
+    for (i, b) in selector.bytes().enumerate() {
+        if b == b'&' {
+            if first_amp.is_none() {
+                first_amp = Some(i);
+            } else {
+                saw_second = true;
+                break;
+            }
+        }
+    }
+    let t: &str = match first_amp {
+        Some(i) if !saw_second => &selector[i + 1..],
         _ => selector,
     };
 
