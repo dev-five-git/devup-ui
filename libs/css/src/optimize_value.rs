@@ -290,22 +290,36 @@ fn optimize_color(value: &str) -> String {
             out.push(up(bytes[2]) as char);
             out.push(up(bytes[4]) as char);
         }
-        8 if bytes[0].eq_ignore_ascii_case(&bytes[1])
-            && bytes[2].eq_ignore_ascii_case(&bytes[3])
-            && bytes[4].eq_ignore_ascii_case(&bytes[5])
-            && bytes[6].eq_ignore_ascii_case(&bytes[7]) =>
-        {
-            out.push(up(bytes[0]) as char);
-            out.push(up(bytes[2]) as char);
-            out.push(up(bytes[4]) as char);
-            // A trailing `F` alpha pair (fully opaque) collapses away entirely.
-            if up(bytes[6]) != b'F' {
-                out.push(up(bytes[6]) as char);
-            }
-        }
-        8 if up(bytes[6]) == b'F' && up(bytes[7]) == b'F' => {
-            for &b in &bytes[..6] {
-                out.push(up(b) as char);
+        8 => {
+            // Collapse the two former `len()==8` arms into one, evaluating each
+            // pair-equality and the trailing-alpha opacity ONCE. Order is preserved:
+            // the nibble-duplication collapse (`#RRGGBBAA→#RGB(A)`) is still tried
+            // BEFORE the opaque `#RRGGBBFF→#RRGGBB` collapse, so load-bearing cases
+            // like `#ff0000ff → #F00` stay byte-identical. Previously a non-nibble
+            // opaque color re-ran the opacity check after the four failed
+            // `eq_ignore_ascii_case` comparisons; now `alpha_opaque` is computed once.
+            let alpha_opaque = up(bytes[6]) == b'F' && up(bytes[7]) == b'F';
+            if bytes[0].eq_ignore_ascii_case(&bytes[1])
+                && bytes[2].eq_ignore_ascii_case(&bytes[3])
+                && bytes[4].eq_ignore_ascii_case(&bytes[5])
+                && bytes[6].eq_ignore_ascii_case(&bytes[7])
+            {
+                out.push(up(bytes[0]) as char);
+                out.push(up(bytes[2]) as char);
+                out.push(up(bytes[4]) as char);
+                // A trailing `F` alpha pair (fully opaque) collapses away entirely.
+                // `bytes[6]==bytes[7]` here, so `alpha_opaque` == `up(bytes[6])=='F'`.
+                if !alpha_opaque {
+                    out.push(up(bytes[6]) as char);
+                }
+            } else if alpha_opaque {
+                for &b in &bytes[..6] {
+                    out.push(up(b) as char);
+                }
+            } else {
+                for &b in bytes {
+                    out.push(up(b) as char);
+                }
             }
         }
         4 if up(bytes[3]) == b'F' => {
