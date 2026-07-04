@@ -209,18 +209,23 @@ pub fn merge_expression_for_class_name<'a>(
     if class_name.is_empty() && unknown_expr.len() == 1 {
         Some(unknown_expr.remove(0))
     } else {
+        // Decide the head quasi once, up front. When there are static classes we
+        // append a trailing space so the first interpolation is separated; when
+        // there are none the head is empty. Hoisting this out of the loop removes
+        // the per-`idx == 0` `class_name.is_empty()` re-test. Output is byte-identical.
+        let head: &str = if class_name.is_empty() {
+            ""
+        } else {
+            class_name.push(' ');
+            class_name.as_str()
+        };
         let mut qu = oxc_allocator::Vec::new_in(ast_builder);
         for idx in 0..=unknown_expr.len() {
             let tail = idx == unknown_expr.len();
             let t = TemplateElementValue {
                 raw: Str::from_in(
                     if idx == 0 {
-                        if class_name.is_empty() {
-                            ""
-                        } else {
-                            class_name.push(' ');
-                            class_name.as_str()
-                        }
+                        head
                     } else if tail {
                         ""
                     } else {
