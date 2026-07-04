@@ -345,12 +345,18 @@ pub fn css_to_style(
             // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
             // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
             // outer recursion level) still skips materializing a throwaway `Vec<String>`.
-            // `split(at_rule)` already performs the substring scan that a separate
-            // `input.contains(at_rule)` guard would do, and the peekable `first`/`second`
-            // check below already no-ops when the prefix is absent (a single segment yields
-            // `second == None`). So run `split` directly and drop the redundant O(n)
-            // `contains` scan — byte-identical behavior, one fewer full-string scan per
-            // at-rule kind on every `@`-bearing input.
+            // A single `contains` probe short-circuits absent prefixes for ONE
+            // `memchr`-style scan, versus building a `Split`+`filter_map` and pulling
+            // two `next()` values (which trims + emptiness-checks every leading segment)
+            // just to discover the prefix never appears. When the `@`-bearing input carries
+            // a DIFFERENT at-rule kind (e.g. `@media` present, `@supports`/`@container`
+            // absent), those two absent kinds now cost one scan each instead of a full
+            // split walk. When the prefix IS present, `split` still does the authoritative
+            // scan below — the extra `contains` is one redundant scan only on the matching
+            // kind, dwarfed by the recursion it guards. Byte-identical behavior.
+            if !input.contains(at_rule) {
+                continue;
+            }
             let mut segments = input.split(at_rule).filter_map(|s| {
                 let s = s.trim();
                 (!s.is_empty()).then_some(s)

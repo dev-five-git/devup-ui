@@ -77,8 +77,8 @@ pub fn extract_style_from_styled<'a>(
 
         let styles = css_to_style_literal(&tag.quasi, 0, &None);
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
-            .iter()
-            .map(|ex| ExtractStyleProp::Static(ex.clone().into()))
+            .into_iter()
+            .map(|ex| ExtractStyleProp::Static(ex.into()))
             .collect();
 
         if let Some(default_class_name) = default_class_name {

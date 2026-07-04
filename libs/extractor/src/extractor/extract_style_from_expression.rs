@@ -217,7 +217,17 @@ pub fn extract_style_from_expression<'a>(
         };
     }
 
-    if let Some(name) = name {
+    if let Some(name) = name
+        // First-byte dispatch: only names beginning with `a` (`as`), `s`
+        // (`selectors`), `@`/`_` (at-rule + `_`-selector prefixes) or `t`
+        // (`typography`) can match ANY special branch below. The dominant
+        // plain-CSS-prop path (`background`, `padding`, `width`, …) fails this
+        // gate on its first byte and skips every `==` compare and the two
+        // `strip_prefix` scans, falling straight through to `typo = false`.
+        // Byte-identical: every branch below still requires the exact same full
+        // name it did before, and no special name starts with any other byte.
+        && matches!(name.as_bytes().first(), Some(b'a' | b's' | b'@' | b'_' | b't'))
+    {
         if name == "as" {
             return ExtractResult {
                 tag: Some(expression.clone_in(ast_builder.allocator())),

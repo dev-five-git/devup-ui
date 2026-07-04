@@ -10,8 +10,17 @@ pub fn optimize_multi_css_value(value: &str) -> String {
     // plus a trailing `2` so even the worst case (every segment re-wrapped) never
     // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
     // is a safe upper bound; output stays byte-identical.
-    let comma_count = value.bytes().filter(|&b| b == b',').count();
-    let mut result = String::with_capacity(value.len() + comma_count * 2 + 2);
+    // The dominant single-value case (`Roboto`, no comma) skips the full
+    // comma-count scan: with no commas the headroom is just the trailing `2`.
+    // Only when a comma is actually present do we pay the O(n) count to add
+    // `2` per comma. `memchr`-free single probe gates the count; capacity stays
+    // byte-for-byte identical to `value.len() + comma_count * 2 + 2`.
+    let comma_headroom = if value.as_bytes().contains(&b',') {
+        value.bytes().filter(|&b| b == b',').count() * 2
+    } else {
+        0
+    };
+    let mut result = String::with_capacity(value.len() + comma_headroom + 2);
     // Loop-invariant predicate: captures nothing, so construct it once per call
     // instead of once per comma-separated segment. Byte-scan equivalent of the
     // `[()\s]` regex — `\s` in `regex_lite` matches `[ \t\n\r\x0b\x0c]`, so the
