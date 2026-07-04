@@ -1,11 +1,7 @@
+use crate::utils::compile_regex;
 use phf::{phf_map, phf_set};
 use regex_lite::Regex;
 use std::sync::LazyLock;
-
-fn compile_regex(pattern: &str) -> Regex {
-    Regex::new(pattern)
-        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
-}
 
 pub(super) const SELECTOR_ORDER: [(&str, u8); 6] = [
     (":hover", 0),

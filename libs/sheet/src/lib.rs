@@ -8,6 +8,7 @@ use css::{
     sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector, get_selector_order, global_selector_order},
     theme_tokens::set_theme_token_levels,
+    utils::compile_regex,
     write_merge_selector,
 };
 use extractor::extract_style::ExtractStyleProperty;
@@ -106,11 +107,6 @@ impl StyleSheetProperty {
         css.push_str(&convert_theme_variable_value(&self.value));
         css.push('}');
     }
-}
-
-fn compile_regex(pattern: &str) -> Regex {
-    Regex::new(pattern)
-        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
 }
 
 static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$[\w.]+"));

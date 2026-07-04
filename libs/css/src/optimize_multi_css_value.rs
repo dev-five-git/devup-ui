@@ -13,18 +13,27 @@ pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
     // the owning builder below and stays byte-identical.
     if !value.as_bytes().contains(&b',') {
         let s = value.trim();
+        let quote_byte =
+            |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
         if s.len() >= 2 {
             let quoted = (s.starts_with('\'') && s.ends_with('\''))
                 || (s.starts_with('"') && s.ends_with('"'));
             if !quoted {
-                let quote_byte =
-                    |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
                 let needs_quotes = s.bytes().any(quote_byte);
                 if !needs_quotes || CSS_FUNCTION_RE.is_match(s) {
                     // Output would be exactly `s` pushed bare -> borrow it.
                     return Cow::Borrowed(s);
                 }
             }
+        } else if s.len() == 1 && !quote_byte(s.as_bytes()[0]) {
+            // A single-byte bare segment cannot be a quote *pair* (a lone `'`/`"`
+            // is length 1, not two), and `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
+            // can never match `<2` bytes, so it is never re-quoted. When the byte
+            // is not quote-worthy the owned builder pushes it bare too — the output
+            // is exactly `s`, so borrow it and skip the `String` allocation.
+            // (A lone `'`/`"` is not a `quote_byte`, so it also borrows bare,
+            // matching the owned `unquoted.len()==1` non-quote-byte arm.)
+            return Cow::Borrowed(s);
         }
     }
     Cow::Owned(optimize_multi_css_value_owned(value))
@@ -145,6 +154,8 @@ mod tests {
     #[case("A, B, C", "A,B,C")]
     #[case("'", "'")]
     #[case("\"", "\"")]
+    #[case("A", "A")]
+    #[case("x", "x")]
     #[case("url(abc)", "url(abc)")]
     #[case("url(\"a bc\")", "url(\"a bc\")")]
     #[case("'A', 'B', 'C'", "A,B,C")]

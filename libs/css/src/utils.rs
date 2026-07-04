@@ -1,5 +1,19 @@
 use std::borrow::Cow;
 
+use regex_lite::Regex;
+
+/// Compile a built-in regex pattern, panicking with a descriptive message.
+///
+/// The pattern strings are compile-time constants, so a failure here is a
+/// programming error, not a runtime condition. Shared canonical helper so `css`
+/// and its dependent crates (e.g. `sheet`) use one definition and one
+/// panic-message wording instead of copy-pasted duplicates.
+#[must_use]
+pub fn compile_regex(pattern: &str) -> Regex {
+    Regex::new(pattern)
+        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
+}
+
 #[inline]
 #[must_use]
 pub fn to_kebab_case(value: &str) -> String {
