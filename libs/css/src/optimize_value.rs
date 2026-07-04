@@ -41,13 +41,25 @@ pub fn optimize_value(value: &str) -> String {
     // and cannot add or remove `--`, so the flag stays valid across that step.
     let has_custom_prop = wrapped_custom_prop || ret.contains("--");
 
+    // Track whether `ret` may still hold a `(` or `)` at the final unbalanced-paren
+    // fixup (lines below). Seeding it here from a SINGLE byte scan for either paren
+    // lets the dominant paren-free values (`red`, `14px`, `$primary`, `0px`,
+    // `#FF0000`) skip that final whole-string depth scan entirely. It is only ever
+    // allowed to *skip* when provably paren-free: seed `true` on any `(`/`)` present
+    // (or the var()-wrap that just added a pair) and never clear it — the rgba/rgb
+    // hex replacements only REMOVE parens, so leaving the flag set there is
+    // conservative (runs a redundant scan, never misses a needed fix). Output is
+    // byte-identical to always running the scan.
+    let has_open_paren = ret.contains('(');
+    let may_have_paren = wrapped_custom_prop || has_open_paren || ret.contains(')');
+
     // Use Cow-aware replacement: only allocate when regex matches.
     // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code
     // that can introduce a `(` before here is the var() wrap above. Probe the
     // post-wrap buffer so we skip the regex-engine setup on the common no-paren
     // values (`red`, `14px`, `$primary`, `0px`) — matching the existing
     // `if ret.contains(',')` / `if ret.contains("rgba(")` guard style below.
-    if ret.contains('(') {
+    if has_open_paren {
         let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
@@ -245,23 +257,30 @@ pub fn optimize_value(value: &str) -> String {
     // no-paren values (`red`, `14px`, `$primary`, `0px`, `#FF0000`) pay exactly
     // one scan instead of two, and the `saw_paren` fast-out preserves the "no
     // paren ⇒ no mutation" behavior. Byte-identical output.
-    let mut depth: i32 = 0;
-    let mut saw_paren = false;
-    for b in ret.bytes() {
-        if b == b'(' {
-            depth += 1;
-            saw_paren = true;
-        } else if b == b')' {
-            depth -= 1;
-            saw_paren = true;
+    //
+    // `may_have_paren` gates the scan entirely: it was seeded `true` for any value
+    // that ever held a `(` or `)` (and only ever set, never cleared), so a `false`
+    // flag PROVES `ret` is paren-free and the scan can only ever no-op. The common
+    // paren-free values skip this whole-string traversal.
+    if may_have_paren {
+        let mut depth: i32 = 0;
+        let mut saw_paren = false;
+        for b in ret.bytes() {
+            if b == b'(' {
+                depth += 1;
+                saw_paren = true;
+            } else if b == b')' {
+                depth -= 1;
+                saw_paren = true;
+            }
         }
-    }
-    if saw_paren {
-        if depth < 0 {
-            ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
-        } else if depth > 0 {
-            for _ in 0..depth {
-                ret.push(')');
+        if saw_paren {
+            if depth < 0 {
+                ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
+            } else if depth > 0 {
+                for _ in 0..depth {
+                    ret.push(')');
+                }
             }
         }
     }

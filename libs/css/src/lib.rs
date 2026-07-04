@@ -286,10 +286,14 @@ fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) ->
                     num_to_nm_base(len)
                 }
             } else {
-                map.insert(
-                    filename_key.to_string(),
-                    std::iter::once((key.clone(), 0)).collect(),
-                );
+                // First style seen for this file: build the inner map presized to
+                // exactly the one entry we insert, so the initial insert never starts
+                // from a zero-capacity map (which would rehash/grow on the first few
+                // inserts). Output/behavior is byte-identical — same single entry,
+                // same `0` numbering — this only fixes the allocation shape.
+                let mut inner = std::collections::HashMap::with_capacity(1);
+                inner.insert(key.clone(), 0);
+                map.insert(filename_key.to_string(), inner);
                 num_to_nm_base(0)
             }
         })
