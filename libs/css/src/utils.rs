@@ -32,8 +32,12 @@ pub fn to_camel_case(value: &str) -> String {
         if i == 0 {
             result.push_str(s);
         } else if let Some(first) = s.chars().next() {
+            // Split "head char + rest" once so the first char's byte width is
+            // derived a single time (via `split_at`) instead of recomputing
+            // `first.len_utf8()` to re-slice `rest`. Byte-identical output.
+            let (_, rest) = s.split_at(first.len_utf8());
             result.push(first.to_ascii_uppercase());
-            result.push_str(&s[first.len_utf8()..]);
+            result.push_str(rest);
         }
     }
     result

@@ -79,7 +79,7 @@ impl ExtractStaticStyle {
                 Cow::Borrowed(value)
             }
         } else {
-            Cow::Owned(convert_value(value))
+            convert_value(value)
         };
         optimize_value(normalized.as_ref())
     }

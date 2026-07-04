@@ -16,11 +16,17 @@ use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
-/// Convert a value to a pixel value
-pub(super) fn convert_value(value: &str) -> String {
-    value
-        .parse::<f64>()
-        .map_or_else(|_| value.to_string(), |num| format!("{}px", num * 4.0))
+/// Convert a value to a pixel value.
+///
+/// Returns `Cow::Borrowed(value)` for the overwhelmingly common non-numeric
+/// case (e.g. `red`, `100%`, `8px`) so the caller can feed the borrowed input
+/// straight into `optimize_value` without an intermediate heap copy. Only the
+/// numeric branch (`4` → `16px`) allocates, exactly as before.
+pub(super) fn convert_value(value: &str) -> Cow<'_, str> {
+    value.parse::<f64>().map_or_else(
+        |_| Cow::Borrowed(value),
+        |num| Cow::Owned(format!("{}px", num * 4.0)),
+    )
 }
 
 /// Loop-invariant source type for the throwaway codegen `Program`. `d_ts()` is a
@@ -428,10 +434,13 @@ mod tests {
 
     #[test]
     fn test_convert_value() {
-        assert_eq!(convert_value("1px"), "1px");
-        assert_eq!(convert_value("1%"), "1%");
-        assert_eq!(convert_value("foo"), "foo");
-        assert_eq!(convert_value("4"), "16px");
+        assert_eq!(convert_value("1px").as_ref(), "1px");
+        assert_eq!(convert_value("1%").as_ref(), "1%");
+        assert_eq!(convert_value("foo").as_ref(), "foo");
+        assert_eq!(convert_value("4").as_ref(), "16px");
+        // Non-numeric values borrow the input; only the numeric branch allocates.
+        assert!(matches!(convert_value("foo"), Cow::Borrowed(_)));
+        assert!(matches!(convert_value("4"), Cow::Owned(_)));
     }
 
     #[test]
