@@ -760,7 +760,19 @@ pub fn extract_style_from_expression<'a>(
                                 None
                             }
                         });
-                        Some(arr.collect::<Vec<String>>().join(","))
+                        // Fold the filter-mapped literals directly into one
+                        // `String` (prefix `,` after the first) instead of
+                        // collecting into a throwaway `Vec<String>` and
+                        // `join`ing it — same bytes, one fewer heap Vec and no
+                        // per-element re-copy in `join`.
+                        let mut params = String::new();
+                        for s in arr {
+                            if !params.is_empty() {
+                                params.push(',');
+                            }
+                            params.push_str(&s);
+                        }
+                        Some(params)
                     } else {
                         None
                     }

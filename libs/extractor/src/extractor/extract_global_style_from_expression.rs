@@ -59,16 +59,25 @@ pub fn extract_global_style_from_expression<'a>(
                                             }
                                         }
                                         if let Some(url) = url {
+                                            // Build `"url"` (+ optional ` query`)
+                                            // in one presized buffer instead of a
+                                            // nested `format!` that allocates a
+                                            // throwaway inner `String`.
+                                            let mut import_url = String::with_capacity(
+                                                url.len()
+                                                    + 2
+                                                    + query.as_ref().map_or(0, |q| q.len() + 1),
+                                            );
+                                            import_url.push('"');
+                                            import_url.push_str(&url);
+                                            import_url.push('"');
+                                            if let Some(query) = query {
+                                                import_url.push(' ');
+                                                import_url.push_str(&query);
+                                            }
                                             styles.push(ExtractStyleProp::Static(
                                                 ExtractStyleValue::Import(ExtractImport {
-                                                    url: format!(
-                                                        "\"{url}\"{}",
-                                                        if let Some(query) = query {
-                                                            format!(" {query}")
-                                                        } else {
-                                                            String::new()
-                                                        }
-                                                    ),
+                                                    url: import_url,
                                                     file: file.to_string(),
                                                 }),
                                             ));
