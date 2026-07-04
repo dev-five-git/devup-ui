@@ -347,7 +347,7 @@ impl StyleSheet {
             canonical(file)
         };
 
-        if let Some(prop_map) = self.properties.get_mut(&property_key) {
+        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
                     props.retain(|prop| {
@@ -363,12 +363,12 @@ impl StyleSheet {
                     map.clear();
                 }
             }
-        }
-        if self
-            .properties
-            .get(&property_key)
-            .is_none_or(BTreeMap::is_empty)
-        {
+            prop_map.is_empty()
+        } else {
+            // Bucket absent entirely: treat as empty so it is (already) not present.
+            true
+        };
+        if bucket_empty {
             self.properties.remove(&property_key);
         }
         true
