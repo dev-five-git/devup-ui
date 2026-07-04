@@ -7,6 +7,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::collections::BTreeMap;
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
@@ -127,18 +128,59 @@ fn gen_style<'a>(
             if collect_c.is_empty() && collect_a.is_empty() {
                 return vec![];
             }
+            // Index the alternate branch by key ONCE so the two-sided merge is O(C+A)
+            // instead of the old O(C*A) nested `iter().any(..)` key comparisons. The map
+            // stores each key's FIRST index in `collect_a` (only inserting on the first
+            // sight of a key), exactly reproducing the previous "first matching q wins"
+            // ternary. `key.name()` is a borrowed `Cow<str>` for the common static-ident
+            // props, so keys are cheap to hash and don't allocate.
+            let mut a_by_key: FxHashMap<std::borrow::Cow<str>, usize> =
+                FxHashMap::with_capacity_and_hasher(collect_a.len(), FxBuildHasher);
+            for (j, q) in collect_a.iter().enumerate() {
+                if let ObjectPropertyKind::ObjectProperty(q) = q
+                    && let Some(name) = q.key.name()
+                {
+                    a_by_key.entry(name).or_insert(j);
+                }
+            }
+            // Set of consequent keys: an alternate entry is emitted alone (a-side pass
+            // below) iff NO consequent shares its key — identical to the old
+            // `collect_c.iter().any(..)` probe, now a single O(1) set lookup.
+            let mut c_keys: FxHashSet<std::borrow::Cow<str>> =
+                FxHashSet::with_capacity_and_hasher(collect_c.len(), FxBuildHasher);
+
             for p in &collect_c {
-                let found = collect_a.iter().any(|q| {
-                    let r = matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name());
-                    if let ObjectPropertyKind::ObjectProperty(p) = p
-                        && let ObjectPropertyKind::ObjectProperty(q) = q
-                        && r
+                let matched = if let ObjectPropertyKind::ObjectProperty(p) = p
+                    && let Some(name) = p.key.name()
+                {
+                    c_keys.insert(name.clone());
+                    if let Some(&j) = a_by_key.get(&name)
+                        && let ObjectPropertyKind::ObjectProperty(q) = &collect_a[j]
                     {
-                        properties.push(ObjectPropertyKind::new_object_property(SPAN, PropertyKind::Init, p.key.clone_in(ast_builder.allocator()), Expression::new_conditional_expression(SPAN, condition.clone_in(ast_builder.allocator()), p.value.clone_in(ast_builder.allocator()), q.value.clone_in(ast_builder.allocator()), ast_builder), false, false, false, ast_builder));
+                        properties.push(ObjectPropertyKind::new_object_property(
+                            SPAN,
+                            PropertyKind::Init,
+                            p.key.clone_in(ast_builder.allocator()),
+                            Expression::new_conditional_expression(
+                                SPAN,
+                                condition.clone_in(ast_builder.allocator()),
+                                p.value.clone_in(ast_builder.allocator()),
+                                q.value.clone_in(ast_builder.allocator()),
+                                ast_builder,
+                            ),
+                            false,
+                            false,
+                            false,
+                            ast_builder,
+                        ));
+                        true
+                    } else {
+                        false
                     }
-                    r
-                });
-                if !found && let ObjectPropertyKind::ObjectProperty(p) = p {
+                } else {
+                    false
+                };
+                if !matched && let ObjectPropertyKind::ObjectProperty(p) = p {
                     properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
@@ -153,8 +195,15 @@ fn gen_style<'a>(
             }
 
             for q in &collect_a {
-                let found = collect_c.iter().any(|p| matches!((p, q), (ObjectPropertyKind::ObjectProperty(p), ObjectPropertyKind::ObjectProperty(q)) if p.key.name() == q.key.name()));
-                if !found && let ObjectPropertyKind::ObjectProperty(q) = q {
+                // Emit an alternate-only property when it has no consequent counterpart:
+                // either its key is absent from `c_keys`, or it has no resolvable key at
+                // all (the old probe's `matches!` never matched such an entry either).
+                let unmatched = if let ObjectPropertyKind::ObjectProperty(qq) = q {
+                    qq.key.name().is_none_or(|name| !c_keys.contains(&name))
+                } else {
+                    false
+                };
+                if unmatched && let ObjectPropertyKind::ObjectProperty(q) = q {
                     properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
