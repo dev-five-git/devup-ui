@@ -283,7 +283,7 @@ pub fn extract_style_from_expression<'a>(
                                 if name.starts_with("_theme") {
                                     StyleSelector::from([
                                         to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                            .as_str(),
+                                            .as_ref(),
                                         parent_sel,
                                     ])
                                     .to_string()
@@ -291,7 +291,7 @@ pub fn extract_style_from_expression<'a>(
                                     StyleSelector::from([
                                         parent_sel,
                                         to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                            .as_str(),
+                                            .as_ref(),
                                     ])
                                     .to_string()
                                 }
@@ -300,7 +300,7 @@ pub fn extract_style_from_expression<'a>(
                             }
                         } else if name.starts_with('_') {
                             StyleSelector::from(
-                                to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_str(),
+                                to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_ref(),
                             )
                             .to_string()
                         } else {

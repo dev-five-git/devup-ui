@@ -152,7 +152,7 @@ impl From<&str> for StyleSelector {
             StyleSelector::Selector(value.into_owned())
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
-            let sep = SelectorSeparator::from(post.as_str()).as_str();
+            let sep = SelectorSeparator::from(post.as_ref()).as_str();
             // Match both the legacy `role="group"` attribute (deprecated, removal
             // planned for v2) and the new `data-group` attribute with a single
             // `:is()` clause. `:is()` adopts its highest-specificity argument, so
@@ -173,7 +173,7 @@ impl From<&str> for StyleSelector {
 
             StyleSelector::Selector(format!(
                 "&{}{}",
-                SelectorSeparator::from(post.as_str()),
+                SelectorSeparator::from(post.as_ref()),
                 post
             ))
         }
@@ -190,7 +190,7 @@ impl From<[&str; 2]> for StyleSelector {
         StyleSelector::Selector(format!(
             "{}{}{}",
             StyleSelector::from(value[0]),
-            SelectorSeparator::from(post.as_str()),
+            SelectorSeparator::from(post.as_ref()),
             post
         ))
     }
@@ -203,7 +203,7 @@ impl From<(&StyleSelector, &str)> for StyleSelector {
                 format!(
                     "{}{}{}",
                     value.0,
-                    SelectorSeparator::from(post.as_str()),
+                    SelectorSeparator::from(post.as_ref()),
                     post
                 ),
                 file.clone(),

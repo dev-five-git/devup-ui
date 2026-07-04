@@ -220,7 +220,7 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                     }
                     s
                 } else {
-                    to_kebab_case(property)
+                    to_kebab_case(property).into_owned()
                 },
             ))
         },

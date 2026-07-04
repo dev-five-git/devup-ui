@@ -73,7 +73,7 @@ pub fn is_types_call(callee: &Expression) -> bool {
 /// Convert camelCase CSS property name to kebab-case.
 /// `StyleX` uses standard CSS properties only — NO devup-ui shorthand expansion.
 pub fn normalize_stylex_property(name: &str) -> String {
-    css::utils::to_kebab_case(name)
+    css::utils::to_kebab_case(name).into_owned()
 }
 
 /// Intermediate selector parts collected during recursion.

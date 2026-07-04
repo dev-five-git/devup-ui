@@ -16,14 +16,22 @@ pub fn compile_regex(pattern: &str) -> Regex {
 
 #[inline]
 #[must_use]
-pub fn to_kebab_case(value: &str) -> String {
-    let mut result = String::with_capacity(value.len() + 4);
+pub fn to_kebab_case(value: &str) -> Cow<'_, str> {
     // Inputs here are always ASCII CSS property / selector identifiers. Use the
     // ASCII-only uppercase check (a single byte compare) instead of
     // `char::is_uppercase()`, which consults the Unicode uppercase tables. This
     // matches the sibling `to_camel_case` (which already uses `to_ascii_uppercase`)
     // and keeps output byte-identical: any non-ASCII char (never ASCII-uppercase)
     // is copied through verbatim, exactly as before.
+    //
+    // Fast path: kebab-casing only rewrites ASCII-uppercase bytes. When the input
+    // has NONE (`color`, `margin`, `width`, already-kebab identifiers), the output
+    // equals the input verbatim, so borrow it instead of allocating + refilling a
+    // fresh `String`.
+    if !value.as_bytes().iter().any(u8::is_ascii_uppercase) {
+        return Cow::Borrowed(value);
+    }
+    let mut result = String::with_capacity(value.len() + 4);
     for (i, c) in value.chars().enumerate() {
         if c.is_ascii_uppercase() {
             if i != 0 {
@@ -34,7 +42,7 @@ pub fn to_kebab_case(value: &str) -> String {
             result.push(c);
         }
     }
-    result
+    Cow::Owned(result)
 }
 
 #[inline]

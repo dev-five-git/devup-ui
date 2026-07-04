@@ -638,10 +638,16 @@ pub fn optimize_css_block(css: &str) -> String {
     // single buffer. This is equivalent to the previous split('{')-then-split('}')
     // rebuild but avoids the intermediate whole-string allocation: each segment between
     // two structural chars is trimmed once and the consumed `{`/`}` is re-emitted.
-    let trimmed = {
+    //
+    // Fast path: a segment with NO `{`/`}` boundary has nothing to re-emit — the
+    // per-declaration `.split(';')` loop below already `.trim()`s every part, so the
+    // brace-boundary rewrite would produce a string byte-identical to `cleaned`. In
+    // that case borrow `cleaned` directly (`Cow::Borrowed`) instead of allocating and
+    // filling a second whole-string buffer.
+    let bytes = cleaned.as_bytes();
+    let trimmed: Cow<str> = if bytes.iter().any(|&b| b == b'{' || b == b'}') {
         let mut buf = String::with_capacity(cleaned.len());
         let mut segment_start = 0;
-        let bytes = cleaned.as_bytes();
         for (idx, &b) in bytes.iter().enumerate() {
             if b == b'{' || b == b'}' {
                 buf.push_str(cleaned[segment_start..idx].trim());
@@ -650,7 +656,9 @@ pub fn optimize_css_block(css: &str) -> String {
             }
         }
         buf.push_str(cleaned[segment_start..].trim());
-        buf
+        Cow::Owned(buf)
+    } else {
+        Cow::Borrowed(cleaned.as_str())
     };
 
     let mut first_segment = true;
