@@ -258,10 +258,15 @@ pub fn extract(
 
     let source_type = SourceType::from_path(filename)?;
     let (bucket, global, css_file) = resolve_css_target(filename, &option);
-    let mut css_files = vec![css_file.clone()];
-    if option.import_main_css && !global {
-        css_files.insert(0, format!("{}/devup-ui.css", option.css_dir));
+    let import_main = option.import_main_css && !global;
+    // Presize to the exact final length (1 target + optional main-css entry) and
+    // push the main-css path FIRST so the order (main-css, target) matches the
+    // former `insert(0, …)` without paying its O(n) element shift.
+    let mut css_files = Vec::with_capacity(1 + usize::from(import_main));
+    if import_main {
+        css_files.push(main_css_path(&option.css_dir));
     }
+    css_files.push(css_file.clone());
     let allocator = Allocator::default();
 
     let ParserReturn {
@@ -295,6 +300,16 @@ pub fn extract(
     })
 }
 
+/// Build the shared `devup-ui.css` main-css path for a given css directory.
+///
+/// Single source of truth for the `"{css_dir}/devup-ui.css"` literal, used both
+/// by the global/single-css branch of [`resolve_css_target`] and the
+/// `import_main_css` entry in [`extract`], so the shape never drifts between the
+/// two sites.
+fn main_css_path(css_dir: &str) -> String {
+    format!("{css_dir}/devup-ui.css")
+}
+
 /// Resolve the CSS bucket identity, global flag, and target CSS file for a
 /// source file.
 ///
@@ -307,7 +322,7 @@ fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, 
     let bucket = canonical(filename);
     let global = option.single_css || is_global(filename);
     let css_file = if global {
-        format!("{}/devup-ui.css", option.css_dir)
+        main_css_path(&option.css_dir)
     } else {
         format!(
             "{}/devup-ui-{}.css",
