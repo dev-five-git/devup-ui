@@ -30,6 +30,25 @@ macro_rules! push_fmt {
     }};
 }
 
+/// Shared 5-field comparator for the decorate-sort-undecorate keyed tuples in
+/// `create_style_with_layers`. Both the `global_keyed` (`bool` first field) and
+/// `keyed` (`u8` first field) buckets share the shape
+/// `(K, order: u8, selector_str: &str, prop: &StyleSheetProperty)` and sort by the
+/// exact same chain: precomputed order key first (`bool`/`u8` both compare via
+/// `Ord`), then selector string, then property, then value. Extracted so the two
+/// call sites cannot drift; produces byte-identical ordering to the former inline
+/// closures.
+fn keyed_prop_cmp<K: Ord>(
+    a: &(K, u8, &str, &StyleSheetProperty),
+    b: &(K, u8, &str, &StyleSheetProperty),
+) -> std::cmp::Ordering {
+    a.0.cmp(&b.0)
+        .then_with(|| a.1.cmp(&b.1))
+        .then_with(|| a.2.cmp(b.2))
+        .then_with(|| a.3.property.cmp(&b.3.property))
+        .then_with(|| a.3.value.cmp(&b.3.value))
+}
+
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleSheetProperty {
@@ -682,13 +701,7 @@ impl StyleSheet {
                     }
                     _ => (false, 0u8, "", prop),
                 }));
-                global_keyed.sort_by(|a, b| {
-                    a.0.cmp(&b.0)
-                        .then_with(|| a.1.cmp(&b.1))
-                        .then_with(|| a.2.cmp(b.2))
-                        .then_with(|| a.3.property.cmp(&b.3.property))
-                        .then_with(|| a.3.value.cmp(&b.3.value))
-                });
+                global_keyed.sort_by(keyed_prop_cmp);
                 global_keyed
                     .into_iter()
                     .map(|(_, _, _, prop)| prop)
@@ -711,13 +724,7 @@ impl StyleSheet {
                 Some(StyleSelector::Selector(s)) => (1u8, get_selector_order(s), s.as_str(), prop),
                 _ => (0u8, 0u8, "", prop),
             }));
-            keyed.sort_by(|a, b| {
-                a.0.cmp(&b.0)
-                    .then_with(|| a.1.cmp(&b.1))
-                    .then_with(|| a.2.cmp(b.2))
-                    .then_with(|| a.3.property.cmp(&b.3.property))
-                    .then_with(|| a.3.value.cmp(&b.3.value))
-            });
+            keyed.sort_by(keyed_prop_cmp);
             // The common level has no `@`-rule atoms, so `at_rules` is empty.
             // Skip the `sort()` no-op and the per-level `BTreeMap` construction
             // entirely in that case; only regroup when there is actually work.

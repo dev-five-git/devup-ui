@@ -46,9 +46,6 @@ pub fn optimize_multi_css_value(value: &str) -> String {
             continue;
         }
 
-        // Byte-scan equivalent of the `[()\s]` regex: `\s` in `regex_lite`
-        // matches `[ \t\n\r\x0b\x0c]`, so the vertical-tab (0x0b) and form-feed
-        // (0x0c) bytes MUST be included to stay byte-identical.
         let needs_quotes = unquoted.bytes().any(quote_byte);
         if needs_quotes && !CSS_FUNCTION_RE.is_match(unquoted) {
             result.push('"');
