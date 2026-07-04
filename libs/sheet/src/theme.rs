@@ -632,11 +632,11 @@ impl Theme {
             };
             let single_theme = entries.len() <= 1;
             // if other theme is exists, should use light-dark function
-            let other_theme_key = if entries.len() == 2 {
+            let other_theme_key: Option<&str> = if entries.len() == 2 {
                 entries
                     .iter()
                     .find(|(k, _)| **k != default_theme_key)
-                    .map(|(k, _)| (*k).clone())
+                    .map(|(k, _)| k.as_str())
             } else {
                 None
             };
@@ -714,19 +714,18 @@ impl Theme {
                                 |v| Cow::Borrowed(v.as_str()),
                             );
                         let optimized_value: &str = &optimized_value;
-                        let other_theme_value =
-                            other_theme_key.as_ref().and_then(|other_theme_key| {
-                                self.colors.get(other_theme_key).and_then(|v| {
-                                    v.get(prop).and_then(|v| {
-                                        let other_theme_value = optimize_value(v.as_str());
-                                        if other_theme_value == optimized_value {
-                                            None
-                                        } else {
-                                            Some(other_theme_value)
-                                        }
-                                    })
+                        let other_theme_value = other_theme_key.and_then(|other_theme_key| {
+                            self.colors.get(other_theme_key).and_then(|v| {
+                                v.get(prop).and_then(|v| {
+                                    let other_theme_value = optimize_value(v.as_str());
+                                    if other_theme_value == optimized_value {
+                                        None
+                                    } else {
+                                        Some(other_theme_value)
+                                    }
                                 })
-                            });
+                            })
+                        });
                         // default theme
                         if !theme_contents.is_empty() {
                             theme_contents.push(';');

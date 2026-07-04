@@ -112,11 +112,11 @@ static HEADER: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-fn convert_interface_key(key: &str) -> String {
+fn convert_interface_key(key: &str) -> Cow<'_, str> {
     if INTERFACE_KEY_RE.is_match(key) {
-        key.to_string()
+        Cow::Borrowed(key)
     } else {
-        format!("[`{}`]", key.replace('`', "\\`"))
+        Cow::Owned(format!("[`{}`]", key.replace('`', "\\`")))
     }
 }
 

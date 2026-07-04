@@ -125,6 +125,21 @@ fn criterion_benchmark(c: &mut Criterion) {
         let sheet = make_selector_sheet();
         b.iter(|| black_box(sheet.create_css(Some("app.tsx"), false)));
     });
+
+    c.bench_function("create_interface", |b| {
+        let mut sheet = StyleSheet::default();
+        sheet.set_theme(make_large_theme());
+        b.iter(|| {
+            black_box(sheet.create_interface(
+                black_box("@devup-ui/react"),
+                black_box("DevupColorTheme"),
+                black_box("DevupTypography"),
+                black_box("DevupLength"),
+                black_box("DevupShadows"),
+                black_box("DevupTheme"),
+            ))
+        });
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);
