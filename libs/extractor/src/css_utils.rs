@@ -545,6 +545,18 @@ pub fn css_to_style(
     styles
 }
 
+/// Optimize a declaration's value only when its property warrants multi-value
+/// optimization, borrowing otherwise. Shared by `css_to_style_block` and
+/// `optimize_css_block`, which both made this identical decision inline.
+#[inline]
+fn optimize_decl_value<'a>(property: &str, value: &'a str) -> Cow<'a, str> {
+    if check_multi_css_optimize(property) {
+        optimize_multi_css_value(value)
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
 fn css_to_style_block(
     css: &str,
     level: u8,
@@ -569,11 +581,7 @@ fn css_to_style_block(
         };
         let property = property.trim();
         let value = value.trim();
-        let value: Cow<str> = if check_multi_css_optimize(property) {
-            optimize_multi_css_value(value)
-        } else {
-            Cow::Borrowed(value)
-        };
+        let value: Cow<str> = optimize_decl_value(property, value);
         styles.push(ExtractStaticStyle::new(
             property,
             value.as_ref(),
@@ -649,11 +657,7 @@ pub fn optimize_css_block(css: &str) -> String {
             let property_name = property
                 .rsplit_once('{')
                 .map_or(property, |(_, property_name)| property_name);
-            let optimized_value = if check_multi_css_optimize(property_name) {
-                optimize_multi_css_value(value)
-            } else {
-                Cow::Borrowed(value)
-            };
+            let optimized_value = optimize_decl_value(property_name, value);
             result.push_str(property);
             result.push(':');
             result.push_str(&optimized_value);

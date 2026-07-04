@@ -599,12 +599,12 @@ impl StyleSheet {
                 // separator. `keys.len() * 12` is a cheap lower-bound estimate that
                 // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
                 let mut contents = String::with_capacity(keys.len() * 12);
-                // Presize the reused `$`-prefix scratch to the longest key (+1 for
-                // the leading `$`) so the first `push_str` never grows it. `keys`
-                // is a `BTreeSet<&str>`, cheap to scan for its max length; when
-                // empty the buffer is `$`-sized and the loop never touches it.
-                let dollar_cap = 1 + keys.iter().map(|k| k.len()).max().unwrap_or(0);
-                let mut dollar_key = String::with_capacity(dollar_cap);
+                // The `$`-prefix scratch is `clear()`-reused across every key, so it
+                // grows amortized to the longest key within the first few iterations
+                // and never reallocs thereafter. Starting it empty removes the extra
+                // full `keys.iter().map(len).max()` traversal that previously ran only
+                // to presize this one reused buffer; output stays byte-identical.
+                let mut dollar_key = String::new();
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');

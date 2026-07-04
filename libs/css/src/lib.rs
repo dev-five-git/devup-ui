@@ -191,13 +191,26 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
                             && property.len() > 2
                             && property.as_bytes()[2].is_ascii_uppercase()))
                 {
-                    // Build `-<kebab>` in one pre-sized String instead of
-                    // `format!("-{}", …)`, which would allocate a second String
-                    // just to prepend the `-`. Output byte-identical.
-                    let kebab = to_kebab_case(property);
-                    let mut s = String::with_capacity(kebab.len() + 1);
+                    // Build `-<kebab>` directly into ONE buffer instead of allocating
+                    // a `to_kebab_case(property)` String and copying it into a second
+                    // presized buffer. This inlines `to_kebab_case`'s exact conversion
+                    // (ASCII-uppercase char → `-` before it when not first, then its
+                    // lowercase; other chars copied verbatim) after the leading `-`.
+                    // The `i != 0` guard matches `to_kebab_case`, so the vendor
+                    // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
+                    // extra `-`. Output byte-identical, one fewer allocation.
+                    let mut s = String::with_capacity(property.len() + 5);
                     s.push('-');
-                    s.push_str(&kebab);
+                    for (i, c) in property.chars().enumerate() {
+                        if c.is_ascii_uppercase() {
+                            if i != 0 {
+                                s.push('-');
+                            }
+                            s.push(c.to_ascii_lowercase());
+                        } else {
+                            s.push(c);
+                        }
+                    }
                     s
                 } else {
                     to_kebab_case(property)

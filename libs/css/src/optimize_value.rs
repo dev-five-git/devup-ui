@@ -49,16 +49,26 @@ pub fn optimize_value(value: &str) -> String {
     // `has_open_paren` still gates the INNER_TRIM_RE step (which only fires on a `(`),
     // `may_have_paren` still gates the final unbalanced-paren scan, and `has_double_dash`
     // still gates RM_MINUS_ZERO_RE. Byte-identical: one scan instead of three per value.
-    let (has_open_paren, saw_close_paren, has_double_dash, _) =
-        ret.bytes()
-            .fold((false, false, false, false), |(o, c, dd, prev_dash), b| {
-                (
-                    o || b == b'(',
-                    c || b == b')',
-                    dd || (b == b'-' && prev_dash),
-                    b == b'-',
-                )
-            });
+    // `saw_semi` records whether the post-wrap buffer holds a `;`. It is folded here
+    // (before any regex pass runs) and used far below to gate the trailing `;`-strip
+    // loop instead of a separate `ret.contains(';')` scan. This is provably byte-identical:
+    // every intervening replacement either inserts fixed literals with no `;`
+    // (INNER_TRIM `(${1})`, F_SPACE `,`, F_RGBA/F_RGB/COLOR_HASH hex, F_DOT `${1}.${2}`,
+    // ZERO `${1}0`, ZERO_PERCENT `%`) or re-emits bytes captured FROM `ret`
+    // (RM_MINUS_ZERO `0${1}`, NUM_TRIM `${1} ${3}`, DOT_ZERO `${1}0${2}`), so none can
+    // introduce a `;` that was not already present — a `false` seed stays `false`.
+    let (has_open_paren, saw_close_paren, has_double_dash, _, saw_semi) = ret.bytes().fold(
+        (false, false, false, false, false),
+        |(o, c, dd, prev_dash, semi), b| {
+            (
+                o || b == b'(',
+                c || b == b')',
+                dd || (b == b'-' && prev_dash),
+                b == b'-',
+                semi || b == b';',
+            )
+        },
+    );
     let may_have_paren = wrapped_custom_prop || has_open_paren || saw_close_paren;
 
     // When the var()-wrap above fired, the value started with `--`, so the flag is
@@ -243,7 +253,9 @@ pub fn optimize_value(value: &str) -> String {
     }
     // remove ; from dynamic value. Every SEMI_SUFFIXES entry contains `;`, so a
     // value with no `;` can never match — skip the 4 strip_suffix probes entirely.
-    if ret.contains(';') {
+    // `saw_semi` was folded from the SAME post-wrap byte scan above (no later pass can
+    // add a `;`), so this reuses that result instead of a fresh `contains(';')` scan.
+    if saw_semi {
         for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
             if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
                 let base = stripped.trim_end_matches(';');
