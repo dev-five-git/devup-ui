@@ -95,6 +95,22 @@ const cls = css`
   border-radius: 8px;
 `";
 
+// Multiple dynamic interpolations interleaved with static text. Exercises the
+// dynamic-reconstruction branch of `css_to_style_literal` (placeholder-map build,
+// `found_placeholders` scan, reverse-position decorate-sort, per-placeholder
+// `${expr}` rebuild) that the single-interpolation `CSS_TEMPLATE_INPUT` only
+// shallowly covers.
+const CSS_MULTI_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  margin: ${topGap}px ${sideGap}px ${bottomGap}px ${sideGap}px;
+  padding: ${padY}px ${padX}px;
+  color: ${textColor};
+  background: ${bgColor};
+  border: ${borderWidth}px solid ${borderColor};
+  width: calc(${baseWidth}px + ${extraWidth}px);
+  transform: translate(${offsetX}px, ${offsetY}px);
+`";
+
 const STYLED_INPUT: &str = r"import { styled } from '@devup-ui/react'
 const Card = styled('div', { bg: 'red', p: 4, borderRadius: '8px', _hover: { bg: 'blue' } })
 const Button = styled('button', { px: 4, py: 2, bg: 'green', color: 'white', _hover: { bg: 'darkgreen' }, _focus: { outline: 'none' } })";
@@ -160,6 +176,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("test.tsx"),
                 black_box(CSS_TEMPLATE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_css_template_multi", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_MULTI_TEMPLATE_INPUT),
                 make_option(),
             )
             .unwrap()

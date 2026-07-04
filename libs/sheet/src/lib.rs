@@ -146,20 +146,22 @@ fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
         // an owned copy. The borrow must be tied to `value`, not the `replace_all` temporary.
         match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
             let tok = &caps[0][1..];
+            // Build the `var(--<tok>)` expansion in ONE pre-sized buffer for both arms,
+            // instead of a throwaway `tok.replace('.', "-")` String plus a `format!`
+            // (dot case) or a lone `format!` spinning up the fmt machinery (no-dot case).
+            // Output is byte-identical.
+            let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
+            out.push_str("var(--");
             if tok.contains('.') {
-                // Single allocation: build the expansion in one pre-sized buffer, replacing
-                // `.`→`-` inline, instead of allocating a throwaway `tok.replace('.', "-")`
-                // String and then a second String for the `format!`.
-                let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
-                out.push_str("var(--");
+                // Translate `.`→`-` inline while copying.
                 for b in tok.chars() {
                     out.push(if b == '.' { '-' } else { b });
                 }
-                out.push(')');
-                out
             } else {
-                format!("var(--{tok})")
+                out.push_str(tok);
             }
+            out.push(')');
+            out
         }) {
             Cow::Owned(s) => Cow::Owned(s),
             Cow::Borrowed(_) => Cow::Borrowed(value),
@@ -718,13 +720,24 @@ impl StyleSheet {
             // (is_some=0, order=0, selector_str="") sort by (property, value); `Selector`
             // props (is_some=1) sort by (order, selector_str, property, value) — matching
             // `StyleSelector::cmp`'s `get_selector_order` then string tie-break.
-            let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> =
-                Vec::with_capacity(sorted_props.len());
-            keyed.extend(sorted_props.into_iter().map(|prop| match &prop.selector {
-                Some(StyleSelector::Selector(s)) => (1u8, get_selector_order(s), s.as_str(), prop),
-                _ => (0u8, 0u8, "", prop),
-            }));
-            keyed.sort_by(keyed_prop_cmp);
+            // The common level often has ONLY global/at props, leaving `sorted_props`
+            // empty. Skip the `with_capacity`/`extend`/`sort_by` triple entirely in that
+            // case, mirroring the `global_props`/`at_rules` guards above and below; an
+            // empty build+sort yields an empty vec anyway, so output is byte-identical.
+            let keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> = if sorted_props.is_empty() {
+                Vec::new()
+            } else {
+                let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> =
+                    Vec::with_capacity(sorted_props.len());
+                keyed.extend(sorted_props.into_iter().map(|prop| match &prop.selector {
+                    Some(StyleSelector::Selector(s)) => {
+                        (1u8, get_selector_order(s), s.as_str(), prop)
+                    }
+                    _ => (0u8, 0u8, "", prop),
+                }));
+                keyed.sort_by(keyed_prop_cmp);
+                keyed
+            };
             // The common level has no `@`-rule atoms, so `at_rules` is empty.
             // Skip the `sort()` no-op and the per-level `BTreeMap` construction
             // entirely in that case; only regroup when there is actually work.

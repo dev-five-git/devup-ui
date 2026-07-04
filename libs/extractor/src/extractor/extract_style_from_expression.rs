@@ -66,7 +66,7 @@ fn create_static_styles<'a>(
                 .saturating_sub(levels.len()),
         );
         for &level in levels {
-            styles.extend(map.iter().map(|&(k, v)| {
+            styles.extend(map.entries().map(|(&k, &v)| {
                 ExtractStyleProp::Static(ExtractStyleValue::Static(
                     ExtractStaticStyle::new(k, v, level, selector.clone())
                         .with_theme_token_resolution(resolution),

@@ -204,14 +204,49 @@ pub fn css_to_style_literal(
             }
 
             if all_literals {
-                // All expressions are literals - replace placeholders with literal values to create static style
-                let mut static_value = value.to_string();
-                for (placeholder, idx) in &found_placeholders {
-                    if let Some((_, literal_value)) = literal_values.iter().find(|(i, _)| i == idx)
-                    {
-                        static_value = static_value.replace(*placeholder, literal_value.as_str());
+                // All expressions are literals - replace placeholders with literal values to
+                // create a static style. Rebuild the value in ONE left-to-right pass over
+                // `value` instead of calling `String::replace` once per placeholder (each of
+                // which re-scans and re-allocates the whole value String → O(P) full-string
+                // allocations for P placeholders). We reuse the already-known placeholder
+                // positions/lengths: every entry in `found_placeholders` is a registered
+                // marker with a literal (guaranteed by `all_literals`), so scanning for
+                // `__EXPR_` and substituting the matching literal reproduces the sequential
+                // `replace`-all-occurrences result byte-for-byte in a single allocation.
+                let mut static_value = String::with_capacity(value.len());
+                let vbytes = value.as_bytes();
+                let mut cursor = 0usize;
+                while let Some(rel) = value[cursor..].find("__EXPR_") {
+                    let marker_start = cursor + rel;
+                    let digits_start = marker_start + "__EXPR_".len();
+                    let mut end = digits_start;
+                    while end < vbytes.len() && vbytes[end].is_ascii_digit() {
+                        end += 1;
+                    }
+                    if end > digits_start && value[end..].starts_with("__") {
+                        let marker_end = end + "__".len();
+                        let placeholder = &value[marker_start..marker_end];
+                        if let Some((_, literal_value)) = expression_map
+                            .get(placeholder)
+                            .and_then(|idx| literal_values.iter().find(|(i, _)| i == idx))
+                        {
+                            // Emit static text before the marker, then the literal.
+                            static_value.push_str(&value[cursor..marker_start]);
+                            static_value.push_str(literal_value.as_str());
+                            cursor = marker_end;
+                        } else {
+                            // Registered-but-unmatched or malformed marker: keep the
+                            // `__EXPR_` text verbatim and continue past it, matching the
+                            // old code which only `replace`d markers present in the set.
+                            static_value.push_str(&value[cursor..digits_start]);
+                            cursor = digits_start;
+                        }
+                    } else {
+                        static_value.push_str(&value[cursor..digits_start]);
+                        cursor = digits_start;
                     }
                 }
+                static_value.push_str(&value[cursor..]);
                 // Create a new static style with the evaluated value
                 styles.push(CssToStyleResult::Static(ExtractStaticStyle::new(
                     style.property(),

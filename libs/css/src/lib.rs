@@ -226,15 +226,19 @@ pub fn is_enum_property(property: &str) -> bool {
     GLOBAL_ENUM_STYLE_PROPERTY.contains_key(property)
 }
 
+/// Borrow the phf expansion map for `(property, value)` without materializing a `Vec`.
+///
+/// The caller iterates `.entries()`/reads `.len()` directly off the static map, so the
+/// enum-property extract hot path (every `display`/`alignItems`/… prop per breakpoint
+/// level) no longer allocates a throwaway `Vec` per call.
 #[must_use]
 pub fn get_enum_property_value(
     property: &str,
     value: &str,
-) -> Option<Vec<(&'static str, &'static str)>> {
+) -> Option<&'static phf::Map<&'static str, &'static str>> {
     GLOBAL_ENUM_STYLE_PROPERTY
         .get(property)
         .and_then(|map| map.get(value))
-        .map(|map| map.entries().map(|(k, v)| (*k, *v)).collect())
 }
 
 #[must_use]
