@@ -170,15 +170,19 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
             DisassembleProperty::Fallback(Some(
-                if (property.starts_with("Webkit")
-                    && property.len() > 6
-                    && property.as_bytes()[6].is_ascii_uppercase())
-                    || (property.starts_with("Moz")
-                        && property.len() > 3
-                        && property.as_bytes()[3].is_ascii_uppercase())
-                    || (property.starts_with("ms")
-                        && property.len() > 2
-                        && property.as_bytes()[2].is_ascii_uppercase())
+                // Gate the three vendor-prefix `starts_with` scans behind a
+                // single first-byte check: only `W`/`M`/`m` can begin
+                // `Webkit`/`Moz`/`ms`, so every other property skips all three.
+                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm'))
+                    && ((property.starts_with("Webkit")
+                        && property.len() > 6
+                        && property.as_bytes()[6].is_ascii_uppercase())
+                        || (property.starts_with("Moz")
+                            && property.len() > 3
+                            && property.as_bytes()[3].is_ascii_uppercase())
+                        || (property.starts_with("ms")
+                            && property.len() > 2
+                            && property.as_bytes()[2].is_ascii_uppercase()))
                 {
                     // Build `-<kebab>` in one pre-sized String instead of
                     // `format!("-{}", …)`, which would allocate a second String

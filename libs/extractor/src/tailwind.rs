@@ -1219,41 +1219,49 @@ static TAILWIND_SIZE_KEYWORDS: phf::Set<&'static str> = phf_set! {
     "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
 };
 
+/// Tailwind color-family names. Loop-invariant lookup set: promoted from a
+/// per-call `[&str; 22]` stack array + linear `strip_prefix` scan to a
+/// module-level `phf::Set` for an O(1) first-segment `contains`.
+static TAILWIND_COLOR_NAMES: phf::Set<&'static str> = phf_set! {
+    "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
+    "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
+    "pink", "rose",
+};
+
 /// Check if a value part looks like a valid Tailwind value
 fn is_valid_tailwind_value(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
 
+    // Ordered cheapest-and-most-common first so the dominant numeric/color
+    // utilities short-circuit before the two phf keyword probes. Every branch
+    // is a side-effect-free predicate returning `true`, so reordering cannot
+    // change the boolean result for any input.
+
     // Arbitrary value syntax [...]
     if value.starts_with('[') && value.ends_with(']') {
+        return true;
+    }
+
+    // Numeric values (including decimals like 0.5, 1.5) — the dominant case
+    // (`p-4`→`4`, `z-10`→`10`).
+    // Safe: `value.is_empty()` returns early above, so `value` has at least one char.
+    if value.starts_with(|c: char| c.is_ascii_digit()) {
+        return true;
+    }
+
+    // Color names with shade (e.g., red-500, blue-100). Every Tailwind color
+    // token is `<name>` or `<name>-<shade>`, so an O(1) first-segment lookup
+    // reproduces the old `<name>` / `<name>-…` prefix scan byte-for-byte.
+    let base = value.split('-').next().unwrap_or(value);
+    if TAILWIND_COLOR_NAMES.contains(base) {
         return true;
     }
 
     // Common keywords
     if TAILWIND_VALUE_KEYWORDS.contains(value) {
         return true;
-    }
-
-    // Numeric values (including decimals like 0.5, 1.5)
-    // Safe: `value.is_empty()` returns early above, so `value` has at least one char.
-    if value.starts_with(|c: char| c.is_ascii_digit()) {
-        return true;
-    }
-
-    // Color names with shade (e.g., red-500, blue-100)
-    let color_names = [
-        "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
-        "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
-        "pink", "rose",
-    ];
-    for color in color_names {
-        if let Some(rest) = value.strip_prefix(color) {
-            // Must be followed by nothing or a dash and number
-            if rest.is_empty() || rest.starts_with('-') {
-                return true;
-            }
-        }
     }
 
     // Size suffixes (xs, sm, md, lg, xl, 2xl, etc.)

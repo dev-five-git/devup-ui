@@ -34,7 +34,10 @@ fn raw_static_style<'a>(
     }))
 }
 
-const SHORTHAND_PROPERTIES: &[&str] = &[
+/// Shorthand CSS properties that trigger a `StyleX` specificity warning.
+/// Promoted from an 18-element `&[&str]` linear `.contains` scan to a
+/// module-level `phf::Set` for an O(1) membership probe per `create()` property.
+static SHORTHAND_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
     "margin",
     "padding",
     "background",
@@ -53,7 +56,7 @@ const SHORTHAND_PROPERTIES: &[&str] = &[
     "margin-block",
     "padding-inline",
     "padding-block",
-];
+};
 
 /// Extract styles from a `stylex.create()` call's argument (`ObjectExpression`).
 ///
@@ -189,7 +192,7 @@ pub fn extract_stylex_namespace_styles<'a>(
 
             let css_property = normalize_stylex_property(&prop_name);
 
-            if SHORTHAND_PROPERTIES.contains(&css_property.as_str()) {
+            if SHORTHAND_PROPERTIES.contains(css_property.as_str()) {
                 eprintln!(
                     "[stylex] WARNING: Shorthand property '{css_property}' may cause unexpected specificity issues. Consider using longhand properties (e.g., 'marginTop', 'paddingLeft')."
                 );
