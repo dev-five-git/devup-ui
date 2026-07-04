@@ -707,19 +707,38 @@ fn remove_semicolon_before_closing_brace(value: &mut String) {
     if !value.contains(";}") {
         return;
     }
-    // Single forward pass: drop every run of ';' that sits directly before '}'.
-    let mut out = String::with_capacity(value.len());
-    let mut rest = value.as_str();
-    while let Some(pos) = rest.find(';') {
-        out.push_str(&rest[..pos]);
-        let after_run = rest[pos..].trim_start_matches(';');
-        if !after_run.starts_with('}') {
-            out.push_str(&rest[pos..rest.len() - after_run.len()]);
+    // In-place: drop every ';' that is followed — after any run of ';' — by '}'.
+    // The result only ever shrinks, so a single retain-style pass over the bytes
+    // (deciding each ';' by the next non-';' byte) rewrites in place with no extra
+    // allocation. Byte-identical to the previous forward-pass rebuild.
+    //
+    // SAFETY: We only ever drop or copy leftward whole ASCII bytes (`;`, which is
+    // a single-byte UTF-8 code unit) and shift already-valid bytes toward the
+    // front without splitting any multi-byte sequence. Every retained byte was a
+    // valid UTF-8 boundary in the original string and keeps its identity, so the
+    // buffer stays valid UTF-8 for the final `truncate`.
+    let bytes = unsafe { value.as_mut_vec() };
+    let mut write = 0usize;
+    let mut read = 0usize;
+    let len = bytes.len();
+    while read < len {
+        if bytes[read] == b';' {
+            // Peek past the run of ';' to see what follows it.
+            let mut peek = read;
+            while peek < len && bytes[peek] == b';' {
+                peek += 1;
+            }
+            if peek < len && bytes[peek] == b'}' {
+                // Drop this whole ';' run (it sits directly before '}').
+                read = peek;
+                continue;
+            }
         }
-        rest = after_run;
+        bytes[write] = bytes[read];
+        write += 1;
+        read += 1;
     }
-    out.push_str(rest);
-    *value = out;
+    bytes.truncate(write);
 }
 
 #[cfg(test)]

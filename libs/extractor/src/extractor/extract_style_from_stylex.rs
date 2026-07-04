@@ -11,7 +11,6 @@ use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
-use oxc_ast::builder::AstBuilder;
 use rustc_hash::FxHashMap;
 
 use crate::utils::get_string_by_property_key;
@@ -66,7 +65,6 @@ static SHORTHAND_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
 /// corresponds to a top-level key in the `stylex.create({...})` argument.
 #[allow(clippy::type_complexity)]
 pub fn extract_stylex_namespace_styles<'a>(
-    _ast_builder: &AstBuilder<'a>,
     expression: &mut Expression<'a>,
     keyframe_names: &FxHashMap<String, String>,
 ) -> Vec<(

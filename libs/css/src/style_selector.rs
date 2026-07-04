@@ -305,12 +305,18 @@ pub fn get_selector_order(selector: &str) -> u8 {
     }
 
     // For group selectors like ":is([role=group],[data-group]):hover &", the pseudo-selector is before &
-    // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
-    if let Some(before_ampersand) = selector.strip_suffix(" &") {
-        for (pseudo, order) in SELECTOR_ORDER {
-            if before_ampersand.ends_with(pseudo) {
-                return order;
-            }
+    // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector.
+    // Every SELECTOR_ORDER key is a `:`-prefixed token with no interior `:`, so the pseudo suffix,
+    // if any, is exactly the slice from the LAST `:` onward. Locate it once via `rfind(':')` and
+    // compare that single slice against the table by equality, collapsing 6 `ends_with` tail-walks
+    // into one `rfind` + up-to-6 `==`. Byte-identical: each key is a distinct suffix, so the first
+    // (and only) `ends_with` match the previous loop could return equals the single-slice equality.
+    if let Some(before_ampersand) = selector.strip_suffix(" &")
+        && let Some(colon) = before_ampersand.rfind(':')
+    {
+        let suffix = &before_ampersand[colon..];
+        if let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == suffix) {
+            return *order;
         }
     }
 

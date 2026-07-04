@@ -451,8 +451,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && call.arguments.len() == 1
         {
             let arg = call.arguments[0].to_expression_mut();
-            let namespaces =
-                extract_stylex_namespace_styles(&self.ast, arg, &self.stylex_keyframe_names);
+            let namespaces = extract_stylex_namespace_styles(arg, &self.stylex_keyframe_names);
 
             let mut namespace_map: FxHashMap<String, StylexNamespaceValue> = FxHashMap::default();
             let mut properties = oxc_allocator::Vec::new_in(&self.ast);
