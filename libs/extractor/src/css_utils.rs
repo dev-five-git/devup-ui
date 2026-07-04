@@ -509,16 +509,13 @@ fn css_to_style_block(
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let cleaned = rm_css_comment(css);
-    // Presize to an upper bound (`;`-count + 1 = max declarations). The dominant
-    // single-declaration block (template/styled) contains no `;`, so gate the full
-    // `matches(';').count()` byte scan behind a cheap `contains(';')` check: single
-    // blocks presize to 1 without a second traversal, while multi-declaration blocks
-    // still presize exactly to skip the intermediate grow-reallocs.
-    let cap = if cleaned.contains(';') {
-        cleaned.matches(';').count() + 1
-    } else {
-        1
-    };
+    // Presize to an upper bound (`;`-count + 1 = max declarations). A single byte
+    // fold computes the count in one pass: for the dominant single-declaration
+    // block (template/styled, no `;`) it returns 0 so `+1` still presizes to 1,
+    // and multi-declaration blocks presize exactly — without the prior
+    // `contains(';')` pre-scan that traversed `cleaned` a second time when `;` was
+    // present.
+    let cap = cleaned.bytes().filter(|&b| b == b';').count() + 1;
     let mut styles = Vec::with_capacity(cap);
     for s in cleaned.split(';') {
         let s = s.trim();

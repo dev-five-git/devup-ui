@@ -118,7 +118,13 @@ pub fn write_merge_selector(out: &mut String, class_name: &str, selector: Option
 
 #[must_use]
 pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
-    let mut result = String::new();
+    // Presize to avoid the first-`push_str` grow-realloc in `write_merge_selector`.
+    // Upper-bound estimate: the `&`-expansion cases push `".<class_name>"` per `&`
+    // segment plus the selector body, so `class_name.len() + selector-len + 2`
+    // covers the common (`.a`, `.a:hover`, themed) shapes without under-sizing them.
+    // Capacity-only: output stays byte-identical.
+    let cap = class_name.len() + selector.map_or(0, |s| s.as_class_str().len()) + 2;
+    let mut result = String::with_capacity(cap);
     write_merge_selector(&mut result, class_name, selector);
     result
 }

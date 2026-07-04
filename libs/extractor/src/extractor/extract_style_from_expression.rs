@@ -56,6 +56,15 @@ fn create_static_styles<'a>(
     //   - known enum prop, value NOT mapped     -> drop (emit nothing)
     //   - not an enum prop                       -> emit the single fallback style
     if let Some(map) = get_enum_property_value(name, value) {
+        // Enum expansion emits `levels.len() * map.len()` items; the initial
+        // `levels.len()` capacity only covers a 1-entry map, so reserve the exact
+        // remainder up front to skip the per-level `extend` grow-reallocs.
+        styles.reserve(
+            levels
+                .len()
+                .saturating_mul(map.len())
+                .saturating_sub(levels.len()),
+        );
         for &level in levels {
             styles.extend(map.iter().map(|&(k, v)| {
                 ExtractStyleProp::Static(ExtractStyleValue::Static(
