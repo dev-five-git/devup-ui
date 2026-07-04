@@ -7,8 +7,8 @@ use crate::{
         },
     },
     utils::{
-        get_number_by_literal_expression, get_string_by_literal_expression,
-        get_string_by_property_key,
+        get_number_by_literal_expression, get_str_by_property_key,
+        get_string_by_literal_expression, get_string_by_property_key,
     },
 };
 use css::style_selector::StyleSelector;
@@ -150,7 +150,7 @@ pub(super) fn extract_style_from_member_expression<'a>(
             let mut etc = None;
             for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    if let Some(property_name) = get_string_by_property_key(&o.key)
+                    if let Some(property_name) = get_str_by_property_key(&o.key)
                         && property_name == k
                     {
                         return ExtractResult {

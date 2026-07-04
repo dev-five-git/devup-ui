@@ -423,7 +423,7 @@ impl StyleSheet {
                     };
 
                     let class_name = if is_first_value {
-                        let selector = st.selector().map(ToString::to_string);
+                        let selector = st.selector().map(StyleSelector::as_class_str);
                         sheet_to_classname(
                             st.property(),
                             st.level(),

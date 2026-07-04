@@ -21,16 +21,19 @@ pub fn optimize_value(value: &str) -> String {
 
     // Wrap CSS custom property names in var() when used as values
     // e.g., "--var-0" becomes "var(--var-0)"
-    if ret.starts_with("--") && !ret.contains(' ') && !ret.contains(',') {
+    let wrapped_custom_prop = ret.starts_with("--") && !ret.contains(' ') && !ret.contains(',');
+    if wrapped_custom_prop {
         ret.insert_str(0, "var(");
         ret.push(')');
     }
 
-    // Scan once for `--` after the var()-wrap (which keeps any `--` inside
-    // `var(--x)`); reused below to skip RM_MINUS_ZERO_RE. INNER_TRIM_RE only
-    // wraps its capture in parens and cannot add or remove `--`, so the flag
-    // stays valid across that replacement.
-    let has_custom_prop = ret.contains("--");
+    // Determine whether `ret` holds any `--` (used below to skip RM_MINUS_ZERO_RE).
+    // When the var()-wrap above fired, the value started with `--`, so the flag is
+    // trivially true and the full `contains("--")` scan is redundant. Otherwise a
+    // value can still carry an interior `--` (e.g. a pre-wrapped `var(--x)`), so
+    // the scan is still required. INNER_TRIM_RE only wraps its capture in parens
+    // and cannot add or remove `--`, so the flag stays valid across that step.
+    let has_custom_prop = wrapped_custom_prop || ret.contains("--");
 
     // Use Cow-aware replacement: only allocate when regex matches.
     // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code

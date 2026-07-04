@@ -131,6 +131,12 @@ fn bench_optimize_value(c: &mut Criterion) {
         b.iter(|| optimize_value(black_box("'red;'")));
     });
 
+    // CSS custom-property name used as a value: hits the `starts_with("--")`
+    // var()-wrap branch (the only path that folds the `has_custom_prop` scan).
+    group.bench_function("custom_prop_name", |b| {
+        b.iter(|| optimize_value(black_box("--var-0")));
+    });
+
     group.finish();
 }
 
