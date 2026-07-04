@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
@@ -55,11 +57,14 @@ pub fn optimize_multi_css_value(value: &str) -> String {
     result
 }
 
-pub fn wrap_url(s: &str) -> String {
+#[must_use]
+pub fn wrap_url(s: &str) -> Cow<'_, str> {
     if CSS_FUNCTION_RE.is_match(s) {
-        s.to_string()
+        // Already a CSS function (e.g. `url(...)`/`local(...)`): borrow the input
+        // instead of cloning the whole value onto the heap.
+        Cow::Borrowed(s)
     } else {
-        format!("url({s})")
+        Cow::Owned(format!("url({s})"))
     }
 }
 

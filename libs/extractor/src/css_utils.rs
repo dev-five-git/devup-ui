@@ -263,32 +263,36 @@ pub fn css_to_style(
             // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
             // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
             // outer recursion level) still skips materializing a throwaway `Vec<String>`.
-            if input.contains(at_rule) {
-                let mut segments = input.split(at_rule).filter_map(|s| {
-                    let s = s.trim();
-                    (!s.is_empty()).then_some(s)
-                });
-                if let Some(first) = segments.next()
-                    && let Some(second) = segments.next()
-                {
-                    // Re-attach the known `at_rule` prefix to each segment with a presized
-                    // `String` + two `push_str` instead of `format!`, which pulls in the
-                    // `Arguments` formatting machinery and its grow path. Both lengths are
-                    // known up front, so a single exact allocation suffices. Byte-identical
-                    // to `format!("{at_rule}{seg}")`.
-                    let join_at = |seg: &str| {
-                        let mut s = String::with_capacity(at_rule.len() + seg.len());
-                        s.push_str(at_rule);
-                        s.push_str(seg);
-                        s
-                    };
-                    styles.extend(css_to_style(&join_at(first), level, selector));
-                    styles.extend(css_to_style(&join_at(second), level, selector));
-                    for rest in segments {
-                        styles.extend(css_to_style(&join_at(rest), level, selector));
-                    }
-                    return styles;
+            // `split(at_rule)` already performs the substring scan that a separate
+            // `input.contains(at_rule)` guard would do, and the peekable `first`/`second`
+            // check below already no-ops when the prefix is absent (a single segment yields
+            // `second == None`). So run `split` directly and drop the redundant O(n)
+            // `contains` scan — byte-identical behavior, one fewer full-string scan per
+            // at-rule kind on every `@`-bearing input.
+            let mut segments = input.split(at_rule).filter_map(|s| {
+                let s = s.trim();
+                (!s.is_empty()).then_some(s)
+            });
+            if let Some(first) = segments.next()
+                && let Some(second) = segments.next()
+            {
+                // Re-attach the known `at_rule` prefix to each segment with a presized
+                // `String` + two `push_str` instead of `format!`, which pulls in the
+                // `Arguments` formatting machinery and its grow path. Both lengths are
+                // known up front, so a single exact allocation suffices. Byte-identical
+                // to `format!("{at_rule}{seg}")`.
+                let join_at = |seg: &str| {
+                    let mut s = String::with_capacity(at_rule.len() + seg.len());
+                    s.push_str(at_rule);
+                    s.push_str(seg);
+                    s
+                };
+                styles.extend(css_to_style(&join_at(first), level, selector));
+                styles.extend(css_to_style(&join_at(second), level, selector));
+                for rest in segments {
+                    styles.extend(css_to_style(&join_at(rest), level, selector));
                 }
+                return styles;
             }
         }
     }

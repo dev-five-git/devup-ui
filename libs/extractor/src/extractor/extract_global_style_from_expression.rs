@@ -104,7 +104,7 @@ pub fn extract_global_style_from_expression<'a>(
                                                             let it = disassemble_property(&property_name).into_iter();
                                                             let it = it.map(|p| {
                                                                 let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { s.clone() };
-                                                                if p == "src" { (p.into_owned(), wrap_url(&v)) } else { (p.into_owned(), v) }
+                                                                if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())
                                                         } else {
