@@ -82,14 +82,29 @@ fn generate_transformed_import(
         None => return format!("import '{package}';"),
     };
 
-    // Check for namespace import first (early return, identical for both variants)
-    if let Some(ns_spec) = specifiers.iter().find_map(|s| {
-        if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) = s {
-            Some(ns)
-        } else {
-            None
+    // Classify specifiers in a single pass: capture the first namespace and the
+    // first default specifier (first-seen wins, matching the prior find_map
+    // semantics). Named specifiers are still iterated separately below.
+    let mut namespace = None;
+    let mut default_spec = None;
+    for s in specifiers {
+        match s {
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) => {
+                if namespace.is_none() {
+                    namespace = Some(ns);
+                }
+            }
+            ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) => {
+                if default_spec.is_none() {
+                    default_spec = Some(ds);
+                }
+            }
+            ImportDeclarationSpecifier::ImportSpecifier(_) => {}
         }
-    }) {
+    }
+
+    // Check for namespace import first (early return, identical for both variants)
+    if let Some(ns_spec) = namespace {
         return format!(
             "import * as {} from '{}';",
             ns_spec.local.name.as_str(),
@@ -101,13 +116,7 @@ fn generate_transformed_import(
 
     // Handle default specifier first (at most one in valid JS); only its
     // rendering differs between the alias variants.
-    if let Some(default_spec) = specifiers.iter().find_map(|s| {
-        if let ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) = s {
-            Some(ds)
-        } else {
-            None
-        }
-    }) {
+    if let Some(default_spec) = default_spec {
         let local_name = default_spec.local.name.as_str();
         match alias {
             // `import foo from 'pkg'` → `import { named as foo } from 'target'`
