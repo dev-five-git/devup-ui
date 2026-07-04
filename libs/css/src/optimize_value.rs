@@ -84,7 +84,9 @@ pub fn optimize_value(value: &str) -> String {
     // NUM_TRIM_RE = `(\d(unit)?)\s+(\d)` needs `\s+` to match. `value` was
     // trim()-ed above so only interior whitespace can remain; a value with none
     // (`red`, `14px`, `0px`, `$primary`) can never match — skip the regex pass.
-    if ret.contains(char::is_whitespace) {
+    // `\s` in regex_lite is ASCII-only (`[ \t\n\r\x0b\x0c]`), so an ASCII byte
+    // scan is a sound (and cheaper, non-Unicode) gate matching the sibling scans.
+    if ret.bytes().any(|b| b.is_ascii_whitespace()) {
         let replaced = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
