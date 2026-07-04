@@ -311,13 +311,33 @@ pub struct TailwindClass {
     pub negative: bool,
 }
 
+/// Remove every non-overlapping occurrence of `needle` from `haystack` in place.
+///
+/// Behaves exactly like `*haystack = haystack.replace(needle, "")` (left-to-right,
+/// non-overlapping) but mutates the existing buffer instead of allocating a new
+/// `String`. `needle` must be non-empty.
+fn remove_all_substr(haystack: &mut String, needle: &str) {
+    debug_assert!(!needle.is_empty());
+    let mut search_from = 0;
+    while let Some(rel) = haystack[search_from..].find(needle) {
+        let at = search_from + rel;
+        haystack.replace_range(at..at + needle.len(), "");
+        // Continue scanning from where the removed text was (non-overlapping,
+        // matching `str::replace`'s left-to-right semantics).
+        search_from = at;
+    }
+}
+
 impl TailwindClass {
     /// Convert to `ExtractStaticStyle`
     pub fn to_static_style(&self) -> ExtractStaticStyle {
         // For transform property, negative is already incorporated into the value
         // (e.g., translateX(-1rem)), so don't add prefix again
         let value = if self.negative && self.property != "transform" {
-            format!("-{}", self.value)
+            let mut v = String::with_capacity(self.value.len() + 1);
+            v.push('-');
+            v.push_str(&self.value);
+            v
         } else {
             self.value.clone()
         };
@@ -350,9 +370,15 @@ impl TailwindClass {
                     if selector_str.is_empty() {
                         selector_str = s;
                     } else {
-                        // Combine selectors
-                        selector_str =
-                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
+                        // Combine selectors in place, byte-identical to the previous
+                        // `format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""))`
+                        // form but without the two throwaway `String`s and the `format!`
+                        // buffer: drop all " &" from the accumulator in place, then append
+                        // `s` with every '&' skipped.
+                        remove_all_substr(&mut selector_str, " &");
+                        for part in s.split('&') {
+                            selector_str.push_str(part);
+                        }
                         if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
                             selector_str.push_str(" &");
                         }
@@ -1161,6 +1187,28 @@ fn is_likely_tailwind_class(class: &str) -> bool {
     false
 }
 
+/// Exact-match value keywords for Tailwind utilities
+static TAILWIND_VALUE_KEYWORDS: phf::Set<&'static str> = phf_set! {
+    "auto",
+    "full",
+    "screen",
+    "min",
+    "max",
+    "fit",
+    "px",
+    "none",
+    "inherit",
+    "current",
+    "transparent",
+    "black",
+    "white",
+};
+
+/// Exact-match size suffixes for Tailwind utilities
+static TAILWIND_SIZE_KEYWORDS: phf::Set<&'static str> = phf_set! {
+    "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
+};
+
 /// Check if a value part looks like a valid Tailwind value
 fn is_valid_tailwind_value(value: &str) -> bool {
     if value.is_empty() {
@@ -1173,22 +1221,7 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     }
 
     // Common keywords
-    let keywords = [
-        "auto",
-        "full",
-        "screen",
-        "min",
-        "max",
-        "fit",
-        "px",
-        "none",
-        "inherit",
-        "current",
-        "transparent",
-        "black",
-        "white",
-    ];
-    if keywords.contains(&value) {
+    if TAILWIND_VALUE_KEYWORDS.contains(value) {
         return true;
     }
 
@@ -1214,10 +1247,7 @@ fn is_valid_tailwind_value(value: &str) -> bool {
     }
 
     // Size suffixes (xs, sm, md, lg, xl, 2xl, etc.)
-    let size_keywords = [
-        "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
-    ];
-    if size_keywords.contains(&value) {
+    if TAILWIND_SIZE_KEYWORDS.contains(value) {
         return true;
     }
 
@@ -4061,6 +4091,87 @@ mod tests {
             assert!(nested.is_some());
         } else {
             panic!("Expected At selector");
+        }
+    }
+
+    #[test]
+    fn test_remove_all_substr_matches_str_replace() {
+        for (haystack, needle) in [
+            (":root[data-theme=dark] &", " &"),
+            (".peer:hover ~ & &", " &"),
+            (" & & &", " &"),
+            ("no-match-here", " &"),
+            ("", " &"),
+            (" &", " &"),
+            (":is([role=group],[data-group]):hover &", " &"),
+        ] {
+            let mut buf = haystack.to_string();
+            remove_all_substr(&mut buf, needle);
+            assert_eq!(buf, haystack.replace(needle, ""), "haystack={haystack:?}");
+        }
+    }
+
+    #[test]
+    fn test_combine_selectors_byte_identical_to_prior_impl() {
+        // Oracle: the exact previous implementation of the multi-variant join loop.
+        fn old_combine(variants: &[TailwindVariant]) -> String {
+            let mut selector_str = String::new();
+            for variant in variants {
+                if let StyleSelector::Selector(s) = variant.to_selector() {
+                    if selector_str.is_empty() {
+                        selector_str = s;
+                    } else {
+                        selector_str =
+                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
+                        if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
+                            selector_str.push_str(" &");
+                        }
+                    }
+                }
+            }
+            selector_str
+        }
+
+        // A representative spread of &-prefixed, &-suffixed and multi-segment selectors
+        // in several orderings — exercises every branch of the in-place rewrite.
+        let combos: &[&[TailwindVariant]] = &[
+            &[TailwindVariant::Dark, TailwindVariant::Hover],
+            &[TailwindVariant::Hover, TailwindVariant::Dark],
+            &[TailwindVariant::GroupHover, TailwindVariant::Focus],
+            &[TailwindVariant::PeerHover, TailwindVariant::Active],
+            &[
+                TailwindVariant::Hover,
+                TailwindVariant::Focus,
+                TailwindVariant::Dark,
+            ],
+            &[
+                TailwindVariant::Dark,
+                TailwindVariant::GroupHover,
+                TailwindVariant::Before,
+            ],
+            &[TailwindVariant::Before, TailwindVariant::After],
+            &[
+                TailwindVariant::PeerHover,
+                TailwindVariant::GroupFocus,
+                TailwindVariant::Hover,
+            ],
+        ];
+
+        for variants in combos {
+            let cls = TailwindClass {
+                responsive: 0,
+                variants: variants.to_vec(),
+                property: "color".to_string(),
+                value: "red".to_string(),
+                negative: false,
+            };
+            let expected = old_combine(variants);
+            match cls.combine_selectors() {
+                StyleSelector::Selector(actual) => {
+                    assert_eq!(actual, expected, "variants={variants:?}");
+                }
+                other => panic!("expected Selector, got {other:?} for {variants:?}"),
+            }
         }
     }
 
