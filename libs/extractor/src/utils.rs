@@ -135,33 +135,35 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // First try static resolution
-    if let Some(n) = get_number_by_literal_expression(expr) {
-        return ParsedStyleOrder::Static(n as u8);
+    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
+    // never matches a conditional/logical node, so folding it into the default arm is
+    // behavior-identical to the former "static probe first, then re-match" flow while
+    // avoiding the redundant second inspection of `expr`.
+    match expr {
+        // Conditional: `cond ? a : b` → Conditional with both branches probed.
+        Expression::ConditionalExpression(cond) => {
+            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
+            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
+            ParsedStyleOrder::Conditional {
+                condition: cond.test.clone_in(allocator),
+                consequent,
+                alternate,
+            }
+        }
+        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
+        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
+            ParsedStyleOrder::Conditional {
+                condition: logical.left.clone_in(allocator),
+                consequent,
+                alternate: None,
+            }
+        }
+        // Otherwise fall back to static numeric-literal resolution.
+        _ => get_number_by_literal_expression(expr).map_or(ParsedStyleOrder::None, |n| {
+            ParsedStyleOrder::Static(n as u8)
+        }),
     }
-    // Check for conditional expression
-    if let Expression::ConditionalExpression(cond) = expr {
-        let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-        let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-        return ParsedStyleOrder::Conditional {
-            condition: cond.test.clone_in(allocator),
-            consequent,
-            alternate,
-        };
-    }
-    // Handle logical &&: styleOrder: a === 1 && 5
-    // truthy → right side (number), falsy → None (no styleOrder)
-    if let Expression::LogicalExpression(logical) = expr
-        && logical.operator == LogicalOperator::And
-    {
-        let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-        return ParsedStyleOrder::Conditional {
-            condition: logical.left.clone_in(allocator),
-            consequent,
-            alternate: None,
-        };
-    }
-    ParsedStyleOrder::None
 }
 
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {

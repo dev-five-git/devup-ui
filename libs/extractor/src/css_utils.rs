@@ -95,16 +95,24 @@ pub fn css_to_style_literal(
     let mut expression_map =
         rustc_hash::FxHashMap::with_capacity_and_hasher(css.expressions.len(), Default::default());
 
+    // One reused scratch buffer for the `__EXPR_{i}__` placeholder text. Building
+    // the key here (`.clear()` + `write!`) and `.clone()`ing it into the map avoids
+    // a fresh `format!` temporary per expression; the map still owns one `String`
+    // per distinct key (unavoidable). Same reused-scratch-buffer pattern as
+    // `class_num_for_key` / `token_levels`.
+    let mut key_buf = String::new();
     for (i, quasi) in css.quasis.iter().enumerate() {
         combined_css.push_str(&quasi.value.raw);
 
         // Add expression placeholder if not the last quasi
         if i < css.expressions.len() {
             // Use a unique placeholder format that CSS parser won't modify.
-            // Write the placeholder straight into `combined_css` (no throwaway
-            // `String`); only the owned map key needs a heap allocation, built once.
-            let _ = write!(&mut combined_css, "__EXPR_{i}__");
-            expression_map.insert(format!("__EXPR_{i}__"), i);
+            // Build the placeholder once into the reused scratch buffer, push it
+            // into `combined_css`, then clone it as the owned map key.
+            key_buf.clear();
+            let _ = write!(&mut key_buf, "__EXPR_{i}__");
+            combined_css.push_str(&key_buf);
+            expression_map.insert(key_buf.clone(), i);
         }
     }
 

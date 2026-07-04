@@ -573,7 +573,11 @@ impl StyleSheet {
             // path feeds the key straight to `convert_interface_key` so its
             // allocation profile stays identical to the former `plain_keys`.
             let emit_keys = |keys: BTreeSet<&str>, dollar: bool| {
-                let mut contents = String::new();
+                // Presize the buffer from the known key count: each key emits its
+                // (possibly `$`-prefixed) converted name plus `:null` and a `;`
+                // separator. `keys.len() * 12` is a cheap lower-bound estimate that
+                // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
+                let mut contents = String::with_capacity(keys.len() * 12);
                 let mut dollar_key = String::new();
                 for key in keys {
                     if !contents.is_empty() {
