@@ -50,8 +50,15 @@ pub fn optimize_value(value: &str) -> String {
     // hex replacements only REMOVE parens, so leaving the flag set there is
     // conservative (runs a redundant scan, never misses a needed fix). Output is
     // byte-identical to always running the scan.
-    let has_open_paren = ret.contains('(');
-    let may_have_paren = wrapped_custom_prop || has_open_paren || ret.contains(')');
+    // Fold the two former full-string `contains('(')` / `contains(')')` scans into
+    // ONE `bytes()` pass recording both booleans, mirroring the `(has_hash,
+    // has_zero, has_dot)` fold below. `has_open_paren` still gates the INNER_TRIM_RE
+    // step (which only fires on a `(`), and `may_have_paren` still gates the final
+    // unbalanced-paren scan. Byte-identical: one scan instead of two on every value.
+    let (has_open_paren, saw_close_paren) = ret
+        .bytes()
+        .fold((false, false), |(o, c), b| (o || b == b'(', c || b == b')'));
+    let may_have_paren = wrapped_custom_prop || has_open_paren || saw_close_paren;
 
     // Use Cow-aware replacement: only allocate when regex matches.
     // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code

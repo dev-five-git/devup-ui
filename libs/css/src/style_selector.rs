@@ -294,8 +294,13 @@ pub fn get_selector_order(selector: &str) -> u8 {
         _ => selector,
     };
 
-    // First, try to find the order in the table (for regular selectors like &:hover)
-    if let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == t) {
+    // First, try to find the order in the table (for regular selectors like &:hover).
+    // Every SELECTOR_ORDER key starts with `:`, so a tail that does not begin with
+    // `:` (e.g. `&`, or a group/global pattern) can never equal any key — gate the
+    // 6-entry linear probe behind that single-byte check. Byte-identical result.
+    if t.starts_with(':')
+        && let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == t)
+    {
         return *order;
     }
 

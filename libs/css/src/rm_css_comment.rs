@@ -3,6 +3,14 @@ use std::borrow::Cow;
 use crate::{constant::CSS_COMMENT_RE, utils::collapse_whitespace};
 
 pub fn rm_css_comment(value: &str) -> String {
+    // Fast path: a value with no `/*` cannot contain a CSS comment, so skip the
+    // regex-engine NFA setup entirely and collapse whitespace directly. This is
+    // the overwhelmingly common declaration block. Byte-identical: `replace_all`
+    // would return `Cow::Borrowed` for the same input, hitting the same
+    // `collapse_whitespace(value)` branch below.
+    if !value.contains("/*") {
+        return collapse_whitespace(value);
+    }
     // On the common no-comment path `replace_all` returns `Cow::Borrowed`
     // (an alias of `value`), so collapse whitespace on the original slice and
     // skip materializing the borrowed-equal temporary.

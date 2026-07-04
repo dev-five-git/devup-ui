@@ -4,10 +4,14 @@ use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
 pub fn optimize_multi_css_value(value: &str) -> String {
-    // `+ 2` headroom: a bare (unquoted-in-source) family name that contains a
-    // space gets re-wrapped in `"…"`, adding a quote pair beyond the input
-    // length. Presizing for the common single-wrap case avoids a grow-realloc.
-    let mut result = String::with_capacity(value.len() + 2);
+    // Headroom for re-wrapped segments: EACH comma-separated segment may gain a
+    // `"…"` quote pair (+2 bytes), so a multi-segment list like `'A B', 'C D', E`
+    // → `"A B","C D",E` can add up to one pair per segment. Budget `2` per comma
+    // plus a trailing `2` so even the worst case (every segment re-wrapped) never
+    // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
+    // is a safe upper bound; output stays byte-identical.
+    let comma_count = value.bytes().filter(|&b| b == b',').count();
+    let mut result = String::with_capacity(value.len() + comma_count * 2 + 2);
     // Loop-invariant predicate: captures nothing, so construct it once per call
     // instead of once per comma-separated segment. Byte-scan equivalent of the
     // `[()\s]` regex — `\s` in `regex_lite` matches `[ \t\n\r\x0b\x0c]`, so the

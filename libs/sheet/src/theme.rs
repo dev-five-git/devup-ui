@@ -400,6 +400,20 @@ fn token_levels(
                         // (breakpoints < 16), so the overflow `Vec` is only
                         // allocated on first use, keeping the common case
                         // allocation-free instead of a per-token empty `Vec`.
+                        //
+                        // This branch is COLD by construction: every reachable
+                        // theme has fewer than 16 breakpoints, so the `u16` mask
+                        // above absorbs all real inputs and this `contains`-guarded
+                        // O(k²) dedupe never runs in practice. The `debug_assert!`
+                        // documents that expectation and would fire in dev/test if a
+                        // future change ever drove a level into the overflow path,
+                        // signalling the mask width (and this fallback) needs review.
+                        // It compiles out entirely in release, so the hot path is
+                        // unaffected.
+                        debug_assert!(
+                            level >= 16,
+                            "overflow branch entered for level < 16, which the u16 mask should have handled"
+                        );
                         let overflow = overflow.get_or_insert_with(Vec::new);
                         if !overflow.contains(&level) {
                             overflow.push(level);

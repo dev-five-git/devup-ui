@@ -599,7 +599,12 @@ impl StyleSheet {
                 // separator. `keys.len() * 12` is a cheap lower-bound estimate that
                 // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
                 let mut contents = String::with_capacity(keys.len() * 12);
-                let mut dollar_key = String::new();
+                // Presize the reused `$`-prefix scratch to the longest key (+1 for
+                // the leading `$`) so the first `push_str` never grows it. `keys`
+                // is a `BTreeSet<&str>`, cheap to scan for its max length; when
+                // empty the buffer is `$`-sized and the loop never touches it.
+                let dollar_cap = 1 + keys.iter().map(|k| k.len()).max().unwrap_or(0);
+                let mut dollar_key = String::with_capacity(dollar_cap);
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');
@@ -1128,7 +1133,12 @@ impl StyleSheet {
             }
         }
 
-        if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
+        // Bind the `Option<&str>` filename key once: both the keyframes and
+        // properties lookups below use the same `""`-defaulted key, so computing
+        // `unwrap_or_default()` a single time removes the duplicated call and
+        // documents that both maps are keyed identically.
+        let fkey = filename.unwrap_or_default();
+        if let Some(keyframes) = self.keyframes.get(fkey) {
             for (name, map) in keyframes {
                 push_fmt!(&mut css, "@keyframes {name}{{");
                 for (key, props) in map {
@@ -1148,7 +1158,7 @@ impl StyleSheet {
         }
 
         // order
-        if let Some(maps) = self.properties.get(filename.unwrap_or_default()) {
+        if let Some(maps) = self.properties.get(fkey) {
             for (style_order, map) in maps {
                 if *style_order == 0 {
                     // base style was created in global css
