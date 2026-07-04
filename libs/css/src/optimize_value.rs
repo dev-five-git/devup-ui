@@ -33,32 +33,40 @@ pub fn optimize_value(value: &str) -> String {
         ret.push_str(trimmed);
     }
 
-    // Determine whether `ret` holds any `--` (used below to skip RM_MINUS_ZERO_RE).
-    // When the var()-wrap above fired, the value started with `--`, so the flag is
-    // trivially true and the full `contains("--")` scan is redundant. Otherwise a
-    // value can still carry an interior `--` (e.g. a pre-wrapped `var(--x)`), so
-    // the scan is still required. INNER_TRIM_RE only wraps its capture in parens
-    // and cannot add or remove `--`, so the flag stays valid across that step.
-    let has_custom_prop = wrapped_custom_prop || ret.contains("--");
-
     // Track whether `ret` may still hold a `(` or `)` at the final unbalanced-paren
-    // fixup (lines below). Seeding it here from a SINGLE byte scan for either paren
-    // lets the dominant paren-free values (`red`, `14px`, `$primary`, `0px`,
-    // `#FF0000`) skip that final whole-string depth scan entirely. It is only ever
-    // allowed to *skip* when provably paren-free: seed `true` on any `(`/`)` present
-    // (or the var()-wrap that just added a pair) and never clear it — the rgba/rgb
-    // hex replacements only REMOVE parens, so leaving the flag set there is
-    // conservative (runs a redundant scan, never misses a needed fix). Output is
-    // byte-identical to always running the scan.
-    // Fold the two former full-string `contains('(')` / `contains(')')` scans into
-    // ONE `bytes()` pass recording both booleans, mirroring the `(has_hash,
-    // has_zero, has_dot)` fold below. `has_open_paren` still gates the INNER_TRIM_RE
-    // step (which only fires on a `(`), and `may_have_paren` still gates the final
-    // unbalanced-paren scan. Byte-identical: one scan instead of two on every value.
-    let (has_open_paren, saw_close_paren) = ret
-        .bytes()
-        .fold((false, false), |(o, c), b| (o || b == b'(', c || b == b')'));
+    // fixup (lines below), AND whether it holds any `--` (used to skip RM_MINUS_ZERO_RE).
+    // Seeding these here from a SINGLE byte scan lets the dominant paren-free values
+    // (`red`, `14px`, `$primary`, `0px`, `#FF0000`) skip that final whole-string depth
+    // scan entirely. The paren flags are only ever allowed to *skip* when provably
+    // paren-free: seed `true` on any `(`/`)` present (or the var()-wrap that just added a
+    // pair) and never clear it — the rgba/rgb hex replacements only REMOVE parens, so
+    // leaving the flag set there is conservative (runs a redundant scan, never misses a
+    // needed fix). Output is byte-identical to always running the scan.
+    // Fold the former full-string `contains('(')` / `contains(')')` / `contains("--")`
+    // scans into ONE `bytes()` pass, mirroring the `(has_hash, has_zero, has_dot)` fold
+    // below. A `--` is two consecutive `-` bytes, so track a "previous byte was `-`" flag
+    // (`prev_dash`) and raise `has_double_dash` when a `-` immediately follows one.
+    // `has_open_paren` still gates the INNER_TRIM_RE step (which only fires on a `(`),
+    // `may_have_paren` still gates the final unbalanced-paren scan, and `has_double_dash`
+    // still gates RM_MINUS_ZERO_RE. Byte-identical: one scan instead of three per value.
+    let (has_open_paren, saw_close_paren, has_double_dash, _) =
+        ret.bytes()
+            .fold((false, false, false, false), |(o, c, dd, prev_dash), b| {
+                (
+                    o || b == b'(',
+                    c || b == b')',
+                    dd || (b == b'-' && prev_dash),
+                    b == b'-',
+                )
+            });
     let may_have_paren = wrapped_custom_prop || has_open_paren || saw_close_paren;
+
+    // When the var()-wrap above fired, the value started with `--`, so the flag is
+    // trivially true. Otherwise a value can still carry an interior `--` (e.g. a
+    // pre-wrapped `var(--x)`), captured by `has_double_dash` above. INNER_TRIM_RE only
+    // wraps its capture in parens and cannot add or remove `--`, so the flag stays valid
+    // across that step (the fold runs before it, same as the old `contains("--")` did).
+    let has_custom_prop = wrapped_custom_prop || has_double_dash;
 
     // Use Cow-aware replacement: only allocate when regex matches.
     // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code
