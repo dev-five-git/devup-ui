@@ -536,25 +536,25 @@ impl StyleSheet {
         shadows_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
-        let mut color_keys = BTreeSet::new();
-        let mut typography_keys = BTreeSet::new();
-        let mut length_keys = BTreeSet::new();
-        let mut shadows_keys = BTreeSet::new();
-        let mut theme_keys = BTreeSet::new();
-        for color_theme in self.theme.colors.values() {
-            color_theme.interface_keys().for_each(|key| {
-                color_keys.insert(key.clone());
-            });
-        }
-        self.theme.typography.keys().for_each(|key| {
-            typography_keys.insert(key.clone());
-        });
-        length_keys.extend(self.theme.length.values().flat_map(|t| t.keys().cloned()));
-        shadows_keys.extend(self.theme.shadows.values().flat_map(|t| t.keys().cloned()));
+        // Collect a `BTreeSet<String>` from any iterator of borrowed key
+        // strings, cloning each key into the owned set. Unifies the four
+        // near-identical key-collection blocks (color/typography/length/shadow
+        // + the theme-variant set) so which keys go into which set stays
+        // byte-identical while removing the copy-paste.
+        let collect_keys =
+            |keys: &mut dyn Iterator<Item = &String>| keys.cloned().collect::<BTreeSet<String>>();
 
-        self.theme.colors.keys().for_each(|key| {
-            theme_keys.insert(key.clone());
-        });
+        let color_keys = collect_keys(
+            &mut self
+                .theme
+                .colors
+                .values()
+                .flat_map(theme::ColorTheme::interface_keys),
+        );
+        let typography_keys = collect_keys(&mut self.theme.typography.keys());
+        let length_keys = collect_keys(&mut self.theme.length.values().flat_map(|t| t.keys()));
+        let shadows_keys = collect_keys(&mut self.theme.shadows.values().flat_map(|t| t.keys()));
+        let theme_keys = collect_keys(&mut self.theme.colors.keys());
 
         if color_keys.is_empty()
             && typography_keys.is_empty()

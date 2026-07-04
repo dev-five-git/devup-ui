@@ -101,8 +101,7 @@ pub fn extract_global_style_from_expression<'a>(
                                                             && let Some(property_name) = get_str_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
-                                                            let it = disassemble_property(&property_name).into_iter();
-                                                            let it = it.map(|p| {
+                                                            let it = disassemble_property(&property_name).map(|p| {
                                                                 let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { s.clone() };
                                                                 if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v) }
                                                             });

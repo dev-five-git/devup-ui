@@ -123,11 +123,47 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
     result
 }
 
+/// Iterator over the disassembled CSS property names for one style property.
+///
+/// Yields the same sequence as the former `Vec<Cow<'static, str>>` return of
+/// [`disassemble_property`] but WITHOUT the per-prop heap `Vec`: the common
+/// mapped case (`GLOBAL_STYLE_PROPERTY` hit) borrows the `&'static str` slice
+/// in place, and the fallback yields exactly one owned kebab/`-kebab` `String`.
+pub enum DisassembleProperty {
+    /// Mapped arm: iterate the borrowed `&'static [&'static str]` slice.
+    Mapped(std::slice::Iter<'static, &'static str>),
+    /// Fallback arm: yield a single owned kebab-cased property, then finish.
+    Fallback(Option<String>),
+}
+
+impl Iterator for DisassembleProperty {
+    type Item = Cow<'static, str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            DisassembleProperty::Mapped(iter) => iter.next().map(|s| Cow::Borrowed(*s)),
+            DisassembleProperty::Fallback(slot) => slot.take().map(Cow::Owned),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            DisassembleProperty::Mapped(iter) => iter.size_hint(),
+            DisassembleProperty::Fallback(slot) => {
+                let n = usize::from(slot.is_some());
+                (n, Some(n))
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for DisassembleProperty {}
+
 #[must_use]
-pub fn disassemble_property(property: &str) -> Vec<Cow<'static, str>> {
+pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
-            vec![Cow::Owned(
+            DisassembleProperty::Fallback(Some(
                 if (property.starts_with("Webkit")
                     && property.len() > 6
                     && property.as_bytes()[6].is_ascii_uppercase())
@@ -149,9 +185,9 @@ pub fn disassemble_property(property: &str) -> Vec<Cow<'static, str>> {
                 } else {
                     to_kebab_case(property)
                 },
-            )]
+            ))
         },
-        |v| v.iter().copied().map(Cow::Borrowed).collect(),
+        |v| DisassembleProperty::Mapped(v.iter()),
     )
 }
 
