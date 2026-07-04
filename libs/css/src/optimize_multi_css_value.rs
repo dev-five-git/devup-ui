@@ -8,6 +8,12 @@ pub fn optimize_multi_css_value(value: &str) -> String {
     // space gets re-wrapped in `"…"`, adding a quote pair beyond the input
     // length. Presizing for the common single-wrap case avoids a grow-realloc.
     let mut result = String::with_capacity(value.len() + 2);
+    // Loop-invariant predicate: captures nothing, so construct it once per call
+    // instead of once per comma-separated segment. Byte-scan equivalent of the
+    // `[()\s]` regex — `\s` in `regex_lite` matches `[ \t\n\r\x0b\x0c]`, so the
+    // vertical-tab (0x0b) and form-feed (0x0c) bytes MUST be included to stay
+    // byte-identical.
+    let quote_byte = |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
     for (idx, s) in value.split(',').enumerate() {
         if idx > 0 {
             result.push(',');
@@ -29,8 +35,6 @@ pub fn optimize_multi_css_value(value: &str) -> String {
         // a `(`), so a single quote-worthy byte is always wrapped and everything
         // else is pushed bare. Deciding this from the single byte skips both the
         // `.any()` scan and the regex-engine setup while staying byte-identical.
-        let quote_byte =
-            |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
         if unquoted.len() <= 1 {
             if unquoted.len() == 1 && quote_byte(unquoted.as_bytes()[0]) {
                 result.push('"');

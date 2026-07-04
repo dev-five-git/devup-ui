@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -529,14 +530,14 @@ fn css_to_style_block(
         };
         let property = property.trim();
         let value = value.trim();
-        let value = if check_multi_css_optimize(property) {
-            optimize_multi_css_value(value)
+        let value: Cow<str> = if check_multi_css_optimize(property) {
+            Cow::Owned(optimize_multi_css_value(value))
         } else {
-            value.to_string()
+            Cow::Borrowed(value)
         };
         styles.push(ExtractStaticStyle::new(
             property,
-            &value,
+            value.as_ref(),
             level,
             selector.clone(),
         ));
