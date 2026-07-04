@@ -9,6 +9,25 @@ use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::collections::BTreeMap;
+
+/// Generate the object properties for every style in `styles` and push them, in
+/// reverse generation order, into `properties`. Both the top-level style list
+/// and a nested `StaticArray` arm need this identical
+/// `iter → flat_map(gen_style) → rev → extend` pipeline, so it lives here once.
+fn extend_reversed_styles<'a>(
+    ast_builder: &AstBuilder<'a>,
+    properties: &mut Vec<ObjectPropertyKind<'a>>,
+    styles: &[ExtractStyleProp<'a>],
+    filename: Option<&str>,
+) {
+    properties.extend(
+        styles
+            .iter()
+            .flat_map(|style| gen_style(ast_builder, style, filename))
+            .rev(),
+    );
+}
+
 pub fn gen_styles<'a>(
     ast_builder: &AstBuilder<'a>,
     style_props: &[ExtractStyleProp<'a>],
@@ -18,12 +37,7 @@ pub fn gen_styles<'a>(
         return None;
     }
     let mut properties: Vec<_> = Vec::with_capacity(style_props.len());
-    properties.extend(
-        style_props
-            .iter()
-            .flat_map(|style| gen_style(ast_builder, style, filename))
-            .rev(),
-    );
+    extend_reversed_styles(ast_builder, &mut properties, style_props, filename);
     if properties.is_empty() {
         return None;
     }
@@ -106,11 +120,7 @@ fn gen_style<'a>(
             ));
         }
     } else if let ExtractStyleProp::StaticArray(res) = style {
-        properties.extend(
-            res.iter()
-                .flat_map(|r| gen_style(ast_builder, r, filename))
-                .rev(),
-        );
+        extend_reversed_styles(ast_builder, &mut properties, res, filename);
     } else if let ExtractStyleProp::Conditional {
         condition,
         consequent,

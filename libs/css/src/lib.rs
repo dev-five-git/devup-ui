@@ -240,28 +240,49 @@ pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&
     })
 }
 
-/// Get-or-insert `key` in the per-file class map and return its base-37 name.
+thread_local! {
+    /// Reusable scratch buffer for building a class-map key. Because the common
+    /// path only PROBES the map with a borrowed `&str`, the key never needs its
+    /// own heap allocation per call — it is built into this buffer, borrowed for
+    /// the probe, and only `.to_string()`-cloned on a genuine insert. Reusing
+    /// one buffer removes the per-generated-name key `String` allocation on the
+    /// hot repeat-property path.
+    static KEY_BUF: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Get-or-insert a key in the per-file class map and return its base-37 name.
+/// `build_key` fills the supplied reusable buffer with the key bytes; the buffer
+/// is borrowed for the probe so the common already-present path allocates
+/// nothing, and only a real insert clones the key into an owned `String`.
 /// Single home for the class naming algorithm shared by keyframes, classname
 /// and variable-name generation.
-fn class_num_for_key(filename_key: &str, key: String) -> String {
-    class_map::with_class_map_mut(|map| {
-        // Probe first so the owned filename key is only allocated on the
-        // first style for a file, not on every generated name.
-        if let Some(file_entry) = map.get_mut(filename_key) {
-            if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
+fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+    KEY_BUF.with(|buf| {
+        let mut key = buf.borrow_mut();
+        key.clear();
+        build_key(&mut key);
+        class_map::with_class_map_mut(|map| {
+            // Probe first so the owned filename key is only allocated on the
+            // first style for a file, not on every generated name.
+            if let Some(file_entry) = map.get_mut(filename_key) {
+                // Borrow-probe the common already-present-key path so the owned
+                // `String` is only materialized on a genuine insert, never on
+                // the hot repeat-property path.
+                if let Some(&num) = file_entry.get(key.as_str()) {
+                    num_to_nm_base(num)
+                } else {
+                    let len = file_entry.len();
+                    file_entry.insert(key.clone(), len);
+                    num_to_nm_base(len)
+                }
             } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
+                map.insert(
+                    filename_key.to_string(),
+                    std::iter::once((key.clone(), 0)).collect(),
+                );
+                num_to_nm_base(0)
             }
-        } else {
-            map.insert(
-                filename_key.to_string(),
-                std::iter::once((key, 0)).collect(),
-            );
-            num_to_nm_base(0)
-        }
+        })
     })
 }
 
@@ -275,11 +296,12 @@ pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> S
             result.push_str(keyframes);
             result
         } else {
-            let mut key = String::with_capacity(2 + keyframes.len());
-            key.push_str("k-");
-            key.push_str(keyframes);
             let filename_key = filename.unwrap_or_default();
-            let class_num = class_num_for_key(filename_key, key);
+            let class_num = class_num_for_key(filename_key, |key| {
+                key.reserve(2 + keyframes.len());
+                key.push_str("k-");
+                key.push_str(keyframes);
+            });
             if let Some(fname) = filename {
                 let file_num = num_to_nm_base(get_file_num_by_filename(fname));
                 let mut result =
@@ -409,26 +431,24 @@ pub fn sheet_to_classname(
         let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
         let trimmed_prop = property.trim();
 
-        // Build key with pre-allocated capacity
-        let mut key = String::with_capacity(
-            trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16,
-        );
-        key.push_str(trimmed_prop);
-        key.push('-');
-        write_u8(&mut key, level);
-        key.push('-');
-        key.push_str(&optimized);
-        key.push('-');
-        key.push_str(trimmed_selector);
-        key.push('-');
-        write_u8(&mut key, order);
-        if let Some(fstr) = &file_num_str {
-            key.push('-');
-            key.push_str(fstr);
-        }
-
         let filename_key = filename.unwrap_or_default();
-        let clas_num = class_num_for_key(filename_key, key);
+        // Build key into the reusable buffer; probe borrows it, insert clones it.
+        let clas_num = class_num_for_key(filename_key, |key| {
+            key.reserve(trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16);
+            key.push_str(trimmed_prop);
+            key.push('-');
+            write_u8(key, level);
+            key.push('-');
+            key.push_str(&optimized);
+            key.push('-');
+            key.push_str(trimmed_selector);
+            key.push('-');
+            write_u8(key, order);
+            if let Some(fstr) = &file_num_str {
+                key.push('-');
+                key.push_str(fstr);
+            }
+        });
         with_prefix(|prefix| {
             if let Some(fstr) = &file_num_str {
                 let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
@@ -485,13 +505,14 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         })
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
-        let mut key = String::with_capacity(property.len() + 4 + trimmed_selector.len());
-        key.push_str(property);
-        key.push('-');
-        write_u8(&mut key, level);
-        key.push('-');
-        key.push_str(trimmed_selector);
-        let base_name = class_num_for_key("", key);
+        let base_name = class_num_for_key("", |key| {
+            key.reserve(property.len() + 4 + trimmed_selector.len());
+            key.push_str(property);
+            key.push('-');
+            write_u8(key, level);
+            key.push('-');
+            key.push_str(trimmed_selector);
+        });
         with_prefix(|prefix| {
             let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
             result.push_str("--");

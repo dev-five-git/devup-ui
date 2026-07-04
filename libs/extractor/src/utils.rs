@@ -23,6 +23,22 @@ pub(super) fn convert_value(value: &str) -> String {
         .map_or_else(|_| value.to_string(), |num| format!("{}px", num * 4.0))
 }
 
+/// Loop-invariant source type for the throwaway codegen `Program`. `d_ts()` is a
+/// `const fn`, so this is a compile-time constant reused across every call
+/// instead of being re-derived per invocation.
+const CODEGEN_SOURCE_TYPE: SourceType = SourceType::d_ts();
+
+/// Build the loop-invariant minify codegen options in one place so the intent
+/// (minified output) is documented and the config lives outside the per-call
+/// body. Options are cheap to build (no heap allocation for the empty defaults).
+#[inline]
+fn minify_codegen_options() -> CodegenOptions {
+    CodegenOptions {
+        minify: true,
+        ..Default::default()
+    }
+}
+
 pub(super) fn expression_to_code(expression: &Expression) -> String {
     let allocator = Allocator::default();
     let builder = oxc_ast::builder::AstBuilder::new(&allocator);
@@ -36,7 +52,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
     )));
     let program = Program::new(
         SPAN,
-        SourceType::d_ts(),
+        CODEGEN_SOURCE_TYPE,
         "",
         oxc_allocator::Vec::new_in(&builder),
         None,
@@ -46,10 +62,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
     );
 
     Codegen::new()
-        .with_options(CodegenOptions {
-            minify: true,
-            ..Default::default()
-        })
+        .with_options(minify_codegen_options())
         .build(&program)
         .code
 }
