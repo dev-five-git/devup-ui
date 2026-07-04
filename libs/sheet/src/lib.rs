@@ -653,34 +653,43 @@ impl StyleSheet {
             // `StyleSheetProperty::cmp` falls through to (property, value); no-colon
             // props (`has_colon=false`) sort before colon props and tie on the selector
             // string; colon props sort by (order, selector string).
-            let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
-                Vec::with_capacity(global_props.len());
-            global_keyed.extend(global_props.into_iter().map(|prop| match &prop.selector {
-                Some(StyleSelector::Global(selector, _)) => {
-                    if let Some(i) = selector.find(':') {
-                        (
-                            true,
-                            global_selector_order(&selector[i..]),
-                            selector.as_str(),
-                            prop,
-                        )
-                    } else {
-                        (false, 0u8, selector.as_str(), prop)
+            // The common level has no Global selectors, so `global_props` is empty.
+            // Skip the three vector materializations (keyed `with_capacity`, `extend`,
+            // sorted `collect`) entirely in that case, mirroring the `at_rules.is_empty()`
+            // guard below; only decorate-sort-undecorate when there is actually work.
+            // An empty sort/collect yields an empty vec anyway, so output is byte-identical.
+            let global_props: Vec<&StyleSheetProperty> = if global_props.is_empty() {
+                Vec::new()
+            } else {
+                let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
+                    Vec::with_capacity(global_props.len());
+                global_keyed.extend(global_props.into_iter().map(|prop| match &prop.selector {
+                    Some(StyleSelector::Global(selector, _)) => {
+                        if let Some(i) = selector.find(':') {
+                            (
+                                true,
+                                global_selector_order(&selector[i..]),
+                                selector.as_str(),
+                                prop,
+                            )
+                        } else {
+                            (false, 0u8, selector.as_str(), prop)
+                        }
                     }
-                }
-                _ => (false, 0u8, "", prop),
-            }));
-            global_keyed.sort_by(|a, b| {
-                a.0.cmp(&b.0)
-                    .then_with(|| a.1.cmp(&b.1))
-                    .then_with(|| a.2.cmp(b.2))
-                    .then_with(|| a.3.property.cmp(&b.3.property))
-                    .then_with(|| a.3.value.cmp(&b.3.value))
-            });
-            let global_props: Vec<&StyleSheetProperty> = global_keyed
-                .into_iter()
-                .map(|(_, _, _, prop)| prop)
-                .collect();
+                    _ => (false, 0u8, "", prop),
+                }));
+                global_keyed.sort_by(|a, b| {
+                    a.0.cmp(&b.0)
+                        .then_with(|| a.1.cmp(&b.1))
+                        .then_with(|| a.2.cmp(b.2))
+                        .then_with(|| a.3.property.cmp(&b.3.property))
+                        .then_with(|| a.3.value.cmp(&b.3.value))
+                });
+                global_keyed
+                    .into_iter()
+                    .map(|(_, _, _, prop)| prop)
+                    .collect()
+            };
             // Decorate-sort-undecorate for the plain-selector bucket: sorting via
             // `StyleSheetProperty::cmp` re-runs `get_selector_order` (a byte scan +
             // linear `SELECTOR_ORDER` probe) on BOTH operands of every comparison,

@@ -127,13 +127,42 @@ pub fn css_to_style_literal(
             continue;
         }
 
-        // Find all placeholders in this value. Borrow the placeholder key from
-        // `expression_map` (owned + alive for this iteration) instead of cloning it;
-        // it is only read back as `&str` in the literal-substitution loop below.
+        // Find all placeholders in this value. Instead of testing EVERY registered
+        // `expression_map` key against `value` (O(K_total_exprs) `contains` scans, most
+        // of which are absent), scan `value` for the `__EXPR_{i}__` markers actually
+        // present and parse their indices directly. Each marker slice is borrowed from
+        // `value` itself (alive for this whole iteration) and is byte-identical to the
+        // corresponding `expression_map` key, so downstream `.replace()`/`.rfind()` see
+        // the exact same strings. `expression_map` stays the source of truth for
+        // validity: a parsed index is only accepted if it is a registered expression.
+        // Duplicates are deduped by index, preserving first-seen order, exactly matching
+        // the previous "one entry per registered placeholder present in value" set.
         let mut found_placeholders: Vec<(&str, usize)> = Vec::new();
-        for (placeholder, &idx) in &expression_map {
-            if value.contains(placeholder) {
-                found_placeholders.push((placeholder.as_str(), idx));
+        let bytes = value.as_bytes();
+        let mut search_from = 0usize;
+        while let Some(rel) = value[search_from..].find("__EXPR_") {
+            let marker_start = search_from + rel;
+            let digits_start = marker_start + "__EXPR_".len();
+            // Read the run of ASCII digits following the `__EXPR_` prefix.
+            let mut cursor = digits_start;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+                cursor += 1;
+            }
+            // A valid marker is `__EXPR_<digits>__`: at least one digit, then a closing `__`.
+            if cursor > digits_start && value[cursor..].starts_with("__") {
+                let marker_end = cursor + "__".len();
+                let placeholder = &value[marker_start..marker_end];
+                // `expression_map` is the source of truth: only accept a registered marker,
+                // and dedupe by index (a marker may appear multiple times in `value`).
+                if let Some(&idx) = expression_map.get(placeholder)
+                    && !found_placeholders.iter().any(|(_, i)| *i == idx)
+                {
+                    found_placeholders.push((placeholder, idx));
+                }
+                search_from = marker_end;
+            } else {
+                // Not a well-formed marker; advance past this `__EXPR_` to avoid re-matching.
+                search_from = digits_start;
             }
         }
 
