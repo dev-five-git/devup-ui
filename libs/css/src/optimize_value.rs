@@ -111,9 +111,16 @@ pub fn optimize_value(value: &str) -> String {
     // gate the same branches as before, so output is byte-identical; the fold
     // just avoids a redundant O(n) traversal on every value (e.g. `14px` used to
     // pay two scans to find neither, `#FF0000` two scans that overlap).
-    let (has_hash, has_zero) = ret
-        .bytes()
-        .fold((false, false), |(h, z), b| (h || b == b'#', z || b == b'0'));
+    // Also track `.` in the same byte pass: DOT_ZERO_RE (`(\b|,)-?0\.0+([^\d])`)
+    // and F_DOT_RE (`(\b|,)0\.(\d+)`) both syntactically REQUIRE a literal `.` to
+    // match, so a dot-free value (`0px`, `#FF0000`, `10px 0`, `translate(0px, 0px)`)
+    // can never match either — yet the `has_zero` block used to run both full
+    // regex `replace_all` passes on every zero-bearing value. Gate them on
+    // `has_dot` so the common no-dot zero values skip two NFA executions. Output
+    // is byte-identical: neither regex can alter a string with no `.`.
+    let (has_hash, has_zero, has_dot) = ret.bytes().fold((false, false, false), |(h, z, d), b| {
+        (h || b == b'#', z || b == b'0', d || b == b'.')
+    });
     if has_hash {
         let replaced =
             COLOR_HASH.replace_all(&ret, |c: &regex_lite::Captures| optimize_color(&c[1]));
@@ -122,13 +129,17 @@ pub fn optimize_value(value: &str) -> String {
         }
     }
     if has_zero {
-        let replaced = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}");
-        if let std::borrow::Cow::Owned(s) = replaced {
-            ret = s;
-        }
-        let replaced = F_DOT_RE.replace_all(&ret, "${1}.${2}");
-        if let std::borrow::Cow::Owned(s) = replaced {
-            ret = s;
+        // DOT_ZERO_RE and F_DOT_RE both require a `.`; keep them first (preserving
+        // the original replacement order) but only when a `.` is present.
+        if has_dot {
+            let replaced = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}");
+            if let std::borrow::Cow::Owned(s) = replaced {
+                ret = s;
+            }
+            let replaced = F_DOT_RE.replace_all(&ret, "${1}.${2}");
+            if let std::borrow::Cow::Owned(s) = replaced {
+                ret = s;
+            }
         }
         let replaced = ZERO_RE.replace_all(&ret, "${1}0");
         if let std::borrow::Cow::Owned(s) = replaced {
