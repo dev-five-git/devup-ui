@@ -10,16 +10,15 @@ pub fn optimize_multi_css_value(value: &str) -> String {
     // plus a trailing `2` so even the worst case (every segment re-wrapped) never
     // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
     // is a safe upper bound; output stays byte-identical.
-    // The dominant single-value case (`Roboto`, no comma) skips the full
-    // comma-count scan: with no commas the headroom is just the trailing `2`.
-    // Only when a comma is actually present do we pay the O(n) count to add
-    // `2` per comma. `memchr`-free single probe gates the count; capacity stays
-    // byte-for-byte identical to `value.len() + comma_count * 2 + 2`.
-    let comma_headroom = if value.as_bytes().contains(&b',') {
-        value.bytes().filter(|&b| b == b',').count() * 2
-    } else {
-        0
-    };
+    // ONE O(n) comma count feeds the headroom: `2` per comma, `0` when none.
+    // The prior guarded form did `as_bytes().contains(&b',')` (a full O(n)
+    // scan) and, on the comma-present path, a SECOND scan to count — the guard
+    // never actually saved a scan (a bare `Roboto` still paid the `contains`
+    // probe). Counting unconditionally is one scan in every case: identical
+    // cost on the no-comma path and strictly cheaper (one scan, not two) on the
+    // comma-present path. Capacity stays byte-for-byte identical to
+    // `value.len() + comma_count * 2 + 2`.
+    let comma_headroom = value.bytes().filter(|&b| b == b',').count() * 2;
     let mut result = String::with_capacity(value.len() + comma_headroom + 2);
     // Loop-invariant predicate: captures nothing, so construct it once per call
     // instead of once per comma-separated segment. Byte-scan equivalent of the
