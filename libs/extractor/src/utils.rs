@@ -408,8 +408,11 @@ pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
     get_str_by_property_key(key).map(Cow::into_owned)
 }
 
-pub fn gcd(a: u32, b: u32) -> u32 {
-    if b == 0 { a } else { gcd(b, a % b) }
+pub const fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 #[cfg(test)]

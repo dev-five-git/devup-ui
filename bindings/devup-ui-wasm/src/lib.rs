@@ -1044,7 +1044,7 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
 
-        assert_eq!(color_theme.css_keys().count(), 1);
+        assert_eq!(color_theme.css_entries().count(), 1);
 
         theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::default();

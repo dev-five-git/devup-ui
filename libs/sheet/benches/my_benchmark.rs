@@ -67,6 +67,19 @@ fn make_large_theme() -> Theme {
     theme
 }
 
+fn make_large_single_theme() -> Theme {
+    // Single color variant only (`default`), so `to_css` takes the `single_theme` color
+    // fast path (no `light-dark()` partner, no `default_optimized_colors` map).
+    let mut theme = Theme::default();
+    let mut default_colors = ColorTheme::default();
+    for idx in 0..80 {
+        let name = format!("color.{idx}");
+        default_colors.add_color(&name, &format!("#{idx:02x}{idx:02x}{idx:02x}"));
+    }
+    theme.add_color_theme("default", default_colors);
+    theme
+}
+
 fn make_large_sheet() -> StyleSheet {
     let mut sheet = StyleSheet::default();
     sheet.set_theme(make_large_theme());
@@ -113,6 +126,11 @@ fn make_selector_sheet() -> StyleSheet {
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("theme_to_css_large", |b| {
         let theme = make_large_theme();
+        b.iter(|| black_box(theme.to_css()));
+    });
+
+    c.bench_function("theme_to_css_single_theme", |b| {
+        let theme = make_large_single_theme();
         b.iter(|| black_box(theme.to_css()));
     });
 

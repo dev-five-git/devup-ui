@@ -107,11 +107,6 @@ impl ColorTheme {
         self.entries.values().map(|e| &e.interface_key)
     }
 
-    /// Get all CSS keys (for CSS variable generation, with dashes)
-    pub fn css_keys(&self) -> impl Iterator<Item = &String> {
-        self.entries.keys()
-    }
-
     /// Get iterator over (`css_key`, value) pairs for CSS generation
     pub fn css_entries(&self) -> impl Iterator<Item = (&String, &String)> {
         self.entries.iter().map(|(k, e)| (k, &e.value))
@@ -704,15 +699,21 @@ impl Theme {
                             }
                         }
                     } else {
-                        // Default variant: `default_optimized_colors` was built from this same
-                        // variant, so it already holds `optimize_value(value)` keyed by `prop`.
-                        // Borrow it instead of recomputing (saves one `optimize_value` call and
-                        // one `String` allocation per default-variant color).
-                        let optimized_value: Cow<str> =
+                        // Default variant. When `single_theme` is true, `default_optimized_colors`
+                        // was deliberately left EMPTY (see above), so the map probe below would
+                        // always miss and fall through to `optimize_value(value)` anyway — skip the
+                        // hashing entirely and optimize directly. Otherwise `default_optimized_colors`
+                        // was built from this same variant, so it already holds `optimize_value(value)`
+                        // keyed by `prop`; borrow it instead of recomputing (saves one
+                        // `optimize_value` call and one `String` allocation per default-variant color).
+                        let optimized_value: Cow<str> = if single_theme {
+                            Cow::Owned(optimize_value(value))
+                        } else {
                             default_optimized_colors.get(prop.as_str()).map_or_else(
                                 || Cow::Owned(optimize_value(value)),
                                 |v| Cow::Borrowed(v.as_str()),
-                            );
+                            )
+                        };
                         let optimized_value: &str = &optimized_value;
                         let other_theme_value = other_theme_key.and_then(|other_theme_key| {
                             self.colors.get(other_theme_key).and_then(|v| {
@@ -993,7 +994,7 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
 
-        assert_eq!(color_theme.css_keys().count(), 1);
+        assert_eq!(color_theme.css_entries().count(), 1);
 
         theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::default();
@@ -1314,7 +1315,7 @@ mod tests {
         // Collect interface keys
         let interface_keys: Vec<_> = light.interface_keys().cloned().collect();
         // Collect CSS keys
-        let css_keys: Vec<_> = light.css_keys().cloned().collect();
+        let css_keys: Vec<_> = light.css_entries().map(|(k, _)| k.clone()).collect();
 
         // Interface keys should use dots for nested objects
         assert!(interface_keys.contains(&"gray.100".to_string()));
@@ -1349,7 +1350,7 @@ mod tests {
         // Interface key uses dots
         assert!(light.interface_keys().any(|key| key == "a.b.c"));
         // CSS key uses dashes
-        assert!(light.css_keys().any(|key| key == "a-b-c"));
+        assert!(light.css_entries().any(|(key, _)| key == "a-b-c"));
     }
 
     #[test]
@@ -1817,7 +1818,7 @@ mod tests {
     #[test]
     fn test_color_theme_empty() {
         let color_theme = ColorTheme::default();
-        assert_eq!(color_theme.css_keys().count(), 0);
+        assert_eq!(color_theme.css_entries().count(), 0);
         assert_eq!(color_theme.interface_keys().count(), 0);
         assert_eq!(color_theme.css_entries().count(), 0);
         assert!(!color_theme.contains_key("any"));
