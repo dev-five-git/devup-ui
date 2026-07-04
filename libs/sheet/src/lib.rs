@@ -6,7 +6,7 @@ use css::{
     file_map::canonical,
     file_routes::route_count_for_files,
     sheet_to_classname,
-    style_selector::{AtRuleKind, StyleSelector},
+    style_selector::{AtRuleKind, StyleSelector, get_selector_order},
     theme_tokens::set_theme_token_levels,
     write_merge_selector,
 };
@@ -641,7 +641,35 @@ impl StyleSheet {
                 }
             }
             global_props.sort();
-            sorted_props.sort();
+            // Decorate-sort-undecorate for the plain-selector bucket: sorting via
+            // `StyleSheetProperty::cmp` re-runs `get_selector_order` (a byte scan +
+            // linear `SELECTOR_ORDER` probe) on BOTH operands of every comparison,
+            // i.e. O(n log n) redundant scans of the same `Selector` strings. Here
+            // `sorted_props` holds only `None`/`Selector(_)` variants (Global/At were
+            // filtered out above), so compute each prop's order key ONCE into a keyed
+            // vec and sort that. The key `(is_some, order, selector_str, property,
+            // value)` reproduces `StyleSheetProperty::cmp` byte-for-byte: `None` props
+            // (is_some=0, order=0, selector_str="") sort by (property, value); `Selector`
+            // props (is_some=1) sort by (order, selector_str, property, value) — matching
+            // `StyleSelector::cmp`'s `get_selector_order` then string tie-break.
+            let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> = sorted_props
+                .into_iter()
+                .map(|prop| match &prop.selector {
+                    Some(StyleSelector::Selector(s)) => {
+                        (1u8, get_selector_order(s), s.as_str(), prop)
+                    }
+                    _ => (0u8, 0u8, "", prop),
+                })
+                .collect();
+            keyed.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.cmp(&b.1))
+                    .then_with(|| a.2.cmp(b.2))
+                    .then_with(|| a.3.property.cmp(&b.3.property))
+                    .then_with(|| a.3.value.cmp(&b.3.value))
+            });
+            let sorted_props: Vec<&StyleSheetProperty> =
+                keyed.into_iter().map(|(_, _, _, prop)| prop).collect();
             // The common level has no `@`-rule atoms, so `at_rules` is empty.
             // Skip the `sort()` no-op and the per-level `BTreeMap` construction
             // entirely in that case; only regroup when there is actually work.
@@ -853,14 +881,22 @@ impl StyleSheet {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
             let mut base_styles = BTreeMap::<u8, FxHashSet<StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
-                style_orders.extend(map.iter().filter(|(_, v)| !v.is_empty()).map(|(k, _)| *k));
-                if let Some(_base_styles) = map.get(&0) {
-                    _base_styles.iter().for_each(|prop| {
-                        base_styles
-                            .entry(*prop.0)
-                            .or_default()
-                            .extend(prop.1.iter().cloned());
-                    });
+                // Single walk of the top-level order map: record non-empty style
+                // orders AND fold the `order == 0` base bucket in the same pass,
+                // dropping the separate `map.get(&0)` probe per file. Output is
+                // byte-identical (same `style_orders` set and `base_styles` map).
+                for (order, props) in map {
+                    if !props.is_empty() {
+                        style_orders.insert(*order);
+                    }
+                    if *order == 0 {
+                        props.iter().for_each(|prop| {
+                            base_styles
+                                .entry(*prop.0)
+                                .or_default()
+                                .extend(prop.1.iter().cloned());
+                        });
+                    }
                 }
             });
             // default

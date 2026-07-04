@@ -270,7 +270,8 @@ fn global_selector_order(order_suffix: &str) -> u8 {
     order_value
 }
 
-fn get_selector_order(selector: &str) -> u8 {
+#[must_use]
+pub fn get_selector_order(selector: &str) -> u8 {
     // Extract the part after the single '&' (avoid String allocation).
     // Single fused scan: record the first '&' byte index and detect a second '&'
     // in the same pass; slice the tail directly only when exactly one '&' was

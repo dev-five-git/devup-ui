@@ -1,4 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
+use css::style_selector::StyleSelector;
 use sheet::StyleSheet;
 use sheet::theme::{ColorTheme, Theme, Typography};
 use std::hint::black_box;
@@ -78,6 +79,37 @@ fn make_large_sheet() -> StyleSheet {
     sheet
 }
 
+fn make_selector_sheet() -> StyleSheet {
+    let mut sheet = StyleSheet::default();
+    sheet.set_theme(make_large_theme());
+    // Real selector variants so the `create_style` sort path exercises
+    // `StyleSelector::Ord` / `get_selector_order` (pseudo, theme, group).
+    let selectors = [
+        StyleSelector::from("hover"),
+        StyleSelector::from("focusVisible"),
+        StyleSelector::from("active"),
+        StyleSelector::from("theme-dark"),
+        StyleSelector::from("group-hover"),
+    ];
+    for idx in 0..300 {
+        let class_name = format!("s{idx}");
+        let property = if idx % 2 == 0 { "color" } else { "background" };
+        let value = if idx % 3 == 0 { "$color.1" } else { "red" };
+        let selector = &selectors[idx % selectors.len()];
+        let level = (idx % 4) as u8;
+        sheet.add_property(
+            &class_name,
+            property,
+            level,
+            value,
+            Some(selector),
+            None,
+            Some("app.tsx"),
+        );
+    }
+    sheet
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("theme_to_css_large", |b| {
         let theme = make_large_theme();
@@ -86,6 +118,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("sheet_create_css_large", |b| {
         let sheet = make_large_sheet();
+        b.iter(|| black_box(sheet.create_css(Some("app.tsx"), false)));
+    });
+
+    c.bench_function("sheet_create_css_selectors", |b| {
+        let sheet = make_selector_sheet();
         b.iter(|| black_box(sheet.create_css(Some("app.tsx"), false)));
     });
 }
