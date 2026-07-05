@@ -11,7 +11,8 @@ pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
     // is NOT surrounded by strippable quotes, and it needs no re-quoting. Every
     // other shape (comma list, quoted, requote-needed, <=1 byte) falls through to
     // the owning builder below and stays byte-identical.
-    if !value.as_bytes().contains(&b',') {
+    let has_comma = value.as_bytes().contains(&b',');
+    if !has_comma {
         let s = value.trim();
         let quote_byte =
             |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
@@ -36,25 +37,29 @@ pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
             return Cow::Borrowed(s);
         }
     }
-    Cow::Owned(optimize_multi_css_value_owned(value))
+    Cow::Owned(optimize_multi_css_value_owned(value, has_comma))
 }
 
-fn optimize_multi_css_value_owned(value: &str) -> String {
+fn optimize_multi_css_value_owned(value: &str, has_comma: bool) -> String {
     // Headroom for re-wrapped segments: EACH comma-separated segment may gain a
     // `"…"` quote pair (+2 bytes), so a multi-segment list like `'A B', 'C D', E`
     // → `"A B","C D",E` can add up to one pair per segment. Budget `2` per comma
     // plus a trailing `2` so even the worst case (every segment re-wrapped) never
     // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
     // is a safe upper bound; output stays byte-identical.
-    // ONE O(n) comma count feeds the headroom: `2` per comma, `0` when none.
-    // The prior guarded form did `as_bytes().contains(&b',')` (a full O(n)
-    // scan) and, on the comma-present path, a SECOND scan to count — the guard
-    // never actually saved a scan (a bare `Roboto` still paid the `contains`
-    // probe). Counting unconditionally is one scan in every case: identical
-    // cost on the no-comma path and strictly cheaper (one scan, not two) on the
-    // comma-present path. Capacity stays byte-for-byte identical to
-    // `value.len() + comma_count * 2 + 2`.
-    let comma_headroom = value.bytes().filter(|&b| b == b',').count() * 2;
+    // Headroom is `2` per comma, `0` when none. The caller already probed comma
+    // presence (`value.as_bytes().contains(&b',')`) to pick its borrow fast path
+    // and hands the result in via `has_comma`. On the no-comma owned path (a
+    // quote-pair strip like `'Roboto'` or a single-segment re-quote) the count is
+    // provably `0`, so we skip a second full O(n) `value.bytes()` scan entirely.
+    // Only the comma-present path pays the count. Capacity stays byte-for-byte
+    // identical to `value.len() + comma_count * 2 + 2` (a `0` headroom on the
+    // no-comma path is exactly what a full scan would have yielded).
+    let comma_headroom = if has_comma {
+        value.bytes().filter(|&b| b == b',').count() * 2
+    } else {
+        0
+    };
     let mut result = String::with_capacity(value.len() + comma_headroom + 2);
     // Loop-invariant predicate: captures nothing, so construct it once per call
     // instead of once per comma-separated segment. Byte-scan equivalent of the
