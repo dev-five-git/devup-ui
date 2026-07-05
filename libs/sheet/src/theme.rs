@@ -892,9 +892,16 @@ impl Theme {
             return;
         };
 
-        // Sort variants: default first, then alphabetical
+        // Sort variants: default first, then alphabetical.
+        // For a single (or zero) variant the `default`-first sort is a no-op that only
+        // reproduces the map's own iteration order (a 1-element BTreeMap yields the same lone
+        // entry). Skip the comparator setup + `sort_by` then, mirroring the color path's
+        // `single_theme` guard in `to_css` (and the `sorted_variants.len() <= 1` guard just
+        // below). Byte-identical output; the multi-variant path still sorts (order matters there).
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        sort_variants_default_first(&mut sorted_variants, default_key);
+        if sorted_variants.len() > 1 {
+            sort_variants_default_first(&mut sorted_variants, default_key);
+        }
 
         let default_theme = themes.get(default_key);
 
