@@ -1208,6 +1208,14 @@ pub fn find_selector_references(collected: &CollectedStyles) -> FxHashSet<String
         .collect();
 
     for entry in collected.styles.values() {
+        // Cheap necessary-condition gate: a `"<name>:"` / `"<name> "` selector reference can
+        // only appear inside a `"selectors":{...}` block, so a JSON with no `selectors` object
+        // cannot match ANY probe. Skip the whole K-probe inner loop for those entries (the
+        // common case — most style JSONs carry no cross-references). Byte-identical to probing
+        // every entry: the skipped entries provably contribute nothing to `referenced`.
+        if !entry.json.contains("selectors") {
+            continue;
+        }
         // Check if this style's JSON contains references to other style names
         for (probe_colon, probe_space, style_name) in &probes {
             // Look for patterns like "stylename:" or "stylename " in selectors

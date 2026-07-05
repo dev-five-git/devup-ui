@@ -131,7 +131,16 @@ fn convert_interface_key(key: &str) -> Cow<'_, str> {
     if INTERFACE_KEY_RE.is_match(key) {
         Cow::Borrowed(key)
     } else {
-        Cow::Owned(format!("[`{}`]", key.replace('`', "\\`")))
+        // Only allocate the `key.replace('`', "\\`")` intermediate when `key` actually holds a
+        // backtick (the common non-identifier key — e.g. `(primary)`, `a.b` — has none). Escaping
+        // a backtick-free key is a no-op, so borrowing it is byte-identical and drops one heap
+        // allocation per backtick-free non-identifier key.
+        let escaped = if key.contains('`') {
+            Cow::Owned(key.replace('`', "\\`"))
+        } else {
+            Cow::Borrowed(key)
+        };
+        Cow::Owned(format!("[`{escaped}`]"))
     }
 }
 

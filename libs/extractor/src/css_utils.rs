@@ -275,33 +275,67 @@ pub fn css_to_style_literal(
                 } else {
                     // Value has surrounding text - need to create template literal
                     // Reconstruct the template literal by replacing placeholders with ${expr} syntax
-                    // The value contains placeholders like "__EXPR_0__px", we need to convert to `${expr}px`
+                    // The value contains placeholders like "__EXPR_0__px", we need to convert to `${expr}px`.
+                    //
+                    // Rebuild in ONE left-to-right pass over `value` instead of P sequential
+                    // `String::replace` calls (each re-scanning and re-allocating the whole
+                    // value String → O(P) full-value allocations) plus a throwaway `format!`
+                    // per placeholder. Precompute each placeholder's `${expr_code}` expansion
+                    // ONCE, then scan `value` for the `__EXPR_{i}__` markers and substitute the
+                    // matching expansion. A single forward pass needs no reverse-position sort:
+                    // there is no index shifting because we never mutate an already-built prefix.
+                    // Byte-identical to the former "replace every occurrence of each registered
+                    // placeholder with `${expr}`" result — every marker present in `value` is a
+                    // registered placeholder (guaranteed by the `found_placeholders` scan), so
+                    // each is expanded exactly as `String::replace` would have.
 
-                    let mut template_literal = value.to_string();
-
-                    // Sort placeholders by their position in reverse order to avoid index shifting.
-                    // Decorate each placeholder with its `rfind` position ONCE (P scans total),
-                    // sort by that precomputed key, then undecorate — instead of recomputing two
-                    // full `rfind` scans inside every O(P log P) comparison.
-                    let mut decorated: Vec<(Option<usize>, (&str, usize))> = found_placeholders
-                        .iter()
-                        .map(|entry| (template_literal.rfind(entry.0), *entry))
-                        .collect();
-                    decorated.sort_by_key(|(pos, _)| *pos);
-                    for (dst, (_, entry)) in found_placeholders.iter_mut().zip(decorated) {
-                        *dst = entry;
-                    }
-
-                    // Replace each placeholder with the actual expression in template literal format
+                    // Precompute the `${expr_code}` expansion for each registered placeholder once.
+                    let mut expansions: Vec<(&str, String)> =
+                        Vec::with_capacity(found_placeholders.len());
                     for (placeholder, idx) in &found_placeholders {
                         if *idx < css.expressions.len() {
                             let expr_code =
                                 dynamic_expr_code(&css.expressions[*idx], &shared_allocator);
-                            // Replace placeholder with ${expr} syntax
-                            template_literal = template_literal
-                                .replace(*placeholder, &format!("${{{expr_code}}}"));
+                            expansions.push((*placeholder, format!("${{{expr_code}}}")));
                         }
                     }
+
+                    // Single left-to-right rebuild. Presize generously: the value plus two
+                    // backticks; expansions may grow it, in which case it reallocs once.
+                    let mut template_literal = String::with_capacity(value.len() + 2);
+                    let vbytes = value.as_bytes();
+                    let mut cursor = 0usize;
+                    while let Some(rel) = value[cursor..].find("__EXPR_") {
+                        let marker_start = cursor + rel;
+                        let digits_start = marker_start + "__EXPR_".len();
+                        let mut end = digits_start;
+                        while end < vbytes.len() && vbytes[end].is_ascii_digit() {
+                            end += 1;
+                        }
+                        if end > digits_start && value[end..].starts_with("__") {
+                            let marker_end = end + "__".len();
+                            let placeholder = &value[marker_start..marker_end];
+                            if let Some((_, expansion)) =
+                                expansions.iter().find(|(p, _)| *p == placeholder)
+                            {
+                                // Emit static text before the marker, then the `${expr}`.
+                                template_literal.push_str(&value[cursor..marker_start]);
+                                template_literal.push_str(expansion);
+                                cursor = marker_end;
+                            } else {
+                                // Registered-but-unmatched (idx >= expressions.len()) or an
+                                // unregistered marker: keep the `__EXPR_` text verbatim and
+                                // continue past it, matching the old code which only `replace`d
+                                // placeholders in `found_placeholders` with a valid expansion.
+                                template_literal.push_str(&value[cursor..digits_start]);
+                                cursor = digits_start;
+                            }
+                        } else {
+                            template_literal.push_str(&value[cursor..digits_start]);
+                            cursor = digits_start;
+                        }
+                    }
+                    template_literal.push_str(&value[cursor..]);
 
                     // Wrap in template literal backticks
                     let final_identifier = format!("`{template_literal}`");
