@@ -111,6 +111,35 @@ const cls = css`
   transform: translate(${offsetX}px, ${offsetY}px);
 `";
 
+// `css`-tagged template carrying a multi-`@media` block plus nested `&`/`&:hover`
+// selectors. Exercises the `css_to_style` at-rule path: the `present[]`
+// classification that re-walks every `@` position and the recursive
+// `split(at_rule)` + rejoin that no other criterion bench covers (the existing
+// `css` templates are flat declaration lists with no at-rules, and the
+// `globalCss` benches route through a different splitter).
+const CSS_TEMPLATE_ATRULE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  color: red;
+  padding: 4px;
+  & {
+    background-color: blue;
+  }
+  &:hover {
+    color: green;
+  }
+  @media (max-width: 600px) {
+    color: blue;
+    padding: 2px;
+    &:hover {
+      color: red;
+    }
+  }
+  @media (min-width: 900px) {
+    color: black;
+    padding: 8px;
+  }
+`";
+
 // Tagged-template `globalCss` block: exercises the `optimize_css_block` hot path
 // (comment removal -> brace-trim pass -> per-decl `split(';')` -> per-value
 // `optimize_multi_css_value` on `font-family`) which the object-form globalCss
@@ -144,6 +173,39 @@ globalCss`
     }
   }
 `";
+
+// Object-form `globalCss({...})`: routes through `optimize_css_block` end-to-end
+// (comment strip -> brace-trim -> per-decl `split(';')` -> `optimize_multi_css_value`
+// on the multi-value `font-family`) which the tagged-template `globalCss` and the
+// `css` templates do NOT cover. Includes a multi-value `font-family`, a nested
+// selector group and an `@media` block so the whole `optimize_css_block` walk is
+// measured.
+const GLOBAL_CSS_OBJECT_INPUT: &str = r#"import { globalCss } from '@devup-ui/react'
+globalCss({
+  'html, body': {
+    margin: 0,
+    padding: 0,
+    fontFamily: "'Roboto Hello', 'Segoe UI', Arial, sans-serif",
+    lineHeight: 1.5,
+    backgroundColor: '#ffffff',
+  },
+  a: {
+    color: '#0070f3',
+    textDecoration: 'none',
+  },
+  '.card': {
+    border: '1px solid #eaeaea',
+    borderRadius: '8px',
+    padding: '16px',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  '@media (max-width: 600px)': {
+    '.card': {
+      padding: '8px',
+      fontFamily: "'Roboto Hello', sans-serif",
+    },
+  },
+})"#;
 
 const STYLED_INPUT: &str = r"import { styled } from '@devup-ui/react'
 const Card = styled('div', { bg: 'red', p: 4, borderRadius: '8px', _hover: { bg: 'blue' } })
@@ -228,6 +290,18 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
+    c.bench_function("extract_css_template_atrule", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_TEMPLATE_ATRULE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
     c.bench_function("extract_styled", |b| {
         b.iter(|| {
             reset_state();
@@ -258,6 +332,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("test.tsx"),
                 black_box(GLOBAL_CSS_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_global_css_object", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(GLOBAL_CSS_OBJECT_INPUT),
                 make_option(),
             )
             .unwrap()
