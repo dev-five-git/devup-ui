@@ -228,7 +228,7 @@ pub fn optimize_value(value: &str) -> String {
             // keeps every earlier (lower) index valid despite the +1 byte growth.
             let lower = ret.to_lowercase();
             let bytes = lower.as_bytes();
-            let mut zero_idx: Vec<usize> = Vec::new();
+            let mut zero_idx: Vec<usize> = Vec::with_capacity(2);
             for f in &ZERO_PERCENT_FUNCTION {
                 if let Some(start) = lower.find(f) {
                     let index = start + f.len();

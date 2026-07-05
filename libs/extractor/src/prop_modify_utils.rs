@@ -510,8 +510,14 @@ fn rebuild_template_literal_with_sorted<'a>(
 fn replace_classes_in_string(s: &str, sorted_classes: &[(&String, &String)]) -> String {
     let mut result = Cow::Borrowed(s);
     for (tailwind_class, generated_class) in sorted_classes {
-        if result.contains(tailwind_class.as_str()) {
-            result = Cow::Owned(result.replace(tailwind_class.as_str(), generated_class));
+        // `str::replace` already scans the whole string internally and allocates a
+        // fresh `String` only on a match, so the previous standalone `contains`
+        // pre-scan was a redundant second scan of the same content. Compute the
+        // replacement once and only re-own the `Cow` when it actually changed
+        // (length differs, or same-length differing contents). Byte-identical.
+        let replaced = result.replace(tailwind_class.as_str(), generated_class);
+        if replaced.len() != result.len() || replaced != *result {
+            result = Cow::Owned(replaced);
         }
     }
     result.into_owned()
@@ -751,9 +757,17 @@ fn merge_string_expressions<'a>(
         }
     }
     if other_expressions.is_empty() {
+        // Concatenate the already-owned fragments into one presized buffer instead
+        // of `join("")`, which allocates a fresh Vec-backed buffer internally after
+        // summing lengths. Same summed-capacity, same byte order, then `.trim()` —
+        // byte-identical to `string_literals.join("")`.
+        let mut merged = String::with_capacity(string_literals.iter().map(String::len).sum());
+        for frag in &string_literals {
+            merged.push_str(frag);
+        }
         return Some(Expression::new_string_literal(
             SPAN,
-            Str::from_in(string_literals.join("").trim(), ast_builder.allocator()),
+            Str::from_in(merged.trim(), ast_builder.allocator()),
             None,
             ast_builder,
         ));

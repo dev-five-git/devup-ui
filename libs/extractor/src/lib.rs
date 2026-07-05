@@ -383,11 +383,13 @@ fn extract_class_map_from_code(
                 };
 
                 if let Some((name, rest)) = after_const.split_once(" = ") {
-                    // Extract value from "value" or "value";
-                    let value = rest
-                        .trim_start_matches('"')
-                        .trim_end_matches(';')
-                        .trim_end_matches('"');
+                    // Codegen emits `const name = "value";` (or bare `value`). Strip
+                    // the statement-terminating `;` first, then peel the wrapping
+                    // quotes off both ends in one pass. Byte-identical to the prior
+                    // `trim_start_matches('"').trim_end_matches(';').trim_end_matches('"')`
+                    // for the `"value"`, `"value";` and bare-`value` shapes Codegen
+                    // produces (no interior/leading `;`, symmetric wrapping quotes).
+                    let value = rest.trim_end_matches(';').trim_matches('"');
 
                     if style_names.contains(name) {
                         // For multi-class values like "a b", take the first class
