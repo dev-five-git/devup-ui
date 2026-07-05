@@ -11,7 +11,7 @@ use css::rm_css_comment::rm_css_comment;
 use css::set_prefix;
 use css::style_selector::{get_selector_order, global_selector_order};
 use css::utils::{to_camel_case, to_kebab_case};
-use css::{merge_selector, sheet_to_classname};
+use css::{merge_selector, sheet_to_classname, sheet_to_variable_name};
 
 fn reset_state() {
     reset_class_map();
@@ -323,6 +323,55 @@ fn bench_to_camel_case(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_sheet_to_variable_name(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sheet_to_variable_name");
+
+    // Dynamic-style hot path: called for every `ExtractStyleValue::Dynamic`
+    // variable name. Shares the `class_num_for_key` / `KEY_BUF` key-building
+    // machinery with `sheet_to_classname`, yet was previously unbenched. These
+    // groups lock the current cost and give future optimizations of the shared
+    // key path an attributable number. Mirrors `bench_sheet_to_classname`'s
+    // `reset_state()` structure.
+
+    // debug-off (release-shape): interned base name via `class_num_for_key`.
+    group.bench_function("simple", |b| {
+        b.iter(|| {
+            reset_state();
+            sheet_to_variable_name(black_box("background"), black_box(0), black_box(None))
+        });
+    });
+
+    group.bench_function("with_selector", |b| {
+        b.iter(|| {
+            reset_state();
+            sheet_to_variable_name(
+                black_box("background"),
+                black_box(0),
+                black_box(Some("hover")),
+            )
+        });
+    });
+
+    // debug-on: readable-name path (no interning), the other branch of the fn.
+    group.bench_function("debug_with_selector", |b| {
+        b.iter(|| {
+            reset_class_map();
+            reset_file_map();
+            set_debug(true);
+            set_prefix(None);
+            let out = sheet_to_variable_name(
+                black_box("background"),
+                black_box(0),
+                black_box(Some("hover")),
+            );
+            set_debug(false);
+            out
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_rm_css_comment(c: &mut Criterion) {
     let mut group = c.benchmark_group("rm_css_comment");
 
@@ -361,6 +410,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench_get_selector_order(c);
     bench_disassemble_property(c);
     bench_to_camel_case(c);
+    bench_sheet_to_variable_name(c);
     bench_rm_css_comment(c);
 }
 

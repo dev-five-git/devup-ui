@@ -47,10 +47,16 @@ pub fn to_kebab_case(value: &str) -> Cow<'_, str> {
 
 #[inline]
 #[must_use]
-pub fn to_camel_case(value: &str) -> String {
-    // The split-based body below already yields the input verbatim for a
-    // dash-free string (a single segment pushed as-is), so we skip the extra
-    // `contains('-')` pre-scan and rebuild in one pass.
+pub fn to_camel_case(value: &str) -> Cow<'_, str> {
+    // Fast path: camel-casing only rewrites the char after each `-`. A dash-free
+    // input (`color`, `hover`, `dark`) has a single `split('-')` segment pushed
+    // verbatim, so the output equals the input — borrow it instead of allocating
+    // + refilling a fresh `String`. This mirrors the sibling `to_kebab_case`
+    // borrow guard and keeps output byte-identical. Directly hit by the
+    // dash-free `to_camel_case/color` bench and every `theme-*` selector build.
+    if !value.as_bytes().contains(&b'-') {
+        return Cow::Borrowed(value);
+    }
     let mut result = String::with_capacity(value.len());
     for (i, s) in value.split('-').enumerate() {
         if i == 0 {
@@ -64,7 +70,7 @@ pub fn to_camel_case(value: &str) -> String {
             result.push_str(rest);
         }
     }
-    result
+    Cow::Owned(result)
 }
 
 #[inline]
