@@ -27,6 +27,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::path::PathBuf;
 
+/// `StyleX` package specifier recognized by the relevant-import gate in `extract`.
+const STYLEX_PACKAGE: &str = "@stylexjs/stylex";
+
 /// Import alias configuration for redirecting imports from other CSS-in-JS libraries
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportAlias {
@@ -185,7 +188,7 @@ pub fn extract(
 
     // Step 2: Check if code contains the target package (after transformation)
     let has_relevant_import = transformed_code.contains(option.package.as_str())
-        || transformed_code.contains("@stylexjs/stylex");
+        || transformed_code.contains(STYLEX_PACKAGE);
 
     if !has_relevant_import {
         // skip if not using package

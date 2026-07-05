@@ -1285,8 +1285,11 @@ fn is_valid_tailwind_value(value: &str) -> bool {
 /// Parse a className string into a list of `ExtractStyleValue`
 pub fn parse_tailwind_to_styles(class_str: &str) -> Vec<ExtractStyleValue> {
     // Upper bound: at most one style per whitespace-separated class, so
-    // presizing to the class count removes the grow-realloc chain.
-    let mut styles = Vec::with_capacity(class_str.split_whitespace().count());
+    // presizing removes the grow-realloc chain. Use a cheap single byte scan
+    // (whitespace-byte count + 1) instead of the heavier `split_whitespace`
+    // state machine just to size the buffer.
+    let mut styles =
+        Vec::with_capacity(class_str.bytes().filter(u8::is_ascii_whitespace).count() + 1);
 
     for class in class_str.split_whitespace() {
         if let Some(parsed) = parse_single_class(class) {
