@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     fmt::{Display, Formatter},
 };
@@ -58,6 +59,24 @@ pub enum StyleSelector {
     Global(String, String),
 }
 
+/// Collapse an owned selector string's whitespace WITHOUT allocating when it is
+/// already tight. The overwhelmingly common input (every selector produced by
+/// `StyleSelector::from(&str)`, which already collapsed) hits
+/// `collapse_whitespace`'s `Cow::Borrowed` fast-path, so the prior
+/// `collapse_whitespace(&s).into_owned()` cloned an identical `String` for
+/// nothing. Detecting the borrow lets us MOVE the already-owned `String`
+/// through with zero allocation; only the rare interior-whitespace source
+/// (e.g. a raw `StyleSelector::Selector(sel)` from `css_to_style`, which
+/// `.trim()`s but does not collapse interior runs) pays for the owned rebuild.
+/// Byte-identical to the previous behavior.
+#[inline]
+fn collapse_owned_selector(s: String) -> String {
+    match collapse_whitespace(&s) {
+        Cow::Borrowed(_) => s,
+        Cow::Owned(collapsed) => collapsed,
+    }
+}
+
 #[must_use]
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
@@ -68,13 +87,13 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| collapse_whitespace(&s).into_owned()),
+            selector: selector.map(collapse_owned_selector),
         },
         StyleSelector::Selector(selector) => {
-            StyleSelector::Selector(collapse_whitespace(&selector).into_owned())
+            StyleSelector::Selector(collapse_owned_selector(selector))
         }
         StyleSelector::Global(selector, file) => {
-            StyleSelector::Global(collapse_whitespace(&selector).into_owned(), file)
+            StyleSelector::Global(collapse_owned_selector(selector), file)
         }
     }
 }
