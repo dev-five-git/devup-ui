@@ -625,12 +625,15 @@ impl StyleSheet {
                 // separator. `keys.len() * 12` is a cheap lower-bound estimate that
                 // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
                 let mut contents = String::with_capacity(keys.len() * 12);
-                // The `$`-prefix scratch is reused across every key, so it grows
-                // amortized to the longest key within the first few iterations and
-                // never reallocs thereafter. The `'$'` prefix is invariant, so seed
-                // it once and only rewrite the suffix each key (`truncate(1)` keeps
-                // the `$`, skipping a re-push per key); output stays byte-identical.
-                let mut dollar_key = String::from('$');
+                // The `$`-prefix scratch is reused across every key. Presize it
+                // once to `1 + longest key len` so the very first `push_str(key)`
+                // never triggers the 1→N grow-realloc; thereafter it is reused with
+                // no further reallocs. The `'$'` prefix is invariant, so seed it once
+                // and only rewrite the suffix each key (`truncate(1)` keeps the `$`,
+                // skipping a re-push per key); output stays byte-identical.
+                let dollar_cap = 1 + keys.iter().map(|k| k.len()).max().unwrap_or(0);
+                let mut dollar_key = String::with_capacity(dollar_cap);
+                dollar_key.push('$');
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');

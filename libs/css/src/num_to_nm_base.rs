@@ -36,14 +36,18 @@ pub fn num_to_nm_base(num: usize) -> String {
     // Exact capacity: `len` bytes, plus 1 for the possible "a-d" fixup.
     let needs_fixup = len >= 2 && buf[0] == b'd' && buf[1] == b'a';
     let mut result = String::with_capacity(len + usize::from(needs_fixup));
-    for (i, &b) in buf[..len].iter().rev().enumerate() {
-        // buf is stored least-significant-first, so the reversed suffix "ad"
-        // corresponds to buf[0]=='d' (last emitted char) preceded by buf[1]=='a'.
-        if needs_fixup && i == len - 1 {
-            result.push('-');
-        }
+    // buf is stored least-significant-first, so the reversed suffix "ad"
+    // corresponds to buf[0]=='d' (last emitted char) preceded by buf[1]=='a'.
+    // The '-' splice only ever lands immediately before that final char, so emit
+    // all but the last byte plainly, then splice + push the last byte once —
+    // dropping the `i == len - 1` re-test from every loop iteration.
+    for &b in buf[1..len].iter().rev() {
         result.push(char::from(b));
     }
+    if needs_fixup {
+        result.push('-');
+    }
+    result.push(char::from(buf[0]));
     result
 }
 
