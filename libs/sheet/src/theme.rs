@@ -28,6 +28,17 @@ pub struct ColorTheme {
     entries: HashMap<String, ColorEntry>,
 }
 
+/// Derive the CSS-variable key from a raw name: dots become dashes.
+/// `replace('.', "-")` always allocates + scans even for the common dot-free
+/// name, so borrow the name as-is when it has no `.`. Byte-identical output.
+fn css_key_from(name: &str) -> Cow<'_, str> {
+    if name.contains('.') {
+        Cow::Owned(name.replace('.', "-"))
+    } else {
+        Cow::Borrowed(name)
+    }
+}
+
 /// Recursively flatten a JSON value into `ColorEntry` list
 /// `interface_prefix` uses dots, `css_prefix` uses dashes
 fn flatten_color_value(
@@ -55,14 +66,7 @@ fn flatten_color_value(
                 } else {
                     format!("{interface_prefix}.{key}")
                 };
-                // `replace('.', "-")` always allocates + scans even for the common
-                // dot-free key; borrow `key` as-is when it has no `.` so that path
-                // skips the throwaway rebuild. `css_key` stays byte-identical.
-                let key_css: Cow<str> = if key.contains('.') {
-                    Cow::Owned(key.replace('.', "-"))
-                } else {
-                    Cow::Borrowed(key.as_str())
-                };
+                let key_css = css_key_from(key);
                 let new_css_prefix = if css_prefix.is_empty() {
                     key_css.into_owned()
                 } else {
@@ -89,7 +93,7 @@ impl<'de> Deserialize<'de> for ColorTheme {
         let mut entries = HashMap::new();
 
         for (key, value) in raw {
-            let css_key = key.replace('.', "-");
+            let css_key = css_key_from(&key);
             flatten_color_value(&key, &css_key, &value, &mut entries).map_err(D::Error::custom)?;
         }
 
@@ -99,14 +103,9 @@ impl<'de> Deserialize<'de> for ColorTheme {
 
 impl ColorTheme {
     pub fn add_color(&mut self, name: &str, value: &str) {
-        // The map key must own a `String` regardless, but `replace('.', "-")`
-        // scans + rebuilds even for the common dot-free name; take the cheaper
-        // `to_string()` when there is no `.`. Byte-identical `css_key`.
-        let css_key = if name.contains('.') {
-            name.replace('.', "-")
-        } else {
-            name.to_string()
-        };
+        // The map key must own a `String` regardless; `css_key_from` borrows on
+        // the common dot-free path so only the `.`-present case rebuilds.
+        let css_key = css_key_from(name).into_owned();
         self.entries.insert(
             css_key.clone(),
             ColorEntry {
@@ -426,7 +425,7 @@ fn token_levels(
                         // It compiles out entirely in release, so the hot path is
                         // unaffected.
                         debug_assert!(
-                            level >= 16,
+                            false,
                             "overflow branch entered for level < 16, which the u16 mask should have handled"
                         );
                         let overflow = overflow.get_or_insert_with(Vec::new);

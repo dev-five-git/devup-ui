@@ -625,19 +625,18 @@ impl StyleSheet {
                 // separator. `keys.len() * 12` is a cheap lower-bound estimate that
                 // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
                 let mut contents = String::with_capacity(keys.len() * 12);
-                // The `$`-prefix scratch is `clear()`-reused across every key, so it
-                // grows amortized to the longest key within the first few iterations
-                // and never reallocs thereafter. Starting it empty removes the extra
-                // full `keys.iter().map(len).max()` traversal that previously ran only
-                // to presize this one reused buffer; output stays byte-identical.
-                let mut dollar_key = String::new();
+                // The `$`-prefix scratch is reused across every key, so it grows
+                // amortized to the longest key within the first few iterations and
+                // never reallocs thereafter. The `'$'` prefix is invariant, so seed
+                // it once and only rewrite the suffix each key (`truncate(1)` keeps
+                // the `$`, skipping a re-push per key); output stays byte-identical.
+                let mut dollar_key = String::from('$');
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');
                     }
                     if dollar {
-                        dollar_key.clear();
-                        dollar_key.push('$');
+                        dollar_key.truncate(1);
                         dollar_key.push_str(key);
                         contents.push_str(&convert_interface_key(&dollar_key));
                     } else {
