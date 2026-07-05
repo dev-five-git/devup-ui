@@ -91,9 +91,11 @@ pub fn css_to_style_literal(
     // allocation per quasi, the `Vec` itself, and the `join` output copy.
     let quasi_len: usize = css.quasis.iter().map(|q| q.value.raw.len()).sum();
     // Each placeholder is `__EXPR_{i}__` = `9 + digits` bytes (11 for a
-    // single-digit index, up to 13 for `__EXPR_<=999__`); budget the safe
-    // upper bound per expression so the buffer never needs to grow.
-    let mut combined_css = String::with_capacity(quasi_len + css.expressions.len() * 13);
+    // single-digit index). Budget the realistic single-digit shape (`* 11`),
+    // which is exact for indices 0-9 (the common/bench case) and only
+    // grow-reallocs once for a template with >9 interpolations. Capacity-only;
+    // output byte-identical.
+    let mut combined_css = String::with_capacity(quasi_len + css.expressions.len() * 11);
     let mut expression_map =
         rustc_hash::FxHashMap::with_capacity_and_hasher(css.expressions.len(), Default::default());
 

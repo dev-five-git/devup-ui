@@ -55,10 +55,18 @@ fn flatten_color_value(
                 } else {
                     format!("{interface_prefix}.{key}")
                 };
-                let new_css_prefix = if css_prefix.is_empty() {
-                    key.replace('.', "-")
+                // `replace('.', "-")` always allocates + scans even for the common
+                // dot-free key; borrow `key` as-is when it has no `.` so that path
+                // skips the throwaway rebuild. `css_key` stays byte-identical.
+                let key_css: Cow<str> = if key.contains('.') {
+                    Cow::Owned(key.replace('.', "-"))
                 } else {
-                    format!("{}-{}", css_prefix, key.replace('.', "-"))
+                    Cow::Borrowed(key.as_str())
+                };
+                let new_css_prefix = if css_prefix.is_empty() {
+                    key_css.into_owned()
+                } else {
+                    format!("{css_prefix}-{key_css}")
                 };
                 flatten_color_value(&new_interface_prefix, &new_css_prefix, val, result)?;
             }
@@ -91,7 +99,14 @@ impl<'de> Deserialize<'de> for ColorTheme {
 
 impl ColorTheme {
     pub fn add_color(&mut self, name: &str, value: &str) {
-        let css_key = name.replace('.', "-");
+        // The map key must own a `String` regardless, but `replace('.', "-")`
+        // scans + rebuilds even for the common dot-free name; take the cheaper
+        // `to_string()` when there is no `.`. Byte-identical `css_key`.
+        let css_key = if name.contains('.') {
+            name.replace('.', "-")
+        } else {
+            name.to_string()
+        };
         self.entries.insert(
             css_key.clone(),
             ColorEntry {
@@ -630,7 +645,10 @@ impl Theme {
 
     #[must_use]
     pub fn to_css(&self) -> String {
-        let mut theme_declaration = String::new();
+        // Seed a cheap lower-bound capacity so the initial 0→8→16→… grow chain
+        // before the first `:root{` write is skipped. `colors.len()` is a safe
+        // lower bound (at least one `:root`-ish block per variant); byte-identical.
+        let mut theme_declaration = String::with_capacity(self.colors.len().saturating_mul(64));
 
         let default_theme_key = default_variant_key(&self.colors);
         if let Some(default_theme_key) = default_theme_key {

@@ -496,19 +496,33 @@ impl StyleSheet {
                         variable_name,
                         ..
                     }) = style.extract(name_scope)
-                        && self.add_property(
-                            &class_name,
-                            dy.property(),
-                            dy.level(),
-                            &if dy.important() {
-                                format!("var({variable_name}) !important")
-                            } else {
-                                format!("var({variable_name})")
-                            },
-                            dy.selector(),
-                            dy.style_order(),
-                            bucket_scope,
-                        )
+                        && {
+                            // Build `var(<name>)` / `var(<name>) !important` without the
+                            // `format!` `Arguments` machinery + its grow path: presize once and
+                            // `push_str`. Byte-identical to the two `format!` calls it replaces.
+                            let important = dy.important();
+                            let mut dynamic_value = String::with_capacity(
+                                "var(".len()
+                                    + variable_name.len()
+                                    + 1
+                                    + if important { " !important".len() } else { 0 },
+                            );
+                            dynamic_value.push_str("var(");
+                            dynamic_value.push_str(&variable_name);
+                            dynamic_value.push(')');
+                            if important {
+                                dynamic_value.push_str(" !important");
+                            }
+                            self.add_property(
+                                &class_name,
+                                dy.property(),
+                                dy.level(),
+                                &dynamic_value,
+                                dy.selector(),
+                                dy.style_order(),
+                                bucket_scope,
+                            )
+                        }
                     {
                         collected = true;
                         if dy.style_order() == Some(0) {
