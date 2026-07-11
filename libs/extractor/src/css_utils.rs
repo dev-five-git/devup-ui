@@ -487,10 +487,10 @@ pub fn css_to_style(
             // Find the matching closing brace by counting braces
             let mut brace_count = 1;
             let mut end = 0;
-            for (i, ch) in rest.char_indices() {
-                match ch {
-                    '{' => brace_count += 1,
-                    '}' => {
+            for (i, byte) in rest.bytes().enumerate() {
+                match byte {
+                    b'{' => brace_count += 1,
+                    b'}' => {
                         brace_count -= 1;
                         if brace_count == 0 {
                             end = i;

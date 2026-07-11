@@ -175,7 +175,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     if let Some(name) = name.strip_prefix("_") {
                                         StyleSelector::from(name).to_string().replace('&', "*")
                                     } else {
-                                        name.clone()
+                                        name
                                     },
                                     file.to_string(),
                                 )),

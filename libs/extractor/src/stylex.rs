@@ -9,10 +9,6 @@ pub enum StylexFunction {
     Create,
     Props,
     Keyframes,
-    FirstThatWorks,
-    DefineVars,
-    CreateTheme,
-    Include,
 }
 
 /// Check if a call expression is `stylex.firstThatWorks()` or named `firstThatWorks()`.

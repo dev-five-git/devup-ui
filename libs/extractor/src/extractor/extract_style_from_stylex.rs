@@ -13,7 +13,7 @@ use css::style_selector::StyleSelector;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
 use rustc_hash::FxHashMap;
 
-use crate::utils::get_string_by_property_key;
+use crate::utils::{get_str_by_property_key, get_string_by_property_key};
 
 /// Construct a static style directly — bypass `convert_value()` to avoid devup-ui
 /// spacing transformations. `StyleX` values are raw CSS, only `optimize_value()`.
@@ -147,7 +147,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 continue;
             };
 
-            let Some(prop_name) = get_string_by_property_key(&style_prop.key) else {
+            let Some(prop_name) = get_str_by_property_key(&style_prop.key) else {
                 // Phase 4c: Computed property keys not supported
                 if style_prop.computed {
                     eprintln!(
@@ -166,11 +166,11 @@ pub fn extract_stylex_namespace_styles<'a>(
                     let ObjectPropertyKind::ObjectProperty(inner_prop) = inner_prop else {
                         continue;
                     };
-                    let Some(inner_name) = get_string_by_property_key(&inner_prop.key) else {
+                    let Some(inner_name) = get_str_by_property_key(&inner_prop.key) else {
                         continue;
                     };
-                    let inner_css_property = normalize_stylex_property(&inner_name);
-                    let parent_selectors = vec![SelectorPart::Pseudo(prop_name.clone())];
+                    let inner_css_property = normalize_stylex_property(inner_name.as_ref());
+                    let parent_selectors = vec![SelectorPart::Pseudo(prop_name.to_string())];
                     for decomposed in decompose_value_conditions(
                         &inner_css_property,
                         &inner_prop.value,
@@ -188,7 +188,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 continue;
             }
 
-            let css_property = normalize_stylex_property(&prop_name);
+            let css_property = normalize_stylex_property(prop_name.as_ref());
 
             if SHORTHAND_PROPERTIES.contains(css_property.as_str()) {
                 eprintln!(

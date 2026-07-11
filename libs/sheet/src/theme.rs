@@ -726,16 +726,12 @@ impl Theme {
                         push_css_declaration(&mut theme_contents, "color-scheme:light");
                     }
                 }
-                for (prop, value) in theme_properties.css_entries() {
-                    if theme_key.is_some() {
-                        // Non-default variant. When a light-dark partner exists
-                        // (`other_theme_key.is_some()`, the 2-theme case) the default variant
-                        // already emits this variant's value inside its `light-dark(...)`, so
-                        // nothing is pushed here. Guard the whole per-color pass on
-                        // `other_theme_key.is_none()` to skip the always-discarded
-                        // `optimize_value(value)` + compare in that case (one fewer `String`
-                        // alloc per default-shared color).
-                        if other_theme_key.is_none() {
+                // Non-default variants in a two-theme pair only contribute `color-scheme:dark`;
+                // the default variant already emits their colors via `light-dark(...)`. Guard the
+                // whole per-color pass so that partner variant skips the otherwise no-op iterator.
+                if theme_key.is_none() || other_theme_key.is_none() {
+                    for (prop, value) in theme_properties.css_entries() {
+                        if theme_key.is_some() {
                             // The map may not contain `prop` (a color present in this variant but
                             // absent from the default), so optimize it here.
                             let optimized_value = optimize_value(value);
@@ -751,43 +747,43 @@ impl Theme {
                             {
                                 push_css_variable(&mut theme_contents, prop, &default_value);
                             }
-                        }
-                    } else {
-                        // Default variant. The `single_theme`-invariant source selection is decided
-                        // once by `resolve_default_optimized` (hoisted above the entries loop): for
-                        // the single-variant case it optimizes directly (the map is empty, so the
-                        // probe would always miss); otherwise it borrows the precomputed value keyed
-                        // by `prop`, recomputing only on a rare miss (saves one `optimize_value` call
-                        // and one `String` allocation per default-variant color).
-                        let optimized_value = resolve_default_optimized(prop.as_str(), value);
-                        let optimized_value: &str = &optimized_value;
-                        let other_theme_value = other_theme_key.and_then(|other_theme_key| {
-                            self.colors.get(other_theme_key).and_then(|v| {
-                                v.get(prop).and_then(|v| {
-                                    let other_theme_value = optimize_value(v.as_str());
-                                    if other_theme_value == optimized_value {
-                                        None
-                                    } else {
-                                        Some(other_theme_value)
-                                    }
-                                })
-                            })
-                        });
-                        // default theme
-                        if !theme_contents.is_empty() {
-                            theme_contents.push(';');
-                        }
-                        theme_contents.push_str("--");
-                        theme_contents.push_str(prop);
-                        theme_contents.push(':');
-                        if let Some(other_theme_value) = other_theme_value {
-                            theme_contents.push_str("light-dark(");
-                            theme_contents.push_str(optimized_value);
-                            theme_contents.push(',');
-                            theme_contents.push_str(&other_theme_value);
-                            theme_contents.push(')');
                         } else {
-                            theme_contents.push_str(optimized_value);
+                            // Default variant. The `single_theme`-invariant source selection is decided
+                            // once by `resolve_default_optimized` (hoisted above the entries loop): for
+                            // the single-variant case it optimizes directly (the map is empty, so the
+                            // probe would always miss); otherwise it borrows the precomputed value keyed
+                            // by `prop`, recomputing only on a rare miss (saves one `optimize_value` call
+                            // and one `String` allocation per default-variant color).
+                            let optimized_value = resolve_default_optimized(prop.as_str(), value);
+                            let optimized_value: &str = &optimized_value;
+                            let other_theme_value = other_theme_key.and_then(|other_theme_key| {
+                                self.colors.get(other_theme_key).and_then(|v| {
+                                    v.get(prop).and_then(|v| {
+                                        let other_theme_value = optimize_value(v.as_str());
+                                        if other_theme_value == optimized_value {
+                                            None
+                                        } else {
+                                            Some(other_theme_value)
+                                        }
+                                    })
+                                })
+                            });
+                            // default theme
+                            if !theme_contents.is_empty() {
+                                theme_contents.push(';');
+                            }
+                            theme_contents.push_str("--");
+                            theme_contents.push_str(prop);
+                            theme_contents.push(':');
+                            if let Some(other_theme_value) = other_theme_value {
+                                theme_contents.push_str("light-dark(");
+                                theme_contents.push_str(optimized_value);
+                                theme_contents.push(',');
+                                theme_contents.push_str(&other_theme_value);
+                                theme_contents.push(')');
+                            } else {
+                                theme_contents.push_str(optimized_value);
+                            }
                         }
                     }
                 }

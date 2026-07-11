@@ -381,10 +381,10 @@ fn extract_tailwind_from_class_name<'a>(
                 // Apply style_order to all extracted Tailwind styles
                 apply_style_order_to_styles(&mut tailwind_styles, style_order);
 
-                // Convert ExtractStyleValue to ExtractStyleProp::Static for gen_class_names
+                // Move ExtractStyleValue into ExtractStyleProp::Static for gen_class_names,
+                // then recover the same values afterward without deep-cloning each style.
                 let mut tailwind_style_props: Vec<ExtractStyleProp> = tailwind_styles
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .map(ExtractStyleProp::Static)
                     .collect();
 
@@ -395,6 +395,20 @@ fn extract_tailwind_from_class_name<'a>(
                     style_order,
                     filename,
                 );
+
+                let tailwind_styles = tailwind_style_props
+                    .into_iter()
+                    .map(|style_prop| match style_prop {
+                        ExtractStyleProp::Static(style) => style,
+                        ExtractStyleProp::StaticArray(_)
+                        | ExtractStyleProp::Conditional { .. }
+                        | ExtractStyleProp::Enum { .. }
+                        | ExtractStyleProp::Expression { .. }
+                        | ExtractStyleProp::MemberExpression { .. } => {
+                            unreachable!("tailwind className styles are always static")
+                        }
+                    })
+                    .collect();
 
                 return (tailwind_styles, class_names_expr);
             }

@@ -4,6 +4,7 @@ use crate::css_utils::{css_to_style_literal, keyframes_to_keyframes_style, optim
 use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
+use crate::extract_style::style_property::StyleProperty;
 use crate::extractor::KeyframesExtractResult;
 use crate::extractor::extract_keyframes_from_expression::extract_keyframes_from_expression;
 use crate::extractor::extract_style_from_stylex::extract_stylex_namespace_styles;
@@ -47,6 +48,19 @@ use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
+
+fn style_property_into_string(style_property: StyleProperty) -> String {
+    match style_property {
+        StyleProperty::ClassName(name) => name,
+        StyleProperty::Variable { variable_name, .. } => {
+            let mut value = String::with_capacity("var()".len() + variable_name.len());
+            value.push_str("var(");
+            value.push_str(&variable_name);
+            value.push(')');
+            value
+        }
+    }
+}
 
 pub struct DevupVisitor<'a> {
     pub ast: AstBuilder<'a>,
@@ -542,9 +556,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             let arg = call.arguments[0].to_expression_mut();
             let KeyframesExtractResult { keyframes } =
                 extract_keyframes_from_expression(&self.ast, arg);
-            let name = keyframes
-                .extract(self.split_filename.as_deref())
-                .to_string();
+            let name =
+                style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
             self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
             self.stylex_pending_keyframe_name = Some(name.clone());
             *it = Expression::new_string_literal(
@@ -670,9 +683,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 },
                             );
 
-                        let name = keyframes
-                            .extract(self.split_filename.as_deref())
-                            .to_string();
+                        let name = style_property_into_string(
+                            keyframes.extract(self.split_filename.as_deref()),
+                        );
                         self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                         Expression::new_string_literal(
                             SPAN,
@@ -753,9 +766,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let keyframes = ExtractKeyframes {
                     keyframes: keyframes_to_keyframes_style(&build_css_str()),
                 };
-                let name = keyframes
-                    .extract(self.split_filename.as_deref())
-                    .to_string();
+                let name =
+                    style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
 
                 self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
                 Expression::new_string_literal(
@@ -1119,10 +1131,6 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 "create" => Some(StylexFunction::Create),
                                 "props" => Some(StylexFunction::Props),
                                 "keyframes" => Some(StylexFunction::Keyframes),
-                                "firstThatWorks" => Some(StylexFunction::FirstThatWorks),
-                                "defineVars" => Some(StylexFunction::DefineVars),
-                                "createTheme" => Some(StylexFunction::CreateTheme),
-                                "include" => Some(StylexFunction::Include),
                                 _ => None,
                             };
                             if let Some(func) = func {

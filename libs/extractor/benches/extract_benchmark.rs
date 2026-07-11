@@ -215,6 +215,9 @@ const STYLEX_INPUT: &str = r"import stylex from '@stylexjs/stylex'
 const s = stylex.create({ base: { color: 'red', padding: 4 }, hovered: { color: 'blue' } })
 const c = stylex.props(s.base, s.hovered)";
 
+const PLAIN_CLASSNAME_INPUT: &str = r#"import {Box} from '@devup-ui/react'
+const a = <Box className="app-header brand logo" bg="red" />"#;
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("extract_small", |b| {
         b.iter(|| {
@@ -344,6 +347,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("test.tsx"),
                 black_box(GLOBAL_CSS_OBJECT_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_plain_classname", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(PLAIN_CLASSNAME_INPUT),
                 make_option(),
             )
             .unwrap()

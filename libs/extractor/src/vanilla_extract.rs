@@ -163,7 +163,11 @@ fn parse_font_face_json(json: &str) -> Vec<(String, String)> {
 
 /// Recursively transform theme contract object to CSS `var()` references
 /// Returns a new JS object with null leaves replaced by var(--path)
-fn transform_contract_to_vars(value: &JsValue, ctx: &mut Context, path: &[String]) -> JsValue {
+fn transform_contract_to_vars(
+    value: &JsValue,
+    ctx: &mut Context,
+    path: &mut Vec<String>,
+) -> JsValue {
     if let Some(obj) = value.as_object() {
         // Check if it's an array
         if obj.is_array() {
@@ -182,10 +186,11 @@ fn transform_contract_to_vars(value: &JsValue, ctx: &mut Context, path: &[String
                 };
 
                 if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
-                    let mut new_path = path.to_vec();
-                    new_path.push(key_string.clone());
+                    path.push(key_string.clone());
 
-                    let transformed = transform_contract_to_vars(&prop_value, ctx, &new_path);
+                    let transformed = transform_contract_to_vars(&prop_value, ctx, path);
+
+                    path.pop();
 
                     let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
                 }
@@ -206,7 +211,7 @@ fn extract_theme_vars(
     values: &JsValue,
     ctx: &mut Context,
     css_vars: &mut SmallVec<[(String, String); 8]>,
-    path: &[String],
+    path: &mut Vec<String>,
 ) {
     if let (Some(contract_obj), Some(values_obj)) = (contract.as_object(), values.as_object()) {
         // Both are objects - recurse into properties
@@ -222,10 +227,11 @@ fn extract_theme_vars(
                     contract_obj.get(js_string!(key_string.as_str()), ctx),
                     values_obj.get(js_string!(key_string.as_str()), ctx),
                 ) {
-                    let mut new_path = path.to_vec();
-                    new_path.push(key_string);
+                    path.push(key_string);
 
-                    extract_theme_vars(&contract_prop, &value_prop, ctx, css_vars, &new_path);
+                    extract_theme_vars(&contract_prop, &value_prop, ctx, css_vars, path);
+
+                    path.pop();
                 }
             }
         }
@@ -261,7 +267,7 @@ fn transform_theme_to_vars(
     placeholder_id: &str,
     css_vars: &mut SmallVec<[(String, String); 8]>,
     var_counter: &mut usize,
-    path: &[String],
+    path: &mut Vec<String>,
 ) -> JsValue {
     if let Some(obj) = value.as_object() {
         // Check if it's an array (shouldn't happen in theme objects, but handle it)
@@ -283,8 +289,7 @@ fn transform_theme_to_vars(
                 };
 
                 if let Ok(prop_value) = obj.get(js_string!(key_string.as_str()), ctx) {
-                    let mut new_path = path.to_vec();
-                    new_path.push(key_string.clone());
+                    path.push(key_string.clone());
 
                     let transformed = transform_theme_to_vars(
                         &prop_value,
@@ -292,8 +297,10 @@ fn transform_theme_to_vars(
                         placeholder_id,
                         css_vars,
                         var_counter,
-                        &new_path,
+                        path,
                     );
+
+                    path.pop();
 
                     let _ = new_obj.set(js_string!(key_string.as_str()), transformed, false, ctx);
                 }
@@ -400,6 +407,38 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
     let ret = Parser::new(&allocator, code, source_type).parse();
 
     let mut vars = Vec::new();
+    let mut collect_decl = |decl: &oxc_ast::ast::VariableDeclarator<'_>, exported: bool| {
+        let Some(init) = &decl.init else {
+            return;
+        };
+
+        // Check for array destructuring: const [themeClass, vars] = createTheme(...)
+        if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id {
+            if is_style_api_call(init) {
+                // First element is the theme class
+                if let Some(Some(first)) = array_pat.elements.first()
+                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = first
+                {
+                    vars.push((id.name.to_string(), VarInfo::StyleApi { exported }));
+                }
+                // Second element is the vars object - mark as ThemeVars
+                if let Some(Some(second)) = array_pat.elements.get(1)
+                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = second
+                {
+                    vars.push((id.name.to_string(), VarInfo::ThemeVars));
+                }
+            }
+        } else if let Some(name) = decl.id.get_identifier_name() {
+            if is_style_api_call(init) {
+                vars.push((name.to_string(), VarInfo::StyleApi { exported }));
+            } else if exported {
+                // Extract the original init expression using span
+                let span = init.span();
+                let init_code = &code[span.start as usize..span.end as usize];
+                vars.push((name.to_string(), VarInfo::Constant(init_code.to_string())));
+            }
+        }
+    };
 
     for stmt in &ret.program.body {
         match stmt {
@@ -409,79 +448,14 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
                     &export.declaration
                 {
                     for decl in &var_decl.declarations {
-                        if let Some(init) = &decl.init {
-                            // Check for array destructuring: const [themeClass, vars] = createTheme(...)
-                            if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id
-                            {
-                                if is_style_api_call(init) {
-                                    // First element is the theme class
-                                    if let Some(Some(first)) = array_pat.elements.first()
-                                        && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
-                                            first
-                                    {
-                                        vars.push((
-                                            id.name.to_string(),
-                                            VarInfo::StyleApi { exported: true },
-                                        ));
-                                    }
-                                    // Second element is the vars object - mark as ThemeVars
-                                    if let Some(Some(second)) = array_pat.elements.get(1)
-                                        && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
-                                            second
-                                    {
-                                        vars.push((id.name.to_string(), VarInfo::ThemeVars));
-                                    }
-                                }
-                            } else if let Some(name) = decl.id.get_identifier_name() {
-                                if is_style_api_call(init) {
-                                    vars.push((
-                                        name.to_string(),
-                                        VarInfo::StyleApi { exported: true },
-                                    ));
-                                } else {
-                                    // Extract the original init expression using span
-                                    let span = init.span();
-                                    let init_code = &code[span.start as usize..span.end as usize];
-                                    vars.push((
-                                        name.to_string(),
-                                        VarInfo::Constant(init_code.to_string()),
-                                    ));
-                                }
-                            }
-                        }
+                        collect_decl(decl, true);
                     }
                 }
             }
             // Non-exported variable declarations
             oxc_ast::ast::Statement::VariableDeclaration(var_decl) => {
                 for decl in &var_decl.declarations {
-                    if let Some(init) = &decl.init {
-                        // Check for array destructuring
-                        if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id {
-                            if is_style_api_call(init) {
-                                if let Some(Some(first)) = array_pat.elements.first()
-                                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
-                                        first
-                                {
-                                    vars.push((
-                                        id.name.to_string(),
-                                        VarInfo::StyleApi { exported: false },
-                                    ));
-                                }
-                                if let Some(Some(second)) = array_pat.elements.get(1)
-                                    && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) =
-                                        second
-                                {
-                                    vars.push((id.name.to_string(), VarInfo::ThemeVars));
-                                }
-                            }
-                        } else if let Some(name) = decl.id.get_identifier_name()
-                            && is_style_api_call(init)
-                        {
-                            vars.push((name.to_string(), VarInfo::StyleApi { exported: false }));
-                        }
-                    }
-                    // We don't need to track non-exported non-style constants
+                    collect_decl(decl, false);
                 }
             }
             _ => {}
@@ -1008,7 +982,7 @@ fn register_vanilla_extract_apis(
     let create_theme_contract_fn = unsafe {
         NativeFunction::from_closure(move |_this, args, ctx| {
             let contract_obj = args.get_or_undefined(0);
-            let transformed = transform_contract_to_vars(contract_obj, ctx, &[]);
+            let transformed = transform_contract_to_vars(contract_obj, ctx, &mut Vec::new());
             Ok(transformed)
         })
     };
@@ -1040,7 +1014,7 @@ fn register_vanilla_extract_apis(
                     &id,
                     &mut css_vars,
                     &mut var_counter,
-                    &[],
+                    &mut Vec::new(),
                 );
 
                 let vars_object_json = js_value_to_json(&vars_obj, ctx);
@@ -1067,7 +1041,7 @@ fn register_vanilla_extract_apis(
                 // Two args: createTheme(contract, values)
                 // Returns just the themeClass
                 let mut css_vars = SmallVec::new();
-                extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &[]);
+                extract_theme_vars(first_arg, second_arg, ctx, &mut css_vars, &mut Vec::new());
 
                 // Store the theme entry
                 collector_theme.borrow_mut().styles.themes.insert(
@@ -1142,7 +1116,7 @@ fn register_vanilla_extract_apis(
                 &placeholder_id,
                 &mut css_vars,
                 &mut var_counter,
-                &[],
+                &mut Vec::new(),
             );
 
             // Serialize the result object to JSON for code generation
@@ -2087,7 +2061,7 @@ export const lightTheme = createTheme(vars, {
         let array = boa_engine::object::builtins::JsArray::new(&mut context);
         let _ = array.push(boa_engine::JsValue::from(1), &mut context);
         let value = boa_engine::JsValue::from(array);
-        let result = super::transform_contract_to_vars(&value, &mut context, &[]);
+        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
         // Arrays should be returned as-is
         assert!(result.as_object().is_some());
     }
@@ -2107,7 +2081,7 @@ export const lightTheme = createTheme(vars, {
             "__test__",
             &mut css_vars,
             &mut counter,
-            &[],
+            &mut Vec::new(),
         );
         // Arrays should be returned as-is
         assert!(result.as_object().is_some());
@@ -2145,7 +2119,7 @@ export const lightTheme = createTheme(vars, {
         );
 
         let value = JsValue::from(obj);
-        let result = super::transform_contract_to_vars(&value, &mut context, &[]);
+        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
 
         // Should succeed and only process normalProp (Symbol should be skipped)
         assert!(result.as_object().is_some());
@@ -2197,7 +2171,7 @@ export const lightTheme = createTheme(vars, {
             "__test__",
             &mut css_vars,
             &mut counter,
-            &[],
+            &mut Vec::new(),
         );
 
         // Should succeed - Symbol property should be skipped
@@ -2249,7 +2223,13 @@ export const lightTheme = createTheme(vars, {
         let values = JsValue::from(values_obj);
         let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
 
-        super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
+        super::extract_theme_vars(
+            &contract,
+            &values,
+            &mut context,
+            &mut css_vars,
+            &mut Vec::new(),
+        );
 
         // Should extract only the string property, symbol should be skipped
         assert_eq!(css_vars.len(), 1);
@@ -2318,7 +2298,13 @@ export const lightTheme = createTheme(vars, {
         let contract = boa_engine::JsValue::from(boa_engine::js_string!("not-a-var"));
         let values = boa_engine::JsValue::from(boa_engine::js_string!("some-value"));
         let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
+        super::extract_theme_vars(
+            &contract,
+            &values,
+            &mut context,
+            &mut css_vars,
+            &mut Vec::new(),
+        );
         // No CSS vars should be extracted because contract isn't a var() string
         assert!(css_vars.is_empty());
     }
@@ -2723,7 +2709,7 @@ export const box = style({ padding: 8 })";
         let inner = boa_engine::JsValue::null();
         let _ = obj.set(0u32, inner, false, &mut context);
         let value = boa_engine::JsValue::from(obj);
-        let result = super::transform_contract_to_vars(&value, &mut context, &[]);
+        let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
         // Should handle index keys
         assert!(result.as_object().is_some());
     }
@@ -2750,7 +2736,13 @@ export const box = style({ padding: 8 })";
         let contract = boa_engine::JsValue::from(contract_obj);
         let values = boa_engine::JsValue::from(values_obj);
         let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
+        super::extract_theme_vars(
+            &contract,
+            &values,
+            &mut context,
+            &mut css_vars,
+            &mut Vec::new(),
+        );
         // Should process index keys
         assert!(css_vars.is_empty() || !css_vars.is_empty());
     }
@@ -2776,7 +2768,7 @@ export const box = style({ padding: 8 })";
             "__test__",
             &mut css_vars,
             &mut counter,
-            &[],
+            &mut Vec::new(),
         );
         // Should handle index keys
         assert!(result.as_object().is_some());
@@ -2790,7 +2782,13 @@ export const box = style({ padding: 8 })";
         // Use a number instead of string - will need to_string conversion
         let values = boa_engine::JsValue::from(42);
         let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();
-        super::extract_theme_vars(&contract, &values, &mut context, &mut css_vars, &[]);
+        super::extract_theme_vars(
+            &contract,
+            &values,
+            &mut context,
+            &mut css_vars,
+            &mut Vec::new(),
+        );
         // Should extract the value as string
         assert!(!css_vars.is_empty());
         assert_eq!(css_vars[0].0, "--num");
@@ -2811,7 +2809,7 @@ export const box = style({ padding: 8 })";
             "__test__",
             &mut css_vars,
             &mut counter,
-            &[],
+            &mut Vec::new(),
         );
         // Should have converted the number to string
         assert!(!css_vars.is_empty());
