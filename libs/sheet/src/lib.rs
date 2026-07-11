@@ -306,10 +306,11 @@ impl StyleSheet {
         if !self.global_css_files.contains(file) {
             self.global_css_files.insert(file.to_string());
         }
-        self.imports
-            .entry(file.to_string())
-            .or_default()
-            .insert(import.to_string());
+        let bucket = match self.imports.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.imports.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(import.to_string());
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
@@ -318,10 +319,11 @@ impl StyleSheet {
         if !self.global_css_files.contains(file) {
             self.global_css_files.insert(file.to_string());
         }
-        self.font_faces
-            .entry(file.to_string())
-            .or_default()
-            .insert(properties.clone());
+        let bucket = match self.font_faces.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.font_faces.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(properties.clone());
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
@@ -330,12 +332,13 @@ impl StyleSheet {
         if !self.global_css_files.contains(file) {
             self.global_css_files.insert(file.to_string());
         }
-        self.css
-            .entry(file.to_string())
-            .or_default()
-            .insert(StyleSheetCss {
-                css: css.to_string(),
-            })
+        let bucket = match self.css.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.css.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(StyleSheetCss {
+            css: css.to_string(),
+        })
     }
 
     pub fn add_keyframes(
@@ -344,12 +347,17 @@ impl StyleSheet {
         keyframes: BTreeMap<String, Vec<(String, String)>>,
         filename: Option<&str>,
     ) -> bool {
-        let map = self
-            .keyframes
-            .entry(filename.unwrap_or_default().to_string())
-            .or_default()
-            .entry(name.to_string())
-            .or_default();
+        let filename_key = filename.unwrap_or_default();
+        // Probe the outer filename key with borrowed &str first; allocate owned String only on miss.
+        let inner_map = match self.keyframes.get_mut(filename_key) {
+            Some(inner_map) => inner_map,
+            None => self.keyframes.entry(filename_key.to_string()).or_default(),
+        };
+        // Probe the inner name key with borrowed &str first; allocate owned String only on miss.
+        let map = match inner_map.get_mut(name) {
+            Some(map) => map,
+            None => inner_map.entry(name.to_string()).or_default(),
+        };
         if map == &keyframes {
             return false;
         }
@@ -532,8 +540,14 @@ impl StyleSheet {
                 }
 
                 ExtractStyleValue::Keyframes(keyframes) => {
+                    let name = match keyframes.extract(name_scope) {
+                        StyleProperty::ClassName(cls)
+                        | StyleProperty::Variable {
+                            class_name: cls, ..
+                        } => cls,
+                    };
                     if self.add_keyframes(
-                        &keyframes.extract(name_scope).to_string(),
+                        &name,
                         keyframes
                             .keyframes
                             .iter()
@@ -823,7 +837,12 @@ impl StyleSheet {
                         if let Some(layer) = &prop.layer
                             && let Some(StyleSelector::Global(selector, _)) = &prop.selector
                         {
-                            layered_styles.entry(layer.clone()).or_default().push((
+                            // Borrow-probe existing entry by layer.as_str() before cloning
+                            let bucket = match layered_styles.get_mut(layer.as_str()) {
+                                Some(bucket) => bucket,
+                                None => layered_styles.entry(layer.clone()).or_default(),
+                            };
+                            bucket.push((
                                 selector.clone(),
                                 prop.property.clone(),
                                 prop.value.clone(),

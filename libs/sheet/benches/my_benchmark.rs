@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use css::style_selector::StyleSelector;
 use sheet::StyleSheet;
 use sheet::theme::{ColorTheme, Theme, Typography};
@@ -157,6 +157,33 @@ fn criterion_benchmark(c: &mut Criterion) {
                 black_box("DevupTheme"),
             ))
         });
+    });
+
+    c.bench_function("sheet_add_property", |b| {
+        b.iter_batched(
+            || {
+                let mut sheet = StyleSheet::default();
+                sheet.set_theme(make_large_theme());
+                sheet
+            },
+            |mut sheet| {
+                for idx in 0..300 {
+                    let class_name = format!("c{idx}");
+                    let property = if idx % 2 == 0 { "color" } else { "background" };
+                    let value = if idx % 3 == 0 { "$color.1" } else { "red" };
+                    black_box(sheet.add_property(
+                        black_box(&class_name),
+                        black_box(property),
+                        black_box(0),
+                        black_box(value),
+                        black_box(None),
+                        black_box(None),
+                        black_box(Some("app.tsx")),
+                    ));
+                }
+            },
+            BatchSize::SmallInput,
+        );
     });
 }
 

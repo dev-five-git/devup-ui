@@ -438,7 +438,7 @@ pub fn sheet_to_classname(
     } else {
         filename
     };
-    let optimized = optimize_value(value.unwrap_or_default());
+    let optimized = value.map_or_else(String::new, optimize_value);
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
