@@ -264,6 +264,17 @@ pub fn optimize_value(value: &str) -> String {
     // value with no `;` can never match — skip the 4 strip_suffix probes entirely.
     // `saw_semi` was folded from the SAME post-wrap byte scan above (no later pass can
     // add a `;`), so this reuses that result instead of a fresh `contains(';')` scan.
+    //
+    // Do NOT `break` after a match. `expression_to_code` serializes the value inside
+    // an `ExpressionStatement`, so a quoted dynamic value can arrive carrying BOTH an
+    // inner `;` before its closing symbol AND the appended statement terminator — e.g.
+    // ``expression_to_code(`${color};`)`` yields ``` `${color};`; ```. Entry 0 (`;`)
+    // strips the bare terminator, leaving `` `${color};` `` whose inner `;` only the
+    // backtick entry can strip. The suffixes are therefore NOT mutually exclusive at
+    // the end of such a value, so every entry must get a turn (this mirrors the
+    // original pre-`SEMI_SUFFIXES` loop; a premature `break` regressed the
+    // `remove_semicolon` case). At most one strip fires per entry, and any strip
+    // leaves `ret` ending in `str_symbol`/`)`, so the pass still terminates in ≤4 steps.
     if saw_semi {
         for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
             if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
@@ -272,10 +283,6 @@ pub fn optimize_value(value: &str) -> String {
                 new_ret.push_str(base);
                 new_ret.push_str(str_symbol);
                 ret = new_ret;
-                // Entries are mutually exclusive at a string's end; the rebuilt
-                // `ret` now ends in `str_symbol` (never `;`), so no later probe
-                // can match. Stop scanning the remaining suffixes.
-                break;
             } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
                 let base = stripped.trim_end_matches(';');
                 let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
@@ -283,7 +290,6 @@ pub fn optimize_value(value: &str) -> String {
                 new_ret.push_str(str_symbol);
                 new_ret.push(')');
                 ret = new_ret;
-                break;
             }
         }
     }
@@ -468,6 +474,15 @@ mod tests {
     #[case("\"red;\"", "\"red\"")]
     #[case("'red;'", "'red'")]
     #[case("`red;`", "`red`")]
+    // `expression_to_code` serializes the value inside an `ExpressionStatement`,
+    // appending a statement `;`. A quoted value that already ends in an inner `;`
+    // therefore arrives with TWO trailing semicolons; BOTH must be stripped.
+    // Regression guard for `remove_semicolon` (a premature `break` used to keep the
+    // inner one, e.g. `` `${color};` ``).
+    #[case("`red;`;", "`red`")]
+    #[case("\"red;\";", "\"red\"")]
+    #[case("'red;';", "'red'")]
+    #[case("`${color};`;", "`${color}`")]
     #[case("(\"red;\")", "(\"red\")")]
     #[case("(`red;`)", "(`red`)")]
     #[case("('red;')", "('red')")]
