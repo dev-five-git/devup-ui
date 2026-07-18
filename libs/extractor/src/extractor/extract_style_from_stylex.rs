@@ -24,7 +24,7 @@ fn raw_static_style<'a>(
 ) -> ExtractStyleProp<'a> {
     ExtractStyleProp::Static(ExtractStyleValue::Static(ExtractStaticStyle {
         property,
-        value: optimize_value(value),
+        value: optimize_value(value).into_owned(),
         level: 0,
         selector,
         style_order: None,

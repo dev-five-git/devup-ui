@@ -245,29 +245,37 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
     }
 }
 
-pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
+/// Read a literal expression as a string, borrowing wherever possible.
+///
+/// String-literal and boolean-literal arms return `Cow::Borrowed` (the
+/// `StringLiteral`'s arena-backed `&'a str`, or a static `"true"`/`"false"`),
+/// so the overwhelmingly common static-value case (`bg="red"`, `_hover={{bg:
+/// "blue"}}`) reads its value with ZERO heap allocation. Only the number and
+/// evaluated-template arms — which must synthesize their text — return
+/// `Cow::Owned`. The borrow is tied to the arena lifetime `'a`, not the `&expr`
+/// reference, so a caller can drop the borrow and mutate `*expr` immediately
+/// after (see `as_visit`): the arena bytes outlive the node reassignment.
+pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     get_number_by_literal_expression(expr)
-        .map(|num| num.to_string())
+        .map(|num| Cow::Owned(num.to_string()))
         .or_else(|| match expr {
             Expression::ParenthesizedExpression(parenthesized) => {
                 get_string_by_literal_expression(&parenthesized.expression)
             }
-            Expression::StringLiteral(str) => Some(str.value.into()),
-            Expression::BooleanLiteral(bool) => Some(bool.value.to_string()),
+            Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
+            Expression::BooleanLiteral(bool) => {
+                Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
+            }
             Expression::TemplateLiteral(tmp) => {
                 let mut collect = String::new();
                 for (idx, q) in tmp.quasis.iter().enumerate() {
                     collect.push_str(q.value.raw.as_str());
                     if idx < tmp.expressions.len() {
-                        if let Some(value) = get_string_by_literal_expression(&tmp.expressions[idx])
-                        {
-                            collect.push_str(&value);
-                        } else {
-                            return None;
-                        }
+                        let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
+                        collect.push_str(&value);
                     }
                 }
-                Some(collect)
+                Some(Cow::Owned(collect))
             }
             _ => None,
         })
@@ -396,15 +404,14 @@ pub(super) fn merge_object_expressions<'a>(
 ///
 /// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
 /// allocation the owned variant pays on every prop just to read its key name.
-/// The literal fallback still allocates (`Cow::Owned`) because
-/// `get_string_by_literal_expression` builds an owned `String`.
+/// The literal fallback now also borrows where possible: `get_string_by_literal_expression`
+/// returns `Cow::Borrowed` for string/boolean-literal keys and only allocates
+/// (`Cow::Owned`) for numeric/template keys it must synthesize.
 pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
         Some(Cow::Borrowed(ident.name.as_str()))
-    } else if let Some(s) = key.as_expression()
-        && let Some(s) = get_string_by_literal_expression(s)
-    {
-        Some(Cow::Owned(s))
+    } else if let Some(s) = key.as_expression() {
+        get_string_by_literal_expression(s)
     } else {
         None
     }
@@ -574,20 +581,20 @@ mod tests {
 
         let expr = Expression::new_string_literal(SPAN, "hello", None, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("hello".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("hello")
         );
 
         let expr = Expression::new_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("42".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("42")
         );
 
         let expr = Expression::new_boolean_literal(SPAN, true, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("true".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("true")
         );
 
         let expr = Expression::new_template_literal(
@@ -608,8 +615,8 @@ mod tests {
             &builder,
         );
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("template".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("template")
         );
 
         let expr = Expression::new_template_literal(

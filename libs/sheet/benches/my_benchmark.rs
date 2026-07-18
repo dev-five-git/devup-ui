@@ -1,8 +1,18 @@
+#![allow(clippy::unwrap_used)]
+
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use css::class_map::reset_class_map;
+use css::file_map::reset_file_map;
 use css::style_selector::StyleSelector;
+use extractor::extract_style::extract_static_style::{ExtractStaticStyle, ThemeTokenResolution};
+use extractor::extract_style::extract_style_value::ExtractStyleValue;
+use extractor::{ExtractOption, extract};
+use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use sheet::theme::{ColorTheme, Theme, Typography};
+use std::collections::HashMap;
 use std::hint::black_box;
+use std::time::Duration;
 
 fn make_large_theme() -> Theme {
     let mut theme = Theme::default();
@@ -123,6 +133,63 @@ fn make_selector_sheet() -> StyleSheet {
     sheet
 }
 
+fn make_update_option() -> ExtractOption {
+    ExtractOption {
+        package: "@devup-ui/react".to_string(),
+        css_dir: "@devup-ui/react".to_string(),
+        single_css: true,
+        import_main_css: false,
+        import_aliases: HashMap::new(),
+    }
+}
+
+/// Build a realistic `FxHashSet<ExtractStyleValue>` covering every `update_styles`
+/// match arm. `ExtractDynamicStyle`/`ExtractKeyframes` live in `pub(super)` modules
+/// so they can only be produced through the public `extract` entry point; the
+/// remaining `Static` theme-token and `Typography` variants are added directly.
+fn make_update_styles_set() -> FxHashSet<ExtractStyleValue> {
+    // `extract` populates the global class/file maps; reset so this one-time
+    // (untimed) build is deterministic and does not leak into the timed loop.
+    reset_class_map();
+    reset_file_map();
+    let output = extract(
+        "app.tsx",
+        r"import {Box,Flex,keyframes} from '@devup-ui/react'
+keyframes({from:{opacity:0,transform:'scale(0.5)'},to:{opacity:1,transform:'scale(1)'}});
+const a = <Flex gap={2}>
+  <Box bg={dynamicColor} color={themeColor} w={widthVar} h={heightVar} />
+  <Box p={spacing} m={margin} _hover={{bg: hoverColor}} borderRadius={radius} />
+</Flex>",
+        make_update_option(),
+    )
+    .unwrap();
+    let mut styles = output.styles;
+
+    for idx in 0..40usize {
+        let token = idx % 80;
+        // Static theme-color tokens (default `CssVariable` resolution).
+        styles.insert(ExtractStyleValue::Static(ExtractStaticStyle::new(
+            if idx % 2 == 0 { "color" } else { "background" },
+            &format!("$color.{token}"),
+            (idx % 4) as u8,
+            None,
+        )));
+        // `FirstValue` length token — resolves via `get_default_length_value`.
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("width", &format!("$space{token}"), 0, None)
+                .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
+        ));
+        // `FirstValue` shadow token — resolves via `get_default_shadow_value`.
+        styles.insert(ExtractStyleValue::Static(
+            ExtractStaticStyle::new("box-shadow", &format!("$shadow{token}"), 0, None)
+                .with_theme_token_resolution(ThemeTokenResolution::FirstValue),
+        ));
+        // Typography variant (no-op arm, still walked each iteration).
+        styles.insert(ExtractStyleValue::Typography(format!("type{}", idx % 40)));
+    }
+    styles
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("theme_to_css_large", |b| {
         let theme = make_large_theme();
@@ -185,6 +252,52 @@ fn criterion_benchmark(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
+
+    // `update_styles` mutates the GLOBAL class/file naming maps, so a measured call
+    // is only deterministic when it starts from an empty registry. Resetting INSIDE
+    // the timed routine (not setup) makes every iteration an identical cold insert
+    // regardless of its position in the criterion batch — resetting in setup instead
+    // leaves only the first call per batch cold and the rest warm, and that cold/warm
+    // mix shifts with batch size (unstable medians). The reset is two `HashMap::clear`
+    // calls (~ns) next to a ~kElem insert, so it does not distort the signal.
+    // `SmallInput` keeps the themed-sheet setup batched (not interleaved with each
+    // timed call), matching the stable `sheet_add_property` structure; the longer
+    // measurement time keeps the median resilient to transient host load.
+    let mut group = c.benchmark_group("sheet_update_styles");
+    group.measurement_time(Duration::from_secs(10));
+    group.bench_function("single", |b| {
+        let styles = make_update_styles_set();
+        b.iter_batched(
+            || {
+                let mut sheet = StyleSheet::default();
+                sheet.set_theme(make_large_theme());
+                sheet
+            },
+            |mut sheet| {
+                reset_class_map();
+                reset_file_map();
+                black_box(sheet.update_styles(black_box(&styles), black_box("app.tsx"), true));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+    group.bench_function("per_file", |b| {
+        let styles = make_update_styles_set();
+        b.iter_batched(
+            || {
+                let mut sheet = StyleSheet::default();
+                sheet.set_theme(make_large_theme());
+                sheet
+            },
+            |mut sheet| {
+                reset_class_map();
+                reset_file_map();
+                black_box(sheet.update_styles(black_box(&styles), black_box("app.tsx"), false));
+            },
+            BatchSize::SmallInput,
+        );
+    });
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);

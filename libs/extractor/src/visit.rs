@@ -453,8 +453,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     self.split_filename.as_deref(),
                     &self.imports,
                 );
-                self.styles
-                    .extend(result.styles.into_iter().flat_map(|ex| ex.extract()));
+                self.styles.extend(
+                    result
+                        .styles
+                        .into_iter()
+                        .flat_map(ExtractStyleProp::into_extract),
+                );
                 *it = new_expr;
             }
         }
@@ -473,7 +477,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 let class_name =
                     gen_class_names(&self.ast, &mut styles, None, self.split_filename.as_deref());
                 self.styles
-                    .extend(styles.into_iter().flat_map(|ex| ex.extract()));
+                    .extend(styles.into_iter().flat_map(ExtractStyleProp::into_extract));
 
                 // Extract className string for props() resolution
                 let mut class_name_str = class_name.as_ref().map_or(String::new(), |expr| {
@@ -664,8 +668,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             );
 
                             // already set style order
-                            self.styles
-                                .extend(styles.into_iter().flat_map(|ex| ex.extract()));
+                            self.styles.extend(
+                                styles.into_iter().flat_map(ExtractStyleProp::into_extract),
+                            );
                             if let Some(cls) = class_name {
                                 cls
                             } else {
@@ -712,7 +717,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             if let ExtractStyleProp::Static(css) = &mut ex {
                                 css.set_style_order(style_order.unwrap_or(0));
                             }
-                            ex.extract()
+                            ex.into_extract()
                         }));
                         Expression::new_identifier(SPAN, "", &self.ast)
                     }
@@ -930,21 +935,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     }
 
                     // Collect styles from both branches for CSS output
-                    props_styles.iter().rev().for_each(|style| {
-                        self.styles.extend(style.extract().into_iter().map(|mut s| {
-                            if let Some(order) = consequent {
-                                s.set_style_order(*order);
-                            }
-                            s
-                        }));
+                    props_styles.into_iter().rev().for_each(|style| {
+                        self.styles
+                            .extend(style.into_extract().into_iter().map(|mut s| {
+                                if let Some(order) = consequent {
+                                    s.set_style_order(*order);
+                                }
+                                s
+                            }));
                     });
-                    alt_props_styles.iter().rev().for_each(|style| {
-                        self.styles.extend(style.extract().into_iter().map(|mut s| {
-                            if let Some(order) = alternate {
-                                s.set_style_order(*order);
-                            }
-                            s
-                        }));
+                    alt_props_styles.into_iter().rev().for_each(|style| {
+                        self.styles
+                            .extend(style.into_extract().into_iter().map(|mut s| {
+                                if let Some(order) = alternate {
+                                    s.set_style_order(*order);
+                                }
+                                s
+                            }));
                     });
                 } else {
                     let style_order = parsed_style_order.as_static();
@@ -1176,7 +1183,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 {
                     let property_name = name.name.as_str();
                     for disassembled in disassemble_property(property_name) {
-                        if duplicate_set.insert(disassembled.clone()) {
+                        // Probe with `contains`, run the body borrowing `&disassembled`
+                        // (it has no early exits), then MOVE the value into the set at
+                        // the end — instead of `insert(disassembled.clone())`, which
+                        // heap-copied the `Cow::Owned` String for every non-phf-mapped
+                        // camelCase prop. The lint's suggested single `insert` would
+                        // force that clone back, since the body still needs the name.
+                        #[allow(clippy::set_contains_or_insert)]
+                        if !duplicate_set.contains(&disassembled) {
                             if property_name == "styleOrder" {
                                 if let Some(value) = attr.value.as_ref() {
                                     parsed_style_order =
@@ -1202,6 +1216,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                                 props_styles.extend(styles.into_iter().rev());
                                 tag_name = tag.unwrap_or(tag_name);
                             }
+                            duplicate_set.insert(disassembled);
                         }
                     }
                 } else if let JSXAttributeItem::SpreadAttribute(spread) = &mut attr {
@@ -1259,21 +1274,23 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.styles.extend(tailwind_styles_con);
 
                 // Collect styles from both branches for CSS output
-                props_styles.iter().rev().for_each(|style| {
-                    self.styles.extend(style.extract().into_iter().map(|mut s| {
-                        if let Some(order) = consequent {
-                            s.set_style_order(*order);
-                        }
-                        s
-                    }));
+                props_styles.into_iter().rev().for_each(|style| {
+                    self.styles
+                        .extend(style.into_extract().into_iter().map(|mut s| {
+                            if let Some(order) = consequent {
+                                s.set_style_order(*order);
+                            }
+                            s
+                        }));
                 });
-                alt_props_styles.iter().rev().for_each(|style| {
-                    self.styles.extend(style.extract().into_iter().map(|mut s| {
-                        if let Some(order) = alternate {
-                            s.set_style_order(*order);
-                        }
-                        s
-                    }));
+                alt_props_styles.into_iter().rev().for_each(|style| {
+                    self.styles
+                        .extend(style.into_extract().into_iter().map(|mut s| {
+                            if let Some(order) = alternate {
+                                s.set_style_order(*order);
+                            }
+                            s
+                        }));
                 });
             } else {
                 let style_order = parsed_style_order.as_static();
@@ -1290,9 +1307,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 self.styles.extend(tailwind_styles);
 
                 props_styles
-                    .iter()
+                    .into_iter()
                     .rev()
-                    .for_each(|style| self.styles.extend(style.extract()));
+                    .for_each(|style| self.styles.extend(style.into_extract()));
             }
 
             if let Some(tag) = if let Expression::StringLiteral(str) = tag_name {

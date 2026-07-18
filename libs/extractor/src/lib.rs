@@ -136,6 +136,46 @@ impl<'a> ExtractStyleProp<'a> {
                 .collect(),
         }
     }
+
+    /// Owning variant of [`extract`](Self::extract): consumes `self` and moves
+    /// every collected [`ExtractStyleValue`] out instead of cloning it. Use at
+    /// call sites that discard the `ExtractStyleProp` right after extraction.
+    pub fn into_extract(self) -> Vec<ExtractStyleValue> {
+        match self {
+            ExtractStyleProp::Static(style) => vec![style],
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => match (consequent, alternate) {
+                // Exactly one branch: return its `into_extract()` directly,
+                // skipping the throwaway accumulator `Vec`.
+                (Some(branch), None) | (None, Some(branch)) => branch.into_extract(),
+                // Both branches present: preserve consequent-then-alternate
+                // order, presizing the accumulator to hold both results.
+                (Some(consequent), Some(alternate)) => {
+                    let mut consequent = consequent.into_extract();
+                    let mut alternate = alternate.into_extract();
+                    consequent.reserve(alternate.len());
+                    consequent.append(&mut alternate);
+                    consequent
+                }
+                (None, None) => vec![],
+            },
+            ExtractStyleProp::StaticArray(array) => array
+                .into_iter()
+                .flat_map(ExtractStyleProp::into_extract)
+                .collect(),
+            ExtractStyleProp::Expression { styles, .. } => styles,
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                map.into_values().flat_map(|s| s.into_extract()).collect()
+            }
+            ExtractStyleProp::Enum { map, .. } => map
+                .into_values()
+                .flat_map(|s| s.into_iter().flat_map(ExtractStyleProp::into_extract))
+                .collect(),
+        }
+    }
 }
 /// Style property for props
 #[derive(Debug)]

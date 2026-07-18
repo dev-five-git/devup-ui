@@ -235,7 +235,7 @@ pub fn css_to_style_literal(
                         {
                             // Emit static text before the marker, then the literal.
                             static_value.push_str(&value[cursor..marker_start]);
-                            static_value.push_str(literal_value.as_str());
+                            static_value.push_str(literal_value);
                             cursor = marker_end;
                         } else {
                             // Registered-but-unmatched or malformed marker: keep the
@@ -665,8 +665,12 @@ pub fn keyframes_to_keyframes_style(keyframes: &str) -> BTreeMap<String, Vec<Ext
 }
 
 pub fn optimize_css_block(css: &str) -> String {
-    // First pass: remove comments and normalize whitespace around structural chars
+    // First pass: remove comments and normalize whitespace around structural
+    // chars. `rm_css_comment` now returns `Cow`, so an already-clean block is
+    // borrowed straight from `css` with no whole-block copy; reborrow as `&str`
+    // for the slicing below.
     let cleaned = rm_css_comment(css);
+    let cleaned: &str = &cleaned;
 
     // Second pass: trim around {, }, ; and optimize declarations in one go
     let mut result = String::with_capacity(cleaned.len());
@@ -694,7 +698,7 @@ pub fn optimize_css_block(css: &str) -> String {
         buf.push_str(cleaned[segment_start..].trim());
         Cow::Owned(buf)
     } else {
-        Cow::Borrowed(cleaned.as_str())
+        Cow::Borrowed(cleaned)
     };
 
     let mut first_segment = true;

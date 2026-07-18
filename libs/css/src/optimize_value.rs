@@ -1,9 +1,8 @@
-use crate::{
-    COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{
-        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
-        ZERO_PERCENT_FUNCTION,
-    },
+use std::borrow::Cow;
+
+use crate::constant::{
+    COLOR_HASH, DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, F_SPACE_RE, INNER_TRIM_RE, NUM_TRIM_RE,
+    RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION, ZERO_RE,
 };
 
 /// (symbol, ";{symbol}", ";{symbol})") — compile-time constants, zero probe allocation
@@ -14,8 +13,75 @@ const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
     ("'", ";'", ";')"),
 ];
 
-pub fn optimize_value(value: &str) -> String {
+pub fn optimize_value(value: &str) -> Cow<'_, str> {
     let trimmed = value.trim();
+
+    // ONE pre-scan of `trimmed` for every byte flag the passes below key off.
+    // This subsumes the two former folds (the `--`-wrap space/comma probe and the
+    // post-wrap `(has_open_paren, saw_close_paren, has_double_dash, _, saw_semi)`
+    // fold) AND feeds a borrow fast path: every mutating pass in this function
+    // syntactically REQUIRES at least one of these bytes to fire —
+    //   - var() wrap: leading `--` (⇒ `has_double_dash`)
+    //   - INNER_TRIM_RE `\(\s*([^)]*?)\s*\)`: a `(`
+    //   - RM_MINUS_ZERO_RE `-0(px|…|\)|,)`: a `0`
+    //   - NUM_TRIM_RE `(\d(unit)?)\s+(\d)`: ASCII whitespace
+    //   - F_SPACE_RE `\s*,\s*` (gated on `contains(',')`): a `,`
+    //   - F_RGBA_RE / F_RGB_RE (gated on `contains("rgba(")`/`contains("rgb(")`): a `(`
+    //   - COLOR_HASH `#([0-9a-zA-Z]+)`: a `#`
+    //   - DOT_ZERO_RE / F_DOT_RE / ZERO_RE / ZERO_PERCENT (all inside `has_zero`): a `0`
+    //   - SEMI_SUFFIXES strip: a `;`
+    //   - unbalanced-paren fixup: a `(` or `)`
+    // so a value with NONE of them set is provably returned byte-for-byte
+    // unchanged and can be borrowed instead of copied into a fresh `String`.
+    // `has_space` (a literal `' '`) is tracked separately from `has_ws` (any
+    // ASCII whitespace) because the var()-wrap condition only rejects `' '`/`,`,
+    // exactly like the fold it replaces.
+    let mut has_space = false;
+    let mut has_ws = false;
+    let mut has_comma = false;
+    let mut pre_open_paren = false;
+    let mut pre_close_paren = false;
+    let mut has_double_dash = false;
+    let mut saw_semi = false;
+    let mut has_hash = false;
+    let mut has_zero = false;
+    let mut prev_dash = false;
+    for b in trimmed.bytes() {
+        match b {
+            b' ' => {
+                has_space = true;
+                has_ws = true;
+            }
+            b'\t' | b'\n' | b'\x0C' | b'\r' => has_ws = true,
+            b',' => has_comma = true,
+            b'(' => pre_open_paren = true,
+            b')' => pre_close_paren = true,
+            b';' => saw_semi = true,
+            b'#' => has_hash = true,
+            b'0' => has_zero = true,
+            b'-' if prev_dash => has_double_dash = true,
+            _ => {}
+        }
+        prev_dash = b == b'-';
+    }
+
+    // FAST PATH: no flag set ⇒ no pass can modify `trimmed` (see table above),
+    // so hand the caller a borrow of the trimmed input. This covers the dominant
+    // plain values (`red`, `14px`, `$primary`, `1.3s`) with zero allocation.
+    // A leading `--` raises `has_double_dash` (two consecutive dashes), so the
+    // var()-wrap path can never be skipped by this early return.
+    if !has_ws
+        && !has_comma
+        && !pre_open_paren
+        && !pre_close_paren
+        && !has_double_dash
+        && !saw_semi
+        && !has_hash
+        && !has_zero
+    {
+        return Cow::Borrowed(trimmed);
+    }
+
     let mut ret = String::with_capacity(trimmed.len() + 8);
 
     // Wrap CSS custom property names in var() when used as values
@@ -24,16 +90,8 @@ pub fn optimize_value(value: &str) -> String {
     // `trimmed` then `insert_str(0, "var(")` — the latter memmoves the whole
     // buffer right by 4 bytes on every custom-prop value. Output is byte-identical.
     // `--`-prefixed values are wrapped in `var()` only when they hold no space and no
-    // comma. Fold the former two independent full-string scans (`contains(' ')` then
-    // `contains(',')`) into ONE `bytes()` pass that raises both flags together, mirroring
-    // the `(has_open_paren, saw_close_paren, ...)` fold below. Gated on `starts_with("--")`
-    // so non-custom-prop values (the common case) pay nothing. Byte-identical.
-    let wrapped_custom_prop = trimmed.starts_with("--") && {
-        let (has_space, has_comma) = trimmed.bytes().fold((false, false), |(sp, cm), b| {
-            (sp || b == b' ', cm || b == b',')
-        });
-        !has_space && !has_comma
-    };
+    // comma; both flags come from the single pre-scan above.
+    let wrapped_custom_prop = trimmed.starts_with("--") && !has_space && !has_comma;
     if wrapped_custom_prop {
         ret.push_str("var(");
         ret.push_str(trimmed);
@@ -42,43 +100,21 @@ pub fn optimize_value(value: &str) -> String {
         ret.push_str(trimmed);
     }
 
-    // Track whether `ret` may still hold a `(` or `)` at the final unbalanced-paren
-    // fixup (lines below), AND whether it holds any `--` (used to skip RM_MINUS_ZERO_RE).
-    // Seeding these here from a SINGLE byte scan lets the dominant paren-free values
-    // (`red`, `14px`, `$primary`, `0px`, `#FF0000`) skip that final whole-string depth
-    // scan entirely. The paren flags are only ever allowed to *skip* when provably
-    // paren-free: seed `true` on any `(`/`)` present (or the var()-wrap that just added a
-    // pair) and never clear it — the rgba/rgb hex replacements only REMOVE parens, so
-    // leaving the flag set there is conservative (runs a redundant scan, never misses a
-    // needed fix). Output is byte-identical to always running the scan.
-    // Fold the former full-string `contains('(')` / `contains(')')` / `contains("--")`
-    // scans into ONE `bytes()` pass, mirroring the `(has_hash, has_zero, has_dot)` fold
-    // below. A `--` is two consecutive `-` bytes, so track a "previous byte was `-`" flag
-    // (`prev_dash`) and raise `has_double_dash` when a `-` immediately follows one.
-    // `has_open_paren` still gates the INNER_TRIM_RE step (which only fires on a `(`),
-    // `may_have_paren` still gates the final unbalanced-paren scan, and `has_double_dash`
-    // still gates RM_MINUS_ZERO_RE. Byte-identical: one scan instead of three per value.
-    // `saw_semi` records whether the post-wrap buffer holds a `;`. It is folded here
-    // (before any regex pass runs) and used far below to gate the trailing `;`-strip
-    // loop instead of a separate `ret.contains(';')` scan. This is provably byte-identical:
-    // every intervening replacement either inserts fixed literals with no `;`
-    // (INNER_TRIM `(${1})`, F_SPACE `,`, F_RGBA/F_RGB/COLOR_HASH hex, F_DOT `${1}.${2}`,
-    // ZERO `${1}0`, ZERO_PERCENT `%`) or re-emits bytes captured FROM `ret`
-    // (RM_MINUS_ZERO `0${1}`, NUM_TRIM `${1} ${3}`, DOT_ZERO `${1}0${2}`), so none can
-    // introduce a `;` that was not already present — a `false` seed stays `false`.
-    let (has_open_paren, saw_close_paren, has_double_dash, _, saw_semi) = ret.bytes().fold(
-        (false, false, false, false, false),
-        |(o, c, dd, prev_dash, semi), b| {
-            (
-                o || b == b'(',
-                c || b == b')',
-                dd || (b == b'-' && prev_dash),
-                b == b'-',
-                semi || b == b';',
-            )
-        },
-    );
-    let may_have_paren = wrapped_custom_prop || has_open_paren || saw_close_paren;
+    // Derive the post-wrap flags the passes below gate on from the pre-scan:
+    // the var() wrap only adds `var(` + `)` — one `(`, one `)`, no `;` — so
+    //   - `has_open_paren` / `may_have_paren` are seeded `true` by the wrap,
+    //   - `saw_semi` is unchanged by the wrap (folded before any regex pass runs;
+    //     no later replacement can introduce a `;`: every one either inserts fixed
+    //     literals with no `;` (INNER_TRIM `(${1})`, F_SPACE `,`, F_RGBA/F_RGB/
+    //     COLOR_HASH hex, F_DOT `${1}.${2}`, ZERO `${1}0`, ZERO_PERCENT `%`) or
+    //     re-emits bytes captured FROM `ret` (RM_MINUS_ZERO `0${1}`, NUM_TRIM
+    //     `${1} ${3}`, DOT_ZERO `${1}0${2}`)).
+    // The paren flags are only ever allowed to *skip* when provably paren-free:
+    // seeded `true` on any `(`/`)` present (or the var()-wrap) and never cleared —
+    // the rgba/rgb hex replacements only REMOVE parens, so leaving the flag set
+    // there is conservative (runs a redundant scan, never misses a needed fix).
+    let has_open_paren = wrapped_custom_prop || pre_open_paren;
+    let may_have_paren = wrapped_custom_prop || pre_open_paren || pre_close_paren;
 
     // When the var()-wrap above fired, the value started with `--`, so the flag is
     // trivially true. Otherwise a value can still carry an interior `--` (e.g. a
@@ -328,7 +364,7 @@ pub fn optimize_value(value: &str) -> String {
             }
         }
     }
-    ret
+    Cow::Owned(ret)
 }
 
 fn optimize_color(value: &str) -> String {

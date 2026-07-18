@@ -104,13 +104,15 @@ fn optimize_value_allocation_count_is_bounded() {
     // intermediate allocation on the heavier rgba/shadow/math paths — trips this
     // test instead of silently regressing memory use.
     //
-    // The measured count for the current implementation is 90 allocations over
+    // The measured count for the current implementation is 85 allocations over
     // this 10-input batch (the heavier rgba/rgb collapse, shadow-list and math
     // paths each allocate intermediate `String`s via `format!` inside their regex
-    // replacement closures). The bound below leaves ~20% headroom (so unrelated,
-    // legitimate allocation changes do not make the test brittle) while still
-    // catching a reintroduction of per-value heap churn on the common no-op path,
-    // which would push the count well past this ceiling.
+    // replacement closures; the unmodifiable values `red`, `14px` and `$primary`
+    // are returned as `Cow::Borrowed` with zero allocation). The bound below
+    // leaves headroom (so unrelated, legitimate allocation changes do not make
+    // the test brittle) while still catching a reintroduction of per-value heap
+    // churn on the common no-op path, which would push the count well past this
+    // ceiling.
     const MAX_ALLOCS: usize = 108;
 
     let allocs = measure_optimize_value_allocs();

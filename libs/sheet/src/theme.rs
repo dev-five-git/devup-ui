@@ -687,7 +687,7 @@ impl Theme {
                     .get(default_theme_key)
                     .map(|d| {
                         d.css_entries()
-                            .map(|(k, v)| (k.as_str(), optimize_value(v)))
+                            .map(|(k, v)| (k.as_str(), optimize_value(v).into_owned()))
                             .collect()
                     })
                     .unwrap_or_default()
@@ -699,11 +699,15 @@ impl Theme {
             // to a direct owned optimize. Otherwise borrow the precomputed value, recomputing only on
             // the rare map miss. Emitted bytes are identical to the old per-color branch.
             let resolve_default_optimized = |prop: &str, value: &str| -> Cow<str> {
+                // `optimize_value` now returns `Cow` borrowing from its `value`
+                // parameter; the closure's return borrow is tied to the captured
+                // map, so materialize the (rare) locally-optimized result. A
+                // borrowed result costs exactly the one `String` it always did.
                 if single_theme {
-                    Cow::Owned(optimize_value(value))
+                    Cow::Owned(optimize_value(value).into_owned())
                 } else {
                     default_optimized_colors.get(prop).map_or_else(
-                        || Cow::Owned(optimize_value(value)),
+                        || Cow::Owned(optimize_value(value).into_owned()),
                         |v| Cow::Borrowed(v.as_str()),
                     )
                 }
@@ -916,7 +920,7 @@ impl Theme {
                         .flat_map(|(name, values)| {
                             values.0.iter().enumerate().filter_map(move |(idx, dval)| {
                                 dval.as_ref()
-                                    .map(|d| ((name.as_str(), idx), optimize_value(d)))
+                                    .map(|d| ((name.as_str(), idx), optimize_value(d).into_owned()))
                             })
                         })
                         .collect()

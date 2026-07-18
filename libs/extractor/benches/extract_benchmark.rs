@@ -76,6 +76,14 @@ const a = <Flex direction="column" gap={4}>
 const TAILWIND_INPUT: &str = r#"import {Box} from '@devup-ui/react'
 const a = <Box className="flex flex-col gap-4 p-4 m-2 bg-red-500 text-white hover:bg-blue-500 focus:outline-none active:scale-95 disabled:opacity-50 md:flex-row lg:grid lg:grid-cols-3 xl:gap-8 rounded-lg shadow-lg border border-gray-200 w-full h-screen overflow-hidden items-center justify-between" />"#;
 
+// Box whose `className` is a *template literal* mixing static tailwind classes
+// with a conditional interpolation (`${active ? ... : ...}`). Exercises the
+// template-literal className extraction path (static-chunk handling plus the
+// `${expr}` conditional reconstruction) that the plain string-literal
+// `TAILWIND_INPUT` and `PLAIN_CLASSNAME_INPUT` benches never reach.
+const TAILWIND_TEMPLATE_INPUT: &str = r"import {Box} from '@devup-ui/react'
+const a = <Box className={`p-4 m-2 ${active ? 'text-red-500' : 'text-blue-500'} hover:bg-blue-500 rounded-lg`} />";
+
 const VANILLA_INPUT: &str = r"import { style } from '@devup-ui/react'
 const base = style({ padding: 12, borderRadius: 4 })
 const interactive = style({ cursor: 'pointer', transition: 'all 0.2s' })
@@ -251,6 +259,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             extract(
                 black_box("tailwind.tsx"),
                 black_box(TAILWIND_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_tailwind_template", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("tailwind.tsx"),
+                black_box(TAILWIND_TEMPLATE_INPUT),
                 make_option(),
             )
             .unwrap()

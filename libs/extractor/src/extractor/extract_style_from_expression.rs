@@ -337,14 +337,20 @@ pub fn extract_style_from_expression<'a>(
             && let Expression::ObjectExpression(obj) = expression
         {
             let mut props = vec![];
+            // The parent selector renders identically for every query in this
+            // at-rule object: format it once and clone the resulting `String`
+            // per iteration instead of re-running `Display` formatting. `query`
+            // is moved into the selector (it was previously cloned even though
+            // the original was dropped immediately after).
+            let parent = selector.as_ref().map(ToString::to_string);
             for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p
                     && let Some(query) = get_string_by_property_key(&o.key)
                 {
                     let at_selector = StyleSelector::At {
                         kind: at_rule.into(),
-                        query: query.clone(),
-                        selector: selector.as_ref().map(ToString::to_string),
+                        query,
+                        selector: parent.clone(),
                     };
                     props.extend(
                         extract_style_from_expression(
@@ -386,7 +392,7 @@ pub fn extract_style_from_expression<'a>(
             ExtractResult {
                 styles: if typo {
                     vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
-                        value,
+                        value.into_owned(),
                     ))]
                 } else if matches!(
                     literal_handling,

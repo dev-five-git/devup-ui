@@ -81,7 +81,10 @@ impl ExtractStaticStyle {
         } else {
             convert_value(value)
         };
-        optimize_value(normalized.as_ref())
+        // `optimize_value` returns `Cow` (borrowed when no optimization pass
+        // fires); this constructor stores an owned `String`, so materialize it
+        // here — a borrowed result costs exactly the one copy it always did.
+        optimize_value(normalized.as_ref()).into_owned()
     }
 
     /// create a new `ExtractStaticStyle`

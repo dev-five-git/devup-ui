@@ -87,7 +87,9 @@ impl ExtractDynamicStyle {
         identifier: &str,
         selector: Option<StyleSelector>,
     ) -> Self {
-        let optimized = optimize_value(identifier);
+        // `optimize_value` returns `Cow`; `strip_important` takes ownership (and
+        // the struct stores the `String`), so materialize the owned form here.
+        let optimized = optimize_value(identifier).into_owned();
         let (identifier, important) = strip_important(optimized);
         Self {
             property: property.to_string(),

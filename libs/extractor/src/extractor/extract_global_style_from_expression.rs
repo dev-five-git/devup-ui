@@ -91,7 +91,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {
-                                                url,
+                                                url: url.into_owned(),
                                                 file: file.to_string(),
                                             }),
                                         ));
@@ -112,7 +112,7 @@ pub fn extract_global_style_from_expression<'a>(
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
                                                             let it = disassemble_property(&property_name).map(|p| {
-                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { Cow::Borrowed(s.as_str()) };
+                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { Cow::Borrowed(&*s) };
                                                                 if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v.into_owned()) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())
@@ -191,7 +191,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     // Skip @layer property - it's not a CSS property, set layer on other styles
                                     if st.property() != "@layer" {
                                         if let Some(ref layer) = layer_name {
-                                            st.layer = Some(layer.clone());
+                                            st.layer = Some(layer.to_string());
                                         }
                                         styles.push(style);
                                     }

@@ -419,15 +419,35 @@ fn extract_tailwind_from_class_name<'a>(
     if let Some(Expression::TemplateLiteral(template)) = class_name_prop {
         let all_classes = extract_all_classes_from_template_literal(template);
         if has_tailwind_classes(&all_classes) {
-            // Build mapping from Tailwind class → generated class name
-            let class_mapping = build_tailwind_class_mapping(&all_classes, style_order, filename);
+            // Single pass over every class: parse ONCE, then build both the
+            // `Tailwind class → generated class name` mapping and the styles vec for
+            // CSS generation together. The previous code called
+            // `build_tailwind_class_mapping` and then `parse_tailwind_to_styles`, which
+            // re-parsed (and re-allocated a `TailwindClass` + `ExtractStaticStyle` for)
+            // every class a second time. Merging them keeps the mapping, the collected
+            // styles, and the ordered `extract()` side effects byte-identical while
+            // halving the per-class parse/allocate work.
+            let mut class_mapping: FxHashMap<String, String> = FxHashMap::default();
+            // Upper bound: at most one style per whitespace-separated class (the same
+            // presize `parse_tailwind_to_styles` used), so the vec never grow-reallocs.
+            let mut tailwind_styles: Vec<ExtractStyleValue> =
+                Vec::with_capacity(all_classes.bytes().filter(u8::is_ascii_whitespace).count() + 1);
+            for class in all_classes.split_whitespace() {
+                if let Some(parsed) = parse_single_class(class) {
+                    let mut static_style = parsed.to_static_style();
+                    if let Some(order) = style_order {
+                        static_style.style_order = Some(order);
+                    }
+                    // `ExtractStaticStyle::extract` always yields a `ClassName`, so this
+                    // records the exact mapping entry the two-pass version produced.
+                    if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
+                        class_mapping.insert(class.to_string(), generated);
+                    }
+                    tailwind_styles.push(ExtractStyleValue::Static(static_style));
+                }
+            }
 
             if !class_mapping.is_empty() {
-                // Collect all styles for CSS generation
-                let mut tailwind_styles = parse_tailwind_to_styles(&all_classes);
-                // Apply style_order to all extracted Tailwind styles
-                apply_style_order_to_styles(&mut tailwind_styles, style_order);
-
                 // Build new template literal with replaced class names
                 let new_template =
                     rebuild_template_literal_with_mapping(ast_builder, template, &class_mapping);
@@ -438,30 +458,6 @@ fn extract_tailwind_from_class_name<'a>(
     }
 
     (Vec::new(), None)
-}
-
-/// Build a mapping from Tailwind class name to generated devup-ui class name
-fn build_tailwind_class_mapping(
-    class_str: &str,
-    style_order: Option<u8>,
-    filename: Option<&str>,
-) -> FxHashMap<String, String> {
-    let mut mapping = FxHashMap::default();
-
-    for class in class_str.split_whitespace() {
-        if let Some(parsed) = parse_single_class(class) {
-            let mut static_style = parsed.to_static_style();
-            if let Some(order) = style_order {
-                static_style.style_order = Some(order);
-            }
-            // Extract to get the generated class name
-            if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
-                mapping.insert(class.to_string(), generated);
-            }
-        }
-    }
-
-    mapping
 }
 
 /// Rebuild a template literal, replacing Tailwind classes with generated class names

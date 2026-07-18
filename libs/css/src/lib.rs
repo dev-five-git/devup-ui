@@ -17,9 +17,7 @@ pub mod utils;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use crate::constant::{
-    COLOR_HASH, F_SPACE_RE, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY, ZERO_RE,
-};
+use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
 use crate::debug::is_debug;
 use crate::file_map::get_file_num_by_filename;
 use crate::num_to_nm_base::num_to_nm_base;
@@ -438,7 +436,10 @@ pub fn sheet_to_classname(
     } else {
         filename
     };
-    let optimized = value.map_or_else(String::new, optimize_value);
+    // `optimize_value` returns `Cow`: unmodifiable values (`red`, `14px`,
+    // `$primary`) borrow straight from `value` with zero allocation, and the
+    // key/result builders below only ever read `&optimized` as `&str`.
+    let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {

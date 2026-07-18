@@ -126,7 +126,7 @@ pub fn decompose_value_conditions(
     if let Some(s) = get_string_by_literal_expression(value) {
         return vec![DecomposedStyle {
             property: css_property.to_string(),
-            value: Some(s),
+            value: Some(s.into_owned()),
             selector: compose_selectors(parent_selectors),
         }];
     }
@@ -150,7 +150,7 @@ pub fn decompose_value_conditions(
             if let Some(s) = get_string_by_literal_expression(arg_expr) {
                 results.push(DecomposedStyle {
                     property: css_property.to_string(),
-                    value: Some(s),
+                    value: Some(s.into_owned()),
                     selector: compose_selectors(parent_selectors),
                 });
             }
@@ -167,7 +167,7 @@ pub fn decompose_value_conditions(
         if let Some(s) = get_string_by_literal_expression(inner) {
             return vec![DecomposedStyle {
                 property: css_property.to_string(),
-                value: Some(s),
+                value: Some(s.into_owned()),
                 selector: compose_selectors(parent_selectors),
             }];
         }

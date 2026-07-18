@@ -276,7 +276,12 @@ impl StyleSheet {
     ) -> bool {
         // register global css file for cache
         if let Some(StyleSelector::Global(_, file)) = selector {
-            self.global_css_files.insert(file.clone());
+            // Probe with the borrowed `&str` first so the owned `String` is only
+            // allocated on first registration, not on repeat (HMR/multi-property) calls.
+            // Matches the borrow-probe-first pattern in add_import/add_font_face/add_css.
+            if !self.global_css_files.contains(file.as_str()) {
+                self.global_css_files.insert(file.clone());
+            }
         }
 
         // Look the file bucket up once (one probe on the common existing-file path) and only
@@ -597,8 +602,9 @@ impl StyleSheet {
         shadows_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
-        // Collect a `BTreeSet<String>` from any iterator of borrowed key
-        // strings, cloning each key into the owned set. Unifies the four
+        // Collect a `BTreeSet<&str>` that borrows each key straight from the
+        // theme via `String::as_str` — no per-key `String` clone; the set only
+        // owns its tree nodes, not the key bytes. Unifies the four
         // near-identical key-collection blocks (color/typography/length/shadow
         // + the theme-variant set) so which keys go into which set stays
         // byte-identical while removing the copy-paste.
@@ -624,9 +630,11 @@ impl StyleSheet {
         {
             String::new()
         } else {
-            // `theme_keys` (a full clone of `colors.keys()` into a `BTreeSet<String>`) is
-            // only consumed by the `emit_keys(theme_keys, false)` below, so collect it lazily
-            // here — the empty-theme early-return above no longer allocates a set just to drop it.
+            // `theme_keys` borrows `colors.keys()` into a `BTreeSet<&str>` — no
+            // key clones, but building it still costs a tree allocation plus one
+            // node insert per key. It is only consumed by the
+            // `emit_keys(theme_keys, false)` below, so collect it lazily here: the
+            // empty-theme early-return above never builds this set just to drop it.
             let theme_keys = collect_keys(&mut self.theme.colors.keys());
             // Single emitter parameterized by whether each key is prefixed with
             // `$` (color/length/shadow interfaces) or not (typography/theme).

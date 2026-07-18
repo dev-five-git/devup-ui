@@ -1389,7 +1389,7 @@ fn append_non_style_code(
     // Generate @font-face rules
     let mut font_faces_sorted: Vec<_> = collected.font_faces.iter().collect();
     font_faces_sorted.sort_by_key(|(name, _)| *name);
-    for (_name, (json, font_family, _exported)) in font_faces_sorted {
+    for (_name, (json, font_family, _exported)) in &font_faces_sorted {
         let props = parse_font_face_json(json);
         let props_str = props
             .iter()
@@ -1436,52 +1436,54 @@ fn append_non_style_code(
     }
 
     // Generate styleVariants
-    let style_json_map: FxHashMap<&str, &str> = collected
-        .styles
-        .iter()
-        .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
-        .collect();
     let mut variants: Vec<_> = collected.style_variants.iter().collect();
-    variants.sort_by_key(|(name, _)| *name);
-    for (name, (variant_map, exported)) in variants {
-        let mut variant_entries: Vec<_> = variant_map.iter().collect();
-        variant_entries.sort_by_key(|(k, _)| *k);
-        let mut object_parts = Vec::new();
-        for (variant_key, variant) in variant_entries {
-            let value = if let Some(base_name) = &variant.base {
-                let mut merged_parts = Vec::new();
-                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
-                    let inner = base_json
+    if !variants.is_empty() {
+        let style_json_map: FxHashMap<&str, &str> = collected
+            .styles
+            .iter()
+            .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
+            .collect();
+        variants.sort_by_key(|(name, _)| *name);
+        for (name, (variant_map, exported)) in variants {
+            let mut variant_entries: Vec<_> = variant_map.iter().collect();
+            variant_entries.sort_by_key(|(k, _)| *k);
+            let mut object_parts = Vec::new();
+            for (variant_key, variant) in variant_entries {
+                let value = if let Some(base_name) = &variant.base {
+                    let mut merged_parts = Vec::new();
+                    if let Some(base_json) = style_json_map.get(base_name.as_str()) {
+                        let inner = base_json
+                            .trim()
+                            .trim_start_matches('{')
+                            .trim_end_matches('}')
+                            .trim();
+                        if !inner.is_empty() {
+                            merged_parts.push(inner.to_string());
+                        }
+                    }
+                    let own_inner = variant
+                        .styles_json
                         .trim()
                         .trim_start_matches('{')
                         .trim_end_matches('}')
                         .trim();
-                    if !inner.is_empty() {
-                        merged_parts.push(inner.to_string());
+                    if !own_inner.is_empty() {
+                        merged_parts.push(own_inner.to_string());
                     }
-                }
-                let own_inner = variant
-                    .styles_json
-                    .trim()
-                    .trim_start_matches('{')
-                    .trim_end_matches('}')
-                    .trim();
-                if !own_inner.is_empty() {
-                    merged_parts.push(own_inner.to_string());
-                }
-                format!("css({{{}}})", merged_parts.join(","))
-            } else {
-                format!("css({})", variant.styles_json)
-            };
-            object_parts.push(format!("  {variant_key}: {value}"));
+                    format!("css({{{}}})", merged_parts.join(","))
+                } else {
+                    format!("css({})", variant.styles_json)
+                };
+                object_parts.push(format!("  {variant_key}: {value}"));
+            }
+            let prefix = if *exported { "export " } else { "" };
+            code_parts.push(format!(
+                "{}const {} = {{\n{}\n}}",
+                prefix,
+                name,
+                object_parts.join(",\n")
+            ));
         }
-        let prefix = if *exported { "export " } else { "" };
-        code_parts.push(format!(
-            "{}const {} = {{\n{}\n}}",
-            prefix,
-            name,
-            object_parts.join(",\n")
-        ));
     }
 
     // Generate createVar declarations
@@ -1492,10 +1494,8 @@ fn append_non_style_code(
         code_parts.push(format!("{prefix}const {name} = \"{value}\""));
     }
 
-    // Generate fontFace declarations
-    let mut font_faces: Vec<_> = collected.font_faces.iter().collect();
-    font_faces.sort_by_key(|(name, _)| *name);
-    for (name, (_, font_family, exported)) in font_faces {
+    // Generate fontFace declarations (reuse the name-sorted vec built above)
+    for (name, (_, font_family, exported)) in &font_faces_sorted {
         let prefix = if *exported { "export " } else { "" };
         code_parts.push(format!("{prefix}const {name} = \"{font_family}\""));
     }
