@@ -20,7 +20,7 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^6",
+    "typescript": "^7",
     "@devup-ui/next-plugin": "workspace:^"
   }
 }

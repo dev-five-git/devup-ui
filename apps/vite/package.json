@@ -19,7 +19,7 @@
     "@devup-ui/vite-plugin": "workspace:^",
     "vite": "^8.1",
     "@vitejs/plugin-react": "^6.0",
-    "typescript": "^6",
+    "typescript": "^7",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19"
