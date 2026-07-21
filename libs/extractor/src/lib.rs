@@ -27,6 +27,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::path::PathBuf;
 
+/// `StyleX` package specifier recognized by the relevant-import gate in `extract`.
+const STYLEX_PACKAGE: &str = "@stylexjs/stylex";
+
 /// Import alias configuration for redirecting imports from other CSS-in-JS libraries
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportAlias {
@@ -105,16 +108,21 @@ impl<'a> ExtractStyleProp<'a> {
                 consequent,
                 alternate,
                 ..
-            } => {
-                let mut styles = vec![];
-                if let Some(consequent) = consequent {
-                    styles.append(&mut consequent.extract());
+            } => match (consequent, alternate) {
+                // Exactly one branch: return its `extract()` directly, skipping
+                // the throwaway accumulator `Vec` and the drain-into-it copy.
+                (Some(branch), None) | (None, Some(branch)) => branch.extract(),
+                // Both branches present: preserve consequent-then-alternate
+                // order, presizing the accumulator to hold both results.
+                (Some(consequent), Some(alternate)) => {
+                    let mut consequent = consequent.extract();
+                    let mut alternate = alternate.extract();
+                    consequent.reserve(alternate.len());
+                    consequent.append(&mut alternate);
+                    consequent
                 }
-                if let Some(alternate) = alternate {
-                    styles.append(&mut alternate.extract());
-                }
-                styles
-            }
+                (None, None) => vec![],
+            },
             ExtractStyleProp::StaticArray(array) => {
                 array.iter().flat_map(ExtractStyleProp::extract).collect()
             }
@@ -125,6 +133,46 @@ impl<'a> ExtractStyleProp<'a> {
             ExtractStyleProp::Enum { map, .. } => map
                 .values()
                 .flat_map(|s| s.iter().flat_map(ExtractStyleProp::extract))
+                .collect(),
+        }
+    }
+
+    /// Owning variant of [`extract`](Self::extract): consumes `self` and moves
+    /// every collected [`ExtractStyleValue`] out instead of cloning it. Use at
+    /// call sites that discard the `ExtractStyleProp` right after extraction.
+    pub fn into_extract(self) -> Vec<ExtractStyleValue> {
+        match self {
+            ExtractStyleProp::Static(style) => vec![style],
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => match (consequent, alternate) {
+                // Exactly one branch: return its `into_extract()` directly,
+                // skipping the throwaway accumulator `Vec`.
+                (Some(branch), None) | (None, Some(branch)) => branch.into_extract(),
+                // Both branches present: preserve consequent-then-alternate
+                // order, presizing the accumulator to hold both results.
+                (Some(consequent), Some(alternate)) => {
+                    let mut consequent = consequent.into_extract();
+                    let mut alternate = alternate.into_extract();
+                    consequent.reserve(alternate.len());
+                    consequent.append(&mut alternate);
+                    consequent
+                }
+                (None, None) => vec![],
+            },
+            ExtractStyleProp::StaticArray(array) => array
+                .into_iter()
+                .flat_map(ExtractStyleProp::into_extract)
+                .collect(),
+            ExtractStyleProp::Expression { styles, .. } => styles,
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                map.into_values().flat_map(|s| s.into_extract()).collect()
+            }
+            ExtractStyleProp::Enum { map, .. } => map
+                .into_values()
+                .flat_map(|s| s.into_iter().flat_map(ExtractStyleProp::into_extract))
                 .collect(),
         }
     }
@@ -180,7 +228,7 @@ pub fn extract(
 
     // Step 2: Check if code contains the target package (after transformation)
     let has_relevant_import = transformed_code.contains(option.package.as_str())
-        || transformed_code.contains("@stylexjs/stylex");
+        || transformed_code.contains(STYLEX_PACKAGE);
 
     if !has_relevant_import {
         // skip if not using package
@@ -193,8 +241,10 @@ pub fn extract(
     }
 
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
+    // `processed_code` is Some only when vanilla-extract generation succeeded;
+    // otherwise the untouched `transformed_code` is parsed directly (no copy).
     let is_ve_file = vanilla_extract::is_vanilla_extract_file(filename);
-    let (processed_code, is_vanilla_extract) = if is_ve_file {
+    let processed_code: Option<String> = if is_ve_file {
         // Use transformed code (with imports already pointing to @devup-ui/react)
         match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
         {
@@ -204,9 +254,10 @@ pub fn extract(
 
                 if referenced.is_empty() {
                     // No selector references, use simple code generation
-                    let generated =
-                        vanilla_extract::collected_styles_to_code(&collected, &option.package);
-                    (generated, true)
+                    Some(vanilla_extract::collected_styles_to_code(
+                        &collected,
+                        &option.package,
+                    ))
                 } else {
                     // Two-pass extraction: first extract referenced styles to get their class names
                     let partial_code = vanilla_extract::collected_styles_to_code_partial(
@@ -223,25 +274,21 @@ pub fn extract(
                     };
 
                     // Generate full code with class names substituted into selectors
-                    let generated = vanilla_extract::collected_styles_to_code_with_classes(
+                    Some(vanilla_extract::collected_styles_to_code_with_classes(
                         &collected,
                         &option.package,
                         &class_map,
-                    );
-                    (generated, true)
+                    ))
                 }
             }
-            Err(_) => {
-                // Fall back to treating as regular file if execution fails
-                (transformed_code.clone(), false)
-            }
+            // Fall back to treating as regular file if execution fails
+            Err(_) => None,
         }
     } else {
-        (transformed_code.clone(), false)
+        None
     };
-
     // For vanilla-extract files, if no styles were collected, return early
-    if is_vanilla_extract && processed_code.is_empty() {
+    if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
             styles: FxHashSet::default(),
             code: code.to_string(),
@@ -250,32 +297,19 @@ pub fn extract(
         });
     }
 
-    let code_to_parse = if is_vanilla_extract {
-        &processed_code
-    } else {
-        &transformed_code
-    };
+    let code_to_parse = processed_code.as_deref().unwrap_or(&transformed_code);
 
     let source_type = SourceType::from_path(filename)?;
-    // Bucket identity for CSS naming/emission (single-importer collapse). Identity
-    // when no canonical map is loaded. Real `filename` is kept for parse/sourcemap.
-    let bucket = canonical(filename);
-    // Global (shared-chunk) files are emitted like single-css: into devup-ui.css
-    // with prefix-less global naming, so styles shared across routes ship once.
-    let global = option.single_css || is_global(filename);
-    let css_file = if global {
-        format!("{}/devup-ui.css", option.css_dir)
-    } else {
-        format!(
-            "{}/devup-ui-{}.css",
-            option.css_dir,
-            get_file_num_by_filename(&bucket)
-        )
-    };
-    let mut css_files = vec![css_file.clone()];
-    if option.import_main_css && !global {
-        css_files.insert(0, format!("{}/devup-ui.css", option.css_dir));
+    let (bucket, global, css_file) = resolve_css_target(filename, &option);
+    let import_main = option.import_main_css && !global;
+    // Presize to the exact final length (1 target + optional main-css entry) and
+    // push the main-css path FIRST so the order (main-css, target) matches the
+    // former `insert(0, …)` without paying its O(n) element shift.
+    let mut css_files = Vec::with_capacity(1 + usize::from(import_main));
+    if import_main {
+        css_files.push(main_css_path(&option.css_dir));
     }
+    css_files.push(css_file.clone());
     let allocator = Allocator::default();
 
     let ParserReturn {
@@ -309,6 +343,39 @@ pub fn extract(
     })
 }
 
+/// Build the shared `devup-ui.css` main-css path for a given css directory.
+///
+/// Single source of truth for the `"{css_dir}/devup-ui.css"` literal, used both
+/// by the global/single-css branch of [`resolve_css_target`] and the
+/// `import_main_css` entry in [`extract`], so the shape never drifts between the
+/// two sites.
+fn main_css_path(css_dir: &str) -> String {
+    format!("{css_dir}/devup-ui.css")
+}
+
+/// Resolve the CSS bucket identity, global flag, and target CSS file for a
+/// source file.
+///
+/// The bucket is the identity for CSS naming/emission (single-importer
+/// collapse); identity when no canonical map is loaded. The real `filename` is
+/// kept for parse/sourcemap. Global (shared-chunk) files are emitted like
+/// single-css: into devup-ui.css with prefix-less global naming, so styles
+/// shared across routes ship once.
+fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, String) {
+    let bucket = canonical(filename);
+    let global = option.single_css || is_global(filename);
+    let css_file = if global {
+        main_css_path(&option.css_dir)
+    } else {
+        format!(
+            "{}/devup-ui-{}.css",
+            option.css_dir,
+            get_file_num_by_filename(&bucket)
+        )
+    };
+    (bucket, global, css_file)
+}
+
 /// Extract class names from generated code for specific style names
 /// Used for two-pass vanilla-extract processing to resolve selector references
 fn extract_class_map_from_code(
@@ -318,17 +385,7 @@ fn extract_class_map_from_code(
     style_names: &FxHashSet<String>,
 ) -> Result<FxHashMap<String, String>, Box<dyn Error>> {
     let source_type = SourceType::from_path(filename)?;
-    let bucket = canonical(filename);
-    let global = option.single_css || is_global(filename);
-    let css_file = if global {
-        format!("{}/devup-ui.css", option.css_dir)
-    } else {
-        format!(
-            "{}/devup-ui-{}.css",
-            option.css_dir,
-            get_file_num_by_filename(&bucket)
-        )
-    };
+    let (bucket, global, css_file) = resolve_css_target(filename, option);
     let css_files = vec![css_file];
     let allocator = Allocator::default();
 
@@ -353,7 +410,8 @@ fn extract_class_map_from_code(
 
         // Parse the output code to extract class name assignments
         // Format: const styleName = "className" or const styleName = "className1 className2"
-        let mut class_map = FxHashMap::default();
+        let mut class_map =
+            FxHashMap::with_capacity_and_hasher(style_names.len(), rustc_hash::FxBuildHasher);
         for line in result.code.lines() {
             let line = line.trim();
             if line.starts_with("const ") || line.starts_with("export const ") {
@@ -365,11 +423,13 @@ fn extract_class_map_from_code(
                 };
 
                 if let Some((name, rest)) = after_const.split_once(" = ") {
-                    // Extract value from "value" or "value";
-                    let value = rest
-                        .trim_start_matches('"')
-                        .trim_end_matches(';')
-                        .trim_end_matches('"');
+                    // Codegen emits `const name = "value";` (or bare `value`). Strip
+                    // the statement-terminating `;` first, then peel the wrapping
+                    // quotes off both ends in one pass. Byte-identical to the prior
+                    // `trim_start_matches('"').trim_end_matches(';').trim_end_matches('"')`
+                    // for the `"value"`, `"value";` and bare-`value` shapes Codegen
+                    // produces (no interior/leading `;`, symmetric wrapping quotes).
+                    let value = rest.trim_end_matches(';').trim_matches('"');
 
                     if style_names.contains(name) {
                         // For multi-class values like "a b", take the first class
@@ -2966,6 +3026,34 @@ import clsx from 'clsx'
                 bg: "$secondary"
               }
             }
+          }
+        }} />
+        "#,
+                ExtractOption {
+                    package: "@devup-ui/core".to_string(),
+                    css_dir: "@devup-ui/core".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn extract_selector_multibyte_key() {
+        reset_class_map();
+        reset_file_map();
+        // the last comma-separated segment must survive a multi-byte final char
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r#"import {Box} from '@devup-ui/core'
+        <Box selectors={{
+          "&:hover, .한글": {
+            mx: 1
           }
         }} />
         "#,
@@ -14374,13 +14462,15 @@ export { c as Lib };"#,
     fn test_combine_conditional_class_name() {
         use crate::prop_modify_utils::combine_conditional_class_name;
         use crate::utils::expression_to_code;
+        use oxc_ast::ast::{Expression, Str};
+        use oxc_ast::builder::AstBuilder;
         use oxc_span::SPAN;
 
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = AstBuilder::new(&allocator);
 
-        let make_cond = || builder.expression_identifier(SPAN, builder.str("cond"));
-        let make_str = |s| builder.expression_string_literal(SPAN, builder.str(s), None);
+        let make_cond = || Expression::new_identifier(SPAN, "cond", &builder);
+        let make_str = |s| Expression::new_string_literal(SPAN, Str::from(s), None, &builder);
 
         // (Some, Some) — both branches have classNames
         let result = combine_conditional_class_name(

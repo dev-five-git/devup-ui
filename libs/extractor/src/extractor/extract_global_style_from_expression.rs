@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::{
@@ -11,16 +12,18 @@ use crate::{
         GlobalExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
-    utils::{get_string_by_literal_expression, get_string_by_property_key},
+    utils::{
+        get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+    },
 };
 use css::{
     disassemble_property,
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value, wrap_url},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
     style_selector::StyleSelector,
 };
 use oxc_ast::{
-    AstBuilder,
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
+    builder::AstBuilder,
 };
 
 pub fn extract_global_style_from_expression<'a>(
@@ -57,16 +60,25 @@ pub fn extract_global_style_from_expression<'a>(
                                             }
                                         }
                                         if let Some(url) = url {
+                                            // Build `"url"` (+ optional ` query`)
+                                            // in one presized buffer instead of a
+                                            // nested `format!` that allocates a
+                                            // throwaway inner `String`.
+                                            let mut import_url = String::with_capacity(
+                                                url.len()
+                                                    + 2
+                                                    + query.as_ref().map_or(0, |q| q.len() + 1),
+                                            );
+                                            import_url.push('"');
+                                            import_url.push_str(&url);
+                                            import_url.push('"');
+                                            if let Some(query) = query {
+                                                import_url.push(' ');
+                                                import_url.push_str(&query);
+                                            }
                                             styles.push(ExtractStyleProp::Static(
                                                 ExtractStyleValue::Import(ExtractImport {
-                                                    url: format!(
-                                                        "\"{url}\"{}",
-                                                        if let Some(query) = query {
-                                                            format!(" {query}")
-                                                        } else {
-                                                            String::new()
-                                                        }
-                                                    ),
+                                                    url: import_url,
                                                     file: file.to_string(),
                                                 }),
                                             ));
@@ -79,7 +91,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {
-                                                url,
+                                                url: url.into_owned(),
                                                 file: file.to_string(),
                                             }),
                                         ));
@@ -96,13 +108,12 @@ pub fn extract_global_style_from_expression<'a>(
                                                     .iter()
                                                     .filter_map(|p| {
                                                         if let ObjectPropertyKind::ObjectProperty(o) = p
-                                                            && let Some(property_name) = get_string_by_property_key(&o.key)
+                                                            && let Some(property_name) = get_str_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
                                                         {
-                                                            let it = disassemble_property(&property_name).into_iter();
-                                                            let it = it.map(|p| {
-                                                                let v = if check_multi_css_optimize(&p) { optimize_mutli_css_value(&s) } else { s.clone() };
-                                                                if p == "src" { (p, wrap_url(&v)) } else { (p, v) }
+                                                            let it = disassemble_property(&property_name).map(|p| {
+                                                                let v = if check_multi_css_optimize(&p) { optimize_multi_css_value(&s) } else { Cow::Borrowed(&*s) };
+                                                                if p == "src" { (p.into_owned(), wrap_url(&v).into_owned()) } else { (p.into_owned(), v.into_owned()) }
                                                             });
                                                             Some(it.collect::<Vec<_>>())
                                                         } else {
@@ -148,7 +159,7 @@ pub fn extract_global_style_from_expression<'a>(
                             // Handle @layer property in globalStyle
                             // Extract the layer name if present in the style object
                             let layer_name = if let Expression::ObjectExpression(style_obj) = &o.value
-                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_string_by_property_key(&s.key) == Some("@layer".to_string())))
+                                && let Some(ObjectPropertyKind::ObjectProperty(sp)) = style_obj.properties.iter().find(|style_prop| matches!(style_prop, ObjectPropertyKind::ObjectProperty(s) if get_str_by_property_key(&s.key).as_deref() == Some("@layer")))
                             {
                                 get_string_by_literal_expression(&sp.value)
                             } else {
@@ -164,7 +175,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     if let Some(name) = name.strip_prefix("_") {
                                         StyleSelector::from(name).to_string().replace('&', "*")
                                     } else {
-                                        name.clone()
+                                        name
                                     },
                                     file.to_string(),
                                 )),
@@ -180,7 +191,7 @@ pub fn extract_global_style_from_expression<'a>(
                                     // Skip @layer property - it's not a CSS property, set layer on other styles
                                     if st.property() != "@layer" {
                                         if let Some(ref layer) = layer_name {
-                                            st.layer = Some(layer.clone());
+                                            st.layer = Some(layer.to_string());
                                         }
                                         styles.push(style);
                                     }

@@ -58,6 +58,6 @@
   },
   "devDependencies": {
     "@types/webpack": "^5.28",
-    "typescript": "^6.0"
+    "typescript": "^7.0"
   }
 }

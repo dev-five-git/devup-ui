@@ -6,8 +6,9 @@ import type {
 import type { ResponsiveValue } from '../responsive-value'
 
 export type DevupUiVendorProps = {
-  [key in keyof (VendorLonghandProperties &
-    VendorShorthandProperties)]: ResponsiveValue<
+  [
+    key in keyof (VendorLonghandProperties & VendorShorthandProperties)
+  ]: ResponsiveValue<
     (VendorLonghandProperties & VendorShorthandProperties)[key]
   >
 }

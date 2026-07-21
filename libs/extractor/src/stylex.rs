@@ -9,10 +9,6 @@ pub enum StylexFunction {
     Create,
     Props,
     Keyframes,
-    FirstThatWorks,
-    DefineVars,
-    CreateTheme,
-    Include,
 }
 
 /// Check if a call expression is `stylex.firstThatWorks()` or named `firstThatWorks()`.
@@ -73,7 +69,7 @@ pub fn is_types_call(callee: &Expression) -> bool {
 /// Convert camelCase CSS property name to kebab-case.
 /// `StyleX` uses standard CSS properties only — NO devup-ui shorthand expansion.
 pub fn normalize_stylex_property(name: &str) -> String {
-    css::utils::to_kebab_case(name)
+    css::utils::to_kebab_case(name).into_owned()
 }
 
 /// Intermediate selector parts collected during recursion.
@@ -130,7 +126,7 @@ pub fn decompose_value_conditions(
     if let Some(s) = get_string_by_literal_expression(value) {
         return vec![DecomposedStyle {
             property: css_property.to_string(),
-            value: Some(s),
+            value: Some(s.into_owned()),
             selector: compose_selectors(parent_selectors),
         }];
     }
@@ -154,7 +150,7 @@ pub fn decompose_value_conditions(
             if let Some(s) = get_string_by_literal_expression(arg_expr) {
                 results.push(DecomposedStyle {
                     property: css_property.to_string(),
-                    value: Some(s),
+                    value: Some(s.into_owned()),
                     selector: compose_selectors(parent_selectors),
                 });
             }
@@ -171,7 +167,7 @@ pub fn decompose_value_conditions(
         if let Some(s) = get_string_by_literal_expression(inner) {
             return vec![DecomposedStyle {
                 property: css_property.to_string(),
-                value: Some(s),
+                value: Some(s.into_owned()),
                 selector: compose_selectors(parent_selectors),
             }];
         }
@@ -227,31 +223,24 @@ fn compose_selectors(parts: &[SelectorPart]) -> Option<StyleSelector> {
         return None;
     }
 
-    let pseudos: Vec<&str> = parts
-        .iter()
-        .filter_map(|p| match p {
-            SelectorPart::Pseudo(s) => Some(s.as_str()),
-            SelectorPart::AtRule { .. } => None,
-        })
-        .collect();
+    let mut pseudo_str: Option<String> = None;
+    for p in parts {
+        if let SelectorPart::Pseudo(s) = p {
+            pseudo_str
+                .get_or_insert_with(|| String::from("&"))
+                .push_str(s);
+        }
+    }
 
-    let at_rules: Vec<(AtRuleKind, &str)> = parts
-        .iter()
-        .filter_map(|p| match p {
-            SelectorPart::AtRule { kind, query } => Some((*kind, query.as_str())),
-            SelectorPart::Pseudo(_) => None,
-        })
-        .collect();
+    // Last at-rule wins; read it with a reverse scan (no intermediate Vec).
+    let last_at_rule = parts.iter().rev().find_map(|p| match p {
+        SelectorPart::AtRule { kind, query } => Some((*kind, query.as_str())),
+        SelectorPart::Pseudo(_) => None,
+    });
 
-    let pseudo_str = if pseudos.is_empty() {
-        None
-    } else {
-        Some(format!("&{}", pseudos.join("")))
-    };
-
-    if let Some((kind, query)) = at_rules.last() {
+    if let Some((kind, query)) = last_at_rule {
         Some(StyleSelector::At {
-            kind: *kind,
+            kind,
             query: query.to_string(),
             selector: pseudo_str,
         })

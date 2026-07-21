@@ -2,12 +2,14 @@ export {
   type AtomHoistPlan,
   buildCanonicalMap,
   type BuildCanonicalMapOptions,
+  buildStaticImportGraph,
   computeFileReach,
   type ComputeFileReachOptions,
   computeFileRoutes,
   type ComputeFileRoutesOptions,
   listSourceFiles,
   planAtomHoist,
+  type StaticImportGraph,
 } from './import-graph'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'
 export {

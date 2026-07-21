@@ -78,13 +78,27 @@ pub fn get_file_routes() -> HashMap<String, HashSet<u32>> {
 #[must_use]
 pub fn route_count_for_files<'a>(files: impl IntoIterator<Item = &'a str>) -> usize {
     with_file_routes(|map| {
-        let mut routes: HashSet<u32> = HashSet::new();
-        for file in files {
-            if let Some(set) = map.get(file) {
-                routes.extend(set.iter().copied());
+        // Collect the referenced route sets; the vast majority of atoms are referenced by a
+        // single file, where the distinct-route count is just that file's set length and no
+        // union `HashSet` allocation is needed.
+        let mut sets = files.into_iter().filter_map(|file| map.get(file));
+        let Some(first) = sets.next() else {
+            return 0;
+        };
+        match sets.next() {
+            None => first.len(),
+            Some(second) => {
+                // Pre-size the scratch set to hold at least the first two route sets so the
+                // initial `extend` of `second` does not trigger a rehash-growth reallocation.
+                let mut routes: HashSet<u32> = HashSet::with_capacity(first.len() + second.len());
+                routes.extend(first.iter().copied());
+                routes.extend(second.iter().copied());
+                for set in sets {
+                    routes.extend(set.iter().copied());
+                }
+                routes.len()
             }
         }
-        routes.len()
     })
 }
 

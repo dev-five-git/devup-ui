@@ -1,38 +1,75 @@
-use oxc_allocator::{Allocator, CloneIn};
+use std::borrow::Cow;
+
+use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
-    ast::{Argument, Expression, JSXAttributeValue, PropertyKey, Statement},
+    ast::{
+        Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
+        JSXAttributeValue, ObjectPropertyKind, Program, PropertyKey, Statement,
+        StaticMemberExpression,
+    },
+    builder::AstBuilder,
 };
 
 use oxc_codegen::{Codegen, CodegenOptions};
+#[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
-/// Convert a value to a pixel value
-pub(super) fn convert_value(value: &str) -> String {
-    value
-        .parse::<f64>()
-        .map_or_else(|_| value.to_string(), |num| format!("{}px", num * 4.0))
+/// Convert a value to a pixel value.
+///
+/// Returns `Cow::Borrowed(value)` for the overwhelmingly common non-numeric
+/// case (e.g. `red`, `100%`, `8px`) so the caller can feed the borrowed input
+/// straight into `optimize_value` without an intermediate heap copy. Only the
+/// numeric branch (`4` → `16px`) allocates, exactly as before.
+pub(super) fn convert_value(value: &str) -> Cow<'_, str> {
+    value.parse::<f64>().map_or_else(
+        |_| Cow::Borrowed(value),
+        |num| Cow::Owned(format!("{}px", num * 4.0)),
+    )
+}
+
+/// Loop-invariant source type for the throwaway codegen `Program`. `d_ts()` is a
+/// `const fn`, so this is a compile-time constant reused across every call
+/// instead of being re-derived per invocation.
+const CODEGEN_SOURCE_TYPE: SourceType = SourceType::d_ts();
+
+/// Build the loop-invariant minify codegen options in one place so the intent
+/// (minified output) is documented and the config lives outside the per-call
+/// body. Options are cheap to build (no heap allocation for the empty defaults).
+#[inline]
+fn minify_codegen_options() -> CodegenOptions {
+    CodegenOptions {
+        minify: true,
+        ..Default::default()
+    }
 }
 
 pub(super) fn expression_to_code(expression: &Expression) -> String {
     let allocator = Allocator::default();
-    let mut parsed = Parser::new(&allocator, "", SourceType::d_ts()).parse();
-    parsed.program.body.insert(
-        0,
-        Statement::ExpressionStatement(
-            oxc_ast::AstBuilder::new(&allocator)
-                .alloc_expression_statement(SPAN, expression.clone_in(&allocator)),
-        ),
+    let builder = oxc_ast::builder::AstBuilder::new(&allocator);
+    // Build the one-statement `Program` directly instead of parsing an empty
+    // source and inserting into it — skips a full parse round-trip per call.
+    let mut body = oxc_allocator::Vec::with_capacity_in(1, &builder);
+    body.push(Statement::ExpressionStatement(ExpressionStatement::boxed(
+        SPAN,
+        expression.clone_in(&allocator),
+        &builder,
+    )));
+    let program = Program::new(
+        SPAN,
+        CODEGEN_SOURCE_TYPE,
+        "",
+        oxc_allocator::Vec::new_in(&builder),
+        None,
+        oxc_allocator::Vec::new_in(&builder),
+        body,
+        &builder,
     );
 
     Codegen::new()
-        .with_options(CodegenOptions {
-            minify: true,
-            ..Default::default()
-        })
-        .build(&parsed.program)
+        .with_options(minify_codegen_options())
+        .build(&program)
         .code
 }
 
@@ -86,35 +123,17 @@ pub(super) fn jsx_expression_to_style_order<'a>(
     expr: &JSXAttributeValue<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // First try static resolution
-    if let Some(n) = jsx_expression_to_number(expr) {
-        return ParsedStyleOrder::Static(n as u8);
+    match expr {
+        JSXAttributeValue::ExpressionContainer(ec) => ec
+            .expression
+            .as_expression()
+            .map_or(ParsedStyleOrder::None, |e| {
+                expression_to_style_order(e, allocator)
+            }),
+        _ => jsx_expression_to_number(expr).map_or(ParsedStyleOrder::None, |n| {
+            ParsedStyleOrder::Static(n as u8)
+        }),
     }
-    // Check for conditional or logical expression
-    if let JSXAttributeValue::ExpressionContainer(ec) = expr {
-        if let Some(Expression::ConditionalExpression(cond)) = ec.expression.as_expression() {
-            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-            return ParsedStyleOrder::Conditional {
-                condition: cond.test.clone_in(allocator),
-                consequent,
-                alternate,
-            };
-        }
-        // Handle logical &&: styleOrder={a === 1 && 5}
-        // truthy → right side (number), falsy → None (no styleOrder)
-        if let Some(Expression::LogicalExpression(logical)) = ec.expression.as_expression()
-            && logical.operator == LogicalOperator::And
-        {
-            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-            return ParsedStyleOrder::Conditional {
-                condition: logical.left.clone_in(allocator),
-                consequent,
-                alternate: None,
-            };
-        }
-    }
-    ParsedStyleOrder::None
 }
 
 /// Parse styleOrder from an Expression (for call expression / object path), supporting conditionals
@@ -122,40 +141,40 @@ pub(super) fn expression_to_style_order<'a>(
     expr: &Expression<'a>,
     allocator: &'a Allocator,
 ) -> ParsedStyleOrder<'a> {
-    // First try static resolution
-    if let Some(n) = get_number_by_literal_expression(expr) {
-        return ParsedStyleOrder::Static(n as u8);
+    // Inspect `expr` ONCE. A numeric-literal probe (`get_number_by_literal_expression`)
+    // never matches a conditional/logical node, so folding it into the default arm is
+    // behavior-identical to the former "static probe first, then re-match" flow while
+    // avoiding the redundant second inspection of `expr`.
+    match expr {
+        // Conditional: `cond ? a : b` → Conditional with both branches probed.
+        Expression::ConditionalExpression(cond) => {
+            let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
+            let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
+            ParsedStyleOrder::Conditional {
+                condition: cond.test.clone_in(allocator),
+                consequent,
+                alternate,
+            }
+        }
+        // Logical &&: `a === 1 && 5` → truthy → right side (number), falsy → None.
+        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+            let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
+            ParsedStyleOrder::Conditional {
+                condition: logical.left.clone_in(allocator),
+                consequent,
+                alternate: None,
+            }
+        }
+        // Otherwise fall back to static numeric-literal resolution.
+        _ => get_number_by_literal_expression(expr).map_or(ParsedStyleOrder::None, |n| {
+            ParsedStyleOrder::Static(n as u8)
+        }),
     }
-    // Check for conditional expression
-    if let Expression::ConditionalExpression(cond) = expr {
-        let consequent = get_number_by_literal_expression(&cond.consequent).map(|n| n as u8);
-        let alternate = get_number_by_literal_expression(&cond.alternate).map(|n| n as u8);
-        return ParsedStyleOrder::Conditional {
-            condition: cond.test.clone_in(allocator),
-            consequent,
-            alternate,
-        };
-    }
-    // Handle logical &&: styleOrder: a === 1 && 5
-    // truthy → right side (number), falsy → None (no styleOrder)
-    if let Expression::LogicalExpression(logical) = expr
-        && logical.operator == LogicalOperator::And
-    {
-        let consequent = get_number_by_literal_expression(&logical.right).map(|n| n as u8);
-        return ParsedStyleOrder::Conditional {
-            condition: logical.left.clone_in(allocator),
-            consequent,
-            alternate: None,
-        };
-    }
-    ParsedStyleOrder::None
 }
 
 pub(super) fn jsx_expression_to_number(expr: &JSXAttributeValue) -> Option<f64> {
     match expr {
-        JSXAttributeValue::StringLiteral(sl) => get_number_by_literal_expression(
-            &Expression::StringLiteral(sl.clone_in(&Allocator::default())),
-        ),
+        JSXAttributeValue::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
         JSXAttributeValue::ExpressionContainer(ec) => ec
             .expression
             .as_expression()
@@ -170,13 +189,51 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
             get_number_by_literal_expression(&parenthesized.expression)
         }
         Expression::StringLiteral(sl) => sl.value.parse::<f64>().ok(),
-        Expression::TemplateLiteral(tmp) => tmp
-            .quasis
-            .iter()
-            .map(|q| q.value.raw.to_string())
-            .collect::<String>()
-            .parse::<f64>()
-            .ok(),
+        Expression::TemplateLiteral(tmp) => {
+            // `f64::from_str` succeeds only when every byte belongs to the
+            // float grammar: ASCII digits, sign/exponent punctuation, or the
+            // letters of the `inf`/`infinity`/`nan` keywords. An allocation-free
+            // scan that is STRICTLY more permissive than the parser lets us bail
+            // out (returning `None`) on the common non-numeric case — e.g. a
+            // `${x}px` template's quasis containing `p`/`x` — without collecting
+            // the quasis into a throwaway `String`. Whenever the parser would
+            // have returned `Some`, every byte passes this scan, so the result
+            // stays byte-identical.
+            let can_be_float = tmp.quasis.iter().all(|q| {
+                q.value.raw.bytes().all(|b| {
+                    b.is_ascii_digit()
+                        || matches!(
+                            b,
+                            b'.' | b'+'
+                                | b'-'
+                                | b'e'
+                                | b'E'
+                                | b'i'
+                                | b'I'
+                                | b'n'
+                                | b'N'
+                                | b'f'
+                                | b'F'
+                                | b'a'
+                                | b'A'
+                                | b't'
+                                | b'T'
+                                | b'y'
+                                | b'Y'
+                        )
+                })
+            });
+            if can_be_float {
+                tmp.quasis
+                    .iter()
+                    .map(|q| q.value.raw.as_str())
+                    .collect::<String>()
+                    .parse::<f64>()
+                    .ok()
+            } else {
+                None
+            }
+        }
         Expression::NumericLiteral(num) => Some(num.value),
         Expression::UnaryExpression(unary) => get_number_by_literal_expression(&unary.argument)
             .and_then(|num| match unary.operator {
@@ -188,29 +245,37 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
     }
 }
 
-pub(super) fn get_string_by_literal_expression(expr: &Expression) -> Option<String> {
+/// Read a literal expression as a string, borrowing wherever possible.
+///
+/// String-literal and boolean-literal arms return `Cow::Borrowed` (the
+/// `StringLiteral`'s arena-backed `&'a str`, or a static `"true"`/`"false"`),
+/// so the overwhelmingly common static-value case (`bg="red"`, `_hover={{bg:
+/// "blue"}}`) reads its value with ZERO heap allocation. Only the number and
+/// evaluated-template arms — which must synthesize their text — return
+/// `Cow::Owned`. The borrow is tied to the arena lifetime `'a`, not the `&expr`
+/// reference, so a caller can drop the borrow and mutate `*expr` immediately
+/// after (see `as_visit`): the arena bytes outlive the node reassignment.
+pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     get_number_by_literal_expression(expr)
-        .map(|num| num.to_string())
+        .map(|num| Cow::Owned(num.to_string()))
         .or_else(|| match expr {
             Expression::ParenthesizedExpression(parenthesized) => {
                 get_string_by_literal_expression(&parenthesized.expression)
             }
-            Expression::StringLiteral(str) => Some(str.value.into()),
-            Expression::BooleanLiteral(bool) => Some(bool.value.to_string()),
+            Expression::StringLiteral(str) => Some(Cow::Borrowed(str.value.as_str())),
+            Expression::BooleanLiteral(bool) => {
+                Some(Cow::Borrowed(if bool.value { "true" } else { "false" }))
+            }
             Expression::TemplateLiteral(tmp) => {
-                let mut collect = vec![];
+                let mut collect = String::new();
                 for (idx, q) in tmp.quasis.iter().enumerate() {
-                    collect.push(q.value.raw.to_string());
+                    collect.push_str(q.value.raw.as_str());
                     if idx < tmp.expressions.len() {
-                        if let Some(value) = get_string_by_literal_expression(&tmp.expressions[idx])
-                        {
-                            collect.push(value);
-                        } else {
-                            return None;
-                        }
+                        let value = get_string_by_literal_expression(&tmp.expressions[idx])?;
+                        collect.push_str(&value);
                     }
                 }
-                Some(collect.join(""))
+                Some(Cow::Owned(collect))
             }
             _ => None,
         })
@@ -224,64 +289,64 @@ pub(super) fn wrap_array_filter<'a>(
         return None;
     }
     if expr.len() == 1 {
-        return Some(expr[0].clone_in(builder.allocator));
+        return Some(expr[0].clone_in(builder.allocator()));
     }
 
     // 1. Create ArrayExpression: [a, b, ...]
     let array_elements = oxc_allocator::Vec::from_iter_in(
-        expr.iter().map(|e| e.clone_in(builder.allocator).into()),
-        builder.allocator,
+        expr.iter().map(|e| e.clone_in(builder.allocator()).into()),
+        builder,
     );
-    let array_expr = builder.expression_array(SPAN, array_elements);
+    let array_expr = Expression::new_array_expression(SPAN, array_elements, builder);
 
     // 2. Create StaticMemberExpression: array.filter
-    let filter_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+    let filter_member = Expression::StaticMemberExpression(StaticMemberExpression::boxed(
         SPAN,
         array_expr,
-        builder.identifier_name(SPAN, builder.str("filter")),
+        IdentifierName::new(SPAN, "filter", builder),
         false,
+        builder,
     ));
 
     // 3. Create CallExpression: array.filter(Boolean)
-    let filter_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
-        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
-    >>(
+    let filter_call = Expression::CallExpression(CallExpression::boxed(
         SPAN,
         filter_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(
-                builder.expression_identifier(SPAN, builder.str("Boolean")),
-            )],
-            builder.allocator,
-        ),
+        {
+            let mut args = oxc_allocator::Vec::with_capacity_in(1, builder);
+            args.push(Argument::from(Expression::new_identifier(
+                SPAN, "Boolean", builder,
+            )));
+            args
+        },
         false,
+        builder,
     ));
 
     // 4. Create StaticMemberExpression: array.filter(Boolean).join
-    let join_member = Expression::StaticMemberExpression(builder.alloc_static_member_expression(
+    let join_member = Expression::StaticMemberExpression(StaticMemberExpression::boxed(
         SPAN,
         filter_call,
-        builder.identifier_name(SPAN, builder.str("join")),
+        IdentifierName::new(SPAN, "join", builder),
         false,
+        builder,
     ));
 
     // 5. Create CallExpression: array.filter(Boolean).join()
-    let join_call = Expression::CallExpression(builder.alloc_call_expression::<Option<
-        oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>,
-    >>(
+    let join_call = Expression::CallExpression(CallExpression::boxed(
         SPAN,
         join_member,
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        oxc_allocator::Vec::from_iter_in(
-            vec![Argument::from(builder.expression_string_literal(
-                SPAN,
-                builder.str(" "),
-                None,
-            ))],
-            builder.allocator,
-        ),
+        {
+            let mut args = oxc_allocator::Vec::with_capacity_in(1, builder);
+            args.push(Argument::from(Expression::new_string_literal(
+                SPAN, " ", None, builder,
+            )));
+            args
+        },
         false,
+        builder,
     ));
 
     Some(join_call)
@@ -292,7 +357,20 @@ pub(super) fn wrap_direct_call<'a>(
     expr: &Expression<'a>,
     args: &[Expression<'a>],
 ) -> Expression<'a> {
-    builder.expression_call::<Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>>(SPAN, expr.clone_in(builder.allocator), None, oxc_allocator::Vec::from_iter_in(args.iter().map(|e| e.clone_in(builder.allocator).into()), builder.allocator), false)
+    Expression::new_call_expression(
+        SPAN,
+        expr.clone_in(builder.allocator()),
+        None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
+        {
+            let mut call_args = oxc_allocator::Vec::with_capacity_in(args.len(), builder);
+            for e in args {
+                call_args.push(e.clone_in(builder.allocator()).into());
+            }
+            call_args
+        },
+        false,
+        builder,
+    )
 }
 /// merge expressions to object expression
 pub(super) fn merge_object_expressions<'a>(
@@ -303,50 +381,73 @@ pub(super) fn merge_object_expressions<'a>(
         return None;
     }
     if expressions.len() == 1 {
-        return Some(expressions[0].clone_in(ast_builder.allocator));
+        return Some(expressions[0].clone_in(ast_builder.allocator()));
     }
-    Some(ast_builder.expression_object(
+    Some(Expression::new_object_expression(
         SPAN,
-        oxc_allocator::Vec::from_iter_in(
-            expressions.iter().map(|ex| {
-                ast_builder
-                    .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator))
-            }),
-            ast_builder.allocator,
-        ),
+        {
+            let mut props = oxc_allocator::Vec::with_capacity_in(expressions.len(), ast_builder);
+            for ex in expressions {
+                props.push(ObjectPropertyKind::new_spread_property(
+                    SPAN,
+                    ex.clone_in(ast_builder.allocator()),
+                    ast_builder,
+                ));
+            }
+            props
+        },
+        ast_builder,
     ))
 }
 
-pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
+/// Borrowing variant of [`get_string_by_property_key`].
+///
+/// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
+/// allocation the owned variant pays on every prop just to read its key name.
+/// The literal fallback now also borrows where possible: `get_string_by_literal_expression`
+/// returns `Cow::Borrowed` for string/boolean-literal keys and only allocates
+/// (`Cow::Owned`) for numeric/template keys it must synthesize.
+pub(super) fn get_str_by_property_key<'k>(key: &PropertyKey<'k>) -> Option<Cow<'k, str>> {
     if let PropertyKey::StaticIdentifier(ident) = key {
-        Some(ident.name.to_string())
-    } else if let Some(s) = key.as_expression()
-        && let Some(s) = get_string_by_literal_expression(s)
-    {
-        Some(s)
+        Some(Cow::Borrowed(ident.name.as_str()))
+    } else if let Some(s) = key.as_expression() {
+        get_string_by_literal_expression(s)
     } else {
         None
     }
 }
 
-pub fn gcd(a: u32, b: u32) -> u32 {
-    if b == 0 { a } else { gcd(b, a % b) }
+pub(super) fn get_string_by_property_key(key: &PropertyKey) -> Option<String> {
+    get_str_by_property_key(key).map(Cow::into_owned)
+}
+
+pub const fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
-    use oxc_allocator::Vec;
-    use oxc_ast::ast::NumberBase;
+    use oxc_allocator::{FromIn, Vec};
+    use oxc_ast::ast::{
+        JSXAttribute, JSXAttributeName, JSXClosingElement, JSXElementName, JSXOpeningElement,
+        NumberBase, Str, TSTypeParameterInstantiation, TemplateElement,
+    };
 
     use super::*;
 
     #[test]
     fn test_convert_value() {
-        assert_eq!(convert_value("1px"), "1px");
-        assert_eq!(convert_value("1%"), "1%");
-        assert_eq!(convert_value("foo"), "foo");
-        assert_eq!(convert_value("4"), "16px");
+        assert_eq!(convert_value("1px").as_ref(), "1px");
+        assert_eq!(convert_value("1%").as_ref(), "1%");
+        assert_eq!(convert_value("foo").as_ref(), "foo");
+        assert_eq!(convert_value("4").as_ref(), "16px");
+        // Non-numeric values borrow the input; only the numeric branch allocates.
+        assert!(matches!(convert_value("foo"), Cow::Borrowed(_)));
+        assert!(matches!(convert_value("4"), Cow::Owned(_)));
     }
 
     #[test]
@@ -410,131 +511,149 @@ mod tests {
     #[test]
     fn test_jsx_expression_to_number() {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
         assert_eq!(
             jsx_expression_to_number(
-                builder
-                    .jsx_attribute(
-                        SPAN,
-                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
-                        Some(builder.jsx_attribute_value_string_literal(SPAN, "1", None)),
-                    )
-                    .value
-                    .as_ref()
-                    .unwrap()
+                JSXAttribute::new(
+                    SPAN,
+                    JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
+                    Some(JSXAttributeValue::new_string_literal(
+                        SPAN, "1", None, &builder
+                    )),
+                    &builder,
+                )
+                .value
+                .as_ref()
+                .unwrap()
             ),
             Some(1.0)
         );
 
         assert_eq!(
             jsx_expression_to_number(
-                builder
-                    .jsx_attribute(
+                JSXAttribute::new(
+                    SPAN,
+                    JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
+                    Some(JSXAttributeValue::new_element(
                         SPAN,
-                        builder.jsx_attribute_name_identifier(SPAN, "styleOrder"),
-                        Some(builder.jsx_attribute_value_element(
+                        JSXOpeningElement::new(
                             SPAN,
-                            builder.jsx_opening_element(
+                            JSXElementName::new_identifier(SPAN, "div", &builder),
+                            Some(TSTypeParameterInstantiation::new(
                                 SPAN,
-                                builder.jsx_element_name_identifier(SPAN, "div"),
-                                Some(builder.ts_type_parameter_instantiation(
-                                    SPAN,
-                                    Vec::new_in(&allocator)
-                                )),
-                                Vec::new_in(&allocator),
-                            ),
-                            Vec::new_in(&allocator),
-                            Some(builder.jsx_closing_element(
-                                SPAN,
-                                builder.jsx_element_name_identifier(SPAN, "div"),
+                                Vec::new_in(&builder),
+                                &builder,
                             )),
-                        ))
-                    )
-                    .value
-                    .as_ref()
-                    .unwrap()
+                            Vec::new_in(&builder),
+                            &builder,
+                        ),
+                        Vec::new_in(&builder),
+                        Some(JSXClosingElement::new(
+                            SPAN,
+                            JSXElementName::new_identifier(SPAN, "div", &builder),
+                            &builder,
+                        )),
+                        &builder,
+                    )),
+                    &builder,
+                )
+                .value
+                .as_ref()
+                .unwrap()
             ),
             None
+        );
+
+        assert_eq!(
+            jsx_expression_to_number(&JSXAttributeValue::new_expression_container(
+                SPAN,
+                Expression::new_numeric_literal(SPAN, 2.0, None, NumberBase::Decimal, &builder)
+                    .into(),
+                &builder,
+            )),
+            Some(2.0)
         );
     }
     #[test]
     fn test_get_string_by_literal_expression() {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
 
-        let expr = builder.expression_string_literal(SPAN, "hello", None);
+        let expr = Expression::new_string_literal(SPAN, "hello", None, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("hello".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("hello")
         );
 
-        let expr = builder.expression_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal);
+        let expr = Expression::new_numeric_literal(SPAN, 42.0, None, NumberBase::Decimal, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("42".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("42")
         );
 
-        let expr = builder.expression_boolean_literal(SPAN, true);
+        let expr = Expression::new_boolean_literal(SPAN, true, &builder);
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("true".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("true")
         );
 
-        let expr = builder.expression_template_literal(
+        let expr = Expression::new_template_literal(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
-                vec![builder.template_element(
+                vec![TemplateElement::new(
                     SPAN,
                     oxc_ast::ast::TemplateElementValue {
-                        cooked: Some("template".into()),
-                        raw: "template".into(),
+                        cooked: Some(Str::from("template")),
+                        raw: Str::from("template"),
                     },
                     true,
-                    false,
+                    &builder,
                 )],
-                &allocator,
+                &builder,
             ),
-            oxc_allocator::Vec::new_in(&allocator),
+            oxc_allocator::Vec::new_in(&builder),
+            &builder,
         );
         assert_eq!(
-            super::get_string_by_literal_expression(&expr),
-            Some("template".to_string())
+            super::get_string_by_literal_expression(&expr).as_deref(),
+            Some("template")
         );
 
-        let expr = builder.expression_template_literal(
+        let expr = Expression::new_template_literal(
             SPAN,
             oxc_allocator::Vec::from_iter_in(
                 vec![
-                    builder.template_element(
+                    TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some("a".into()),
-                            raw: "a".into(),
+                            cooked: Some(Str::from("a")),
+                            raw: Str::from("a"),
                         },
                         false,
-                        false,
+                        &builder,
                     ),
-                    builder.template_element(
+                    TemplateElement::new(
                         SPAN,
                         oxc_ast::ast::TemplateElementValue {
-                            cooked: Some("b".into()),
-                            raw: "b".into(),
+                            cooked: Some(Str::from("b")),
+                            raw: Str::from("b"),
                         },
                         true,
-                        false,
+                        &builder,
                     ),
                 ],
-                &allocator,
+                &builder,
             ),
             oxc_allocator::Vec::from_iter_in(
-                vec![builder.expression_identifier(SPAN, builder.str("x"))],
-                &allocator,
+                vec![Expression::new_identifier(SPAN, "x", &builder)],
+                &builder,
             ),
+            &builder,
         );
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
 
         // Identifier 등 기타 타입 - None 반환
-        let expr = builder.expression_identifier(SPAN, builder.str("foo"));
+        let expr = Expression::new_identifier(SPAN, "foo", &builder);
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
     }
 
@@ -548,7 +667,7 @@ mod tests {
     #[case::identifier_and_string(&["className", "\"class-name\""], Some("[className, \"class-name\"].filter(Boolean).join()"))]
     fn test_wrap_array_filter(#[case] input: &[&str], #[case] _expected: Option<&str>) {
         let allocator = Allocator::default();
-        let builder = oxc_ast::AstBuilder::new(&allocator);
+        let builder = oxc_ast::builder::AstBuilder::new(&allocator);
 
         // Create expressions from input strings
         let expressions: std::vec::Vec<oxc_ast::ast::Expression> = input
@@ -557,10 +676,19 @@ mod tests {
                 if s.starts_with('"') && s.ends_with('"') {
                     // String literal
                     let value = s.trim_matches('"');
-                    builder.expression_string_literal(SPAN, builder.str(value), None)
+                    Expression::new_string_literal(
+                        SPAN,
+                        Str::from_in(value, builder.allocator()),
+                        None,
+                        &builder,
+                    )
                 } else {
                     // Identifier
-                    builder.expression_identifier(SPAN, builder.str(s))
+                    Expression::new_identifier(
+                        SPAN,
+                        Str::from_in(*s, builder.allocator()),
+                        &builder,
+                    )
                 }
             })
             .collect();

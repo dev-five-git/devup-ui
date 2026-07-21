@@ -12,30 +12,30 @@
   },
   "dependencies": {
     "@stylexjs/open-props": "^0.11",
-    "@stylexjs/stylex": "^0.18",
+    "@stylexjs/stylex": "^0.19",
     "bright": "^1.0",
     "next": "16.2",
     "react": "19.2",
     "react-dom": "19.2"
   },
   "devDependencies": {
-    "@babel/core": "^7.29",
-    "@babel/plugin-syntax-flow": "^7.29",
-    "@babel/plugin-syntax-jsx": "^7.29",
-    "@babel/plugin-syntax-typescript": "^7.29",
-    "@stylexjs/babel-plugin": "^0.18",
-    "@stylexjs/eslint-plugin": "^0.18",
+    "@babel/core": "^8.0",
+    "@babel/plugin-syntax-flow": "^8.0",
+    "@babel/plugin-syntax-jsx": "^8.0",
+    "@babel/plugin-syntax-typescript": "^8.0",
+    "@stylexjs/babel-plugin": "^0.19",
+    "@stylexjs/eslint-plugin": "^0.19",
     "@stylexjs/nextjs-plugin": "^0.11",
-    "@types/node": "25.9",
+    "@types/node": "26.1",
     "@types/react": "19.2",
     "@types/react-dom": "19.2",
     "@types/react-test-renderer": "^19.1",
-    "eslint": "10.4",
+    "eslint": "10.7",
     "eslint-config-next": "16.2",
-    "prettier": "^3.8",
+    "prettier": "^3.9",
     "react-test-renderer": "^19.2",
     "rimraf": "^6.1",
     "ts_dependency_graph": "^2.1",
-    "typescript": "6.0"
+    "typescript": "7.0"
   }
 }

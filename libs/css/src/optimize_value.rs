@@ -1,40 +1,159 @@
-use crate::{
-    COLOR_HASH, F_SPACE_RE, ZERO_RE,
-    constant::{
-        DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, INNER_TRIM_RE, NUM_TRIM_RE, RM_MINUS_ZERO_RE,
-        ZERO_PERCENT_FUNCTION,
-    },
+use std::borrow::Cow;
+
+use crate::constant::{
+    COLOR_HASH, DOT_ZERO_RE, F_DOT_RE, F_RGB_RE, F_RGBA_RE, F_SPACE_RE, INNER_TRIM_RE, NUM_TRIM_RE,
+    RM_MINUS_ZERO_RE, ZERO_PERCENT_FUNCTION, ZERO_RE,
 };
 
-pub fn optimize_value(value: &str) -> String {
-    let trimmed = value.trim();
-    let mut ret = String::with_capacity(trimmed.len() + 8);
-    ret.push_str(trimmed);
+/// (symbol, ";{symbol}", ";{symbol})") — compile-time constants, zero probe allocation
+const SEMI_SUFFIXES: [(&str, &str, &str); 4] = [
+    ("", ";", ";)"),
+    ("`", ";`", ";`)"),
+    ("\"", ";\"", ";\")"),
+    ("'", ";'", ";')"),
+];
 
-    // Wrap CSS custom property names in var() when used as values
-    // e.g., "--var-0" becomes "var(--var-0)"
-    if ret.starts_with("--") && !ret.contains(' ') && !ret.contains(',') {
-        ret.insert_str(0, "var(");
-        ret.push(')');
+pub fn optimize_value(value: &str) -> Cow<'_, str> {
+    let trimmed = value.trim();
+
+    // ONE pre-scan of `trimmed` for every byte flag the passes below key off.
+    // This subsumes the two former folds (the `--`-wrap space/comma probe and the
+    // post-wrap `(has_open_paren, saw_close_paren, has_double_dash, _, saw_semi)`
+    // fold) AND feeds a borrow fast path: every mutating pass in this function
+    // syntactically REQUIRES at least one of these bytes to fire —
+    //   - var() wrap: leading `--` (⇒ `has_double_dash`)
+    //   - INNER_TRIM_RE `\(\s*([^)]*?)\s*\)`: a `(`
+    //   - RM_MINUS_ZERO_RE `-0(px|…|\)|,)`: a `0`
+    //   - NUM_TRIM_RE `(\d(unit)?)\s+(\d)`: ASCII whitespace
+    //   - F_SPACE_RE `\s*,\s*` (gated on `contains(',')`): a `,`
+    //   - F_RGBA_RE / F_RGB_RE (gated on `contains("rgba(")`/`contains("rgb(")`): a `(`
+    //   - COLOR_HASH `#([0-9a-zA-Z]+)`: a `#`
+    //   - DOT_ZERO_RE / F_DOT_RE / ZERO_RE / ZERO_PERCENT (all inside `has_zero`): a `0`
+    //   - SEMI_SUFFIXES strip: a `;`
+    //   - unbalanced-paren fixup: a `(` or `)`
+    // so a value with NONE of them set is provably returned byte-for-byte
+    // unchanged and can be borrowed instead of copied into a fresh `String`.
+    // `has_space` (a literal `' '`) is tracked separately from `has_ws` (any
+    // ASCII whitespace) because the var()-wrap condition only rejects `' '`/`,`,
+    // exactly like the fold it replaces.
+    let mut has_space = false;
+    let mut has_ws = false;
+    let mut has_comma = false;
+    let mut pre_open_paren = false;
+    let mut pre_close_paren = false;
+    let mut has_double_dash = false;
+    let mut saw_semi = false;
+    let mut has_hash = false;
+    let mut has_zero = false;
+    let mut prev_dash = false;
+    for b in trimmed.bytes() {
+        match b {
+            b' ' => {
+                has_space = true;
+                has_ws = true;
+            }
+            b'\t' | b'\n' | b'\x0C' | b'\r' => has_ws = true,
+            b',' => has_comma = true,
+            b'(' => pre_open_paren = true,
+            b')' => pre_close_paren = true,
+            b';' => saw_semi = true,
+            b'#' => has_hash = true,
+            b'0' => has_zero = true,
+            b'-' if prev_dash => has_double_dash = true,
+            _ => {}
+        }
+        prev_dash = b == b'-';
     }
 
-    // Use Cow-aware replacement: only allocate when regex matches
-    let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    // FAST PATH: no flag set ⇒ no pass can modify `trimmed` (see table above),
+    // so hand the caller a borrow of the trimmed input. This covers the dominant
+    // plain values (`red`, `14px`, `$primary`, `1.3s`) with zero allocation.
+    // A leading `--` raises `has_double_dash` (two consecutive dashes), so the
+    // var()-wrap path can never be skipped by this early return.
+    if !has_ws
+        && !has_comma
+        && !pre_open_paren
+        && !pre_close_paren
+        && !has_double_dash
+        && !saw_semi
+        && !has_hash
+        && !has_zero
+    {
+        return Cow::Borrowed(trimmed);
+    }
+
+    let mut ret = String::with_capacity(trimmed.len() + 8);
+
+    // Wrap CSS custom property names in var() when used as values
+    // e.g., "--var-0" becomes "var(--var-0)". Probe `trimmed` up front so the
+    // buffer is built FORWARD (`var(` + trimmed + `)`) instead of pushing
+    // `trimmed` then `insert_str(0, "var(")` — the latter memmoves the whole
+    // buffer right by 4 bytes on every custom-prop value. Output is byte-identical.
+    // `--`-prefixed values are wrapped in `var()` only when they hold no space and no
+    // comma; both flags come from the single pre-scan above.
+    let wrapped_custom_prop = trimmed.starts_with("--") && !has_space && !has_comma;
+    if wrapped_custom_prop {
+        ret.push_str("var(");
+        ret.push_str(trimmed);
+        ret.push(')');
+    } else {
+        ret.push_str(trimmed);
+    }
+
+    // Derive the post-wrap flags the passes below gate on from the pre-scan:
+    // the var() wrap only adds `var(` + `)` — one `(`, one `)`, no `;` — so
+    //   - `has_open_paren` / `may_have_paren` are seeded `true` by the wrap,
+    //   - `saw_semi` is unchanged by the wrap (folded before any regex pass runs;
+    //     no later replacement can introduce a `;`: every one either inserts fixed
+    //     literals with no `;` (INNER_TRIM `(${1})`, F_SPACE `,`, F_RGBA/F_RGB/
+    //     COLOR_HASH hex, F_DOT `${1}.${2}`, ZERO `${1}0`, ZERO_PERCENT `%`) or
+    //     re-emits bytes captured FROM `ret` (RM_MINUS_ZERO `0${1}`, NUM_TRIM
+    //     `${1} ${3}`, DOT_ZERO `${1}0${2}`)).
+    // The paren flags are only ever allowed to *skip* when provably paren-free:
+    // seeded `true` on any `(`/`)` present (or the var()-wrap) and never cleared —
+    // the rgba/rgb hex replacements only REMOVE parens, so leaving the flag set
+    // there is conservative (runs a redundant scan, never misses a needed fix).
+    let has_open_paren = wrapped_custom_prop || pre_open_paren;
+    let may_have_paren = wrapped_custom_prop || pre_open_paren || pre_close_paren;
+
+    // When the var()-wrap above fired, the value started with `--`, so the flag is
+    // trivially true. Otherwise a value can still carry an interior `--` (e.g. a
+    // pre-wrapped `var(--x)`), captured by `has_double_dash` above. INNER_TRIM_RE only
+    // wraps its capture in parens and cannot add or remove `--`, so the flag stays valid
+    // across that step (the fold runs before it, same as the old `contains("--")` did).
+    let has_custom_prop = wrapped_custom_prop || has_double_dash;
+
+    // Use Cow-aware replacement: only allocate when regex matches.
+    // INNER_TRIM_RE = `\(\s*([^)]*?)\s*\)` requires a `(` to match; the only code
+    // that can introduce a `(` before here is the var() wrap above. Probe the
+    // post-wrap buffer so we skip the regex-engine setup on the common no-paren
+    // values (`red`, `14px`, `$primary`, `0px`) — matching the existing
+    // `if ret.contains(',')` / `if ret.contains("rgba(")` guard style below.
+    if has_open_paren {
+        let replaced = INNER_TRIM_RE.replace_all(&ret, "(${1})");
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
 
     // Skip RM_MINUS_ZERO_RE for values containing CSS custom property references
     // to preserve names like --var-0 (the -0 should not be converted to 0)
-    if !ret.contains("--") {
+    if !has_custom_prop {
         let replaced = RM_MINUS_ZERO_RE.replace_all(&ret, "0${1}");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }
     }
-    let replaced = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}");
-    if let std::borrow::Cow::Owned(s) = replaced {
-        ret = s;
+    // NUM_TRIM_RE = `(\d(unit)?)\s+(\d)` needs `\s+` to match. `value` was
+    // trim()-ed above so only interior whitespace can remain; a value with none
+    // (`red`, `14px`, `0px`, `$primary`) can never match — skip the regex pass.
+    // `\s` in regex_lite is ASCII-only (`[ \t\n\r\x0b\x0c]`), so an ASCII byte
+    // scan is a sound (and cheaper, non-Unicode) gate matching the sibling scans.
+    if ret.bytes().any(|b| b.is_ascii_whitespace()) {
+        let replaced = NUM_TRIM_RE.replace_all(&ret, "${1} ${3}");
+        if let std::borrow::Cow::Owned(s) = replaced {
+            ret = s;
+        }
     }
 
     if ret.contains(',') {
@@ -80,151 +199,241 @@ pub fn optimize_value(value: &str) -> String {
             ret = s;
         }
     }
-    if ret.contains('#') {
+    // Detect `#` and `0` in a SINGLE byte pass, replacing the two back-to-back
+    // full-string `contains('#')` / `contains('0')` scans below. Both booleans
+    // gate the same branches as before, so output is byte-identical; the fold
+    // just avoids a redundant O(n) traversal on every value (e.g. `14px` used to
+    // pay two scans to find neither, `#FF0000` two scans that overlap).
+    // Also track `.` in the same byte pass: DOT_ZERO_RE (`(\b|,)-?0\.0+([^\d])`)
+    // and F_DOT_RE (`(\b|,)0\.(\d+)`) both syntactically REQUIRE a literal `.` to
+    // match, so a dot-free value (`0px`, `#FF0000`, `10px 0`, `translate(0px, 0px)`)
+    // can never match either — yet the `has_zero` block used to run both full
+    // regex `replace_all` passes on every zero-bearing value. Gate them on
+    // `has_dot` so the common no-dot zero values skip two NFA executions. Output
+    // is byte-identical: neither regex can alter a string with no `.`.
+    let (has_hash, has_zero, has_dot) = ret.bytes().fold((false, false, false), |(h, z, d), b| {
+        (h || b == b'#', z || b == b'0', d || b == b'.')
+    });
+    if has_hash {
         let replaced =
             COLOR_HASH.replace_all(&ret, |c: &regex_lite::Captures| optimize_color(&c[1]));
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }
     }
-    if ret.contains('0') {
-        let replaced = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}");
-        if let std::borrow::Cow::Owned(s) = replaced {
-            ret = s;
-        }
-        let replaced = F_DOT_RE.replace_all(&ret, "${1}.${2}");
-        if let std::borrow::Cow::Owned(s) = replaced {
-            ret = s;
+    if has_zero {
+        // DOT_ZERO_RE and F_DOT_RE both require a `.`; keep them first (preserving
+        // the original replacement order) but only when a `.` is present.
+        if has_dot {
+            let replaced = DOT_ZERO_RE.replace_all(&ret, "${1}0${2}");
+            if let std::borrow::Cow::Owned(s) = replaced {
+                ret = s;
+            }
+            let replaced = F_DOT_RE.replace_all(&ret, "${1}.${2}");
+            if let std::borrow::Cow::Owned(s) = replaced {
+                ret = s;
+            }
         }
         let replaced = ZERO_RE.replace_all(&ret, "${1}0");
         if let std::borrow::Cow::Owned(s) = replaced {
             ret = s;
         }
 
-        let mut lower = ret.to_lowercase();
-        for f in &ZERO_PERCENT_FUNCTION {
-            if let Some(start) = lower.find(f) {
-                let index = start + f.len();
-                let mut zero_idx = Vec::with_capacity(4);
-                let mut depth: i32 = 0;
-                let bytes = lower.as_bytes();
-
-                for i in index..bytes.len() {
-                    match bytes[i] {
-                        b'(' => depth += 1,
-                        b')' => depth -= 1,
-                        b'0' if depth == 0
-                            && (i == 0 || !bytes[i - 1].is_ascii_digit())
-                            && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
-                        {
-                            zero_idx.push(i);
+        // Every ZERO_PERCENT_FUNCTION token ends in '(', so a value with no '('
+        // can never match. Skip the lowercase allocation and scan entirely on the
+        // common no-paren path (colors like #FF0000, plain lengths like `10px 0`).
+        // When a '(' is present, allocate the lowercase copy once and let the
+        // per-token `lower.find(f)` loop below no-op on non-matching tokens —
+        // that loop already performs the definitive scan, so a separate
+        // case-insensitive pre-scan (formerly `any(contains_ci)`) would only
+        // duplicate the work it does.
+        if ret.contains('(') {
+            // Lowercase ONCE for case-insensitive function-name matching. The
+            // previous version re-lowercased `ret` after every modified token
+            // (a full-string heap allocation per math function), which is pure
+            // churn on multi-function values like `clamp(...) + min(...)`.
+            //
+            // Instead, collect every zero position to convert across ALL matched
+            // functions against this single immutable `lower`, then apply them to
+            // `ret` in one back-to-front pass. This is byte-identical to the old
+            // per-token refresh: replacements only ever insert a `%` immediately
+            // after a top-level `0`, and a convertible `0` is by construction never
+            // digit-adjacent (a `0` next to another digit is skipped), so an
+            // inserted `%` can never sit beside another convertible `0` nor change
+            // any later depth/zero scan. Applying the collected indices highest-first
+            // keeps every earlier (lower) index valid despite the +1 byte growth.
+            let lower = ret.to_lowercase();
+            let bytes = lower.as_bytes();
+            let mut zero_idx: Vec<usize> = Vec::with_capacity(2);
+            for f in &ZERO_PERCENT_FUNCTION {
+                if let Some(start) = lower.find(f) {
+                    let index = start + f.len();
+                    let mut depth: i32 = 0;
+                    for i in index..bytes.len() {
+                        match bytes[i] {
+                            b'(' => depth += 1,
+                            b')' => depth -= 1,
+                            b'0' if depth == 0
+                                && (i == 0 || !bytes[i - 1].is_ascii_digit())
+                                && (i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_digit()) =>
+                            {
+                                zero_idx.push(i);
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
-                // In-place replacement: replace each '0' with '0%' from back to front
+            }
+            if !zero_idx.is_empty() {
+                // Apply highest-index-first so earlier indices stay valid as each
+                // `0` grows to `0%` (+1 byte). Dedup guards against the same top-level
+                // `0` being collected by two overlapping function matches.
+                zero_idx.sort_unstable();
+                zero_idx.dedup();
                 for i in zero_idx.iter().rev() {
                     ret.replace_range((*i)..=(*i), "0%");
                 }
-                if !zero_idx.is_empty() {
-                    // Refresh lowercase only when modification occurred
-                    lower = ret.to_lowercase();
+            }
+        }
+    }
+    // remove ; from dynamic value. Every SEMI_SUFFIXES entry contains `;`, so a
+    // value with no `;` can never match — skip the 4 strip_suffix probes entirely.
+    // `saw_semi` was folded from the SAME post-wrap byte scan above (no later pass can
+    // add a `;`), so this reuses that result instead of a fresh `contains(';')` scan.
+    //
+    // Do NOT `break` after a match. `expression_to_code` serializes the value inside
+    // an `ExpressionStatement`, so a quoted dynamic value can arrive carrying BOTH an
+    // inner `;` before its closing symbol AND the appended statement terminator — e.g.
+    // ``expression_to_code(`${color};`)`` yields ``` `${color};`; ```. Entry 0 (`;`)
+    // strips the bare terminator, leaving `` `${color};` `` whose inner `;` only the
+    // backtick entry can strip. The suffixes are therefore NOT mutually exclusive at
+    // the end of such a value, so every entry must get a turn (this mirrors the
+    // original pre-`SEMI_SUFFIXES` loop; a premature `break` regressed the
+    // `remove_semicolon` case). At most one strip fires per entry, and any strip
+    // leaves `ret` ending in `str_symbol`/`)`, so the pass still terminates in ≤4 steps.
+    if saw_semi {
+        for (str_symbol, suffix_without_paren, suffix_with_paren) in SEMI_SUFFIXES {
+            if let Some(stripped) = ret.strip_suffix(suffix_without_paren) {
+                let base = stripped.trim_end_matches(';');
+                let mut new_ret = String::with_capacity(base.len() + str_symbol.len());
+                new_ret.push_str(base);
+                new_ret.push_str(str_symbol);
+                ret = new_ret;
+            } else if let Some(stripped) = ret.strip_suffix(suffix_with_paren) {
+                let base = stripped.trim_end_matches(';');
+                let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
+                new_ret.push_str(base);
+                new_ret.push_str(str_symbol);
+                new_ret.push(')');
+                ret = new_ret;
+            }
+        }
+    }
+
+    // Single pass to detect unbalanced parens: accumulate depth over the whole
+    // string while tracking whether any paren was seen. This folds the former
+    // two-probe guard (`ret.contains('(') || ret.contains(')')` — up to two full
+    // byte scans) into the SAME loop that already scans every byte, so the common
+    // no-paren values (`red`, `14px`, `$primary`, `0px`, `#FF0000`) pay exactly
+    // one scan instead of two, and the `saw_paren` fast-out preserves the "no
+    // paren ⇒ no mutation" behavior. Byte-identical output.
+    //
+    // `may_have_paren` gates the scan entirely: it was seeded `true` for any value
+    // that ever held a `(` or `)` (and only ever set, never cleared), so a `false`
+    // flag PROVES `ret` is paren-free and the scan can only ever no-op. The common
+    // paren-free values skip this whole-string traversal.
+    if may_have_paren {
+        let mut depth: i32 = 0;
+        let mut saw_paren = false;
+        for b in ret.bytes() {
+            if b == b'(' {
+                depth += 1;
+                saw_paren = true;
+            } else if b == b')' {
+                depth -= 1;
+                saw_paren = true;
+            }
+        }
+        if saw_paren {
+            if depth < 0 {
+                ret.insert_str(0, &"(".repeat(depth.unsigned_abs() as usize));
+            } else if depth > 0 {
+                for _ in 0..depth {
+                    ret.push(')');
                 }
             }
         }
     }
-    // remove ; from dynamic value
-    // Check suffix patterns directly without format! allocation
-    for str_symbol in ["", "`", "\"", "'"] {
-        let suffix_with_paren = if str_symbol.is_empty() {
-            ";)".to_string()
-        } else {
-            let mut s = String::with_capacity(str_symbol.len() + 2);
-            s.push(';');
-            s.push_str(str_symbol);
-            s.push(')');
-            s
-        };
-        let suffix_without_paren = if str_symbol.is_empty() {
-            ";".to_string()
-        } else {
-            let mut s = String::with_capacity(str_symbol.len() + 1);
-            s.push(';');
-            s.push_str(str_symbol);
-            s
-        };
-        if ret.ends_with(&suffix_without_paren) {
-            let base = ret[..ret.len() - suffix_without_paren.len()].trim_end_matches(';');
-            let mut new_ret = String::with_capacity(base.len() + str_symbol.len());
-            new_ret.push_str(base);
-            new_ret.push_str(str_symbol);
-            ret = new_ret;
-        } else if ret.ends_with(&suffix_with_paren) {
-            let base = ret[..ret.len() - suffix_with_paren.len()].trim_end_matches(';');
-            let mut new_ret = String::with_capacity(base.len() + str_symbol.len() + 1);
-            new_ret.push_str(base);
-            new_ret.push_str(str_symbol);
-            new_ret.push(')');
-            ret = new_ret;
-        }
-    }
-
-    if ret.contains('(') || ret.contains(')') {
-        let mut depth: i32 = 0;
-        for ch in ret.chars() {
-            if ch == '(' {
-                depth += 1;
-            } else if ch == ')' {
-                depth -= 1;
-            }
-        }
-        if depth < 0 {
-            for _ in 0..(-depth) {
-                ret.insert(0, '(');
-            }
-        }
-        if depth > 0 {
-            for _ in 0..depth {
-                ret.push(')');
-            }
-        }
-    }
-    ret
+    Cow::Owned(ret)
 }
 
 fn optimize_color(value: &str) -> String {
-    let mut ret = value.to_uppercase();
+    // `value` is an ASCII hex capture (`COLOR_HASH` = `#([0-9a-fA-F]+)`), so
+    // ASCII-only uppercasing is correct and skips the Unicode-aware casing tables.
+    // Build the result in one pass into a fresh buffer seeded with '#', so the
+    // collapse branches push the final bytes directly and we avoid both the
+    // clear/re-push churn and the front `insert(0, '#')` memmove.
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len() + 1);
+    out.push('#');
 
-    if ret.len() == 6 {
-        let b = ret.as_bytes();
-        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] {
-            let (c0, c2, c4) = (b[0], b[2], b[4]);
-            ret.clear();
-            ret.push(c0 as char);
-            ret.push(c2 as char);
-            ret.push(c4 as char);
+    // Uppercase a single ASCII hex byte (a-f -> A-F, digits/A-F unchanged).
+    let up = |b: u8| b.to_ascii_uppercase();
+
+    match bytes.len() {
+        6 if bytes[0].eq_ignore_ascii_case(&bytes[1])
+            && bytes[2].eq_ignore_ascii_case(&bytes[3])
+            && bytes[4].eq_ignore_ascii_case(&bytes[5]) =>
+        {
+            out.push(up(bytes[0]) as char);
+            out.push(up(bytes[2]) as char);
+            out.push(up(bytes[4]) as char);
         }
-    } else if ret.len() == 8 {
-        let b = ret.as_bytes();
-        if b[0] == b[1] && b[2] == b[3] && b[4] == b[5] && b[6] == b[7] {
-            let (c0, c2, c4, c6) = (b[0], b[2], b[4], b[6]);
-            let has_trailing_f = c6 == b'F';
-            ret.clear();
-            ret.push(c0 as char);
-            ret.push(c2 as char);
-            ret.push(c4 as char);
-            if !has_trailing_f {
-                ret.push(c6 as char);
+        8 => {
+            // Collapse the two former `len()==8` arms into one, evaluating each
+            // pair-equality and the trailing-alpha opacity ONCE. Order is preserved:
+            // the nibble-duplication collapse (`#RRGGBBAA→#RGB(A)`) is still tried
+            // BEFORE the opaque `#RRGGBBFF→#RRGGBB` collapse, so load-bearing cases
+            // like `#ff0000ff → #F00` stay byte-identical. Previously a non-nibble
+            // opaque color re-ran the opacity check after the four failed
+            // `eq_ignore_ascii_case` comparisons; now `alpha_opaque` is computed once.
+            let alpha_opaque = up(bytes[6]) == b'F' && up(bytes[7]) == b'F';
+            if bytes[0].eq_ignore_ascii_case(&bytes[1])
+                && bytes[2].eq_ignore_ascii_case(&bytes[3])
+                && bytes[4].eq_ignore_ascii_case(&bytes[5])
+                && bytes[6].eq_ignore_ascii_case(&bytes[7])
+            {
+                out.push(up(bytes[0]) as char);
+                out.push(up(bytes[2]) as char);
+                out.push(up(bytes[4]) as char);
+                // A trailing `F` alpha pair (fully opaque) collapses away entirely.
+                // `bytes[6]==bytes[7]` here, so `alpha_opaque` == `up(bytes[6])=='F'`.
+                if !alpha_opaque {
+                    out.push(up(bytes[6]) as char);
+                }
+            } else if alpha_opaque {
+                for &b in &bytes[..6] {
+                    out.push(up(b) as char);
+                }
+            } else {
+                for &b in bytes {
+                    out.push(up(b) as char);
+                }
             }
-        } else if ret.ends_with("FF") {
-            ret.truncate(ret.len() - 2);
         }
-    } else if ret.len() == 4 && ret.ends_with('F') {
-        ret.truncate(ret.len() - 1);
+        4 if up(bytes[3]) == b'F' => {
+            for &b in &bytes[..3] {
+                out.push(up(b) as char);
+            }
+        }
+        _ => {
+            for &b in bytes {
+                out.push(up(b) as char);
+            }
+        }
     }
 
-    ret.insert(0, '#');
-    ret
+    out
 }
 
 #[cfg(test)]
@@ -301,6 +510,15 @@ mod tests {
     #[case("\"red;\"", "\"red\"")]
     #[case("'red;'", "'red'")]
     #[case("`red;`", "`red`")]
+    // `expression_to_code` serializes the value inside an `ExpressionStatement`,
+    // appending a statement `;`. A quoted value that already ends in an inner `;`
+    // therefore arrives with TWO trailing semicolons; BOTH must be stripped.
+    // Regression guard for `remove_semicolon` (a premature `break` used to keep the
+    // inner one, e.g. `` `${color};` ``).
+    #[case("`red;`;", "`red`")]
+    #[case("\"red;\";", "\"red\"")]
+    #[case("'red;';", "'red'")]
+    #[case("`${color};`;", "`${color}`")]
     #[case("(\"red;\")", "(\"red\")")]
     #[case("(`red;`)", "(`red`)")]
     #[case("('red;')", "('red')")]

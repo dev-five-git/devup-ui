@@ -14,11 +14,10 @@ pub mod style_selector;
 pub mod theme_tokens;
 pub mod utils;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use crate::constant::{
-    COLOR_HASH, F_SPACE_RE, GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY, ZERO_RE,
-};
+use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
 use crate::debug::is_debug;
 use crate::file_map::get_file_num_by_filename;
 use crate::num_to_nm_base::num_to_nm_base;
@@ -38,6 +37,10 @@ mod prefix_state {
     pub fn get_prefix() -> Option<String> {
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
+    /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
+    pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -56,75 +59,170 @@ mod prefix_state {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
+    /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
+    pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
+        f(GLOBAL_PREFIX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_deref()
+            .unwrap_or_default())
+    }
 }
 
+use prefix_state::with_prefix;
 pub use prefix_state::{get_prefix, set_prefix};
 
-#[must_use]
-pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
+/// Write `value` into `out`, replacing every `&` with `".<class_name>"` in place.
+///
+/// Equivalent to `out.push_str(&value.replace('&', &format!(".{class_name}")))`
+/// but avoids both the throwaway `".<class>"` String and the intermediate
+/// `str::replace` result String.
+fn write_ampersand_expansion(out: &mut String, value: &str, class_name: &str) {
+    for (i, seg) in value.split('&').enumerate() {
+        if i > 0 {
+            out.push('.');
+            out.push_str(class_name);
+        }
+        out.push_str(seg);
+    }
+}
+
+/// Write the merged selector directly into `out`.
+///
+/// Avoids the throwaway `String` that [`merge_selector`] returns: the common
+/// no-selector path pushes `".<class_name>"` in place, while the `&`-replacement
+/// cases expand `&` into `out` in place via [`write_ampersand_expansion`].
+pub fn write_merge_selector(out: &mut String, class_name: &str, selector: Option<&StyleSelector>) {
     if let Some(selector) = selector {
         match selector {
             StyleSelector::Selector(value) => {
-                let mut dot_class = String::with_capacity(1 + class_name.len());
-                dot_class.push('.');
-                dot_class.push_str(class_name);
-                value.replace('&', &dot_class)
+                write_ampersand_expansion(out, value, class_name);
             }
             StyleSelector::At { selector: s, .. } => {
                 if let Some(s) = s {
-                    let mut dot_class = String::with_capacity(1 + class_name.len());
-                    dot_class.push('.');
-                    dot_class.push_str(class_name);
-                    s.replace('&', &dot_class)
+                    write_ampersand_expansion(out, s, class_name);
                 } else {
-                    let mut result = String::with_capacity(1 + class_name.len());
-                    result.push('.');
-                    result.push_str(class_name);
-                    result
+                    out.push('.');
+                    out.push_str(class_name);
                 }
             }
-            StyleSelector::Global(v, _) => v.clone(),
+            StyleSelector::Global(v, _) => out.push_str(v),
         }
     } else {
-        let mut result = String::with_capacity(1 + class_name.len());
-        result.push('.');
-        result.push_str(class_name);
-        result
+        out.push('.');
+        out.push_str(class_name);
     }
 }
 
 #[must_use]
-pub fn disassemble_property(property: &str) -> Vec<String> {
+pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> String {
+    // Presize to avoid grow-reallocs in `write_merge_selector`.
+    // The `&`-expansion cases push `".<class_name>"` once per `&` in the selector.
+    // The base `class_name.len() + selector-len + 2` covers a SINGLE `&` (the
+    // common `.a`, `.a:hover`, themed shapes); a selector with N `&` segments
+    // (e.g. `:root[data-theme=dark]:hover &` chained variants) would grow-realloc
+    // the buffer, so reserve `class_name.len()` extra per additional `&`.
+    // Capacity-only: output stays byte-identical.
+    let sel = selector.map(StyleSelector::as_class_str);
+    // `extra_amps` is `(&-count - 1)`, nonzero ONLY for the rare multi-`&` selector.
+    // Locate the FIRST `&` with a `memchr`-backed `find` (bailing to 0 for the common
+    // zero/one-`&` selectors — `.a`, `.a:hover`, `theme-dark` — without spinning up the
+    // `filter(...).count()` iterator over the whole string), then count only the `&`s in
+    // the tail AFTER it. That tail count already excludes the first `&`, so it equals
+    // `count - 1` directly, dropping the `saturating_sub`. Byte-identical capacity.
+    let extra_amps = sel.as_deref().map_or(0, |s| match s.find('&') {
+        Some(first) => s[first + 1..].bytes().filter(|&b| b == b'&').count(),
+        None => 0,
+    });
+    let cap =
+        class_name.len() + sel.as_deref().map_or(0, str::len) + class_name.len() * extra_amps + 2;
+    let mut result = String::with_capacity(cap);
+    write_merge_selector(&mut result, class_name, selector);
+    result
+}
+
+/// Iterator over the disassembled CSS property names for one style property.
+///
+/// Yields the same sequence as the former `Vec<Cow<'static, str>>` return of
+/// [`disassemble_property`] but WITHOUT the per-prop heap `Vec`: the common
+/// mapped case (`GLOBAL_STYLE_PROPERTY` hit) borrows the `&'static str` slice
+/// in place, and the fallback yields exactly one owned kebab/`-kebab` `String`.
+pub enum DisassembleProperty {
+    /// Mapped arm: iterate the borrowed `&'static [&'static str]` slice.
+    Mapped(std::slice::Iter<'static, &'static str>),
+    /// Fallback arm: yield a single owned kebab-cased property, then finish.
+    Fallback(Option<String>),
+}
+
+impl Iterator for DisassembleProperty {
+    type Item = Cow<'static, str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            DisassembleProperty::Mapped(iter) => iter.next().map(|s| Cow::Borrowed(*s)),
+            DisassembleProperty::Fallback(slot) => slot.take().map(Cow::Owned),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            DisassembleProperty::Mapped(iter) => iter.size_hint(),
+            DisassembleProperty::Fallback(slot) => {
+                let n = usize::from(slot.is_some());
+                (n, Some(n))
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for DisassembleProperty {}
+
+#[must_use]
+pub fn disassemble_property(property: &str) -> DisassembleProperty {
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
-            vec![if (property.starts_with("Webkit")
-                && property.len() > 6
-                && property
-                    .as_bytes()
-                    .get(6)
-                    .is_some_and(u8::is_ascii_uppercase))
-                || (property.starts_with("Moz")
-                    && property.len() > 3
-                    && property
-                        .as_bytes()
-                        .get(3)
-                        .is_some_and(u8::is_ascii_uppercase))
-                || (property.starts_with("ms")
-                    && property.len() > 2
-                    && property
-                        .as_bytes()
-                        .get(2)
-                        .is_some_and(u8::is_ascii_uppercase))
-            {
-                format!("-{}", to_kebab_case(property))
-            } else {
-                to_kebab_case(property)
-            }]
+            DisassembleProperty::Fallback(Some(
+                // Gate the three vendor-prefix `starts_with` scans behind a
+                // single first-byte check: only `W`/`M`/`m` can begin
+                // `Webkit`/`Moz`/`ms`, so every other property skips all three.
+                if matches!(property.as_bytes().first(), Some(b'W' | b'M' | b'm'))
+                    && ((property.starts_with("Webkit")
+                        && property.len() > 6
+                        && property.as_bytes()[6].is_ascii_uppercase())
+                        || (property.starts_with("Moz")
+                            && property.len() > 3
+                            && property.as_bytes()[3].is_ascii_uppercase())
+                        || (property.starts_with("ms")
+                            && property.len() > 2
+                            && property.as_bytes()[2].is_ascii_uppercase()))
+                {
+                    // Build `-<kebab>` directly into ONE buffer instead of allocating
+                    // a `to_kebab_case(property)` String and copying it into a second
+                    // presized buffer. This inlines `to_kebab_case`'s exact conversion
+                    // (ASCII-uppercase char → `-` before it when not first, then its
+                    // lowercase; other chars copied verbatim) after the leading `-`.
+                    // The `i != 0` guard matches `to_kebab_case`, so the vendor
+                    // prefix's uppercase first char (`W`/`M`/`m`→lowercase) gets no
+                    // extra `-`. Output byte-identical, one fewer allocation.
+                    let mut s = String::with_capacity(property.len() + 5);
+                    s.push('-');
+                    for (i, c) in property.chars().enumerate() {
+                        if c.is_ascii_uppercase() {
+                            if i != 0 {
+                                s.push('-');
+                            }
+                            s.push(c.to_ascii_lowercase());
+                        } else {
+                            s.push(c);
+                        }
+                    }
+                    s
+                } else {
+                    to_kebab_case(property).into_owned()
+                },
+            ))
         },
-        |v| match v.len() {
-            1 => vec![v[0].to_string()],
-            _ => v.iter().map(ToString::to_string).collect(),
-        },
+        |v| DisassembleProperty::Mapped(v.iter()),
     )
 }
 
@@ -147,80 +245,123 @@ pub fn add_selector_params(selector: StyleSelector, params: &str) -> StyleSelect
     }
 }
 
+/// True when `property` is a known enum style property (e.g. `display`).
+///
+/// Holds regardless of whether a specific value maps to an expansion. Cheap
+/// phf `contains_key`; lets callers distinguish "not an enum prop" from
+/// "enum prop, value not mapped" without materializing an empty `Vec`.
 #[must_use]
-pub fn get_enum_property_value(property: &str, value: &str) -> Option<Vec<(String, String)>> {
-    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
-        if let Some(map) = map.get(value) {
-            Some(
-                map.entries()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect(),
-            )
-        } else {
-            Some(vec![])
-        }
-    } else {
-        None
-    }
+pub fn is_enum_property(property: &str) -> bool {
+    GLOBAL_ENUM_STYLE_PROPERTY.contains_key(property)
+}
+
+/// Borrow the phf expansion map for `(property, value)` without materializing a `Vec`.
+///
+/// The caller iterates `.entries()`/reads `.len()` directly off the static map, so the
+/// enum-property extract hot path (every `display`/`alignItems`/… prop per breakpoint
+/// level) no longer allocates a throwaway `Vec` per call.
+#[must_use]
+pub fn get_enum_property_value(
+    property: &str,
+    value: &str,
+) -> Option<&'static phf::Map<&'static str, &'static str>> {
+    GLOBAL_ENUM_STYLE_PROPERTY
+        .get(property)
+        .and_then(|map| map.get(value))
 }
 
 #[must_use]
 pub fn get_enum_property_map(property: &str) -> Option<BTreeMap<&str, BTreeMap<&str, &str>>> {
-    if let Some(map) = GLOBAL_ENUM_STYLE_PROPERTY.get(property) {
-        let mut ret = BTreeMap::new();
-        for (k, v) in map.entries() {
-            let mut tmp = BTreeMap::new();
-            v.entries().for_each(|(k, v)| {
-                tmp.insert(*k, *v);
-            });
-            ret.insert(*k, tmp);
-        }
-        Some(ret)
-    } else {
-        None
-    }
+    GLOBAL_ENUM_STYLE_PROPERTY.get(property).map(|map| {
+        map.entries()
+            .map(|(k, v)| (*k, v.entries().map(|(k, v)| (*k, *v)).collect()))
+            .collect()
+    })
+}
+
+thread_local! {
+    /// Reusable scratch buffer for building a class-map key. Because the common
+    /// path only PROBES the map with a borrowed `&str`, the key never needs its
+    /// own heap allocation per call — it is built into this buffer, borrowed for
+    /// the probe, and only `.to_string()`-cloned on a genuine insert. Reusing
+    /// one buffer removes the per-generated-name key `String` allocation on the
+    /// hot repeat-property path.
+    static KEY_BUF: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Get-or-insert a key in the per-file class map and return its base-37 name.
+/// `build_key` fills the supplied reusable buffer with the key bytes; the buffer
+/// is borrowed for the probe so the common already-present path allocates
+/// nothing, and only a real insert clones the key into an owned `String`.
+/// Single home for the class naming algorithm shared by keyframes, classname
+/// and variable-name generation.
+fn class_num_for_key(filename_key: &str, build_key: impl FnOnce(&mut String)) -> String {
+    KEY_BUF.with(|buf| {
+        let mut key = buf.borrow_mut();
+        key.clear();
+        build_key(&mut key);
+        class_map::with_class_map_mut(|map| {
+            // Probe first so the owned filename key is only allocated on the
+            // first style for a file, not on every generated name.
+            if let Some(file_entry) = map.get_mut(filename_key) {
+                // Borrow-probe the common already-present-key path so the owned
+                // `String` is only materialized on a genuine insert, never on
+                // the hot repeat-property path.
+                if let Some(&num) = file_entry.get(key.as_str()) {
+                    num_to_nm_base(num)
+                } else {
+                    let len = file_entry.len();
+                    file_entry.insert(key.clone(), len);
+                    num_to_nm_base(len)
+                }
+            } else {
+                // First style seen for this file: build the inner map presized to
+                // exactly the one entry we insert, so the initial insert never starts
+                // from a zero-capacity map (which would rehash/grow on the first few
+                // inserts). Output/behavior is byte-identical — same single entry,
+                // same `0` numbering — this only fixes the allocation shape.
+                let mut inner = std::collections::HashMap::with_capacity(1);
+                inner.insert(key.clone(), 0);
+                map.insert(filename_key.to_string(), inner);
+                num_to_nm_base(0)
+            }
+        })
+    })
 }
 
 #[must_use]
 pub fn keyframes_to_keyframes_name(keyframes: &str, filename: Option<&str>) -> String {
-    let prefix = get_prefix().unwrap_or_default();
-    if is_debug() {
-        let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
-        result.push_str(&prefix);
-        result.push_str("k-");
-        result.push_str(keyframes);
-        result
-    } else {
-        let mut key = String::with_capacity(2 + keyframes.len());
-        key.push_str("k-");
-        key.push_str(keyframes);
-        let filename_key = filename.unwrap_or_default();
-        let class_num = class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(filename_key.to_string()).or_default();
-            if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
-            }
-        });
-        if let Some(fname) = filename {
-            let file_num = num_to_nm_base(get_file_num_by_filename(fname));
-            let mut result =
-                String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
-            result.push_str(&prefix);
-            result.push_str(&file_num);
-            result.push('-');
-            result.push_str(&class_num);
+    with_prefix(|prefix| {
+        if is_debug() {
+            let mut result = String::with_capacity(prefix.len() + 2 + keyframes.len());
+            result.push_str(prefix);
+            result.push_str("k-");
+            result.push_str(keyframes);
             result
         } else {
-            let mut result = String::with_capacity(prefix.len() + class_num.len());
-            result.push_str(&prefix);
-            result.push_str(&class_num);
-            result
+            let filename_key = filename.unwrap_or_default();
+            let class_num = class_num_for_key(filename_key, |key| {
+                key.reserve(2 + keyframes.len());
+                key.push_str("k-");
+                key.push_str(keyframes);
+            });
+            if let Some(fname) = filename {
+                let file_num = num_to_nm_base(get_file_num_by_filename(fname));
+                let mut result =
+                    String::with_capacity(prefix.len() + file_num.len() + 1 + class_num.len());
+                result.push_str(prefix);
+                result.push_str(&file_num);
+                result.push('-');
+                result.push_str(&class_num);
+                result
+            } else {
+                let mut result = String::with_capacity(prefix.len() + class_num.len());
+                result.push_str(prefix);
+                result.push_str(&class_num);
+                result
+            }
         }
-    }
+    })
 }
 
 /// ASCII lookup table for selector encoding. `None` means pass through (alphanumeric, `-`, `_`)
@@ -262,7 +403,7 @@ const SELECTOR_ENCODE: [Option<&str>; 128] = {
 
 fn encode_selector(selector: &str) -> String {
     use std::fmt::Write;
-    let mut result = String::with_capacity(selector.len() * 3);
+    let mut result = String::with_capacity(selector.len() + 8);
     for c in selector.chars() {
         if c.is_ascii() {
             let byte = c as u8;
@@ -289,14 +430,16 @@ pub fn sheet_to_classname(
     style_order: Option<u8>,
     filename: Option<&str>,
 ) -> String {
-    let prefix = get_prefix().unwrap_or_default();
     // base style
     let filename = if style_order == Some(0) {
         None
     } else {
         filename
     };
-    let optimized = optimize_value(value.unwrap_or_default());
+    // `optimize_value` returns `Cow`: unmodifiable values (`red`, `14px`,
+    // `$primary`) borrow straight from `value` with zero allocation, and the
+    // key/result builders below only ever read `&optimized` as `&str`.
+    let optimized = value.map_or(Cow::Borrowed(""), optimize_value);
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -307,72 +450,66 @@ pub fn sheet_to_classname(
         let file_suffix = filename.map(get_file_num_by_filename);
         let order = style_order.unwrap_or(255);
         let prop = property.trim();
-        // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
-        let mut result =
-            String::with_capacity(prefix.len() + prop.len() + optimized.len() + encoded.len() + 16);
-        result.push_str(&prefix);
-        result.push_str(prop);
-        result.push('-');
-        write_u8(&mut result, level);
-        result.push('-');
-        result.push_str(&optimized);
-        result.push('-');
-        result.push_str(&encoded);
-        result.push('-');
-        write_u8(&mut result, order);
-        if let Some(fnum) = file_suffix {
+        with_prefix(|prefix| {
+            // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
+            let mut result = String::with_capacity(
+                prefix.len() + prop.len() + optimized.len() + encoded.len() + 16,
+            );
+            result.push_str(prefix);
+            result.push_str(prop);
             result.push('-');
-            result.push_str(&num_to_nm_base(fnum));
-        }
-        result
+            write_u8(&mut result, level);
+            result.push('-');
+            result.push_str(&optimized);
+            result.push('-');
+            result.push_str(&encoded);
+            result.push('-');
+            write_u8(&mut result, order);
+            if let Some(fnum) = file_suffix {
+                result.push('-');
+                result.push_str(&num_to_nm_base(fnum));
+            }
+            result
+        })
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
         let order = style_order.unwrap_or(255);
-        let file_num = filename.map(get_file_num_by_filename);
+        let file_num_str = filename.map(|f| num_to_nm_base(get_file_num_by_filename(f)));
         let trimmed_prop = property.trim();
 
-        // Build key with pre-allocated capacity
-        let mut key = String::with_capacity(
-            trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16,
-        );
-        key.push_str(trimmed_prop);
-        key.push('-');
-        write_u8(&mut key, level);
-        key.push('-');
-        key.push_str(&optimized);
-        key.push('-');
-        key.push_str(trimmed_selector);
-        key.push('-');
-        write_u8(&mut key, order);
-        if let Some(fnum) = file_num {
-            key.push('-');
-            key.push_str(&num_to_nm_base(fnum));
-        }
-
         let filename_key = filename.unwrap_or_default();
-        let clas_num = class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(filename_key.to_string()).or_default();
-            if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
+        // Build key into the reusable buffer; probe borrows it, insert clones it.
+        let clas_num = class_num_for_key(filename_key, |key| {
+            key.reserve(trimmed_prop.len() + optimized.len() + trimmed_selector.len() + 16);
+            key.push_str(trimmed_prop);
+            key.push('-');
+            write_u8(key, level);
+            key.push('-');
+            key.push_str(&optimized);
+            key.push('-');
+            key.push_str(trimmed_selector);
+            key.push('-');
+            write_u8(key, order);
+            if let Some(fstr) = &file_num_str {
+                key.push('-');
+                key.push_str(fstr);
             }
         });
-        if let Some(file_num) = file_num {
-            let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
-            result.push_str(&prefix);
-            result.push_str(&num_to_nm_base(file_num));
-            result.push('-');
-            result.push_str(&clas_num);
-            result
-        } else {
-            let mut result = String::with_capacity(prefix.len() + clas_num.len());
-            result.push_str(&prefix);
-            result.push_str(&clas_num);
-            result
-        }
+        with_prefix(|prefix| {
+            if let Some(fstr) = &file_num_str {
+                let mut result = String::with_capacity(prefix.len() + 8 + clas_num.len());
+                result.push_str(prefix);
+                result.push_str(fstr);
+                result.push('-');
+                result.push_str(&clas_num);
+                result
+            } else {
+                let mut result = String::with_capacity(prefix.len() + clas_num.len());
+                result.push_str(prefix);
+                result.push_str(&clas_num);
+                result
+            }
+        })
     }
 }
 
@@ -393,7 +530,6 @@ fn write_u8(s: &mut String, v: u8) {
 
 #[must_use]
 pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>) -> String {
-    let prefix = get_prefix().unwrap_or_default();
     if is_debug() {
         let selector = selector.unwrap_or_default().trim();
         let encoded = if selector.is_empty() {
@@ -401,36 +537,32 @@ pub fn sheet_to_variable_name(property: &str, level: u8, selector: Option<&str>)
         } else {
             encode_selector(selector)
         };
-        let mut result =
-            String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
-        result.push_str("--");
-        result.push_str(&prefix);
-        result.push_str(property);
-        result.push('-');
-        write_u8(&mut result, level);
-        result.push('-');
-        result.push_str(&encoded);
-        result
+        with_prefix(|prefix| {
+            let mut result =
+                String::with_capacity(2 + prefix.len() + property.len() + 4 + encoded.len());
+            result.push_str("--");
+            result.push_str(prefix);
+            result.push_str(property);
+            result.push('-');
+            write_u8(&mut result, level);
+            result.push('-');
+            result.push_str(&encoded);
+            result
+        })
     } else {
         let trimmed_selector = selector.unwrap_or_default().trim();
-        let mut key = String::with_capacity(property.len() + 4 + trimmed_selector.len());
-        key.push_str(property);
-        key.push('-');
-        write_u8(&mut key, level);
-        key.push('-');
-        key.push_str(trimmed_selector);
-        class_map::with_class_map_mut(|map| {
-            let file_entry = map.entry(String::new()).or_default();
-            let base_name = if let Some(&num) = file_entry.get(&key) {
-                num_to_nm_base(num)
-            } else {
-                let len = file_entry.len();
-                file_entry.insert(key, len);
-                num_to_nm_base(len)
-            };
+        let base_name = class_num_for_key("", |key| {
+            key.reserve(property.len() + 4 + trimmed_selector.len());
+            key.push_str(property);
+            key.push('-');
+            write_u8(key, level);
+            key.push('-');
+            key.push_str(trimmed_selector);
+        });
+        with_prefix(|prefix| {
             let mut result = String::with_capacity(2 + prefix.len() + base_name.len());
             result.push_str("--");
-            result.push_str(&prefix);
+            result.push_str(prefix);
             result.push_str(&base_name);
             result
         })

@@ -72,7 +72,17 @@ pub fn get_file_map() -> BiHashMap<String, usize> {
 #[inline]
 #[must_use]
 pub fn get_file_num_by_filename(filename: &str) -> usize {
+    // Hot path: a file is inserted once but read on every one of its many styles,
+    // so the overwhelmingly common case is a repeat lookup of an already-registered
+    // file. Probe under the shared read guard first (no exclusive lock / no
+    // RefCell::borrow_mut contention); only fall back to the write guard on a
+    // genuine miss.
+    if let Some(file_num) = with_file_map(|map| map.get_by_left(filename).copied()) {
+        return file_num;
+    }
     with_file_map_mut(|map| {
+        // Re-check under the write lock in case another registration slipped in
+        // during the brief unlocked window between the two guards.
         if let Some(&file_num) = map.get_by_left(filename) {
             file_num
         } else {

@@ -957,7 +957,7 @@ mod tests {
                 "z-index",
                 "zoom",
             ]
-            .map(to_camel_case),
+            .map(|p| to_camel_case(p).into_owned()),
         );
 
         for property in &SPECIAL_PROPERTIES {

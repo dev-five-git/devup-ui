@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     fmt::{Display, Formatter},
 };
@@ -6,7 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    constant::SELECTOR_ORDER_MAP,
+    constant::SELECTOR_ORDER,
     selector_separator::SelectorSeparator,
     to_kebab_case,
     utils::{collapse_whitespace, to_camel_case},
@@ -58,9 +59,24 @@ pub enum StyleSelector {
     Global(String, String),
 }
 
-fn optimize_selector_string(selector: &str) -> String {
-    collapse_whitespace(selector)
+/// Collapse an owned selector string's whitespace WITHOUT allocating when it is
+/// already tight. The overwhelmingly common input (every selector produced by
+/// `StyleSelector::from(&str)`, which already collapsed) hits
+/// `collapse_whitespace`'s `Cow::Borrowed` fast-path, so the prior
+/// `collapse_whitespace(&s).into_owned()` cloned an identical `String` for
+/// nothing. Detecting the borrow lets us MOVE the already-owned `String`
+/// through with zero allocation; only the rare interior-whitespace source
+/// (e.g. a raw `StyleSelector::Selector(sel)` from `css_to_style`, which
+/// `.trim()`s but does not collapse interior runs) pays for the owned rebuild.
+/// Byte-identical to the previous behavior.
+#[inline]
+fn collapse_owned_selector(s: String) -> String {
+    match collapse_whitespace(&s) {
+        Cow::Borrowed(_) => s,
+        Cow::Owned(collapsed) => collapsed,
+    }
 }
+
 #[must_use]
 pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
     match selector {
@@ -71,13 +87,13 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
         } => StyleSelector::At {
             kind,
             query,
-            selector: selector.map(|s| optimize_selector_string(&s)),
+            selector: selector.map(collapse_owned_selector),
         },
         StyleSelector::Selector(selector) => {
-            StyleSelector::Selector(optimize_selector_string(&selector))
+            StyleSelector::Selector(collapse_owned_selector(selector))
         }
         StyleSelector::Global(selector, file) => {
-            StyleSelector::Global(optimize_selector_string(&selector), file)
+            StyleSelector::Global(collapse_owned_selector(selector), file)
         }
     }
 }
@@ -123,22 +139,12 @@ impl Ord for StyleSelector {
                 }
                 match (a.contains(':'), b.contains(':')) {
                     (true, true) => {
-                        let a_order = a
-                            .split_once(':')
-                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
-                        let b_order = b
-                            .split_once(':')
-                            .map_or_else(String::new, |(_, post)| format!(":{post}"));
-                        let mut a_order_value = 0;
-                        let mut b_order_value = 0;
-                        for (order, order_value) in SELECTOR_ORDER_MAP.iter() {
-                            if a_order.contains(order) {
-                                a_order_value = *order_value;
-                            }
-                            if b_order.contains(order) {
-                                b_order_value = *order_value;
-                            }
-                        }
+                        // `contains(':')` is true here, so `find` always succeeds;
+                        // the slice equals the former `format!(":{post}")` without allocating.
+                        let a_order = a.find(':').map_or("", |i| &a[i..]);
+                        let b_order = b.find(':').map_or("", |i| &b[i..]);
+                        let a_order_value = global_selector_order(a_order);
+                        let b_order_value = global_selector_order(b_order);
                         if a_order_value == b_order_value {
                             a.cmp(b)
                         } else {
@@ -162,10 +168,10 @@ impl From<&str> for StyleSelector {
     fn from(value: &str) -> Self {
         let value = collapse_whitespace(value);
         if value.contains('&') {
-            StyleSelector::Selector(value)
+            StyleSelector::Selector(value.into_owned())
         } else if let Some(s) = value.strip_prefix("group-") {
             let post = to_kebab_case(s);
-            let sep = SelectorSeparator::from(post.as_str()).to_string();
+            let sep = SelectorSeparator::from(post.as_ref()).as_str();
             // Match both the legacy `role="group"` attribute (deprecated, removal
             // planned for v2) and the new `data-group` attribute with a single
             // `:is()` clause. `:is()` adopts its highest-specificity argument, so
@@ -175,10 +181,10 @@ impl From<&str> for StyleSelector {
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
-        } else if matches!(value.as_str(), "print" | "screen" | "speech" | "all") {
+        } else if matches!(value.as_ref(), "print" | "screen" | "speech" | "all") {
             StyleSelector::At {
                 kind: AtRuleKind::Media,
-                query: value,
+                query: value.into_owned(),
                 selector: None,
             }
         } else {
@@ -186,7 +192,7 @@ impl From<&str> for StyleSelector {
 
             StyleSelector::Selector(format!(
                 "&{}{}",
-                SelectorSeparator::from(post.as_str()),
+                SelectorSeparator::from(post.as_ref()),
                 post
             ))
         }
@@ -203,7 +209,7 @@ impl From<[&str; 2]> for StyleSelector {
         StyleSelector::Selector(format!(
             "{}{}{}",
             StyleSelector::from(value[0]),
-            SelectorSeparator::from(post.as_str()),
+            SelectorSeparator::from(post.as_ref()),
             post
         ))
     }
@@ -216,7 +222,7 @@ impl From<(&StyleSelector, &str)> for StyleSelector {
                 format!(
                     "{}{}{}",
                     value.0,
-                    SelectorSeparator::from(post.as_str()),
+                    SelectorSeparator::from(post.as_ref()),
                     post
                 ),
                 file.clone(),
@@ -250,27 +256,86 @@ impl Display for StyleSelector {
     }
 }
 
-fn get_selector_order(selector: &str) -> u8 {
-    // Extract the part after the single '&' (avoid String allocation)
-    let t: &str = if selector.chars().filter(|c| *c == '&').count() == 1 {
-        selector.split('&').next_back().unwrap_or(selector)
-    } else {
-        selector
+impl StyleSelector {
+    /// The selector string used for class-name generation, borrowing when possible.
+    ///
+    /// `Selector`/`Global` variants have a `Display` impl that writes their inner
+    /// `String` verbatim, so they can be handed out as a borrowed `&str` with zero
+    /// allocation. Only the `At` variant needs the formatted owned string. This
+    /// yields bytes identical to `self.to_string()` for every variant.
+    #[must_use]
+    pub fn as_class_str(&self) -> std::borrow::Cow<'_, str> {
+        match self {
+            StyleSelector::Selector(value) | StyleSelector::Global(value, _) => {
+                std::borrow::Cow::Borrowed(value)
+            }
+            StyleSelector::At { .. } => std::borrow::Cow::Owned(self.to_string()),
+        }
+    }
+}
+
+/// Rank a `Global` selector's pseudo suffix by scanning `SELECTOR_ORDER` once.
+///
+/// "Last matching entry wins": the value of the last table token contained in
+/// `order_suffix` (default 0). Computes each side's order in a single pass
+/// instead of re-scanning the table per comparison.
+#[must_use]
+pub fn global_selector_order(order_suffix: &str) -> u8 {
+    let mut order_value = 0;
+    for (order, value) in SELECTOR_ORDER {
+        if order_suffix.contains(order) {
+            order_value = value;
+        }
+    }
+    order_value
+}
+
+#[must_use]
+pub fn get_selector_order(selector: &str) -> u8 {
+    // Extract the part after the single '&' (avoid String allocation).
+    // Single fused scan: record the first '&' byte index and detect a second '&'
+    // in the same pass; slice the tail directly only when exactly one '&' was
+    // seen (exactly one '&' ⇒ part after it), else use the whole selector.
+    let mut first_amp: Option<usize> = None;
+    let mut saw_second = false;
+    for (i, b) in selector.bytes().enumerate() {
+        if b == b'&' {
+            if first_amp.is_none() {
+                first_amp = Some(i);
+            } else {
+                saw_second = true;
+                break;
+            }
+        }
+    }
+    let t: &str = match first_amp {
+        Some(i) if !saw_second => &selector[i + 1..],
+        _ => selector,
     };
 
-    // First, try to find the order in the map (for regular selectors like &:hover)
-    if let Some(order) = SELECTOR_ORDER_MAP.get(t) {
+    // First, try to find the order in the table (for regular selectors like &:hover).
+    // Every SELECTOR_ORDER key starts with `:`, so a tail that does not begin with
+    // `:` (e.g. `&`, or a group/global pattern) can never equal any key — gate the
+    // 6-entry linear probe behind that single-byte check. Byte-identical result.
+    if t.starts_with(':')
+        && let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == t)
+    {
         return *order;
     }
 
     // For group selectors like ":is([role=group],[data-group]):hover &", the pseudo-selector is before &
-    // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector
-    if selector.ends_with(" &") {
-        let before_ampersand = selector.strip_suffix(" &").unwrap_or(selector);
-        for (pseudo, order) in SELECTOR_ORDER_MAP.iter() {
-            if before_ampersand.ends_with(pseudo) {
-                return *order;
-            }
+    // Check if the selector ends with " &" (group pattern) and contains a known pseudo-selector.
+    // Every SELECTOR_ORDER key is a `:`-prefixed token with no interior `:`, so the pseudo suffix,
+    // if any, is exactly the slice from the LAST `:` onward. Locate it once via `rfind(':')` and
+    // compare that single slice against the table by equality, collapsing 6 `ends_with` tail-walks
+    // into one `rfind` + up-to-6 `==`. Byte-identical: each key is a distinct suffix, so the first
+    // (and only) `ends_with` match the previous loop could return equals the single-slice equality.
+    if let Some(before_ampersand) = selector.strip_suffix(" &")
+        && let Some(colon) = before_ampersand.rfind(':')
+    {
+        let suffix = &before_ampersand[colon..];
+        if let Some((_, order)) = SELECTOR_ORDER.iter().find(|(k, _)| *k == suffix) {
+            return *order;
         }
     }
 

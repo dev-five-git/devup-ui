@@ -3,17 +3,19 @@ use crate::extract_style::style_property::StyleProperty;
 use crate::gen_class_name::gen_class_names;
 use crate::gen_style::gen_styles;
 use crate::tailwind::{has_tailwind_classes, parse_single_class, parse_tailwind_to_styles};
-use crate::utils::{get_string_by_property_key, merge_object_expressions};
+use crate::utils::{get_str_by_property_key, merge_object_expressions};
 use crate::{ExtractStyleProp, ExtractStyleValue};
-use oxc_allocator::CloneIn;
-use oxc_ast::AstBuilder;
+use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Expression, JSXAttributeItem, JSXAttributeValue, LogicalOperator, ObjectPropertyKind,
-    PropertyKey, PropertyKind, TemplateElementValue,
+    Expression, IdentifierName, JSXAttributeItem, JSXAttributeName, JSXAttributeValue,
+    LogicalOperator, ObjectPropertyKind, PropertyKey, PropertyKind, StaticMemberExpression, Str,
+    StringLiteral, TemplateElement, TemplateElementValue, TemplateLiteral,
 };
+use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 use rustc_hash::FxHashMap;
+use std::borrow::Cow;
 
 /// Combine two optional className expressions into a conditional expression.
 /// `condition ? con_expr : alt_expr`, falling back to `""` for the missing branch.
@@ -25,22 +27,80 @@ pub(crate) fn combine_conditional_class_name<'a>(
     alt_expr: Option<Expression<'a>>,
 ) -> Option<Expression<'a>> {
     match (con_expr, alt_expr) {
-        (Some(con), Some(alt)) => {
-            Some(ast_builder.expression_conditional(SPAN, condition, con, alt))
-        }
-        (Some(con), None) => Some(ast_builder.expression_conditional(
+        (Some(con), Some(alt)) => Some(Expression::new_conditional_expression(
             SPAN,
             condition,
             con,
-            ast_builder.expression_string_literal(SPAN, "", None),
+            alt,
+            ast_builder,
         )),
-        (None, Some(alt)) => Some(ast_builder.expression_conditional(
+        (Some(con), None) => Some(Expression::new_conditional_expression(
             SPAN,
             condition,
-            ast_builder.expression_string_literal(SPAN, "", None),
+            con,
+            Expression::new_string_literal(SPAN, "", None, ast_builder),
+            ast_builder,
+        )),
+        (None, Some(alt)) => Some(Expression::new_conditional_expression(
+            SPAN,
+            condition,
+            Expression::new_string_literal(SPAN, "", None, ast_builder),
             alt,
+            ast_builder,
         )),
         (None, None) => None,
+    }
+}
+
+/// Resolve the final className expression (and extracted Tailwind styles),
+/// handling the optional conditional styleOrder branch:
+/// `condition ? consequent_class : alternate_class`.
+fn resolve_class_name_expression<'a>(
+    ast_builder: &AstBuilder<'a>,
+    class_name_prop: &Option<Expression<'a>>,
+    styles: &mut [ExtractStyleProp<'a>],
+    style_order: Option<u8>,
+    spread_props: &[Expression<'a>],
+    filename: Option<&str>,
+    conditional_branch: Option<(Expression<'a>, &mut [ExtractStyleProp<'a>], Option<u8>)>,
+) -> (Option<Expression<'a>>, Vec<ExtractStyleValue>) {
+    if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
+        // Conditional styleOrder: generate className for both branches
+        let (con_expr, con_tailwind) = get_class_name_expression(
+            ast_builder,
+            class_name_prop,
+            styles,
+            style_order,
+            spread_props,
+            filename,
+        );
+        let alt_class_name_prop = class_name_prop
+            .as_ref()
+            .map(|c| c.clone_in(ast_builder.allocator()));
+        let (alt_expr, alt_tailwind) = get_class_name_expression(
+            ast_builder,
+            &alt_class_name_prop,
+            alt_styles,
+            alt_style_order,
+            spread_props,
+            filename,
+        );
+
+        let combined_expr =
+            combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
+
+        let mut all_tailwind = con_tailwind;
+        all_tailwind.extend(alt_tailwind);
+        (combined_expr, all_tailwind)
+    } else {
+        get_class_name_expression(
+            ast_builder,
+            class_name_prop,
+            styles,
+            style_order,
+            spread_props,
+            filename,
+        )
     }
 }
 
@@ -66,11 +126,11 @@ pub fn modify_prop_object<'a>(
         let prop = props.remove(idx);
         match prop {
             ObjectPropertyKind::ObjectProperty(attr) => {
-                if let Some(name) = get_string_by_property_key(&attr.key) {
+                if let Some(name) = get_str_by_property_key(&attr.key) {
                     if name == "className" {
-                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        class_name_prop = Some(attr.value.clone_in(ast_builder.allocator()));
                     } else if name == "style" {
-                        style_prop = Some(attr.value.clone_in(ast_builder.allocator));
+                        style_prop = Some(attr.value.clone_in(ast_builder.allocator()));
                     } else {
                         props.insert(idx, ObjectPropertyKind::ObjectProperty(attr));
                     }
@@ -79,61 +139,32 @@ pub fn modify_prop_object<'a>(
                 }
             }
             ObjectPropertyKind::SpreadProperty(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
                 props.insert(idx, ObjectPropertyKind::SpreadProperty(spread));
             }
         }
     }
 
-    let (class_name_expr, tailwind_styles) =
-        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-            // Conditional styleOrder: generate className for both branches
-            let (con_expr, con_tailwind) = get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            );
-            let alt_class_name_prop = class_name_prop
-                .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator));
-            let (alt_expr, alt_tailwind) = get_class_name_expression(
-                ast_builder,
-                &alt_class_name_prop,
-                alt_styles,
-                alt_style_order,
-                &spread_props,
-                filename,
-            );
-
-            let combined_expr =
-                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
-
-            let mut all_tailwind = con_tailwind;
-            all_tailwind.extend(alt_tailwind);
-            (combined_expr, all_tailwind)
-        } else {
-            get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            )
-        };
+    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+        filename,
+        conditional_branch,
+    );
 
     if let Some(ex) = class_name_expr {
-        props.push(ast_builder.object_property_kind_object_property(
+        props.push(ObjectPropertyKind::new_object_property(
             SPAN,
             PropertyKind::Init,
-            ast_builder.property_key_static_identifier(SPAN, "className"),
+            PropertyKey::new_static_identifier(SPAN, "className", ast_builder),
             ex,
             false,
             false,
             false,
+            ast_builder,
         ));
     }
     if let Some(ex) = get_style_expression(
@@ -144,21 +175,23 @@ pub fn modify_prop_object<'a>(
         &spread_props,
         filename,
     ) {
-        props.push(ast_builder.object_property_kind_object_property(
+        props.push(ObjectPropertyKind::new_object_property(
             SPAN,
             PropertyKind::Init,
-            ast_builder.property_key_static_identifier(SPAN, "style"),
+            PropertyKey::new_static_identifier(SPAN, "style", ast_builder),
             ex,
             false,
             false,
             false,
+            ast_builder,
         ));
     }
     if let Some(ex) = props_prop {
-        props.push(
-            ast_builder
-                .object_property_kind_spread_property(SPAN, ex.clone_in(ast_builder.allocator)),
-        );
+        props.push(ObjectPropertyKind::new_spread_property(
+            SPAN,
+            ex.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ));
     }
     tailwind_styles
 }
@@ -194,10 +227,14 @@ pub fn modify_props<'a>(
                         res = container
                             .expression
                             .as_expression()
-                            .map(|expression| expression.clone_in(ast_builder.allocator));
+                            .map(|expression| expression.clone_in(ast_builder.allocator()));
                     } else if let JSXAttributeValue::StringLiteral(literal) = &value {
-                        res =
-                            Some(ast_builder.expression_string_literal(SPAN, literal.value, None));
+                        res = Some(Expression::new_string_literal(
+                            SPAN,
+                            literal.value,
+                            None,
+                            ast_builder,
+                        ));
                     }
                     let name = ident.name.as_str();
                     if name == "className" {
@@ -210,59 +247,30 @@ pub fn modify_props<'a>(
                 }
             }
             JSXAttributeItem::SpreadAttribute(spread) => {
-                spread_props.push(spread.argument.clone_in(ast_builder.allocator));
+                spread_props.push(spread.argument.clone_in(ast_builder.allocator()));
                 props.insert(idx, JSXAttributeItem::SpreadAttribute(spread));
             }
         }
     }
-    let (class_name_expr, tailwind_styles) =
-        if let Some((condition, alt_styles, alt_style_order)) = conditional_branch {
-            // Conditional styleOrder: generate className for both branches
-            let (con_expr, con_tailwind) = get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            );
-            let alt_class_name_prop = class_name_prop
-                .as_ref()
-                .map(|c| c.clone_in(ast_builder.allocator));
-            let (alt_expr, alt_tailwind) = get_class_name_expression(
-                ast_builder,
-                &alt_class_name_prop,
-                alt_styles,
-                alt_style_order,
-                &spread_props,
-                filename,
-            );
-
-            let combined_expr =
-                combine_conditional_class_name(ast_builder, condition, con_expr, alt_expr);
-
-            let mut all_tailwind = con_tailwind;
-            all_tailwind.extend(alt_tailwind);
-            (combined_expr, all_tailwind)
-        } else {
-            get_class_name_expression(
-                ast_builder,
-                &class_name_prop,
-                styles,
-                style_order,
-                &spread_props,
-                filename,
-            )
-        };
+    let (class_name_expr, tailwind_styles) = resolve_class_name_expression(
+        ast_builder,
+        &class_name_prop,
+        styles,
+        style_order,
+        &spread_props,
+        filename,
+        conditional_branch,
+    );
     if let Some(ex) = class_name_expr {
-        props.push(ast_builder.jsx_attribute_item_attribute(
+        props.push(JSXAttributeItem::new_attribute(
             SPAN,
-            ast_builder.jsx_attribute_name_identifier(SPAN, "className"),
+            JSXAttributeName::new_identifier(SPAN, "className", ast_builder),
             Some(if let Expression::StringLiteral(literal) = ex {
                 JSXAttributeValue::StringLiteral(literal)
             } else {
-                ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())
+                JSXAttributeValue::new_expression_container(SPAN, ex.into(), ast_builder)
             }),
+            ast_builder,
         ));
     }
     if let Some(ex) = get_style_expression(
@@ -273,19 +281,23 @@ pub fn modify_props<'a>(
         &spread_props,
         filename,
     ) {
-        props.push(ast_builder.jsx_attribute_item_attribute(
+        props.push(JSXAttributeItem::new_attribute(
             SPAN,
-            ast_builder.jsx_attribute_name_identifier(SPAN, "style"),
-            Some(ast_builder.jsx_attribute_value_expression_container(SPAN, ex.into())),
+            JSXAttributeName::new_identifier(SPAN, "style", ast_builder),
+            Some(JSXAttributeValue::new_expression_container(
+                SPAN,
+                ex.into(),
+                ast_builder,
+            )),
+            ast_builder,
         ));
     }
     if let Some(props_prop) = props_prop {
-        props.push(
-            ast_builder.jsx_attribute_item_spread_attribute(
-                SPAN,
-                props_prop.clone_in(ast_builder.allocator),
-            ),
-        );
+        props.push(JSXAttributeItem::new_spread_attribute(
+            SPAN,
+            props_prop.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ));
     }
     tailwind_styles
 }
@@ -328,11 +340,12 @@ pub fn get_class_name_expression<'a>(
         class_expressions.extend(spread_props.iter().map(|ex| {
             convert_class_name(
                 ast_builder,
-                &Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+                &Expression::StaticMemberExpression(StaticMemberExpression::boxed(
                     SPAN,
-                    ex.clone_in(ast_builder.allocator),
-                    ast_builder.identifier_name(SPAN, ast_builder.str("className")),
+                    ex.clone_in(ast_builder.allocator()),
+                    IdentifierName::new(SPAN, "className", ast_builder),
                     true,
+                    ast_builder,
                 )),
             )
         }));
@@ -363,15 +376,15 @@ fn extract_tailwind_from_class_name<'a>(
     if let Some(Expression::StringLiteral(literal)) = class_name_prop {
         let class_str = literal.value.as_str();
         if has_tailwind_classes(class_str) {
-            let mut tailwind_styles = parse_tailwind_to_styles(class_str, filename);
+            let mut tailwind_styles = parse_tailwind_to_styles(class_str);
             if !tailwind_styles.is_empty() {
                 // Apply style_order to all extracted Tailwind styles
                 apply_style_order_to_styles(&mut tailwind_styles, style_order);
 
-                // Convert ExtractStyleValue to ExtractStyleProp::Static for gen_class_names
+                // Move ExtractStyleValue into ExtractStyleProp::Static for gen_class_names,
+                // then recover the same values afterward without deep-cloning each style.
                 let mut tailwind_style_props: Vec<ExtractStyleProp> = tailwind_styles
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .map(ExtractStyleProp::Static)
                     .collect();
 
@@ -383,6 +396,20 @@ fn extract_tailwind_from_class_name<'a>(
                     filename,
                 );
 
+                let tailwind_styles = tailwind_style_props
+                    .into_iter()
+                    .map(|style_prop| match style_prop {
+                        ExtractStyleProp::Static(style) => style,
+                        ExtractStyleProp::StaticArray(_)
+                        | ExtractStyleProp::Conditional { .. }
+                        | ExtractStyleProp::Enum { .. }
+                        | ExtractStyleProp::Expression { .. }
+                        | ExtractStyleProp::MemberExpression { .. } => {
+                            unreachable!("tailwind className styles are always static")
+                        }
+                    })
+                    .collect();
+
                 return (tailwind_styles, class_names_expr);
             }
         }
@@ -392,15 +419,35 @@ fn extract_tailwind_from_class_name<'a>(
     if let Some(Expression::TemplateLiteral(template)) = class_name_prop {
         let all_classes = extract_all_classes_from_template_literal(template);
         if has_tailwind_classes(&all_classes) {
-            // Build mapping from Tailwind class → generated class name
-            let class_mapping = build_tailwind_class_mapping(&all_classes, style_order, filename);
+            // Single pass over every class: parse ONCE, then build both the
+            // `Tailwind class → generated class name` mapping and the styles vec for
+            // CSS generation together. The previous code called
+            // `build_tailwind_class_mapping` and then `parse_tailwind_to_styles`, which
+            // re-parsed (and re-allocated a `TailwindClass` + `ExtractStaticStyle` for)
+            // every class a second time. Merging them keeps the mapping, the collected
+            // styles, and the ordered `extract()` side effects byte-identical while
+            // halving the per-class parse/allocate work.
+            let mut class_mapping: FxHashMap<String, String> = FxHashMap::default();
+            // Upper bound: at most one style per whitespace-separated class (the same
+            // presize `parse_tailwind_to_styles` used), so the vec never grow-reallocs.
+            let mut tailwind_styles: Vec<ExtractStyleValue> =
+                Vec::with_capacity(all_classes.bytes().filter(u8::is_ascii_whitespace).count() + 1);
+            for class in all_classes.split_whitespace() {
+                if let Some(parsed) = parse_single_class(class) {
+                    let mut static_style = parsed.to_static_style();
+                    if let Some(order) = style_order {
+                        static_style.style_order = Some(order);
+                    }
+                    // `ExtractStaticStyle::extract` always yields a `ClassName`, so this
+                    // records the exact mapping entry the two-pass version produced.
+                    if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
+                        class_mapping.insert(class.to_string(), generated);
+                    }
+                    tailwind_styles.push(ExtractStyleValue::Static(static_style));
+                }
+            }
 
             if !class_mapping.is_empty() {
-                // Collect all styles for CSS generation
-                let mut tailwind_styles = parse_tailwind_to_styles(&all_classes, filename);
-                // Apply style_order to all extracted Tailwind styles
-                apply_style_order_to_styles(&mut tailwind_styles, style_order);
-
                 // Build new template literal with replaced class names
                 let new_template =
                     rebuild_template_literal_with_mapping(ast_builder, template, &class_mapping);
@@ -413,52 +460,42 @@ fn extract_tailwind_from_class_name<'a>(
     (Vec::new(), None)
 }
 
-/// Build a mapping from Tailwind class name to generated devup-ui class name
-fn build_tailwind_class_mapping(
-    class_str: &str,
-    style_order: Option<u8>,
-    filename: Option<&str>,
-) -> FxHashMap<String, String> {
-    let mut mapping = FxHashMap::default();
-
-    for class in class_str.split_whitespace() {
-        if let Some(parsed) = parse_single_class(class) {
-            let mut static_style = parsed.to_static_style();
-            if let Some(order) = style_order {
-                static_style.style_order = Some(order);
-            }
-            // Extract to get the generated class name
-            if let StyleProperty::ClassName(generated) = static_style.extract(filename) {
-                mapping.insert(class.to_string(), generated);
-            }
-        }
-    }
-
-    mapping
-}
-
 /// Rebuild a template literal, replacing Tailwind classes with generated class names
 fn rebuild_template_literal_with_mapping<'a>(
     ast_builder: &AstBuilder<'a>,
     template: &oxc_ast::ast::TemplateLiteral<'a>,
     class_mapping: &FxHashMap<String, String>,
 ) -> Expression<'a> {
+    // Sort the mapping ONCE by key length descending (avoids partial replacements,
+    // e.g. "text-3xl" before "text-3") and reuse the sorted slice for every quasi
+    // and nested expression instead of re-sorting per call.
+    let mut sorted_classes: Vec<(&String, &String)> = class_mapping.iter().collect();
+    sorted_classes.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
+    rebuild_template_literal_with_sorted(ast_builder, template, &sorted_classes)
+}
+
+/// Rebuild a template literal using a pre-sorted class mapping slice.
+fn rebuild_template_literal_with_sorted<'a>(
+    ast_builder: &AstBuilder<'a>,
+    template: &oxc_ast::ast::TemplateLiteral<'a>,
+    sorted_classes: &[(&String, &String)],
+) -> Expression<'a> {
     // Rebuild quasis with replaced class names
     let new_quasis = template.quasis.iter().map(|quasi| {
         let raw = quasi.value.raw.as_str();
-        let replaced = replace_classes_in_string(raw, class_mapping);
+        let replaced = replace_classes_in_string(raw, sorted_classes);
         let cooked = quasi.value.cooked.as_ref().map(|c| {
-            let replaced_cooked = replace_classes_in_string(c.as_str(), class_mapping);
-            ast_builder.str(&replaced_cooked)
+            let replaced_cooked = replace_classes_in_string(c.as_str(), sorted_classes);
+            Str::from_in(&replaced_cooked, ast_builder.allocator())
         });
-        ast_builder.template_element(
+        TemplateElement::new(
             quasi.span,
             TemplateElementValue {
-                raw: ast_builder.str(&replaced),
+                raw: Str::from_in(&replaced, ast_builder.allocator()),
                 cooked,
             },
             quasi.tail,
-            false, // escape_raw
+            ast_builder,
         )
     });
 
@@ -466,66 +503,80 @@ fn rebuild_template_literal_with_mapping<'a>(
     let new_expressions = template
         .expressions
         .iter()
-        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, class_mapping));
+        .map(|expr| rebuild_expression_with_mapping(ast_builder, expr, sorted_classes));
 
-    ast_builder.expression_template_literal(
+    Expression::new_template_literal(
         template.span,
-        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder.allocator),
-        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder.allocator),
+        oxc_allocator::Vec::from_iter_in(new_quasis, ast_builder),
+        oxc_allocator::Vec::from_iter_in(new_expressions, ast_builder),
+        ast_builder,
     )
 }
 
-/// Replace Tailwind class names in a string with generated class names
-fn replace_classes_in_string(s: &str, class_mapping: &FxHashMap<String, String>) -> String {
-    let mut result = s.to_string();
-    // Sort by length descending to avoid partial replacements (e.g., "text-3xl" before "text-3")
-    let mut sorted_classes: Vec<_> = class_mapping.iter().collect();
-    sorted_classes.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
-
+/// Replace Tailwind class names in a string with generated class names.
+///
+/// `sorted_classes` MUST already be sorted by key length descending so longer
+/// class names are replaced before their prefixes (e.g. "text-3xl" before "text-3").
+fn replace_classes_in_string(s: &str, sorted_classes: &[(&String, &String)]) -> String {
+    let mut result = Cow::Borrowed(s);
     for (tailwind_class, generated_class) in sorted_classes {
-        result = result.replace(tailwind_class, generated_class);
+        // `str::replace` already scans the whole string internally and allocates a
+        // fresh `String` only on a match, so the previous standalone `contains`
+        // pre-scan was a redundant second scan of the same content. Compute the
+        // replacement once and only re-own the `Cow` when it actually changed
+        // (length differs, or same-length differing contents). Byte-identical.
+        let replaced = result.replace(tailwind_class.as_str(), generated_class);
+        if replaced.len() != result.len() || replaced != *result {
+            result = Cow::Owned(replaced);
+        }
     }
-    result
+    result.into_owned()
 }
 
 /// Rebuild an expression, replacing Tailwind classes in string literals
 fn rebuild_expression_with_mapping<'a>(
     ast_builder: &AstBuilder<'a>,
     expr: &Expression<'a>,
-    class_mapping: &FxHashMap<String, String>,
+    sorted_classes: &[(&String, &String)],
 ) -> Expression<'a> {
     match expr {
         Expression::StringLiteral(lit) => {
-            let replaced = replace_classes_in_string(lit.value.as_str(), class_mapping);
-            ast_builder.expression_string_literal(SPAN, ast_builder.str(&replaced), None)
+            let replaced = replace_classes_in_string(lit.value.as_str(), sorted_classes);
+            Expression::new_string_literal(
+                SPAN,
+                Str::from_in(&replaced, ast_builder.allocator()),
+                None,
+                ast_builder,
+            )
         }
         Expression::ConditionalExpression(cond) => {
             let consequent =
-                rebuild_expression_with_mapping(ast_builder, &cond.consequent, class_mapping);
+                rebuild_expression_with_mapping(ast_builder, &cond.consequent, sorted_classes);
             let alternate =
-                rebuild_expression_with_mapping(ast_builder, &cond.alternate, class_mapping);
-            ast_builder.expression_conditional(
+                rebuild_expression_with_mapping(ast_builder, &cond.alternate, sorted_classes);
+            Expression::new_conditional_expression(
                 cond.span,
-                cond.test.clone_in(ast_builder.allocator),
+                cond.test.clone_in(ast_builder.allocator()),
                 consequent,
                 alternate,
+                ast_builder,
             )
         }
         Expression::LogicalExpression(logic) => {
-            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, class_mapping);
-            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, class_mapping);
-            ast_builder.expression_logical(logic.span, left, logic.operator, right)
+            let left = rebuild_expression_with_mapping(ast_builder, &logic.left, sorted_classes);
+            let right = rebuild_expression_with_mapping(ast_builder, &logic.right, sorted_classes);
+            Expression::new_logical_expression(logic.span, left, logic.operator, right, ast_builder)
         }
         Expression::ParenthesizedExpression(paren) => {
             let inner =
-                rebuild_expression_with_mapping(ast_builder, &paren.expression, class_mapping);
-            ast_builder.expression_parenthesized(paren.span, inner)
+                rebuild_expression_with_mapping(ast_builder, &paren.expression, sorted_classes);
+            Expression::new_parenthesized_expression(paren.span, inner, ast_builder)
         }
         Expression::TemplateLiteral(inner_template) => {
-            rebuild_template_literal_with_mapping(ast_builder, inner_template, class_mapping)
+            rebuild_template_literal_with_sorted(ast_builder, inner_template, sorted_classes)
         }
         // For other expressions (variables, etc.), keep as-is
-        _ => expr.clone_in(ast_builder.allocator),
+        _ => expr.clone_in(ast_builder.allocator()),
     }
 }
 
@@ -607,16 +658,17 @@ pub fn get_style_expression<'a>(
     {
         style_expressions.push(style_vars);
     }
-    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator) {
+    if let Some(style_prop) = style_prop.clone_in(ast_builder.allocator()) {
         style_expressions.push(style_prop);
     }
     if style_prop.is_none() {
         style_expressions.extend(spread_props.iter().map(|ex| {
-            Expression::StaticMemberExpression(ast_builder.alloc_static_member_expression(
+            Expression::StaticMemberExpression(StaticMemberExpression::boxed(
                 SPAN,
-                ex.clone_in(ast_builder.allocator),
-                ast_builder.identifier_name(SPAN, ast_builder.str("style")),
+                ex.clone_in(ast_builder.allocator()),
+                IdentifierName::new(SPAN, "style", ast_builder),
                 true,
+                ast_builder,
             ))
         }));
     }
@@ -637,7 +689,7 @@ fn merge_string_expressions<'a>(
             Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
         )
     {
-        return Some(expression.clone_in(ast_builder.allocator));
+        return Some(expression.clone_in(ast_builder.allocator()));
     }
 
     let mut string_literals: std::vec::Vec<String> = vec![];
@@ -645,14 +697,16 @@ fn merge_string_expressions<'a>(
     let mut prev_str = String::new();
     for ex in expressions {
         if let Expression::StringLiteral(literal) = ex {
-            let target_prev = prev_str.trim();
+            // Reuse the `prev_str` buffer instead of allocating a fresh String via
+            // `format!` each iteration. `prev_str` is only ever built here from trimmed
+            // pieces, so it never carries leading whitespace; trim only its trailing end.
+            let trimmed_len = prev_str.trim_end().len();
+            prev_str.truncate(trimmed_len);
             let target = literal.value.trim();
-            prev_str = format!(
-                "{}{}{}",
-                target_prev,
-                if target_prev.is_empty() { "" } else { " " },
-                target
-            );
+            if !prev_str.is_empty() {
+                prev_str.push(' ');
+            }
+            prev_str.push_str(target);
         } else if let Expression::TemplateLiteral(template) = ex {
             for (idx, q) in template.quasis.iter().enumerate() {
                 let target_prev = prev_str.trim();
@@ -675,10 +729,14 @@ fn merge_string_expressions<'a>(
                         }
                     ));
                 } else {
-                    prev_str = q.value.raw.trim().to_string();
+                    // Reuse the existing heap buffer instead of dropping it and
+                    // allocating a fresh String: one fewer allocation per template
+                    // quasi. Output stays byte-identical (same trimmed contents).
+                    prev_str.clear();
+                    prev_str.push_str(q.value.raw.trim());
                 }
             }
-            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator));
+            other_expressions.extend(template.expressions.clone_in(ast_builder.allocator()));
         } else {
             let target_prev = prev_str.trim();
             string_literals.push(format!(
@@ -691,50 +749,66 @@ fn merge_string_expressions<'a>(
                 target_prev,
                 if target_prev.is_empty() { "" } else { " " }
             ));
-            other_expressions.push(ex.clone_in(ast_builder.allocator));
-            prev_str = String::new();
+            other_expressions.push(ex.clone_in(ast_builder.allocator()));
+            // Reuse the backing capacity instead of allocating a fresh empty
+            // String; `clear()` keeps the buffer, byte-identical behavior.
+            prev_str.clear();
         }
     }
-    string_literals.push(format!(
-        "{}{}",
-        if prev_str.trim().is_empty() { "" } else { " " },
-        prev_str.trim(),
-    ));
+    {
+        let tail = prev_str.trim();
+        if tail.is_empty() {
+            string_literals.push(String::new());
+        } else {
+            let mut buf = String::with_capacity(tail.len() + 1);
+            buf.push(' ');
+            buf.push_str(tail);
+            string_literals.push(buf);
+        }
+    }
     if other_expressions.is_empty() {
-        return Some(ast_builder.expression_string_literal(
+        // Concatenate the already-owned fragments into one presized buffer instead
+        // of `join("")`, which allocates a fresh Vec-backed buffer internally after
+        // summing lengths. Same summed-capacity, same byte order, then `.trim()` —
+        // byte-identical to `string_literals.join("")`.
+        let mut merged = String::with_capacity(string_literals.iter().map(String::len).sum());
+        for frag in &string_literals {
+            merged.push_str(frag);
+        }
+        return Some(Expression::new_string_literal(
             SPAN,
-            ast_builder.str(string_literals.join("").trim()),
+            Str::from_in(merged.trim(), ast_builder.allocator()),
             None,
+            ast_builder,
         ));
     }
 
     let q = oxc_allocator::Vec::from_iter_in(
         string_literals.iter().enumerate().map(|(idx, s)| {
             let tail = idx == string_literals.len() - 1;
-            ast_builder.template_element(
+            TemplateElement::new(
                 SPAN,
                 TemplateElementValue {
-                    raw: ast_builder.str(s),
+                    raw: Str::from_in(s, ast_builder.allocator()),
                     cooked: None,
                 },
                 tail,
-                false,
+                ast_builder,
             )
         }),
-        ast_builder.allocator,
+        ast_builder,
     );
-    Some(
-        ast_builder.expression_template_literal(
-            SPAN,
-            q,
-            oxc_allocator::Vec::from_iter_in(
-                other_expressions
-                    .into_iter()
-                    .map(|ex| ex.clone_in(ast_builder.allocator)),
-                ast_builder.allocator,
-            ),
+    Some(Expression::new_template_literal(
+        SPAN,
+        q,
+        oxc_allocator::Vec::from_iter_in(
+            other_expressions
+                .into_iter()
+                .map(|ex| ex.clone_in(ast_builder.allocator())),
+            ast_builder,
         ),
-    )
+        ast_builder,
+    ))
 }
 
 pub fn convert_class_name<'a>(
@@ -747,15 +821,20 @@ pub fn convert_class_name<'a>(
             | Expression::TemplateLiteral(_)
             | Expression::NumericLiteral(_)
     ) {
-        return class_name.clone_in(ast_builder.allocator);
+        return class_name.clone_in(ast_builder.allocator());
     }
 
     // wrap ( and ?? ''
-    ast_builder.expression_logical(
+    Expression::new_logical_expression(
         SPAN,
-        ast_builder.expression_parenthesized(SPAN, class_name.clone_in(ast_builder.allocator)),
+        Expression::new_parenthesized_expression(
+            SPAN,
+            class_name.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ),
         LogicalOperator::Or,
-        ast_builder.expression_string_literal(SPAN, "", None),
+        Expression::new_string_literal(SPAN, "", None, ast_builder),
+        ast_builder,
     )
 }
 
@@ -763,54 +842,56 @@ pub fn convert_style_vars<'a>(
     ast_builder: &AstBuilder<'a>,
     style_vars: &Expression<'a>,
 ) -> Expression<'a> {
-    let mut style_vars = style_vars.clone_in(ast_builder.allocator);
+    let mut style_vars = style_vars.clone_in(ast_builder.allocator());
     if let Expression::ObjectExpression(obj) = &mut style_vars {
         for idx in (0..obj.properties.len()).rev() {
             let mut prop = obj.properties.remove(idx);
 
             if let ObjectPropertyKind::ObjectProperty(p) = &mut prop {
-                let name = if let Some(name) = get_string_by_property_key(&p.key) {
+                let name = if let Some(name) = get_str_by_property_key(&p.key) {
                     Some(name)
                 } else {
                     obj.properties.insert(
                         idx,
-                        ast_builder.object_property_kind_object_property(
+                        ObjectPropertyKind::new_object_property(
                             SPAN,
                             PropertyKind::Init,
-                            PropertyKey::TemplateLiteral(ast_builder.alloc_template_literal(
+                            PropertyKey::TemplateLiteral(TemplateLiteral::boxed(
                                 SPAN,
                                 oxc_allocator::Vec::from_array_in(
                                     [
-                                        ast_builder.template_element(
+                                        TemplateElement::new(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.str("--"),
+                                                raw: Str::from("--"),
                                                 cooked: None,
                                             },
                                             false,
-                                            false,
+                                            ast_builder,
                                         ),
-                                        ast_builder.template_element(
+                                        TemplateElement::new(
                                             SPAN,
                                             TemplateElementValue {
-                                                raw: ast_builder.str(""),
+                                                raw: Str::from(""),
                                                 cooked: None,
                                             },
                                             true,
-                                            false,
+                                            ast_builder,
                                         ),
                                     ],
-                                    ast_builder.allocator,
+                                    ast_builder,
                                 ),
                                 oxc_allocator::Vec::from_array_in(
-                                    [p.key.to_expression().clone_in(ast_builder.allocator)],
-                                    ast_builder.allocator,
+                                    [p.key.to_expression().clone_in(ast_builder.allocator())],
+                                    ast_builder,
                                 ),
+                                ast_builder,
                             )),
-                            p.value.clone_in(ast_builder.allocator),
+                            p.value.clone_in(ast_builder.allocator()),
                             false,
                             false,
                             true,
+                            ast_builder,
                         ),
                     );
                     None
@@ -818,10 +899,19 @@ pub fn convert_style_vars<'a>(
 
                 if let Some(name) = name {
                     if !name.starts_with("--") {
-                        p.key = PropertyKey::StringLiteral(ast_builder.alloc_string_literal(
+                        // Build the `--`-prefixed key directly into a presized owned
+                        // buffer instead of going through `format!`'s `Arguments`
+                        // machinery; `Str::from_in` copies the bytes into the arena
+                        // regardless, so this is the same single owned allocation
+                        // minus the formatting overhead. Output is byte-identical.
+                        let mut prefixed = String::with_capacity(name.len() + 2);
+                        prefixed.push_str("--");
+                        prefixed.push_str(&name);
+                        p.key = PropertyKey::StringLiteral(StringLiteral::boxed(
                             SPAN,
-                            ast_builder.str(&format!("--{name}")),
+                            Str::from_in(&prefixed, ast_builder.allocator()),
                             None,
+                            ast_builder,
                         ));
                     }
                     obj.properties.insert(idx, prop);

@@ -21,9 +21,9 @@ export type GlobalCssProps = {
       params: string[]
     }
 } & {
-  [K in GlobalCssKeys<
-    Extract<AdvancedSelector, SimpleSelector>
-  >]?: DevupCommonProps &
+  [
+    K in GlobalCssKeys<Extract<AdvancedSelector, SimpleSelector>>
+  ]?: DevupCommonProps &
     DevupSelectorProps &
     DevupThemeSelectorProps & {
       params?: string[]
@@ -33,9 +33,9 @@ export type GlobalCssProps = {
     DevupSelectorProps &
     DevupThemeSelectorProps
 } & {
-  [K in `${keyof HTMLElementTagNameMap | keyof SVGElementTagNameMap | '.' | '*' | '#' | ':' | '['}${string}`]?: DevupCommonProps &
-    DevupSelectorProps &
-    DevupThemeSelectorProps
+  [
+    K in `${keyof HTMLElementTagNameMap | keyof SVGElementTagNameMap | '.' | '*' | '#' | ':' | '['}${string}`
+  ]?: DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
 }
 
 interface FontFaceProps {

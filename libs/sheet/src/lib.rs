@@ -5,9 +5,11 @@ use css::{
     atom_hoist::{atom_hoist_threshold, is_atom_hoist},
     file_map::canonical,
     file_routes::route_count_for_files,
-    merge_selector, sheet_to_classname,
-    style_selector::{AtRuleKind, StyleSelector},
+    sheet_to_classname,
+    style_selector::{AtRuleKind, StyleSelector, get_selector_order, global_selector_order},
     theme_tokens::set_theme_token_levels,
+    utils::compile_regex,
+    write_merge_selector,
 };
 use extractor::extract_style::ExtractStyleProperty;
 use extractor::extract_style::extract_static_style::ThemeTokenResolution;
@@ -27,6 +29,25 @@ macro_rules! push_fmt {
         // `std::fmt::Write::write_fmt` on `&mut String` is infallible; discard result.
         let _ = std::fmt::Write::write_fmt($target, format_args!($($arg)*));
     }};
+}
+
+/// Shared 5-field comparator for the decorate-sort-undecorate keyed tuples in
+/// `create_style_with_layers`. Both the `global_keyed` (`bool` first field) and
+/// `keyed` (`u8` first field) buckets share the shape
+/// `(K, order: u8, selector_str: &str, prop: &StyleSheetProperty)` and sort by the
+/// exact same chain: precomputed order key first (`bool`/`u8` both compare via
+/// `Ord`), then selector string, then property, then value. Extracted so the two
+/// call sites cannot drift; produces byte-identical ordering to the former inline
+/// closures.
+fn keyed_prop_cmp<K: Ord>(
+    a: &(K, u8, &str, &StyleSheetProperty),
+    b: &(K, u8, &str, &StyleSheetProperty),
+) -> std::cmp::Ordering {
+    a.0.cmp(&b.0)
+        .then_with(|| a.1.cmp(&b.1))
+        .then_with(|| a.2.cmp(b.2))
+        .then_with(|| a.3.property.cmp(&b.3.property))
+        .then_with(|| a.3.value.cmp(&b.3.value))
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
@@ -79,18 +100,13 @@ impl Ord for StyleSheetProperty {
 
 impl StyleSheetProperty {
     fn write_extract(&self, css: &mut String) {
-        css.push_str(&merge_selector(&self.class_name, self.selector.as_ref()));
+        write_merge_selector(css, &self.class_name, self.selector.as_ref());
         css.push('{');
         css.push_str(&self.property);
         css.push(':');
         css.push_str(&convert_theme_variable_value(&self.value));
         css.push('}');
     }
-}
-
-fn compile_regex(pattern: &str) -> Regex {
-    Regex::new(pattern)
-        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
 }
 
 static VAR_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\$[\w.]+"));
@@ -111,23 +127,57 @@ static HEADER: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-fn convert_interface_key(key: &str) -> String {
+fn convert_interface_key(key: &str) -> Cow<'_, str> {
     if INTERFACE_KEY_RE.is_match(key) {
-        key.to_string()
+        Cow::Borrowed(key)
     } else {
-        format!("[`{}`]", key.replace('`', "\\`"))
+        // Only allocate the `key.replace('`', "\\`")` intermediate when `key` actually holds a
+        // backtick (the common non-identifier key — e.g. `(primary)`, `a.b` — has none). Escaping
+        // a backtick-free key is a no-op, so borrowing it is byte-identical and drops one heap
+        // allocation per backtick-free non-identifier key.
+        let escaped = if key.contains('`') {
+            Cow::Owned(key.replace('`', "\\`"))
+        } else {
+            Cow::Borrowed(key)
+        };
+        Cow::Owned(format!("[`{escaped}`]"))
     }
 }
 
 fn convert_theme_variable_value(value: &str) -> Cow<'_, str> {
     if value.contains('$') {
-        Cow::Owned(
-            VAR_RE
-                .replace_all(value, |caps: &regex_lite::Captures| {
-                    format!("var(--{})", &caps[0][1..].replace('.', "-"))
-                })
-                .into_owned(),
-        )
+        // `replace_all` already returns a `Cow`; forward the owned result directly and, on the
+        // borrowed arm (a `$` with no `VAR_RE` match), re-borrow the input instead of allocating
+        // an owned copy. The borrow must be tied to `value`, not the `replace_all` temporary.
+        match VAR_RE.replace_all(value, |caps: &regex_lite::Captures| {
+            let tok = &caps[0][1..];
+            // Build the `var(--<tok>)` expansion in ONE pre-sized buffer for both arms,
+            // instead of a throwaway `tok.replace('.', "-")` String plus a `format!`
+            // (dot case) or a lone `format!` spinning up the fmt machinery (no-dot case).
+            // Output is byte-identical.
+            let mut out = String::with_capacity(6 + tok.len() + 1); // "var(--" + tok + ")"
+            out.push_str("var(--");
+            if tok.contains('.') {
+                // Translate `.`→`-` by copying dot-free runs with `push_str` and a
+                // `-` between them — no per-char UTF-8 decode. The token is an ASCII
+                // identifier, so this is byte-identical to the former `chars()` copy.
+                let mut runs = tok.split('.');
+                if let Some(first) = runs.next() {
+                    out.push_str(first);
+                    for run in runs {
+                        out.push('-');
+                        out.push_str(run);
+                    }
+                }
+            } else {
+                out.push_str(tok);
+            }
+            out.push(')');
+            out
+        }) {
+            Cow::Owned(s) => Cow::Owned(s),
+            Cow::Borrowed(_) => Cow::Borrowed(value),
+        }
     } else {
         Cow::Borrowed(value)
     }
@@ -140,6 +190,8 @@ pub struct StyleSheetCss {
 
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
 type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
+/// layer name -> Vec<(selector, property, value)> collected for `@layer` output.
+type LayeredStyles = BTreeMap<String, Vec<(String, String, String)>>;
 
 fn deserialize_btree_map_u8<'de, D>(
     deserializer: D,
@@ -224,12 +276,22 @@ impl StyleSheet {
     ) -> bool {
         // register global css file for cache
         if let Some(StyleSelector::Global(_, file)) = selector {
-            self.global_css_files.insert(file.clone());
+            // Probe with the borrowed `&str` first so the owned `String` is only
+            // allocated on first registration, not on repeat (HMR/multi-property) calls.
+            // Matches the borrow-probe-first pattern in add_import/add_font_face/add_css.
+            if !self.global_css_files.contains(file.as_str()) {
+                self.global_css_files.insert(file.clone());
+            }
         }
 
-        self.properties
-            .entry(filename.unwrap_or_default().to_string())
-            .or_default()
+        // Look the file bucket up once (one probe on the common existing-file path) and only
+        // allocate the owned key `String` when the bucket has to be created for the first time.
+        let filename_key = filename.unwrap_or_default();
+        let bucket = match self.properties.get_mut(filename_key) {
+            Some(bucket) => bucket,
+            None => self.properties.entry(filename_key.to_string()).or_default(),
+        };
+        bucket
             .entry(style_order.unwrap_or(255))
             .or_default()
             .entry(level)
@@ -244,29 +306,44 @@ impl StyleSheet {
     }
 
     pub fn add_import(&mut self, file: &str, import: &str) {
-        self.global_css_files.insert(file.to_string());
-        self.imports
-            .entry(file.to_string())
-            .or_default()
-            .insert(import.to_string());
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
+        let bucket = match self.imports.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.imports.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(import.to_string());
     }
 
     pub fn add_font_face(&mut self, file: &str, properties: &BTreeMap<String, String>) {
-        self.global_css_files.insert(file.to_string());
-        self.font_faces
-            .entry(file.to_string())
-            .or_default()
-            .insert(properties.clone());
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
+        let bucket = match self.font_faces.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.font_faces.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(properties.clone());
     }
 
     pub fn add_css(&mut self, file: &str, css: &str) -> bool {
-        self.global_css_files.insert(file.to_string());
-        self.css
-            .entry(file.to_string())
-            .or_default()
-            .insert(StyleSheetCss {
-                css: css.to_string(),
-            })
+        // Probe with the borrowed `&str` first so the owned `String` is only
+        // allocated on first registration, not on repeat (HMR/multi-property) calls.
+        if !self.global_css_files.contains(file) {
+            self.global_css_files.insert(file.to_string());
+        }
+        let bucket = match self.css.get_mut(file) {
+            Some(bucket) => bucket,
+            None => self.css.entry(file.to_string()).or_default(),
+        };
+        bucket.insert(StyleSheetCss {
+            css: css.to_string(),
+        })
     }
 
     pub fn add_keyframes(
@@ -275,12 +352,17 @@ impl StyleSheet {
         keyframes: BTreeMap<String, Vec<(String, String)>>,
         filename: Option<&str>,
     ) -> bool {
-        let map = self
-            .keyframes
-            .entry(filename.unwrap_or_default().to_string())
-            .or_default()
-            .entry(name.to_string())
-            .or_default();
+        let filename_key = filename.unwrap_or_default();
+        // Probe the outer filename key with borrowed &str first; allocate owned String only on miss.
+        let inner_map = match self.keyframes.get_mut(filename_key) {
+            Some(inner_map) => inner_map,
+            None => self.keyframes.entry(filename_key.to_string()).or_default(),
+        };
+        // Probe the inner name key with borrowed &str first; allocate owned String only on miss.
+        let map = match inner_map.get_mut(name) {
+            Some(map) => map,
+            None => inner_map.entry(name.to_string()).or_default(),
+        };
         if map == &keyframes {
             return false;
         }
@@ -311,7 +393,7 @@ impl StyleSheet {
             canonical(file)
         };
 
-        if let Some(prop_map) = self.properties.get_mut(&property_key) {
+        let bucket_empty = if let Some(prop_map) = self.properties.get_mut(&property_key) {
             for map in prop_map.values_mut() {
                 for props in map.values_mut() {
                     props.retain(|prop| {
@@ -327,13 +409,12 @@ impl StyleSheet {
                     map.clear();
                 }
             }
-        }
-        if self
-            .properties
-            .get(&property_key)
-            .and_then(|v| if v.is_empty() { None } else { Some(()) })
-            .is_none()
-        {
+            prop_map.is_empty()
+        } else {
+            // Bucket absent entirely: treat as empty so it is (already) not present.
+            true
+        };
+        if bucket_empty {
             self.properties.remove(&property_key);
         }
         true
@@ -368,45 +449,43 @@ impl StyleSheet {
         for style in styles {
             match style {
                 ExtractStyleValue::Static(st) => {
-                    let resolved_value =
-                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
-                            if let Some(token) = st.value().strip_prefix('$') {
-                                match st.property() {
-                                    "box-shadow" => self
-                                        .theme
-                                        .get_default_shadow_value(token)
-                                        .map_or_else(|| st.value().to_string(), str::to_string),
-                                    _ => self
-                                        .theme
-                                        .get_default_length_value(token)
-                                        .map_or_else(|| st.value().to_string(), str::to_string),
-                                }
-                            } else {
-                                st.value().to_string()
+                    let is_first_value =
+                        st.theme_token_resolution() == ThemeTokenResolution::FirstValue;
+                    let resolved_value: Cow<'_, str> = if is_first_value {
+                        if let Some(token) = st.value().strip_prefix('$') {
+                            match st.property() {
+                                "box-shadow" => self.theme.get_default_shadow_value(token),
+                                _ => self.theme.get_default_length_value(token),
                             }
-                        } else {
-                            st.value().to_string()
-                        };
-
-                    let class_name =
-                        if st.theme_token_resolution() == ThemeTokenResolution::FirstValue {
-                            let selector = st.selector().map(ToString::to_string);
-                            sheet_to_classname(
-                                st.property(),
-                                st.level(),
-                                Some(&resolved_value),
-                                selector.as_deref(),
-                                st.style_order(),
-                                name_scope,
+                            .map_or_else(
+                                || Cow::Borrowed(st.value()),
+                                |v| Cow::Owned(v.to_string()),
                             )
                         } else {
-                            match st.extract(name_scope) {
-                                StyleProperty::ClassName(cls)
-                                | StyleProperty::Variable {
-                                    class_name: cls, ..
-                                } => cls,
-                            }
-                        };
+                            Cow::Borrowed(st.value())
+                        }
+                    } else {
+                        Cow::Borrowed(st.value())
+                    };
+
+                    let class_name = if is_first_value {
+                        let selector = st.selector().map(StyleSelector::as_class_str);
+                        sheet_to_classname(
+                            st.property(),
+                            st.level(),
+                            Some(&resolved_value),
+                            selector.as_deref(),
+                            st.style_order(),
+                            name_scope,
+                        )
+                    } else {
+                        match st.extract(name_scope) {
+                            StyleProperty::ClassName(cls)
+                            | StyleProperty::Variable {
+                                class_name: cls, ..
+                            } => cls,
+                        }
+                    };
 
                     if self.add_property_with_layer(
                         &class_name,
@@ -430,19 +509,33 @@ impl StyleSheet {
                         variable_name,
                         ..
                     }) = style.extract(name_scope)
-                        && self.add_property(
-                            &class_name,
-                            dy.property(),
-                            dy.level(),
-                            &if dy.important() {
-                                format!("var({variable_name}) !important")
-                            } else {
-                                format!("var({variable_name})")
-                            },
-                            dy.selector(),
-                            dy.style_order(),
-                            bucket_scope,
-                        )
+                        && {
+                            // Build `var(<name>)` / `var(<name>) !important` without the
+                            // `format!` `Arguments` machinery + its grow path: presize once and
+                            // `push_str`. Byte-identical to the two `format!` calls it replaces.
+                            let important = dy.important();
+                            let mut dynamic_value = String::with_capacity(
+                                "var(".len()
+                                    + variable_name.len()
+                                    + 1
+                                    + if important { " !important".len() } else { 0 },
+                            );
+                            dynamic_value.push_str("var(");
+                            dynamic_value.push_str(&variable_name);
+                            dynamic_value.push(')');
+                            if important {
+                                dynamic_value.push_str(" !important");
+                            }
+                            self.add_property(
+                                &class_name,
+                                dy.property(),
+                                dy.level(),
+                                &dynamic_value,
+                                dy.selector(),
+                                dy.style_order(),
+                                bucket_scope,
+                            )
+                        }
                     {
                         collected = true;
                         if dy.style_order() == Some(0) {
@@ -452,24 +545,28 @@ impl StyleSheet {
                 }
 
                 ExtractStyleValue::Keyframes(keyframes) => {
+                    let name = match keyframes.extract(name_scope) {
+                        StyleProperty::ClassName(cls)
+                        | StyleProperty::Variable {
+                            class_name: cls, ..
+                        } => cls,
+                    };
                     if self.add_keyframes(
-                        &keyframes.extract(name_scope).to_string(),
+                        &name,
                         keyframes
                             .keyframes
                             .iter()
                             .map(|(key, value)| {
-                                (
-                                    key.clone(),
-                                    value
-                                        .iter()
-                                        .map(|style| {
-                                            (
-                                                style.property().to_string(),
-                                                style.value().to_string(),
-                                            )
-                                        })
-                                        .collect::<Vec<(String, String)>>(),
-                                )
+                                // Presize the per-step Vec to the known property count so
+                                // multi-property keyframe steps skip the intermediate grow-reallocs.
+                                let mut props = Vec::with_capacity(value.len());
+                                for style in value {
+                                    props.push((
+                                        style.property().to_string(),
+                                        style.value().to_string(),
+                                    ));
+                                }
+                                (key.clone(), props)
                             })
                             .collect(),
                         bucket_scope,
@@ -505,25 +602,26 @@ impl StyleSheet {
         shadows_interface_name: &str,
         theme_interface_name: &str,
     ) -> String {
-        let mut color_keys = BTreeSet::new();
-        let mut typography_keys = BTreeSet::new();
-        let mut length_keys = BTreeSet::new();
-        let mut shadows_keys = BTreeSet::new();
-        let mut theme_keys = BTreeSet::new();
-        for color_theme in self.theme.colors.values() {
-            color_theme.interface_keys().for_each(|key| {
-                color_keys.insert(key.clone());
-            });
+        // Collect a `BTreeSet<&str>` that borrows each key straight from the
+        // theme via `String::as_str` — no per-key `String` clone; the set only
+        // owns its tree nodes, not the key bytes. Unifies the four
+        // near-identical key-collection blocks (color/typography/length/shadow
+        // + the theme-variant set) so which keys go into which set stays
+        // byte-identical while removing the copy-paste.
+        fn collect_keys<'k>(keys: &mut dyn Iterator<Item = &'k String>) -> BTreeSet<&'k str> {
+            keys.map(String::as_str).collect::<BTreeSet<&'k str>>()
         }
-        self.theme.typography.keys().for_each(|key| {
-            typography_keys.insert(key.clone());
-        });
-        length_keys.extend(self.theme.length.values().flat_map(|t| t.keys().cloned()));
-        shadows_keys.extend(self.theme.shadows.values().flat_map(|t| t.keys().cloned()));
 
-        self.theme.colors.keys().for_each(|key| {
-            theme_keys.insert(key.clone());
-        });
+        let color_keys = collect_keys(
+            &mut self
+                .theme
+                .colors
+                .values()
+                .flat_map(theme::ColorTheme::interface_keys),
+        );
+        let typography_keys = collect_keys(&mut self.theme.typography.keys());
+        let length_keys = collect_keys(&mut self.theme.length.values().flat_map(|t| t.keys()));
+        let shadows_keys = collect_keys(&mut self.theme.shadows.values().flat_map(|t| t.keys()));
 
         if color_keys.is_empty()
             && typography_keys.is_empty()
@@ -532,24 +630,43 @@ impl StyleSheet {
         {
             String::new()
         } else {
-            let dollar_keys = |keys: BTreeSet<String>| {
-                let mut contents = String::new();
+            // `theme_keys` borrows `colors.keys()` into a `BTreeSet<&str>` — no
+            // key clones, but building it still costs a tree allocation plus one
+            // node insert per key. It is only consumed by the
+            // `emit_keys(theme_keys, false)` below, so collect it lazily here: the
+            // empty-theme early-return above never builds this set just to drop it.
+            let theme_keys = collect_keys(&mut self.theme.colors.keys());
+            // Single emitter parameterized by whether each key is prefixed with
+            // `$` (color/length/shadow interfaces) or not (typography/theme).
+            // The `$` path reuses one scratch `String` across keys; the plain
+            // path feeds the key straight to `convert_interface_key` so its
+            // allocation profile stays identical to the former `plain_keys`.
+            let emit_keys = |keys: BTreeSet<&str>, dollar: bool| {
+                // Presize the buffer from the known key count: each key emits its
+                // (possibly `$`-prefixed) converted name plus `:null` and a `;`
+                // separator. `keys.len() * 12` is a cheap lower-bound estimate that
+                // removes the 0→8→16→… grow-realloc chain; output stays byte-identical.
+                let mut contents = String::with_capacity(keys.len() * 12);
+                // The `$`-prefix scratch is reused across every key. Presize it
+                // once to `1 + longest key len` so the very first `push_str(key)`
+                // never triggers the 1→N grow-realloc; thereafter it is reused with
+                // no further reallocs. The `'$'` prefix is invariant, so seed it once
+                // and only rewrite the suffix each key (`truncate(1)` keeps the `$`,
+                // skipping a re-push per key); output stays byte-identical.
+                let dollar_cap = 1 + keys.iter().map(|k| k.len()).max().unwrap_or(0);
+                let mut dollar_key = String::with_capacity(dollar_cap);
+                dollar_key.push('$');
                 for key in keys {
                     if !contents.is_empty() {
                         contents.push(';');
                     }
-                    contents.push_str(&convert_interface_key(&format!("${key}")));
-                    contents.push_str(":null");
-                }
-                contents
-            };
-            let plain_keys = |keys: BTreeSet<String>| {
-                let mut contents = String::new();
-                for key in keys {
-                    if !contents.is_empty() {
-                        contents.push(';');
+                    if dollar {
+                        dollar_key.truncate(1);
+                        dollar_key.push_str(key);
+                        contents.push_str(&convert_interface_key(&dollar_key));
+                    } else {
+                        contents.push_str(&convert_interface_key(key));
                     }
-                    contents.push_str(&convert_interface_key(&key));
                     contents.push_str(":null");
                 }
                 contents
@@ -559,47 +676,142 @@ impl StyleSheet {
                 package_name,
                 package_name,
                 color_interface_name,
-                dollar_keys(color_keys),
+                emit_keys(color_keys, true),
                 typography_interface_name,
-                plain_keys(typography_keys),
+                emit_keys(typography_keys, false),
                 length_interface_name,
-                dollar_keys(length_keys),
+                emit_keys(length_keys, true),
                 shadows_interface_name,
-                dollar_keys(shadows_keys),
+                emit_keys(shadows_keys, true),
                 theme_interface_name,
-                plain_keys(theme_keys)
+                emit_keys(theme_keys, false)
             )
         }
     }
     fn create_style(&self, map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>) -> String {
-        self.create_style_with_layers(map, &mut BTreeMap::new())
+        // Callers here discard layered output, so pass `None` to skip the
+        // throwaway `BTreeMap` allocation (and the per-prop `String` clones it
+        // would collect) entirely.
+        self.create_style_with_layers(map, None)
     }
 
-    fn create_style_with_layers(
+    // Generic over the per-level set element `P: Borrow<StyleSheetProperty>` so this one
+    // implementation serves BOTH the owned `FxHashSet<StyleSheetProperty>` callers and the
+    // borrowed `FxHashSet<&StyleSheetProperty>` base-style path in `create_css` — the latter
+    // aggregates cross-file base props by reference (deduped by value in the set) instead of
+    // deep-cloning every `StyleSheetProperty` (3 owned `String`s + `Option<StyleSelector>`).
+    // Each `prop` here is a `&P`; `.borrow()` yields the `&StyleSheetProperty` all downstream
+    // buckets already hold. Output is byte-identical.
+    fn create_style_with_layers<P: std::borrow::Borrow<StyleSheetProperty>>(
         &self,
-        map: &BTreeMap<u8, FxHashSet<StyleSheetProperty>>,
-        layered_styles: &mut BTreeMap<String, Vec<(String, String, String)>>, // layer -> Vec<(selector, property, value)>
+        map: &BTreeMap<u8, FxHashSet<P>>,
+        mut layered_styles: Option<&mut LayeredStyles>,
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
         let mut current_css = String::with_capacity(prop_count * 64);
         for (level, props) in map {
-            let (mut global_props, rest): (Vec<_>, Vec<_>) = props
-                .iter()
-                .partition(|prop| matches!(prop.selector, Some(StyleSelector::Global(_, _))));
-            global_props.sort();
-            let (mut at_rules, mut sorted_props): (Vec<_>, Vec<_>) = rest
-                .into_iter()
-                .partition(|prop| matches!(prop.selector, Some(StyleSelector::At { .. })));
-            sorted_props.sort();
-            at_rules.sort();
-            let at_rules = {
+            // Single pass bucketing: the two prior `partition` calls always
+            // heap-allocated all four output `Vec`s even when the Global/At
+            // buckets stay empty (the common case). One scan pushing each
+            // `&prop` into one of three pre-declared `Vec`s leaves empty buckets
+            // as non-allocating `Vec::new()` and avoids the second full scan.
+            let mut global_props: Vec<_> = Vec::new();
+            let mut at_rules: Vec<_> = Vec::new();
+            // Plain (non-Global, non-At) selectors dominate: presize this bucket
+            // to `props.len()` to avoid its 1→4→8→… grow-reallocs. `global_props`
+            // / `at_rules` stay `Vec::new()` so empty buckets never allocate.
+            let mut sorted_props: Vec<&StyleSheetProperty> = Vec::with_capacity(props.len());
+            for prop in props {
+                let prop: &StyleSheetProperty = prop.borrow();
+                match prop.selector {
+                    Some(StyleSelector::Global(_, _)) => global_props.push(prop),
+                    Some(StyleSelector::At { .. }) => at_rules.push(prop),
+                    _ => sorted_props.push(prop),
+                }
+            }
+            // Decorate-sort-undecorate for the Global bucket, mirroring the
+            // plain-selector `keyed` sort below. `global_props.sort()` compares via
+            // `StyleSheetProperty::cmp` → `StyleSelector::cmp`'s Global arm, which for
+            // EACH comparison re-runs `global_selector_order` (a `SELECTOR_ORDER` table
+            // walk) on BOTH operands — O(n log n) redundant re-scans of the same
+            // selector strings. Compute each prop's Global order key ONCE. The key
+            // `(has_colon, order, selector_str, property, value)` reproduces the Global
+            // arm byte-for-byte: equal selector strings ⇒ `Ordering::Equal` there, so
+            // `StyleSheetProperty::cmp` falls through to (property, value); no-colon
+            // props (`has_colon=false`) sort before colon props and tie on the selector
+            // string; colon props sort by (order, selector string).
+            // The common level has no Global selectors, so `global_props` is empty.
+            // Skip the three vector materializations (keyed `with_capacity`, `extend`,
+            // sorted `collect`) entirely in that case, mirroring the `at_rules.is_empty()`
+            // guard below; only decorate-sort-undecorate when there is actually work.
+            // An empty sort/collect yields an empty vec anyway, so output is byte-identical.
+            let global_props: Vec<&StyleSheetProperty> = if global_props.is_empty() {
+                Vec::new()
+            } else {
+                let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
+                    Vec::with_capacity(global_props.len());
+                global_keyed.extend(global_props.into_iter().map(|prop| match &prop.selector {
+                    Some(StyleSelector::Global(selector, _)) => {
+                        if let Some(i) = selector.find(':') {
+                            (
+                                true,
+                                global_selector_order(&selector[i..]),
+                                selector.as_str(),
+                                prop,
+                            )
+                        } else {
+                            (false, 0u8, selector.as_str(), prop)
+                        }
+                    }
+                    _ => (false, 0u8, "", prop),
+                }));
+                global_keyed.sort_by(keyed_prop_cmp);
+                global_keyed
+                    .into_iter()
+                    .map(|(_, _, _, prop)| prop)
+                    .collect()
+            };
+            // Decorate-sort-undecorate for the plain-selector bucket: sorting via
+            // `StyleSheetProperty::cmp` re-runs `get_selector_order` (a byte scan +
+            // linear `SELECTOR_ORDER` probe) on BOTH operands of every comparison,
+            // i.e. O(n log n) redundant scans of the same `Selector` strings. Here
+            // `sorted_props` holds only `None`/`Selector(_)` variants (Global/At were
+            // filtered out above), so compute each prop's order key ONCE into a keyed
+            // vec and sort that. The key `(is_some, order, selector_str, property,
+            // value)` reproduces `StyleSheetProperty::cmp` byte-for-byte: `None` props
+            // (is_some=0, order=0, selector_str="") sort by (property, value); `Selector`
+            // props (is_some=1) sort by (order, selector_str, property, value) — matching
+            // `StyleSelector::cmp`'s `get_selector_order` then string tie-break.
+            // The common level often has ONLY global/at props, leaving `sorted_props`
+            // empty. Skip the `with_capacity`/`extend`/`sort_by` triple entirely in that
+            // case, mirroring the `global_props`/`at_rules` guards above and below; an
+            // empty build+sort yields an empty vec anyway, so output is byte-identical.
+            let keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> = if sorted_props.is_empty() {
+                Vec::new()
+            } else {
+                let mut keyed: Vec<(u8, u8, &str, &StyleSheetProperty)> =
+                    Vec::with_capacity(sorted_props.len());
+                keyed.extend(sorted_props.into_iter().map(|prop| match &prop.selector {
+                    Some(StyleSelector::Selector(s)) => {
+                        (1u8, get_selector_order(s), s.as_str(), prop)
+                    }
+                    _ => (0u8, 0u8, "", prop),
+                }));
+                keyed.sort_by(keyed_prop_cmp);
+                keyed
+            };
+            // The common level has no `@`-rule atoms, so `at_rules` is empty.
+            // Skip the `sort()` no-op and the per-level `BTreeMap` construction
+            // entirely in that case; only regroup when there is actually work.
+            let at_rules: BTreeMap<(AtRuleKind, &String), Vec<_>> = if at_rules.is_empty() {
+                BTreeMap::new()
+            } else {
+                at_rules.sort();
                 let mut map: BTreeMap<(AtRuleKind, &String), Vec<_>> = BTreeMap::new();
                 for prop in at_rules {
                     if let Some(StyleSelector::At { kind, query, .. }) = &prop.selector {
-                        map.entry((*kind, query))
-                            .or_insert_with(Vec::new)
-                            .push(prop);
+                        map.entry((*kind, query)).or_default().push(prop);
                     }
                 }
                 map
@@ -611,41 +823,54 @@ impl StyleSheet {
                 Some(
                     self.theme
                         .breakpoints
-                        .iter()
-                        .enumerate()
-                        .find(|(idx, _)| (*idx as u8) == *level)
-                        .map_or_else(
-                            || self.theme.breakpoints.last().copied().unwrap_or(0),
-                            |(_, bp)| *bp,
-                        ),
+                        .get(*level as usize)
+                        .copied()
+                        .unwrap_or_else(|| self.theme.breakpoints.last().copied().unwrap_or(0)),
                 )
             };
 
             if !global_props.is_empty() {
-                // Separate layered and non-layered global props
-                let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
-                    .into_iter()
-                    .partition(|prop| prop.layer.is_some());
+                // Separate layered and non-layered global props. Only pay the
+                // partition + clone-into-map cost when the caller actually
+                // consumes the layered output (base/global path); callers that
+                // discard layers pass `None` and keep every global prop inline.
+                let non_layered_props = if let Some(layered_styles) = layered_styles.as_deref_mut()
+                {
+                    let (layered_props, non_layered_props): (Vec<_>, Vec<_>) = global_props
+                        .into_iter()
+                        .partition(|prop| prop.layer.is_some());
 
-                // Collect layered props for later processing
-                for prop in layered_props {
-                    if let Some(layer) = &prop.layer
-                        && let Some(StyleSelector::Global(selector, _)) = &prop.selector
-                    {
-                        layered_styles.entry(layer.clone()).or_default().push((
-                            selector.clone(),
-                            prop.property.clone(),
-                            prop.value.clone(),
-                        ));
+                    // Collect layered props for later processing
+                    for prop in layered_props {
+                        if let Some(layer) = &prop.layer
+                            && let Some(StyleSelector::Global(selector, _)) = &prop.selector
+                        {
+                            // Borrow-probe existing entry by layer.as_str() before cloning
+                            let bucket = match layered_styles.get_mut(layer.as_str()) {
+                                Some(bucket) => bucket,
+                                None => layered_styles.entry(layer.clone()).or_default(),
+                            };
+                            bucket.push((
+                                selector.clone(),
+                                prop.property.clone(),
+                                prop.value.clone(),
+                            ));
+                        }
                     }
-                }
+                    non_layered_props
+                } else {
+                    global_props
+                };
 
                 // Process non-layered global props as before
                 if !non_layered_props.is_empty() {
                     let mut selector_map: BTreeMap<_, Vec<_>> = BTreeMap::new();
                     for prop in non_layered_props {
                         if let Some(StyleSelector::Global(selector, _)) = &prop.selector {
-                            selector_map.entry(selector).or_default().push(prop);
+                            selector_map
+                                .entry(selector)
+                                .or_insert_with(|| Vec::with_capacity(1))
+                                .push(prop);
                         }
                     }
                     if let Some(break_point) = break_point {
@@ -672,11 +897,11 @@ impl StyleSheet {
                 }
             }
 
-            if !sorted_props.is_empty() {
+            if !keyed.is_empty() {
                 if let Some(break_point) = break_point {
                     push_fmt!(&mut current_css, "@media(min-width:{break_point}px){{");
                 }
-                for prop in sorted_props {
+                for (_, _, _, prop) in &keyed {
                     prop.write_extract(&mut current_css);
                 }
                 if break_point.is_some() {
@@ -749,7 +974,7 @@ impl StyleSheet {
     /// because they are already emitted globally and shared by every chunk.
     fn compute_hoisted_atoms(&self, threshold: usize) -> FxHashSet<String> {
         // atom class_name -> set of files that reference it (order != 0)
-        let mut atom_files: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
+        let mut atom_files: FxHashMap<&str, FxHashSet<&str>> = FxHashMap::default();
         for (filename, property_map) in &self.properties {
             for (style_order, level_map) in property_map {
                 if *style_order == 0 {
@@ -758,7 +983,7 @@ impl StyleSheet {
                 for props in level_map.values() {
                     for prop in props {
                         atom_files
-                            .entry(prop.class_name.clone())
+                            .entry(prop.class_name.as_str())
                             .or_default()
                             .insert(filename.as_str());
                     }
@@ -768,7 +993,7 @@ impl StyleSheet {
         atom_files
             .into_iter()
             .filter(|(_, files)| route_count_for_files(files.iter().copied()) >= threshold)
-            .map(|(class_name, _)| class_name)
+            .map(|(class_name, _)| class_name.to_string())
             .collect()
     }
 
@@ -793,16 +1018,29 @@ impl StyleSheet {
 
         if write_global {
             let mut style_orders: BTreeSet<u8> = BTreeSet::new();
-            let mut base_styles = BTreeMap::<u8, FxHashSet<StyleSheetProperty>>::new();
+            // Aggregate the `order == 0` base props by BORROWED reference rather than
+            // deep-cloning each `StyleSheetProperty` (3 owned `String`s + selector) just to
+            // hand `create_style_with_layers` refs it would only borrow. The set element is
+            // `&StyleSheetProperty`, so cross-file dedup is preserved (values hash/eq the same
+            // as the owned set), and the emitted CSS stays byte-identical.
+            let mut base_styles = BTreeMap::<u8, FxHashSet<&StyleSheetProperty>>::new();
             self.properties.values().for_each(|map| {
-                style_orders.extend(map.iter().filter(|(_, v)| !v.is_empty()).map(|(k, _)| *k));
-                if let Some(_base_styles) = map.get(&0) {
-                    _base_styles.iter().for_each(|prop| {
-                        base_styles
-                            .entry(*prop.0)
-                            .or_default()
-                            .extend(prop.1.iter().cloned());
-                    });
+                // Single walk of the top-level order map: record non-empty style
+                // orders AND fold the `order == 0` base bucket in the same pass,
+                // dropping the separate `map.get(&0)` probe per file. Output is
+                // byte-identical (same `style_orders` set and `base_styles` map).
+                for (order, props) in map {
+                    if !props.is_empty() {
+                        style_orders.insert(*order);
+                    }
+                    if *order == 0 {
+                        props.iter().for_each(|prop| {
+                            base_styles
+                                .entry(*prop.0)
+                                .or_default()
+                                .extend(prop.1.iter());
+                        });
+                    }
                 }
             });
             // default
@@ -870,9 +1108,8 @@ impl StyleSheet {
             }
 
             // Collect layered styles while creating base CSS
-            let mut layered_styles: BTreeMap<String, Vec<(String, String, String)>> =
-                BTreeMap::new();
-            let base_css = self.create_style_with_layers(&base_styles, &mut layered_styles);
+            let mut layered_styles: LayeredStyles = BTreeMap::new();
+            let base_css = self.create_style_with_layers(&base_styles, Some(&mut layered_styles));
             if !base_css.is_empty() {
                 push_fmt!(&mut css, "@layer b{{{base_css}}}");
             }
@@ -964,7 +1201,12 @@ impl StyleSheet {
             }
         }
 
-        if let Some(keyframes) = self.keyframes.get(filename.unwrap_or_default()) {
+        // Bind the `Option<&str>` filename key once: both the keyframes and
+        // properties lookups below use the same `""`-defaulted key, so computing
+        // `unwrap_or_default()` a single time removes the duplicated call and
+        // documents that both maps are keyed identically.
+        let fkey = filename.unwrap_or_default();
+        if let Some(keyframes) = self.keyframes.get(fkey) {
             for (name, map) in keyframes {
                 push_fmt!(&mut css, "@keyframes {name}{{");
                 for (key, props) in map {
@@ -984,7 +1226,7 @@ impl StyleSheet {
         }
 
         // order
-        if let Some(maps) = self.properties.get(filename.unwrap_or_default()) {
+        if let Some(maps) = self.properties.get(fkey) {
             for (style_order, map) in maps {
                 if *style_order == 0 {
                     // base style was created in global css
@@ -993,21 +1235,32 @@ impl StyleSheet {
                 // Under atom hoisting, hoisted atoms were emitted globally; the
                 // per-route chunk keeps only its route-private atoms.
                 let current_css = if let Some(hoisted) = &hoisted_atoms {
-                    let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
-                        .iter()
-                        .filter_map(|(level, props)| {
-                            let kept: FxHashSet<StyleSheetProperty> = props
-                                .iter()
-                                .filter(|prop| !hoisted.contains(&prop.class_name))
-                                .cloned()
-                                .collect();
-                            (!kept.is_empty()).then_some((*level, kept))
-                        })
-                        .collect();
-                    if filtered.is_empty() {
-                        continue;
+                    // Common case: none of this map's atoms were hoisted, so the
+                    // filtered map would equal the original — skip the clone-collect
+                    // entirely and borrow `map` directly.
+                    let any_hoisted = map
+                        .values()
+                        .flatten()
+                        .any(|prop| hoisted.contains(&prop.class_name));
+                    if any_hoisted {
+                        let filtered: BTreeMap<u8, FxHashSet<StyleSheetProperty>> = map
+                            .iter()
+                            .filter_map(|(level, props)| {
+                                let kept: FxHashSet<StyleSheetProperty> = props
+                                    .iter()
+                                    .filter(|prop| !hoisted.contains(&prop.class_name))
+                                    .cloned()
+                                    .collect();
+                                (!kept.is_empty()).then_some((*level, kept))
+                            })
+                            .collect();
+                        if filtered.is_empty() {
+                            continue;
+                        }
+                        self.create_style(&filtered)
+                    } else {
+                        self.create_style(map)
                     }
-                    self.create_style(&filtered)
                 } else {
                     self.create_style(map)
                 };

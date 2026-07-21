@@ -12,17 +12,17 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-oxc_parser = "0.134.0"
-oxc_syntax = "0.134.0"
-oxc_span = "0.134.0"
-oxc_allocator = "0.134.0"
-oxc_ast = "0.134.0"
-oxc_ast_visit = "0.134.0"
-oxc_codegen = "0.134.0"
-oxc_transformer = "0.134.0"
-oxc_semantic = "0.134.0"
+oxc_parser = "0.140.0"
+oxc_syntax = "0.140.0"
+oxc_span = "0.140.0"
+oxc_allocator = "0.140.0"
+oxc_ast = { version = "0.140.0", features = ["disable_old_builder"] }
+oxc_ast_visit = "0.140.0"
+oxc_codegen = "0.140.0"
+oxc_transformer = "0.140.0"
+oxc_semantic = "0.140.0"
 css = { path = "../css" }
-phf = "0.13"
+phf = "0.14"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 serde_json = "1.0"
@@ -31,11 +31,15 @@ rustc-hash = "2"
 smallvec = "1"
 
 [dev-dependencies]
-insta = "1.47.2"
+insta = "1.48.0"
 serial_test = "3.5.0"
 rstest = "0.26.1"
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "extract_benchmark"
+harness = false
+
+[[bench]]
+name = "alloc_benchmark"
 harness = false

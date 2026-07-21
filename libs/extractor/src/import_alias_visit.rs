@@ -9,9 +9,10 @@
 
 use crate::ImportAlias;
 use oxc_allocator::Allocator;
-use oxc_ast::ast::ImportDeclarationSpecifier;
+use oxc_ast::ast::{ImportDeclarationSpecifier, ModuleExportName};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 /// Transform source code by rewriting aliased imports to the target package
@@ -24,15 +25,15 @@ use std::collections::HashMap;
 ///
 /// # Returns
 /// The transformed source code, or the original code if no transformations were needed
-pub fn transform_import_aliases(
-    code: &str,
+pub fn transform_import_aliases<'a>(
+    code: &'a str,
     filename: &str,
     package: &str,
     import_aliases: &HashMap<String, ImportAlias>,
-) -> String {
+) -> Cow<'a, str> {
     // Quick check: if no aliases match, return original code
     if import_aliases.is_empty() || !import_aliases.keys().any(|alias| code.contains(alias)) {
-        return code.to_string();
+        return Cow::Borrowed(code);
     }
 
     let allocator = Allocator::default();
@@ -59,7 +60,7 @@ pub fn transform_import_aliases(
 
     // Apply transformations in reverse order to preserve positions
     if transformations.is_empty() {
-        return code.to_string();
+        return Cow::Borrowed(code);
     }
 
     let mut result = code.to_string();
@@ -67,7 +68,7 @@ pub fn transform_import_aliases(
         result.replace_range(start..end, &replacement);
     }
 
-    result
+    Cow::Owned(result)
 }
 
 /// Generate the transformed import statement
@@ -81,111 +82,100 @@ fn generate_transformed_import(
         None => return format!("import '{package}';"),
     };
 
-    match alias {
-        ImportAlias::DefaultToNamed(named_export) => {
-            // Transform: `import foo from 'pkg'` → `import { named as foo } from 'target'`
-            // Check for namespace import first (early return)
-            if let Some(ns_spec) = specifiers.iter().find_map(|s| {
-                if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) = s {
-                    Some(ns)
-                } else {
-                    None
+    // Classify specifiers in a single pass: capture the first namespace and the
+    // first default specifier (first-seen wins, matching the prior find_map
+    // semantics). Named specifiers are still iterated separately below.
+    let mut namespace = None;
+    let mut default_spec = None;
+    for s in specifiers {
+        match s {
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) => {
+                if namespace.is_none() {
+                    namespace = Some(ns);
                 }
-            }) {
-                return format!(
-                    "import * as {} from '{}';",
-                    ns_spec.local.name.as_str(),
-                    package
-                );
             }
-
-            let mut parts = String::new();
-
-            // Handle default specifier (always first and at most one in valid JS)
-            if let Some(default_spec) = specifiers.iter().find_map(|s| {
-                if let ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) = s {
-                    Some(ds)
-                } else {
-                    None
+            ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) => {
+                if default_spec.is_none() {
+                    default_spec = Some(ds);
                 }
-            }) {
-                let local_name = default_spec.local.name.as_str();
+            }
+            ImportDeclarationSpecifier::ImportSpecifier(_) => {}
+        }
+    }
+
+    // Check for namespace import first (early return, identical for both variants)
+    if let Some(ns_spec) = namespace {
+        return format!(
+            "import * as {} from '{}';",
+            ns_spec.local.name.as_str(),
+            package
+        );
+    }
+
+    let mut parts = String::new();
+
+    // Handle default specifier first (at most one in valid JS); only its
+    // rendering differs between the alias variants.
+    if let Some(default_spec) = default_spec {
+        let local_name = default_spec.local.name.as_str();
+        match alias {
+            // `import foo from 'pkg'` → `import { named as foo } from 'target'`
+            ImportAlias::DefaultToNamed(named_export) => {
                 parts.push_str(named_export);
                 if local_name != named_export {
                     parts.push_str(" as ");
                     parts.push_str(local_name);
                 }
             }
-
-            // Handle named specifiers
-            for specifier in specifiers {
-                if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
-                    if !parts.is_empty() {
-                        parts.push_str(", ");
-                    }
-                    let imported = spec.imported.to_string();
-                    let local = spec.local.name.as_str();
-                    parts.push_str(&imported);
-                    if imported != local {
-                        parts.push_str(" as ");
-                        parts.push_str(local);
-                    }
-                }
-            }
-
-            format!("import {{ {parts} }} from '{package}';")
-        }
-        ImportAlias::NamedToNamed => {
-            // Just change the source, keep specifiers as-is
-            // `import { style } from 'pkg'` → `import { style } from 'target'`
-            // Check for namespace import first (early return)
-            if let Some(ns_spec) = specifiers.iter().find_map(|s| {
-                if let ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns) = s {
-                    Some(ns)
-                } else {
-                    None
-                }
-            }) {
-                return format!(
-                    "import * as {} from '{}';",
-                    ns_spec.local.name.as_str(),
-                    package
-                );
-            }
-
-            let mut parts = String::new();
-
-            // Handle default specifier first (becomes `default as localName`)
-            if let Some(default_spec) = specifiers.iter().find_map(|s| {
-                if let ImportDeclarationSpecifier::ImportDefaultSpecifier(ds) = s {
-                    Some(ds)
-                } else {
-                    None
-                }
-            }) {
+            // `import foo from 'pkg'` → `import { default as foo } from 'target'`
+            ImportAlias::NamedToNamed => {
                 parts.push_str("default as ");
-                parts.push_str(default_spec.local.name.as_str());
+                parts.push_str(local_name);
             }
-
-            // Handle named specifiers
-            for specifier in specifiers {
-                if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
-                    if !parts.is_empty() {
-                        parts.push_str(", ");
-                    }
-                    let imported = spec.imported.to_string();
-                    let local = spec.local.name.as_str();
-                    parts.push_str(&imported);
-                    if imported != local {
-                        parts.push_str(" as ");
-                        parts.push_str(local);
-                    }
-                }
-            }
-
-            format!("import {{ {parts} }} from '{package}';")
         }
     }
+
+    // Handle named specifiers (kept as-is for both variants)
+    for specifier in specifiers {
+        if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
+            if !parts.is_empty() {
+                parts.push_str(", ");
+            }
+            let local = spec.local.name.as_str();
+            // Borrow the imported name for the common identifier cases to avoid a
+            // per-specifier heap allocation. Only the rare string-literal export
+            // name (`import { "x" as y }`) needs an owned `String`, and its
+            // `Display` output is quoted — matching the prior `to_string()` bytes.
+            match &spec.imported {
+                ModuleExportName::IdentifierName(id) => {
+                    let imported = id.name.as_str();
+                    parts.push_str(imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
+                ModuleExportName::IdentifierReference(id) => {
+                    let imported = id.name.as_str();
+                    parts.push_str(imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
+                ModuleExportName::StringLiteral(_) => {
+                    let imported = spec.imported.to_string();
+                    parts.push_str(&imported);
+                    if imported != local {
+                        parts.push_str(" as ");
+                        parts.push_str(local);
+                    }
+                }
+            }
+        }
+    }
+
+    format!("import {{ {parts} }} from '{package}';")
 }
 
 #[cfg(test)]

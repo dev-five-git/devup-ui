@@ -1,8 +1,72 @@
-use crate::constant::{CHECK_QUOTES_RE, CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
+use std::borrow::Cow;
+
+use crate::constant::{CSS_FUNCTION_RE, OPTIMIZE_MULTI_CSS_VALUE_PROPERTY};
 
 #[must_use]
-pub fn optimize_mutli_css_value(value: &str) -> String {
-    let mut result = String::with_capacity(value.len());
+pub fn optimize_multi_css_value(value: &str) -> Cow<'_, str> {
+    // Borrow fast path: a single bare segment (no comma) whose trimmed form is
+    // already the exact output. This is the common `Roboto` / `sans-serif` case.
+    // It qualifies only when trimming does not slice (the trimmed slice IS a
+    // suffix-and-prefix of `value` — we return that borrowed slice), the segment
+    // is NOT surrounded by strippable quotes, and it needs no re-quoting. Every
+    // other shape (comma list, quoted, requote-needed, <=1 byte) falls through to
+    // the owning builder below and stays byte-identical.
+    let has_comma = value.as_bytes().contains(&b',');
+    if !has_comma {
+        let s = value.trim();
+        let quote_byte =
+            |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
+        if s.len() >= 2 {
+            let quoted = (s.starts_with('\'') && s.ends_with('\''))
+                || (s.starts_with('"') && s.ends_with('"'));
+            if !quoted {
+                let needs_quotes = s.bytes().any(quote_byte);
+                if !needs_quotes || CSS_FUNCTION_RE.is_match(s) {
+                    // Output would be exactly `s` pushed bare -> borrow it.
+                    return Cow::Borrowed(s);
+                }
+            }
+        } else if s.len() == 1 && !quote_byte(s.as_bytes()[0]) {
+            // A single-byte bare segment cannot be a quote *pair* (a lone `'`/`"`
+            // is length 1, not two), and `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
+            // can never match `<2` bytes, so it is never re-quoted. When the byte
+            // is not quote-worthy the owned builder pushes it bare too — the output
+            // is exactly `s`, so borrow it and skip the `String` allocation.
+            // (A lone `'`/`"` is not a `quote_byte`, so it also borrows bare,
+            // matching the owned `unquoted.len()==1` non-quote-byte arm.)
+            return Cow::Borrowed(s);
+        }
+    }
+    Cow::Owned(optimize_multi_css_value_owned(value, has_comma))
+}
+
+fn optimize_multi_css_value_owned(value: &str, has_comma: bool) -> String {
+    // Headroom for re-wrapped segments: EACH comma-separated segment may gain a
+    // `"…"` quote pair (+2 bytes), so a multi-segment list like `'A B', 'C D', E`
+    // → `"A B","C D",E` can add up to one pair per segment. Budget `2` per comma
+    // plus a trailing `2` so even the worst case (every segment re-wrapped) never
+    // triggers a grow-realloc. Stripping source quotes only ever shrinks, so this
+    // is a safe upper bound; output stays byte-identical.
+    // Headroom is `2` per comma, `0` when none. The caller already probed comma
+    // presence (`value.as_bytes().contains(&b',')`) to pick its borrow fast path
+    // and hands the result in via `has_comma`. On the no-comma owned path (a
+    // quote-pair strip like `'Roboto'` or a single-segment re-quote) the count is
+    // provably `0`, so we skip a second full O(n) `value.bytes()` scan entirely.
+    // Only the comma-present path pays the count. Capacity stays byte-for-byte
+    // identical to `value.len() + comma_count * 2 + 2` (a `0` headroom on the
+    // no-comma path is exactly what a full scan would have yielded).
+    let comma_headroom = if has_comma {
+        value.bytes().filter(|&b| b == b',').count() * 2
+    } else {
+        0
+    };
+    let mut result = String::with_capacity(value.len() + comma_headroom + 2);
+    // Loop-invariant predicate: captures nothing, so construct it once per call
+    // instead of once per comma-separated segment. Byte-scan equivalent of the
+    // `[()\s]` regex — `\s` in `regex_lite` matches `[ \t\n\r\x0b\x0c]`, so the
+    // vertical-tab (0x0b) and form-feed (0x0c) bytes MUST be included to stay
+    // byte-identical.
+    let quote_byte = |b: u8| matches!(b, b'(' | b')' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c);
     for (idx, s) in value.split(',').enumerate() {
         if idx > 0 {
             result.push(',');
@@ -18,7 +82,25 @@ pub fn optimize_mutli_css_value(value: &str) -> String {
             s
         };
 
-        if CHECK_QUOTES_RE.is_match(unquoted) && !CSS_FUNCTION_RE.is_match(unquoted) {
+        // Fast path for empty/single-char segments (`''`/`""` strip to empty, the
+        // lone `'`/`"` cases stay one char): `CSS_FUNCTION_RE = ^[a-zA-Z-]+(\(.*\))`
+        // can NEVER match a string shorter than 2 bytes (it needs a name byte plus
+        // a `(`), so a single quote-worthy byte is always wrapped and everything
+        // else is pushed bare. Deciding this from the single byte skips both the
+        // `.any()` scan and the regex-engine setup while staying byte-identical.
+        if unquoted.len() <= 1 {
+            if unquoted.len() == 1 && quote_byte(unquoted.as_bytes()[0]) {
+                result.push('"');
+                result.push_str(unquoted);
+                result.push('"');
+            } else {
+                result.push_str(unquoted);
+            }
+            continue;
+        }
+
+        let needs_quotes = unquoted.bytes().any(quote_byte);
+        if needs_quotes && !CSS_FUNCTION_RE.is_match(unquoted) {
             result.push('"');
             result.push_str(unquoted);
             result.push('"');
@@ -29,11 +111,21 @@ pub fn optimize_mutli_css_value(value: &str) -> String {
     result
 }
 
-pub fn wrap_url(s: &str) -> String {
+#[must_use]
+pub fn wrap_url(s: &str) -> Cow<'_, str> {
     if CSS_FUNCTION_RE.is_match(s) {
-        s.to_string()
+        // Already a CSS function (e.g. `url(...)`/`local(...)`): borrow the input
+        // instead of cloning the whole value onto the heap.
+        Cow::Borrowed(s)
     } else {
-        format!("url({s})")
+        // Build `url(<s>)` into a presized buffer instead of routing through
+        // `format!`'s `Arguments` machinery; the single owned allocation is
+        // unavoidable but the formatting overhead is not. Byte-identical output.
+        let mut out = String::with_capacity(s.len() + 5);
+        out.push_str("url(");
+        out.push_str(s);
+        out.push(')');
+        Cow::Owned(out)
     }
 }
 
@@ -67,12 +159,14 @@ mod tests {
     #[case("A, B, C", "A,B,C")]
     #[case("'", "'")]
     #[case("\"", "\"")]
+    #[case("A", "A")]
+    #[case("x", "x")]
     #[case("url(abc)", "url(abc)")]
     #[case("url(\"a bc\")", "url(\"a bc\")")]
     #[case("'A', 'B', 'C'", "A,B,C")]
     #[case("\"A\", \"B\", \"C\"", "A,B,C")]
-    fn test_optimize_mutli_css_value(#[case] input: &str, #[case] expected: &str) {
-        assert_eq!(optimize_mutli_css_value(input), expected);
+    fn test_optimize_multi_css_value(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(optimize_multi_css_value(input), expected);
     }
 
     #[rstest]
@@ -103,7 +197,7 @@ mod tests {
     #[case("(hello world)", "url(\"(hello world)\")")]
     fn test_wrap_url(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(
-            super::wrap_url(&super::optimize_mutli_css_value(input)),
+            super::wrap_url(&super::optimize_multi_css_value(input)),
             expected
         );
     }

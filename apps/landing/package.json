@@ -30,11 +30,11 @@
     "@devup-ui/next-plugin": "workspace:^",
     "@types/body-scroll-lock": "^3.1",
     "@types/mdx": "^2.0",
-    "@types/node": "^25",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5",
     "babel-plugin-react-compiler": "^1.0",
-    "typescript": "^6"
+    "typescript": "^7"
   }
 }

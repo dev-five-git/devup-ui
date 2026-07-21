@@ -7,8 +7,10 @@
 // Using if-let chains would make the code harder to read and modify.
 #![allow(clippy::collapsible_if)]
 
+use std::borrow::Cow;
+
 use css::style_selector::StyleSelector;
-use phf::phf_map;
+use phf::{phf_map, phf_set};
 
 use crate::extract_style::{
     extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
@@ -304,22 +306,44 @@ pub struct TailwindClass {
     /// Variants/modifiers applied
     pub variants: Vec<TailwindVariant>,
     /// CSS property name
-    pub property: String,
+    pub property: &'static str,
     /// CSS value
-    pub value: String,
+    pub value: Cow<'static, str>,
     /// Whether this is a negative value
     pub negative: bool,
+}
+
+/// Remove every non-overlapping occurrence of `needle` from `haystack` in place.
+///
+/// Behaves exactly like `*haystack = haystack.replace(needle, "")` (left-to-right,
+/// non-overlapping) but mutates the existing buffer instead of allocating a new
+/// `String`. `needle` must be non-empty.
+fn remove_all_substr(haystack: &mut String, needle: &str) {
+    debug_assert!(!needle.is_empty());
+    let mut search_from = 0;
+    while let Some(rel) = haystack[search_from..].find(needle) {
+        let at = search_from + rel;
+        haystack.replace_range(at..at + needle.len(), "");
+        // Continue scanning from where the removed text was (non-overlapping,
+        // matching `str::replace`'s left-to-right semantics).
+        search_from = at;
+    }
 }
 
 impl TailwindClass {
     /// Convert to `ExtractStaticStyle`
     pub fn to_static_style(&self) -> ExtractStaticStyle {
         // For transform property, negative is already incorporated into the value
-        // (e.g., translateX(-1rem)), so don't add prefix again
-        let value = if self.negative && self.property != "transform" {
-            format!("-{}", self.value)
+        // (e.g., translateX(-1rem)), so don't add prefix again. Only the negative
+        // branch needs an owned String for the `-` prefix; the common non-negative
+        // path borrows `self.value` directly, dropping one allocation per class.
+        let value: Cow<str> = if self.negative && self.property != "transform" {
+            let mut v = String::with_capacity(self.value.len() + 1);
+            v.push('-');
+            v.push_str(&self.value);
+            Cow::Owned(v)
         } else {
-            self.value.clone()
+            Cow::Borrowed(self.value.as_ref())
         };
 
         let selector = if self.variants.is_empty() {
@@ -329,7 +353,7 @@ impl TailwindClass {
             Some(self.combine_selectors())
         };
 
-        ExtractStaticStyle::new(&self.property, &value, self.responsive, selector)
+        ExtractStaticStyle::new(self.property, value.as_ref(), self.responsive, selector)
     }
 
     /// Combine multiple variant selectors
@@ -350,10 +374,22 @@ impl TailwindClass {
                     if selector_str.is_empty() {
                         selector_str = s;
                     } else {
-                        // Combine selectors
-                        selector_str =
-                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
-                        if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
+                        // Combine selectors in place, byte-identical to the previous
+                        // `format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""))`
+                        // form but without the two throwaway `String`s and the `format!`
+                        // buffer: drop all " &" from the accumulator in place, then append
+                        // `s` with every '&' skipped.
+                        remove_all_substr(&mut selector_str, " &");
+                        for part in s.split('&') {
+                            selector_str.push_str(part);
+                        }
+                        // `remove_all_substr` above stripped every " &" and each
+                        // appended `part` comes from `s.split('&')`, so NO '&' char
+                        // remains in the accumulator here — hence `contains(" &")`
+                        // is provably always false and the only live check is the
+                        // trailing-space one. Output stays byte-identical (locked by
+                        // `test_combine_selectors_byte_identical_to_prior_impl`).
+                        if !selector_str.ends_with(" &") {
                             selector_str.push_str(" &");
                         }
                     }
@@ -867,141 +903,132 @@ pub fn has_tailwind_classes(class_str: &str) -> bool {
     false
 }
 
-/// Check if a single class looks like a Tailwind utility
-fn is_likely_tailwind_class(class: &str) -> bool {
-    // Strip any responsive/variant prefixes
-    let class = class
-        .split(':')
-        .next_back()
-        .unwrap_or(class)
-        .trim_start_matches('-');
+/// Common Tailwind prefixes
+static TAILWIND_PREFIXES: &[&str] = &[
+    "bg-",
+    "text-",
+    "font-",
+    "p-",
+    "px-",
+    "py-",
+    "pt-",
+    "pr-",
+    "pb-",
+    "pl-",
+    "m-",
+    "mx-",
+    "my-",
+    "mt-",
+    "mr-",
+    "mb-",
+    "ml-",
+    "w-",
+    "h-",
+    "min-w-",
+    "max-w-",
+    "min-h-",
+    "max-h-",
+    "flex",
+    "grid",
+    "block",
+    "inline",
+    "hidden",
+    "absolute",
+    "relative",
+    "fixed",
+    "sticky",
+    "top-",
+    "right-",
+    "bottom-",
+    "left-",
+    "inset-",
+    "z-",
+    "opacity-",
+    "rounded",
+    "border",
+    "shadow",
+    "gap-",
+    "space-",
+    "items-",
+    "justify-",
+    "content-",
+    "self-",
+    "order-",
+    "col-",
+    "row-",
+    "overflow-",
+    "object-",
+    "aspect-",
+    "transition",
+    "duration-",
+    "ease-",
+    "delay-",
+    "animate-",
+    "cursor-",
+    "select-",
+    "resize",
+    "appearance-",
+    "outline",
+    "ring",
+    "fill-",
+    "stroke-",
+    "sr-",
+    "not-sr-",
+    "container",
+    "columns-",
+    "break-",
+    "decoration-",
+    "underline",
+    "overline",
+    "line-through",
+    "no-underline",
+    "uppercase",
+    "lowercase",
+    "capitalize",
+    "normal-case",
+    "truncate",
+    "leading-",
+    "tracking-",
+    "list-",
+    "align-",
+    "whitespace-",
+    "hyphens-",
+    "blur",
+    "brightness-",
+    "contrast-",
+    "grayscale",
+    "invert",
+    "saturate-",
+    "sepia",
+    "drop-shadow",
+    "backdrop-",
+    "scale-",
+    "rotate-",
+    "translate-",
+    "skew-",
+    "origin-",
+    "accent-",
+    "caret-",
+    "scroll-",
+    "snap-",
+    "touch-",
+    "will-change-",
+    "table",
+    "clear-",
+    "float-",
+    "isolate",
+    "isolation-",
+    "mix-blend-",
+    "bg-blend-",
+    "divide-",
+    "place-",
+    "grow",
+    "shrink",
+    "basis-",
+];
 
-    // Common Tailwind prefixes
-    let prefixes = [
-        "bg-",
-        "text-",
-        "font-",
-        "p-",
-        "px-",
-        "py-",
-        "pt-",
-        "pr-",
-        "pb-",
-        "pl-",
-        "m-",
-        "mx-",
-        "my-",
-        "mt-",
-        "mr-",
-        "mb-",
-        "ml-",
-        "w-",
-        "h-",
-        "min-w-",
-        "max-w-",
-        "min-h-",
-        "max-h-",
-        "flex",
-        "grid",
-        "block",
-        "inline",
-        "hidden",
-        "absolute",
-        "relative",
-        "fixed",
-        "sticky",
-        "top-",
-        "right-",
-        "bottom-",
-        "left-",
-        "inset-",
-        "z-",
-        "opacity-",
-        "rounded",
-        "border",
-        "shadow",
-        "gap-",
-        "space-",
-        "items-",
-        "justify-",
-        "content-",
-        "self-",
-        "order-",
-        "col-",
-        "row-",
-        "overflow-",
-        "object-",
-        "aspect-",
-        "transition",
-        "duration-",
-        "ease-",
-        "delay-",
-        "animate-",
-        "cursor-",
-        "select-",
-        "resize",
-        "appearance-",
-        "outline",
-        "ring",
-        "fill-",
-        "stroke-",
-        "sr-",
-        "not-sr-",
-        "container",
-        "columns-",
-        "break-",
-        "decoration-",
-        "underline",
-        "overline",
-        "line-through",
-        "no-underline",
-        "uppercase",
-        "lowercase",
-        "capitalize",
-        "normal-case",
-        "truncate",
-        "leading-",
-        "tracking-",
-        "list-",
-        "align-",
-        "whitespace-",
-        "hyphens-",
-        "blur",
-        "brightness-",
-        "contrast-",
-        "grayscale",
-        "invert",
-        "saturate-",
-        "sepia",
-        "drop-shadow",
-        "backdrop-",
-        "scale-",
-        "rotate-",
-        "translate-",
-        "skew-",
-        "origin-",
-        "accent-",
-        "caret-",
-        "scroll-",
-        "snap-",
-        "touch-",
-        "will-change-",
-        "table",
-        "clear-",
-        "float-",
-        "isolate",
-        "isolation-",
-        "mix-blend-",
-        "bg-blend-",
-        "divide-",
-        "place-",
-        "grow",
-        "shrink",
-        "basis-",
-    ];
-
-    // Exact matches for utility classes without values
-    let exact_matches = [
+/// Exact matches for utility classes without values
+static EXACT_TAILWIND_CLASSES: phf::Set<&'static str> = phf_set! {
         "flex",
         "inline-flex",
         "grid",
@@ -1133,13 +1160,22 @@ fn is_likely_tailwind_class(class: &str) -> bool {
         "blur-xl",
         "blur-2xl",
         "blur-3xl",
-    ];
+};
 
-    if exact_matches.contains(&class) {
+/// Check if a single class looks like a Tailwind utility
+fn is_likely_tailwind_class(class: &str) -> bool {
+    // Strip any responsive/variant prefixes
+    let class = class
+        .split(':')
+        .next_back()
+        .unwrap_or(class)
+        .trim_start_matches('-');
+
+    if EXACT_TAILWIND_CLASSES.contains(class) {
         return true;
     }
 
-    for prefix in prefixes {
+    for prefix in TAILWIND_PREFIXES {
         if let Some(value_part) = class.strip_prefix(prefix) {
             // For prefixes that end with '-', validate the value part
             if prefix.ends_with('-') {
@@ -1161,63 +1197,75 @@ fn is_likely_tailwind_class(class: &str) -> bool {
     false
 }
 
+/// Exact-match value keywords for Tailwind utilities
+static TAILWIND_VALUE_KEYWORDS: phf::Set<&'static str> = phf_set! {
+    "auto",
+    "full",
+    "screen",
+    "min",
+    "max",
+    "fit",
+    "px",
+    "none",
+    "inherit",
+    "current",
+    "transparent",
+    "black",
+    "white",
+};
+
+/// Exact-match size suffixes for Tailwind utilities
+static TAILWIND_SIZE_KEYWORDS: phf::Set<&'static str> = phf_set! {
+    "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
+};
+
+/// Tailwind color-family names. Loop-invariant lookup set: promoted from a
+/// per-call `[&str; 22]` stack array + linear `strip_prefix` scan to a
+/// module-level `phf::Set` for an O(1) first-segment `contains`.
+static TAILWIND_COLOR_NAMES: phf::Set<&'static str> = phf_set! {
+    "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
+    "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
+    "pink", "rose",
+};
+
 /// Check if a value part looks like a valid Tailwind value
 fn is_valid_tailwind_value(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
 
+    // Ordered cheapest-and-most-common first so the dominant numeric/color
+    // utilities short-circuit before the two phf keyword probes. Every branch
+    // is a side-effect-free predicate returning `true`, so reordering cannot
+    // change the boolean result for any input.
+
     // Arbitrary value syntax [...]
     if value.starts_with('[') && value.ends_with(']') {
         return true;
     }
 
-    // Common keywords
-    let keywords = [
-        "auto",
-        "full",
-        "screen",
-        "min",
-        "max",
-        "fit",
-        "px",
-        "none",
-        "inherit",
-        "current",
-        "transparent",
-        "black",
-        "white",
-    ];
-    if keywords.contains(&value) {
-        return true;
-    }
-
-    // Numeric values (including decimals like 0.5, 1.5)
+    // Numeric values (including decimals like 0.5, 1.5) — the dominant case
+    // (`p-4`→`4`, `z-10`→`10`).
     // Safe: `value.is_empty()` returns early above, so `value` has at least one char.
     if value.starts_with(|c: char| c.is_ascii_digit()) {
         return true;
     }
 
-    // Color names with shade (e.g., red-500, blue-100)
-    let color_names = [
-        "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
-        "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
-        "pink", "rose",
-    ];
-    for color in color_names {
-        if let Some(rest) = value.strip_prefix(color) {
-            // Must be followed by nothing or a dash and number
-            if rest.is_empty() || rest.starts_with('-') {
-                return true;
-            }
-        }
+    // Color names with shade (e.g., red-500, blue-100). Every Tailwind color
+    // token is `<name>` or `<name>-<shade>`, so an O(1) first-segment lookup
+    // reproduces the old `<name>` / `<name>-…` prefix scan byte-for-byte.
+    let base = value.split('-').next().unwrap_or(value);
+    if TAILWIND_COLOR_NAMES.contains(base) {
+        return true;
+    }
+
+    // Common keywords
+    if TAILWIND_VALUE_KEYWORDS.contains(value) {
+        return true;
     }
 
     // Size suffixes (xs, sm, md, lg, xl, 2xl, etc.)
-    let size_keywords = [
-        "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
-    ];
-    if size_keywords.contains(&value) {
+    if TAILWIND_SIZE_KEYWORDS.contains(value) {
         return true;
     }
 
@@ -1235,20 +1283,19 @@ fn is_valid_tailwind_value(value: &str) -> bool {
 }
 
 /// Parse a className string into a list of `ExtractStyleValue`
-pub fn parse_tailwind_to_styles(class_str: &str, filename: Option<&str>) -> Vec<ExtractStyleValue> {
-    let classes = class_str.split_whitespace();
-    let mut styles = Vec::with_capacity(classes.clone().count());
+pub fn parse_tailwind_to_styles(class_str: &str) -> Vec<ExtractStyleValue> {
+    // Upper bound: at most one style per whitespace-separated class, so
+    // presizing removes the grow-realloc chain. Use a cheap single byte scan
+    // (whitespace-byte count + 1) instead of the heavier `split_whitespace`
+    // state machine just to size the buffer.
+    let mut styles =
+        Vec::with_capacity(class_str.bytes().filter(u8::is_ascii_whitespace).count() + 1);
 
-    for class in classes {
+    for class in class_str.split_whitespace() {
         if let Some(parsed) = parse_single_class(class) {
             let static_style = parsed.to_static_style();
             styles.push(ExtractStyleValue::Static(static_style));
         }
-    }
-
-    // Set filename for all styles if provided
-    if filename.is_some() {
-        // The filename is already used in ExtractStaticStyle through the extract() method
     }
 
     styles
@@ -1293,8 +1340,14 @@ pub fn parse_single_class(class: &str) -> Option<TailwindClass> {
     })
 }
 
+type ParsedUtility = (&'static str, Cow<'static, str>);
+
+fn tw(property: &'static str, value: impl Into<Cow<'static, str>>) -> ParsedUtility {
+    (property, value.into())
+}
+
 /// Parse a utility class (without prefixes) into property and value
-fn parse_utility(class: &str, is_negative: bool) -> Option<(String, String)> {
+fn parse_utility(class: &str, is_negative: bool) -> Option<(&'static str, Cow<'static, str>)> {
     // Handle arbitrary values first
     if let Some(result) = parse_arbitrary_value(class) {
         return Some(result);
@@ -1374,7 +1427,7 @@ fn parse_utility(class: &str, is_negative: bool) -> Option<(String, String)> {
 }
 
 /// Parse arbitrary value syntax: class-[value]
-fn parse_arbitrary_value(class: &str) -> Option<(String, String)> {
+fn parse_arbitrary_value(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     if !class.contains('[') {
         return None;
     }
@@ -1393,256 +1446,240 @@ fn parse_arbitrary_value(class: &str) -> Option<(String, String)> {
     let value = value.replace('_', " ");
 
     match prefix {
-        "w-" => Some(("width".to_string(), value)),
-        "h-" => Some(("height".to_string(), value)),
-        "min-w-" => Some(("min-width".to_string(), value)),
-        "max-w-" => Some(("max-width".to_string(), value)),
-        "min-h-" => Some(("min-height".to_string(), value)),
-        "max-h-" => Some(("max-height".to_string(), value)),
-        "p-" => Some(("padding".to_string(), value)),
-        "px-" => Some(("padding-inline".to_string(), value)),
-        "py-" => Some(("padding-block".to_string(), value)),
-        "pt-" => Some(("padding-top".to_string(), value)),
-        "pr-" => Some(("padding-right".to_string(), value)),
-        "pb-" => Some(("padding-bottom".to_string(), value)),
-        "pl-" => Some(("padding-left".to_string(), value)),
-        "m-" => Some(("margin".to_string(), value)),
-        "mx-" => Some(("margin-inline".to_string(), value)),
-        "my-" => Some(("margin-block".to_string(), value)),
-        "mt-" => Some(("margin-top".to_string(), value)),
-        "mr-" => Some(("margin-right".to_string(), value)),
-        "mb-" => Some(("margin-bottom".to_string(), value)),
-        "ml-" => Some(("margin-left".to_string(), value)),
-        "top-" => Some(("top".to_string(), value)),
-        "right-" => Some(("right".to_string(), value)),
-        "bottom-" => Some(("bottom".to_string(), value)),
-        "left-" => Some(("left".to_string(), value)),
-        "inset-" => Some(("inset".to_string(), value)),
-        "inset-x-" => Some(("inset-inline".to_string(), value)),
-        "inset-y-" => Some(("inset-block".to_string(), value)),
-        "gap-" => Some(("gap".to_string(), value)),
-        "gap-x-" => Some(("column-gap".to_string(), value)),
-        "gap-y-" => Some(("row-gap".to_string(), value)),
-        "text-" => Some(("color".to_string(), value)),
-        "bg-" => Some(("background-color".to_string(), value)),
-        "border-" => Some(("border-color".to_string(), value)),
-        "rounded-" => Some(("border-radius".to_string(), value)),
-        "opacity-" => Some(("opacity".to_string(), value)),
-        "z-" => Some(("z-index".to_string(), value)),
-        "font-" => Some(("font-family".to_string(), value)),
-        "tracking-" => Some(("letter-spacing".to_string(), value)),
-        "leading-" => Some(("line-height".to_string(), value)),
-        "duration-" => Some(("transition-duration".to_string(), value)),
-        "delay-" => Some(("transition-delay".to_string(), value)),
-        "scale-" => Some(("transform".to_string(), format!("scale({value})"))),
-        "rotate-" => Some(("transform".to_string(), format!("rotate({value})"))),
-        "translate-x-" => Some(("transform".to_string(), format!("translateX({value})"))),
-        "translate-y-" => Some(("transform".to_string(), format!("translateY({value})"))),
-        "skew-x-" => Some(("transform".to_string(), format!("skewX({value})"))),
-        "skew-y-" => Some(("transform".to_string(), format!("skewY({value})"))),
-        "aspect-" => Some(("aspect-ratio".to_string(), value)),
-        "columns-" => Some(("columns".to_string(), value)),
-        "grid-cols-" => Some((
-            "grid-template-columns".to_string(),
+        "w-" => Some(tw("width", value)),
+        "h-" => Some(tw("height", value)),
+        "min-w-" => Some(tw("min-width", value)),
+        "max-w-" => Some(tw("max-width", value)),
+        "min-h-" => Some(tw("min-height", value)),
+        "max-h-" => Some(tw("max-height", value)),
+        "p-" => Some(tw("padding", value)),
+        "px-" => Some(tw("padding-inline", value)),
+        "py-" => Some(tw("padding-block", value)),
+        "pt-" => Some(tw("padding-top", value)),
+        "pr-" => Some(tw("padding-right", value)),
+        "pb-" => Some(tw("padding-bottom", value)),
+        "pl-" => Some(tw("padding-left", value)),
+        "m-" => Some(tw("margin", value)),
+        "mx-" => Some(tw("margin-inline", value)),
+        "my-" => Some(tw("margin-block", value)),
+        "mt-" => Some(tw("margin-top", value)),
+        "mr-" => Some(tw("margin-right", value)),
+        "mb-" => Some(tw("margin-bottom", value)),
+        "ml-" => Some(tw("margin-left", value)),
+        "top-" => Some(tw("top", value)),
+        "right-" => Some(tw("right", value)),
+        "bottom-" => Some(tw("bottom", value)),
+        "left-" => Some(tw("left", value)),
+        "inset-" => Some(tw("inset", value)),
+        "inset-x-" => Some(tw("inset-inline", value)),
+        "inset-y-" => Some(tw("inset-block", value)),
+        "gap-" => Some(tw("gap", value)),
+        "gap-x-" => Some(tw("column-gap", value)),
+        "gap-y-" => Some(tw("row-gap", value)),
+        "text-" => Some(tw("color", value)),
+        "bg-" => Some(tw("background-color", value)),
+        "border-" => Some(tw("border-color", value)),
+        "rounded-" => Some(tw("border-radius", value)),
+        "opacity-" => Some(tw("opacity", value)),
+        "z-" => Some(tw("z-index", value)),
+        "font-" => Some(tw("font-family", value)),
+        "tracking-" => Some(tw("letter-spacing", value)),
+        "leading-" => Some(tw("line-height", value)),
+        "duration-" => Some(tw("transition-duration", value)),
+        "delay-" => Some(tw("transition-delay", value)),
+        "scale-" => Some(tw("transform", format!("scale({value})"))),
+        "rotate-" => Some(tw("transform", format!("rotate({value})"))),
+        "translate-x-" => Some(tw("transform", format!("translateX({value})"))),
+        "translate-y-" => Some(tw("transform", format!("translateY({value})"))),
+        "skew-x-" => Some(tw("transform", format!("skewX({value})"))),
+        "skew-y-" => Some(tw("transform", format!("skewY({value})"))),
+        "aspect-" => Some(tw("aspect-ratio", value)),
+        "columns-" => Some(tw("columns", value)),
+        "grid-cols-" => Some(tw(
+            "grid-template-columns",
             format!("repeat({value}, minmax(0, 1fr))"),
         )),
-        "grid-rows-" => Some((
-            "grid-template-rows".to_string(),
+        "grid-rows-" => Some(tw(
+            "grid-template-rows",
             format!("repeat({value}, minmax(0, 1fr))"),
         )),
-        "col-span-" => Some((
-            "grid-column".to_string(),
-            format!("span {value} / span {value}"),
-        )),
-        "row-span-" => Some((
-            "grid-row".to_string(),
-            format!("span {value} / span {value}"),
-        )),
-        "basis-" => Some(("flex-basis".to_string(), value)),
-        "blur-" => Some(("filter".to_string(), format!("blur({value})"))),
-        "brightness-" => Some(("filter".to_string(), format!("brightness({value})"))),
-        "contrast-" => Some(("filter".to_string(), format!("contrast({value})"))),
-        "saturate-" => Some(("filter".to_string(), format!("saturate({value})"))),
-        "backdrop-blur-" => Some(("backdrop-filter".to_string(), format!("blur({value})"))),
+        "col-span-" => Some(tw("grid-column", format!("span {value} / span {value}"))),
+        "row-span-" => Some(tw("grid-row", format!("span {value} / span {value}"))),
+        "basis-" => Some(tw("flex-basis", value)),
+        "blur-" => Some(tw("filter", format!("blur({value})"))),
+        "brightness-" => Some(tw("filter", format!("brightness({value})"))),
+        "contrast-" => Some(tw("filter", format!("contrast({value})"))),
+        "saturate-" => Some(tw("filter", format!("saturate({value})"))),
+        "backdrop-blur-" => Some(tw("backdrop-filter", format!("blur({value})"))),
         _ => None,
     }
 }
 
 /// Parse layout utilities (display, position, visibility, etc.)
-fn parse_layout_utility(class: &str) -> Option<(String, String)> {
+fn parse_layout_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     match class {
         // Display
-        "block" => Some(("display".to_string(), "block".to_string())),
-        "inline-block" => Some(("display".to_string(), "inline-block".to_string())),
-        "inline" => Some(("display".to_string(), "inline".to_string())),
-        "flex" => Some(("display".to_string(), "flex".to_string())),
-        "inline-flex" => Some(("display".to_string(), "inline-flex".to_string())),
-        "table" => Some(("display".to_string(), "table".to_string())),
-        "inline-table" => Some(("display".to_string(), "inline-table".to_string())),
-        "table-caption" => Some(("display".to_string(), "table-caption".to_string())),
-        "table-cell" => Some(("display".to_string(), "table-cell".to_string())),
-        "table-column" => Some(("display".to_string(), "table-column".to_string())),
-        "table-column-group" => Some(("display".to_string(), "table-column-group".to_string())),
-        "table-footer-group" => Some(("display".to_string(), "table-footer-group".to_string())),
-        "table-header-group" => Some(("display".to_string(), "table-header-group".to_string())),
-        "table-row-group" => Some(("display".to_string(), "table-row-group".to_string())),
-        "table-row" => Some(("display".to_string(), "table-row".to_string())),
-        "flow-root" => Some(("display".to_string(), "flow-root".to_string())),
-        "grid" => Some(("display".to_string(), "grid".to_string())),
-        "inline-grid" => Some(("display".to_string(), "inline-grid".to_string())),
-        "contents" => Some(("display".to_string(), "contents".to_string())),
-        "list-item" => Some(("display".to_string(), "list-item".to_string())),
-        "hidden" => Some(("display".to_string(), "none".to_string())),
+        "block" => Some(tw("display", Cow::Borrowed("block"))),
+        "inline-block" => Some(tw("display", Cow::Borrowed("inline-block"))),
+        "inline" => Some(tw("display", Cow::Borrowed("inline"))),
+        "flex" => Some(tw("display", Cow::Borrowed("flex"))),
+        "inline-flex" => Some(tw("display", Cow::Borrowed("inline-flex"))),
+        "table" => Some(tw("display", Cow::Borrowed("table"))),
+        "inline-table" => Some(tw("display", Cow::Borrowed("inline-table"))),
+        "table-caption" => Some(tw("display", Cow::Borrowed("table-caption"))),
+        "table-cell" => Some(tw("display", Cow::Borrowed("table-cell"))),
+        "table-column" => Some(tw("display", Cow::Borrowed("table-column"))),
+        "table-column-group" => Some(tw("display", Cow::Borrowed("table-column-group"))),
+        "table-footer-group" => Some(tw("display", Cow::Borrowed("table-footer-group"))),
+        "table-header-group" => Some(tw("display", Cow::Borrowed("table-header-group"))),
+        "table-row-group" => Some(tw("display", Cow::Borrowed("table-row-group"))),
+        "table-row" => Some(tw("display", Cow::Borrowed("table-row"))),
+        "flow-root" => Some(tw("display", Cow::Borrowed("flow-root"))),
+        "grid" => Some(tw("display", Cow::Borrowed("grid"))),
+        "inline-grid" => Some(tw("display", Cow::Borrowed("inline-grid"))),
+        "contents" => Some(tw("display", Cow::Borrowed("contents"))),
+        "list-item" => Some(tw("display", Cow::Borrowed("list-item"))),
+        "hidden" => Some(tw("display", Cow::Borrowed("none"))),
 
         // Position
-        "static" => Some(("position".to_string(), "static".to_string())),
-        "fixed" => Some(("position".to_string(), "fixed".to_string())),
-        "absolute" => Some(("position".to_string(), "absolute".to_string())),
-        "relative" => Some(("position".to_string(), "relative".to_string())),
-        "sticky" => Some(("position".to_string(), "sticky".to_string())),
+        "static" => Some(tw("position", Cow::Borrowed("static"))),
+        "fixed" => Some(tw("position", Cow::Borrowed("fixed"))),
+        "absolute" => Some(tw("position", Cow::Borrowed("absolute"))),
+        "relative" => Some(tw("position", Cow::Borrowed("relative"))),
+        "sticky" => Some(tw("position", Cow::Borrowed("sticky"))),
 
         // Visibility
-        "visible" => Some(("visibility".to_string(), "visible".to_string())),
-        "invisible" => Some(("visibility".to_string(), "hidden".to_string())),
-        "collapse" => Some(("visibility".to_string(), "collapse".to_string())),
+        "visible" => Some(tw("visibility", Cow::Borrowed("visible"))),
+        "invisible" => Some(tw("visibility", Cow::Borrowed("hidden"))),
+        "collapse" => Some(tw("visibility", Cow::Borrowed("collapse"))),
 
         // Box sizing
-        "box-border" => Some(("box-sizing".to_string(), "border-box".to_string())),
-        "box-content" => Some(("box-sizing".to_string(), "content-box".to_string())),
+        "box-border" => Some(tw("box-sizing", Cow::Borrowed("border-box"))),
+        "box-content" => Some(tw("box-sizing", Cow::Borrowed("content-box"))),
 
         // Float
-        "float-start" => Some(("float".to_string(), "inline-start".to_string())),
-        "float-end" => Some(("float".to_string(), "inline-end".to_string())),
-        "float-right" => Some(("float".to_string(), "right".to_string())),
-        "float-left" => Some(("float".to_string(), "left".to_string())),
-        "float-none" => Some(("float".to_string(), "none".to_string())),
+        "float-start" => Some(tw("float", Cow::Borrowed("inline-start"))),
+        "float-end" => Some(tw("float", Cow::Borrowed("inline-end"))),
+        "float-right" => Some(tw("float", Cow::Borrowed("right"))),
+        "float-left" => Some(tw("float", Cow::Borrowed("left"))),
+        "float-none" => Some(tw("float", Cow::Borrowed("none"))),
 
         // Clear
-        "clear-start" => Some(("clear".to_string(), "inline-start".to_string())),
-        "clear-end" => Some(("clear".to_string(), "inline-end".to_string())),
-        "clear-left" => Some(("clear".to_string(), "left".to_string())),
-        "clear-right" => Some(("clear".to_string(), "right".to_string())),
-        "clear-both" => Some(("clear".to_string(), "both".to_string())),
-        "clear-none" => Some(("clear".to_string(), "none".to_string())),
+        "clear-start" => Some(tw("clear", Cow::Borrowed("inline-start"))),
+        "clear-end" => Some(tw("clear", Cow::Borrowed("inline-end"))),
+        "clear-left" => Some(tw("clear", Cow::Borrowed("left"))),
+        "clear-right" => Some(tw("clear", Cow::Borrowed("right"))),
+        "clear-both" => Some(tw("clear", Cow::Borrowed("both"))),
+        "clear-none" => Some(tw("clear", Cow::Borrowed("none"))),
 
         // Isolation
-        "isolate" => Some(("isolation".to_string(), "isolate".to_string())),
-        "isolation-auto" => Some(("isolation".to_string(), "auto".to_string())),
+        "isolate" => Some(tw("isolation", Cow::Borrowed("isolate"))),
+        "isolation-auto" => Some(tw("isolation", Cow::Borrowed("auto"))),
 
         // Object fit
-        "object-contain" => Some(("object-fit".to_string(), "contain".to_string())),
-        "object-cover" => Some(("object-fit".to_string(), "cover".to_string())),
-        "object-fill" => Some(("object-fit".to_string(), "fill".to_string())),
-        "object-none" => Some(("object-fit".to_string(), "none".to_string())),
-        "object-scale-down" => Some(("object-fit".to_string(), "scale-down".to_string())),
+        "object-contain" => Some(tw("object-fit", Cow::Borrowed("contain"))),
+        "object-cover" => Some(tw("object-fit", Cow::Borrowed("cover"))),
+        "object-fill" => Some(tw("object-fit", Cow::Borrowed("fill"))),
+        "object-none" => Some(tw("object-fit", Cow::Borrowed("none"))),
+        "object-scale-down" => Some(tw("object-fit", Cow::Borrowed("scale-down"))),
 
         // Object position
-        "object-bottom" => Some(("object-position".to_string(), "bottom".to_string())),
-        "object-center" => Some(("object-position".to_string(), "center".to_string())),
-        "object-left" => Some(("object-position".to_string(), "left".to_string())),
-        "object-left-bottom" => Some(("object-position".to_string(), "left bottom".to_string())),
-        "object-left-top" => Some(("object-position".to_string(), "left top".to_string())),
-        "object-right" => Some(("object-position".to_string(), "right".to_string())),
-        "object-right-bottom" => Some(("object-position".to_string(), "right bottom".to_string())),
-        "object-right-top" => Some(("object-position".to_string(), "right top".to_string())),
-        "object-top" => Some(("object-position".to_string(), "top".to_string())),
+        "object-bottom" => Some(tw("object-position", Cow::Borrowed("bottom"))),
+        "object-center" => Some(tw("object-position", Cow::Borrowed("center"))),
+        "object-left" => Some(tw("object-position", Cow::Borrowed("left"))),
+        "object-left-bottom" => Some(tw("object-position", Cow::Borrowed("left bottom"))),
+        "object-left-top" => Some(tw("object-position", Cow::Borrowed("left top"))),
+        "object-right" => Some(tw("object-position", Cow::Borrowed("right"))),
+        "object-right-bottom" => Some(tw("object-position", Cow::Borrowed("right bottom"))),
+        "object-right-top" => Some(tw("object-position", Cow::Borrowed("right top"))),
+        "object-top" => Some(tw("object-position", Cow::Borrowed("top"))),
 
         // Overflow
-        "overflow-auto" => Some(("overflow".to_string(), "auto".to_string())),
-        "overflow-hidden" => Some(("overflow".to_string(), "hidden".to_string())),
-        "overflow-clip" => Some(("overflow".to_string(), "clip".to_string())),
-        "overflow-visible" => Some(("overflow".to_string(), "visible".to_string())),
-        "overflow-scroll" => Some(("overflow".to_string(), "scroll".to_string())),
-        "overflow-x-auto" => Some(("overflow-x".to_string(), "auto".to_string())),
-        "overflow-y-auto" => Some(("overflow-y".to_string(), "auto".to_string())),
-        "overflow-x-hidden" => Some(("overflow-x".to_string(), "hidden".to_string())),
-        "overflow-y-hidden" => Some(("overflow-y".to_string(), "hidden".to_string())),
-        "overflow-x-clip" => Some(("overflow-x".to_string(), "clip".to_string())),
-        "overflow-y-clip" => Some(("overflow-y".to_string(), "clip".to_string())),
-        "overflow-x-visible" => Some(("overflow-x".to_string(), "visible".to_string())),
-        "overflow-y-visible" => Some(("overflow-y".to_string(), "visible".to_string())),
-        "overflow-x-scroll" => Some(("overflow-x".to_string(), "scroll".to_string())),
-        "overflow-y-scroll" => Some(("overflow-y".to_string(), "scroll".to_string())),
+        "overflow-auto" => Some(tw("overflow", Cow::Borrowed("auto"))),
+        "overflow-hidden" => Some(tw("overflow", Cow::Borrowed("hidden"))),
+        "overflow-clip" => Some(tw("overflow", Cow::Borrowed("clip"))),
+        "overflow-visible" => Some(tw("overflow", Cow::Borrowed("visible"))),
+        "overflow-scroll" => Some(tw("overflow", Cow::Borrowed("scroll"))),
+        "overflow-x-auto" => Some(tw("overflow-x", Cow::Borrowed("auto"))),
+        "overflow-y-auto" => Some(tw("overflow-y", Cow::Borrowed("auto"))),
+        "overflow-x-hidden" => Some(tw("overflow-x", Cow::Borrowed("hidden"))),
+        "overflow-y-hidden" => Some(tw("overflow-y", Cow::Borrowed("hidden"))),
+        "overflow-x-clip" => Some(tw("overflow-x", Cow::Borrowed("clip"))),
+        "overflow-y-clip" => Some(tw("overflow-y", Cow::Borrowed("clip"))),
+        "overflow-x-visible" => Some(tw("overflow-x", Cow::Borrowed("visible"))),
+        "overflow-y-visible" => Some(tw("overflow-y", Cow::Borrowed("visible"))),
+        "overflow-x-scroll" => Some(tw("overflow-x", Cow::Borrowed("scroll"))),
+        "overflow-y-scroll" => Some(tw("overflow-y", Cow::Borrowed("scroll"))),
 
         // Overscroll
-        "overscroll-auto" => Some(("overscroll-behavior".to_string(), "auto".to_string())),
-        "overscroll-contain" => Some(("overscroll-behavior".to_string(), "contain".to_string())),
-        "overscroll-none" => Some(("overscroll-behavior".to_string(), "none".to_string())),
-        "overscroll-x-auto" => Some(("overscroll-behavior-x".to_string(), "auto".to_string())),
-        "overscroll-x-contain" => {
-            Some(("overscroll-behavior-x".to_string(), "contain".to_string()))
-        }
-        "overscroll-x-none" => Some(("overscroll-behavior-x".to_string(), "none".to_string())),
-        "overscroll-y-auto" => Some(("overscroll-behavior-y".to_string(), "auto".to_string())),
-        "overscroll-y-contain" => {
-            Some(("overscroll-behavior-y".to_string(), "contain".to_string()))
-        }
-        "overscroll-y-none" => Some(("overscroll-behavior-y".to_string(), "none".to_string())),
+        "overscroll-auto" => Some(tw("overscroll-behavior", Cow::Borrowed("auto"))),
+        "overscroll-contain" => Some(tw("overscroll-behavior", Cow::Borrowed("contain"))),
+        "overscroll-none" => Some(tw("overscroll-behavior", Cow::Borrowed("none"))),
+        "overscroll-x-auto" => Some(tw("overscroll-behavior-x", Cow::Borrowed("auto"))),
+        "overscroll-x-contain" => Some(tw("overscroll-behavior-x", Cow::Borrowed("contain"))),
+        "overscroll-x-none" => Some(tw("overscroll-behavior-x", Cow::Borrowed("none"))),
+        "overscroll-y-auto" => Some(tw("overscroll-behavior-y", Cow::Borrowed("auto"))),
+        "overscroll-y-contain" => Some(tw("overscroll-behavior-y", Cow::Borrowed("contain"))),
+        "overscroll-y-none" => Some(tw("overscroll-behavior-y", Cow::Borrowed("none"))),
 
         _ => {
             // Aspect ratio
             if let Some(rest) = class.strip_prefix("aspect-") {
                 let value = match rest {
-                    "auto" => "auto".to_string(),
-                    "square" => "1 / 1".to_string(),
-                    "video" => "16 / 9".to_string(),
-                    v => v.replace('-', " / "),
+                    "auto" => Cow::Borrowed("auto"),
+                    "square" => Cow::Borrowed("1 / 1"),
+                    "video" => Cow::Borrowed("16 / 9"),
+                    v => Cow::Owned(v.replace('-', " / ")),
                 };
-                return Some(("aspect-ratio".to_string(), value));
+                return Some(tw("aspect-ratio", value));
             }
 
             // Columns
             if let Some(rest) = class.strip_prefix("columns-") {
                 let value = match rest {
-                    "auto" => "auto".to_string(),
-                    "3xs" => "16rem".to_string(),
-                    "2xs" => "18rem".to_string(),
-                    "xs" => "20rem".to_string(),
-                    "sm" => "24rem".to_string(),
-                    "md" => "28rem".to_string(),
-                    "lg" => "32rem".to_string(),
-                    "xl" => "36rem".to_string(),
-                    "2xl" => "42rem".to_string(),
-                    "3xl" => "48rem".to_string(),
-                    "4xl" => "56rem".to_string(),
-                    "5xl" => "64rem".to_string(),
-                    "6xl" => "72rem".to_string(),
-                    "7xl" => "80rem".to_string(),
-                    v => v.to_string(),
+                    "auto" => Cow::Borrowed("auto"),
+                    "3xs" => Cow::Borrowed("16rem"),
+                    "2xs" => Cow::Borrowed("18rem"),
+                    "xs" => Cow::Borrowed("20rem"),
+                    "sm" => Cow::Borrowed("24rem"),
+                    "md" => Cow::Borrowed("28rem"),
+                    "lg" => Cow::Borrowed("32rem"),
+                    "xl" => Cow::Borrowed("36rem"),
+                    "2xl" => Cow::Borrowed("42rem"),
+                    "3xl" => Cow::Borrowed("48rem"),
+                    "4xl" => Cow::Borrowed("56rem"),
+                    "5xl" => Cow::Borrowed("64rem"),
+                    "6xl" => Cow::Borrowed("72rem"),
+                    "7xl" => Cow::Borrowed("80rem"),
+                    v => Cow::Owned(v.to_string()),
                 };
-                return Some(("columns".to_string(), value));
+                return Some(tw("columns", value));
             }
 
             // Break utilities
             if let Some(rest) = class.strip_prefix("break-") {
                 return match rest {
-                    "after-auto" => Some(("break-after".to_string(), "auto".to_string())),
-                    "after-avoid" => Some(("break-after".to_string(), "avoid".to_string())),
-                    "after-all" => Some(("break-after".to_string(), "all".to_string())),
-                    "after-avoid-page" => {
-                        Some(("break-after".to_string(), "avoid-page".to_string()))
-                    }
-                    "after-page" => Some(("break-after".to_string(), "page".to_string())),
-                    "after-left" => Some(("break-after".to_string(), "left".to_string())),
-                    "after-right" => Some(("break-after".to_string(), "right".to_string())),
-                    "after-column" => Some(("break-after".to_string(), "column".to_string())),
-                    "before-auto" => Some(("break-before".to_string(), "auto".to_string())),
-                    "before-avoid" => Some(("break-before".to_string(), "avoid".to_string())),
-                    "before-all" => Some(("break-before".to_string(), "all".to_string())),
-                    "before-avoid-page" => {
-                        Some(("break-before".to_string(), "avoid-page".to_string()))
-                    }
-                    "before-page" => Some(("break-before".to_string(), "page".to_string())),
-                    "before-left" => Some(("break-before".to_string(), "left".to_string())),
-                    "before-right" => Some(("break-before".to_string(), "right".to_string())),
-                    "before-column" => Some(("break-before".to_string(), "column".to_string())),
-                    "inside-auto" => Some(("break-inside".to_string(), "auto".to_string())),
-                    "inside-avoid" => Some(("break-inside".to_string(), "avoid".to_string())),
-                    "inside-avoid-page" => {
-                        Some(("break-inside".to_string(), "avoid-page".to_string()))
-                    }
+                    "after-auto" => Some(tw("break-after", Cow::Borrowed("auto"))),
+                    "after-avoid" => Some(tw("break-after", Cow::Borrowed("avoid"))),
+                    "after-all" => Some(tw("break-after", Cow::Borrowed("all"))),
+                    "after-avoid-page" => Some(tw("break-after", Cow::Borrowed("avoid-page"))),
+                    "after-page" => Some(tw("break-after", Cow::Borrowed("page"))),
+                    "after-left" => Some(tw("break-after", Cow::Borrowed("left"))),
+                    "after-right" => Some(tw("break-after", Cow::Borrowed("right"))),
+                    "after-column" => Some(tw("break-after", Cow::Borrowed("column"))),
+                    "before-auto" => Some(tw("break-before", Cow::Borrowed("auto"))),
+                    "before-avoid" => Some(tw("break-before", Cow::Borrowed("avoid"))),
+                    "before-all" => Some(tw("break-before", Cow::Borrowed("all"))),
+                    "before-avoid-page" => Some(tw("break-before", Cow::Borrowed("avoid-page"))),
+                    "before-page" => Some(tw("break-before", Cow::Borrowed("page"))),
+                    "before-left" => Some(tw("break-before", Cow::Borrowed("left"))),
+                    "before-right" => Some(tw("break-before", Cow::Borrowed("right"))),
+                    "before-column" => Some(tw("break-before", Cow::Borrowed("column"))),
+                    "inside-auto" => Some(tw("break-inside", Cow::Borrowed("auto"))),
+                    "inside-avoid" => Some(tw("break-inside", Cow::Borrowed("avoid"))),
+                    "inside-avoid-page" => Some(tw("break-inside", Cow::Borrowed("avoid-page"))),
                     "inside-avoid-column" => {
-                        Some(("break-inside".to_string(), "avoid-column".to_string()))
+                        Some(tw("break-inside", Cow::Borrowed("avoid-column")))
                     }
                     _ => None,
                 };
@@ -1650,53 +1687,53 @@ fn parse_layout_utility(class: &str) -> Option<(String, String)> {
 
             // Box decoration break
             if class == "box-decoration-clone" {
-                return Some(("box-decoration-break".to_string(), "clone".to_string()));
+                return Some(tw("box-decoration-break", Cow::Borrowed("clone")));
             }
             if class == "box-decoration-slice" {
-                return Some(("box-decoration-break".to_string(), "slice".to_string()));
+                return Some(tw("box-decoration-break", Cow::Borrowed("slice")));
             }
 
             // Z-index
             if let Some(rest) = class.strip_prefix("z-") {
                 if let Some(&value) = Z_INDEX_SCALE.get(rest) {
-                    return Some(("z-index".to_string(), value.to_string()));
+                    return Some(tw("z-index", Cow::Borrowed(value)));
                 }
             }
 
             // Top/Right/Bottom/Left/Inset
             if let Some(rest) = class.strip_prefix("top-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("top".to_string(), value.to_string()));
+                    return Some(tw("top", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("right-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("right".to_string(), value.to_string()));
+                    return Some(tw("right", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("bottom-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("bottom".to_string(), value.to_string()));
+                    return Some(tw("bottom", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("left-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("left".to_string(), value.to_string()));
+                    return Some(tw("left", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-x-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("inset-inline".to_string(), value.to_string()));
+                    return Some(tw("inset-inline", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-y-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("inset-block".to_string(), value.to_string()));
+                    return Some(tw("inset-block", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("inset-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("inset".to_string(), value.to_string()));
+                    return Some(tw("inset", Cow::Borrowed(value)));
                 }
             }
 
@@ -1706,173 +1743,170 @@ fn parse_layout_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse flexbox and grid utilities
-fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
+fn parse_flex_grid_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     match class {
         // Flex basis
-        "basis-auto" => Some(("flex-basis".to_string(), "auto".to_string())),
-        "basis-full" => Some(("flex-basis".to_string(), "100%".to_string())),
+        "basis-auto" => Some(tw("flex-basis", Cow::Borrowed("auto"))),
+        "basis-full" => Some(tw("flex-basis", Cow::Borrowed("100%"))),
 
         // Flex direction
-        "flex-row" => Some(("flex-direction".to_string(), "row".to_string())),
-        "flex-row-reverse" => Some(("flex-direction".to_string(), "row-reverse".to_string())),
-        "flex-col" => Some(("flex-direction".to_string(), "column".to_string())),
-        "flex-col-reverse" => Some(("flex-direction".to_string(), "column-reverse".to_string())),
+        "flex-row" => Some(tw("flex-direction", Cow::Borrowed("row"))),
+        "flex-row-reverse" => Some(tw("flex-direction", Cow::Borrowed("row-reverse"))),
+        "flex-col" => Some(tw("flex-direction", Cow::Borrowed("column"))),
+        "flex-col-reverse" => Some(tw("flex-direction", Cow::Borrowed("column-reverse"))),
 
         // Flex wrap
-        "flex-wrap" => Some(("flex-wrap".to_string(), "wrap".to_string())),
-        "flex-wrap-reverse" => Some(("flex-wrap".to_string(), "wrap-reverse".to_string())),
-        "flex-nowrap" => Some(("flex-wrap".to_string(), "nowrap".to_string())),
+        "flex-wrap" => Some(tw("flex-wrap", Cow::Borrowed("wrap"))),
+        "flex-wrap-reverse" => Some(tw("flex-wrap", Cow::Borrowed("wrap-reverse"))),
+        "flex-nowrap" => Some(tw("flex-wrap", Cow::Borrowed("nowrap"))),
 
         // Flex
-        "flex-1" => Some(("flex".to_string(), "1 1 0%".to_string())),
-        "flex-auto" => Some(("flex".to_string(), "1 1 auto".to_string())),
-        "flex-initial" => Some(("flex".to_string(), "0 1 auto".to_string())),
-        "flex-none" => Some(("flex".to_string(), "none".to_string())),
+        "flex-1" => Some(tw("flex", Cow::Borrowed("1 1 0%"))),
+        "flex-auto" => Some(tw("flex", Cow::Borrowed("1 1 auto"))),
+        "flex-initial" => Some(tw("flex", Cow::Borrowed("0 1 auto"))),
+        "flex-none" => Some(tw("flex", Cow::Borrowed("none"))),
 
         // Grow/Shrink
-        "grow" => Some(("flex-grow".to_string(), "1".to_string())),
-        "grow-0" => Some(("flex-grow".to_string(), "0".to_string())),
-        "shrink" => Some(("flex-shrink".to_string(), "1".to_string())),
-        "shrink-0" => Some(("flex-shrink".to_string(), "0".to_string())),
+        "grow" => Some(tw("flex-grow", Cow::Borrowed("1"))),
+        "grow-0" => Some(tw("flex-grow", Cow::Borrowed("0"))),
+        "shrink" => Some(tw("flex-shrink", Cow::Borrowed("1"))),
+        "shrink-0" => Some(tw("flex-shrink", Cow::Borrowed("0"))),
 
         // Order
-        "order-first" => Some(("order".to_string(), "-9999".to_string())),
-        "order-last" => Some(("order".to_string(), "9999".to_string())),
-        "order-none" => Some(("order".to_string(), "0".to_string())),
+        "order-first" => Some(tw("order", Cow::Borrowed("-9999"))),
+        "order-last" => Some(tw("order", Cow::Borrowed("9999"))),
+        "order-none" => Some(tw("order", Cow::Borrowed("0"))),
 
         // Grid template columns
-        "grid-cols-none" => Some(("grid-template-columns".to_string(), "none".to_string())),
-        "grid-cols-subgrid" => Some(("grid-template-columns".to_string(), "subgrid".to_string())),
+        "grid-cols-none" => Some(tw("grid-template-columns", Cow::Borrowed("none"))),
+        "grid-cols-subgrid" => Some(tw("grid-template-columns", Cow::Borrowed("subgrid"))),
 
         // Grid template rows
-        "grid-rows-none" => Some(("grid-template-rows".to_string(), "none".to_string())),
-        "grid-rows-subgrid" => Some(("grid-template-rows".to_string(), "subgrid".to_string())),
+        "grid-rows-none" => Some(tw("grid-template-rows", Cow::Borrowed("none"))),
+        "grid-rows-subgrid" => Some(tw("grid-template-rows", Cow::Borrowed("subgrid"))),
 
         // Grid column
-        "col-auto" => Some(("grid-column".to_string(), "auto".to_string())),
-        "col-span-full" => Some(("grid-column".to_string(), "1 / -1".to_string())),
-        "col-start-auto" => Some(("grid-column-start".to_string(), "auto".to_string())),
-        "col-end-auto" => Some(("grid-column-end".to_string(), "auto".to_string())),
+        "col-auto" => Some(tw("grid-column", Cow::Borrowed("auto"))),
+        "col-span-full" => Some(tw("grid-column", Cow::Borrowed("1 / -1"))),
+        "col-start-auto" => Some(tw("grid-column-start", Cow::Borrowed("auto"))),
+        "col-end-auto" => Some(tw("grid-column-end", Cow::Borrowed("auto"))),
 
         // Grid row
-        "row-auto" => Some(("grid-row".to_string(), "auto".to_string())),
-        "row-span-full" => Some(("grid-row".to_string(), "1 / -1".to_string())),
-        "row-start-auto" => Some(("grid-row-start".to_string(), "auto".to_string())),
-        "row-end-auto" => Some(("grid-row-end".to_string(), "auto".to_string())),
+        "row-auto" => Some(tw("grid-row", Cow::Borrowed("auto"))),
+        "row-span-full" => Some(tw("grid-row", Cow::Borrowed("1 / -1"))),
+        "row-start-auto" => Some(tw("grid-row-start", Cow::Borrowed("auto"))),
+        "row-end-auto" => Some(tw("grid-row-end", Cow::Borrowed("auto"))),
 
         // Grid auto flow
-        "grid-flow-row" => Some(("grid-auto-flow".to_string(), "row".to_string())),
-        "grid-flow-col" => Some(("grid-auto-flow".to_string(), "column".to_string())),
-        "grid-flow-dense" => Some(("grid-auto-flow".to_string(), "dense".to_string())),
-        "grid-flow-row-dense" => Some(("grid-auto-flow".to_string(), "row dense".to_string())),
-        "grid-flow-col-dense" => Some(("grid-auto-flow".to_string(), "column dense".to_string())),
+        "grid-flow-row" => Some(tw("grid-auto-flow", Cow::Borrowed("row"))),
+        "grid-flow-col" => Some(tw("grid-auto-flow", Cow::Borrowed("column"))),
+        "grid-flow-dense" => Some(tw("grid-auto-flow", Cow::Borrowed("dense"))),
+        "grid-flow-row-dense" => Some(tw("grid-auto-flow", Cow::Borrowed("row dense"))),
+        "grid-flow-col-dense" => Some(tw("grid-auto-flow", Cow::Borrowed("column dense"))),
 
         // Grid auto columns
-        "auto-cols-auto" => Some(("grid-auto-columns".to_string(), "auto".to_string())),
-        "auto-cols-min" => Some(("grid-auto-columns".to_string(), "min-content".to_string())),
-        "auto-cols-max" => Some(("grid-auto-columns".to_string(), "max-content".to_string())),
-        "auto-cols-fr" => Some((
-            "grid-auto-columns".to_string(),
-            "minmax(0, 1fr)".to_string(),
-        )),
+        "auto-cols-auto" => Some(tw("grid-auto-columns", Cow::Borrowed("auto"))),
+        "auto-cols-min" => Some(tw("grid-auto-columns", Cow::Borrowed("min-content"))),
+        "auto-cols-max" => Some(tw("grid-auto-columns", Cow::Borrowed("max-content"))),
+        "auto-cols-fr" => Some(tw("grid-auto-columns", Cow::Borrowed("minmax(0, 1fr)"))),
 
         // Grid auto rows
-        "auto-rows-auto" => Some(("grid-auto-rows".to_string(), "auto".to_string())),
-        "auto-rows-min" => Some(("grid-auto-rows".to_string(), "min-content".to_string())),
-        "auto-rows-max" => Some(("grid-auto-rows".to_string(), "max-content".to_string())),
-        "auto-rows-fr" => Some(("grid-auto-rows".to_string(), "minmax(0, 1fr)".to_string())),
+        "auto-rows-auto" => Some(tw("grid-auto-rows", Cow::Borrowed("auto"))),
+        "auto-rows-min" => Some(tw("grid-auto-rows", Cow::Borrowed("min-content"))),
+        "auto-rows-max" => Some(tw("grid-auto-rows", Cow::Borrowed("max-content"))),
+        "auto-rows-fr" => Some(tw("grid-auto-rows", Cow::Borrowed("minmax(0, 1fr)"))),
 
         // Justify content
-        "justify-normal" => Some(("justify-content".to_string(), "normal".to_string())),
-        "justify-start" => Some(("justify-content".to_string(), "flex-start".to_string())),
-        "justify-end" => Some(("justify-content".to_string(), "flex-end".to_string())),
-        "justify-center" => Some(("justify-content".to_string(), "center".to_string())),
-        "justify-between" => Some(("justify-content".to_string(), "space-between".to_string())),
-        "justify-around" => Some(("justify-content".to_string(), "space-around".to_string())),
-        "justify-evenly" => Some(("justify-content".to_string(), "space-evenly".to_string())),
-        "justify-stretch" => Some(("justify-content".to_string(), "stretch".to_string())),
+        "justify-normal" => Some(tw("justify-content", Cow::Borrowed("normal"))),
+        "justify-start" => Some(tw("justify-content", Cow::Borrowed("flex-start"))),
+        "justify-end" => Some(tw("justify-content", Cow::Borrowed("flex-end"))),
+        "justify-center" => Some(tw("justify-content", Cow::Borrowed("center"))),
+        "justify-between" => Some(tw("justify-content", Cow::Borrowed("space-between"))),
+        "justify-around" => Some(tw("justify-content", Cow::Borrowed("space-around"))),
+        "justify-evenly" => Some(tw("justify-content", Cow::Borrowed("space-evenly"))),
+        "justify-stretch" => Some(tw("justify-content", Cow::Borrowed("stretch"))),
 
         // Justify items
-        "justify-items-start" => Some(("justify-items".to_string(), "start".to_string())),
-        "justify-items-end" => Some(("justify-items".to_string(), "end".to_string())),
-        "justify-items-center" => Some(("justify-items".to_string(), "center".to_string())),
-        "justify-items-stretch" => Some(("justify-items".to_string(), "stretch".to_string())),
+        "justify-items-start" => Some(tw("justify-items", Cow::Borrowed("start"))),
+        "justify-items-end" => Some(tw("justify-items", Cow::Borrowed("end"))),
+        "justify-items-center" => Some(tw("justify-items", Cow::Borrowed("center"))),
+        "justify-items-stretch" => Some(tw("justify-items", Cow::Borrowed("stretch"))),
 
         // Justify self
-        "justify-self-auto" => Some(("justify-self".to_string(), "auto".to_string())),
-        "justify-self-start" => Some(("justify-self".to_string(), "start".to_string())),
-        "justify-self-end" => Some(("justify-self".to_string(), "end".to_string())),
-        "justify-self-center" => Some(("justify-self".to_string(), "center".to_string())),
-        "justify-self-stretch" => Some(("justify-self".to_string(), "stretch".to_string())),
+        "justify-self-auto" => Some(tw("justify-self", Cow::Borrowed("auto"))),
+        "justify-self-start" => Some(tw("justify-self", Cow::Borrowed("start"))),
+        "justify-self-end" => Some(tw("justify-self", Cow::Borrowed("end"))),
+        "justify-self-center" => Some(tw("justify-self", Cow::Borrowed("center"))),
+        "justify-self-stretch" => Some(tw("justify-self", Cow::Borrowed("stretch"))),
 
         // Align content
-        "content-normal" => Some(("align-content".to_string(), "normal".to_string())),
-        "content-center" => Some(("align-content".to_string(), "center".to_string())),
-        "content-start" => Some(("align-content".to_string(), "flex-start".to_string())),
-        "content-end" => Some(("align-content".to_string(), "flex-end".to_string())),
-        "content-between" => Some(("align-content".to_string(), "space-between".to_string())),
-        "content-around" => Some(("align-content".to_string(), "space-around".to_string())),
-        "content-evenly" => Some(("align-content".to_string(), "space-evenly".to_string())),
-        "content-baseline" => Some(("align-content".to_string(), "baseline".to_string())),
-        "content-stretch" => Some(("align-content".to_string(), "stretch".to_string())),
+        "content-normal" => Some(tw("align-content", Cow::Borrowed("normal"))),
+        "content-center" => Some(tw("align-content", Cow::Borrowed("center"))),
+        "content-start" => Some(tw("align-content", Cow::Borrowed("flex-start"))),
+        "content-end" => Some(tw("align-content", Cow::Borrowed("flex-end"))),
+        "content-between" => Some(tw("align-content", Cow::Borrowed("space-between"))),
+        "content-around" => Some(tw("align-content", Cow::Borrowed("space-around"))),
+        "content-evenly" => Some(tw("align-content", Cow::Borrowed("space-evenly"))),
+        "content-baseline" => Some(tw("align-content", Cow::Borrowed("baseline"))),
+        "content-stretch" => Some(tw("align-content", Cow::Borrowed("stretch"))),
 
         // Align items
-        "items-start" => Some(("align-items".to_string(), "flex-start".to_string())),
-        "items-end" => Some(("align-items".to_string(), "flex-end".to_string())),
-        "items-center" => Some(("align-items".to_string(), "center".to_string())),
-        "items-baseline" => Some(("align-items".to_string(), "baseline".to_string())),
-        "items-stretch" => Some(("align-items".to_string(), "stretch".to_string())),
+        "items-start" => Some(tw("align-items", Cow::Borrowed("flex-start"))),
+        "items-end" => Some(tw("align-items", Cow::Borrowed("flex-end"))),
+        "items-center" => Some(tw("align-items", Cow::Borrowed("center"))),
+        "items-baseline" => Some(tw("align-items", Cow::Borrowed("baseline"))),
+        "items-stretch" => Some(tw("align-items", Cow::Borrowed("stretch"))),
 
         // Align self
-        "self-auto" => Some(("align-self".to_string(), "auto".to_string())),
-        "self-start" => Some(("align-self".to_string(), "flex-start".to_string())),
-        "self-end" => Some(("align-self".to_string(), "flex-end".to_string())),
-        "self-center" => Some(("align-self".to_string(), "center".to_string())),
-        "self-stretch" => Some(("align-self".to_string(), "stretch".to_string())),
-        "self-baseline" => Some(("align-self".to_string(), "baseline".to_string())),
+        "self-auto" => Some(tw("align-self", Cow::Borrowed("auto"))),
+        "self-start" => Some(tw("align-self", Cow::Borrowed("flex-start"))),
+        "self-end" => Some(tw("align-self", Cow::Borrowed("flex-end"))),
+        "self-center" => Some(tw("align-self", Cow::Borrowed("center"))),
+        "self-stretch" => Some(tw("align-self", Cow::Borrowed("stretch"))),
+        "self-baseline" => Some(tw("align-self", Cow::Borrowed("baseline"))),
 
         // Place content
-        "place-content-center" => Some(("place-content".to_string(), "center".to_string())),
-        "place-content-start" => Some(("place-content".to_string(), "start".to_string())),
-        "place-content-end" => Some(("place-content".to_string(), "end".to_string())),
-        "place-content-between" => Some(("place-content".to_string(), "space-between".to_string())),
-        "place-content-around" => Some(("place-content".to_string(), "space-around".to_string())),
-        "place-content-evenly" => Some(("place-content".to_string(), "space-evenly".to_string())),
-        "place-content-baseline" => Some(("place-content".to_string(), "baseline".to_string())),
-        "place-content-stretch" => Some(("place-content".to_string(), "stretch".to_string())),
+        "place-content-center" => Some(tw("place-content", Cow::Borrowed("center"))),
+        "place-content-start" => Some(tw("place-content", Cow::Borrowed("start"))),
+        "place-content-end" => Some(tw("place-content", Cow::Borrowed("end"))),
+        "place-content-between" => Some(tw("place-content", Cow::Borrowed("space-between"))),
+        "place-content-around" => Some(tw("place-content", Cow::Borrowed("space-around"))),
+        "place-content-evenly" => Some(tw("place-content", Cow::Borrowed("space-evenly"))),
+        "place-content-baseline" => Some(tw("place-content", Cow::Borrowed("baseline"))),
+        "place-content-stretch" => Some(tw("place-content", Cow::Borrowed("stretch"))),
 
         // Place items
-        "place-items-start" => Some(("place-items".to_string(), "start".to_string())),
-        "place-items-end" => Some(("place-items".to_string(), "end".to_string())),
-        "place-items-center" => Some(("place-items".to_string(), "center".to_string())),
-        "place-items-baseline" => Some(("place-items".to_string(), "baseline".to_string())),
-        "place-items-stretch" => Some(("place-items".to_string(), "stretch".to_string())),
+        "place-items-start" => Some(tw("place-items", Cow::Borrowed("start"))),
+        "place-items-end" => Some(tw("place-items", Cow::Borrowed("end"))),
+        "place-items-center" => Some(tw("place-items", Cow::Borrowed("center"))),
+        "place-items-baseline" => Some(tw("place-items", Cow::Borrowed("baseline"))),
+        "place-items-stretch" => Some(tw("place-items", Cow::Borrowed("stretch"))),
 
         // Place self
-        "place-self-auto" => Some(("place-self".to_string(), "auto".to_string())),
-        "place-self-start" => Some(("place-self".to_string(), "start".to_string())),
-        "place-self-end" => Some(("place-self".to_string(), "end".to_string())),
-        "place-self-center" => Some(("place-self".to_string(), "center".to_string())),
-        "place-self-stretch" => Some(("place-self".to_string(), "stretch".to_string())),
+        "place-self-auto" => Some(tw("place-self", Cow::Borrowed("auto"))),
+        "place-self-start" => Some(tw("place-self", Cow::Borrowed("start"))),
+        "place-self-end" => Some(tw("place-self", Cow::Borrowed("end"))),
+        "place-self-center" => Some(tw("place-self", Cow::Borrowed("center"))),
+        "place-self-stretch" => Some(tw("place-self", Cow::Borrowed("stretch"))),
 
         _ => {
             // Flex basis with spacing scale
             if let Some(rest) = class.strip_prefix("basis-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("flex-basis".to_string(), value.to_string()));
+                    return Some(tw("flex-basis", Cow::Borrowed(value)));
                 }
             }
 
             // Order with number
             if let Some(rest) = class.strip_prefix("order-") {
-                return Some(("order".to_string(), rest.to_string()));
+                return Some(tw("order", Cow::Owned(rest.to_string())));
             }
 
             // Grid cols
             if let Some(rest) = class.strip_prefix("grid-cols-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some((
-                        "grid-template-columns".to_string(),
+                    return Some(tw(
+                        "grid-template-columns",
                         format!("repeat({n}, minmax(0, 1fr))"),
                     ));
                 }
@@ -1881,8 +1915,8 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
             // Grid rows
             if let Some(rest) = class.strip_prefix("grid-rows-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some((
-                        "grid-template-rows".to_string(),
+                    return Some(tw(
+                        "grid-template-rows",
                         format!("repeat({n}, minmax(0, 1fr))"),
                     ));
                 }
@@ -1891,51 +1925,51 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
             // Col span
             if let Some(rest) = class.strip_prefix("col-span-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some(("grid-column".to_string(), format!("span {n} / span {n}")));
+                    return Some(tw("grid-column", format!("span {n} / span {n}")));
                 }
             }
 
             // Col start
             if let Some(rest) = class.strip_prefix("col-start-") {
-                return Some(("grid-column-start".to_string(), rest.to_string()));
+                return Some(tw("grid-column-start", Cow::Owned(rest.to_string())));
             }
 
             // Col end
             if let Some(rest) = class.strip_prefix("col-end-") {
-                return Some(("grid-column-end".to_string(), rest.to_string()));
+                return Some(tw("grid-column-end", Cow::Owned(rest.to_string())));
             }
 
             // Row span
             if let Some(rest) = class.strip_prefix("row-span-") {
                 if let Ok(n) = rest.parse::<u32>() {
-                    return Some(("grid-row".to_string(), format!("span {n} / span {n}")));
+                    return Some(tw("grid-row", format!("span {n} / span {n}")));
                 }
             }
 
             // Row start
             if let Some(rest) = class.strip_prefix("row-start-") {
-                return Some(("grid-row-start".to_string(), rest.to_string()));
+                return Some(tw("grid-row-start", Cow::Owned(rest.to_string())));
             }
 
             // Row end
             if let Some(rest) = class.strip_prefix("row-end-") {
-                return Some(("grid-row-end".to_string(), rest.to_string()));
+                return Some(tw("grid-row-end", Cow::Owned(rest.to_string())));
             }
 
             // Gap
             if let Some(rest) = class.strip_prefix("gap-x-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("column-gap".to_string(), value.to_string()));
+                    return Some(tw("column-gap", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-y-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("row-gap".to_string(), value.to_string()));
+                    return Some(tw("row-gap", Cow::Borrowed(value)));
                 }
             }
             if let Some(rest) = class.strip_prefix("gap-") {
                 if let Some(&value) = SPACING_SCALE.get(rest) {
-                    return Some(("gap".to_string(), value.to_string()));
+                    return Some(tw("gap", Cow::Borrowed(value)));
                 }
             }
 
@@ -1945,119 +1979,122 @@ fn parse_flex_grid_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse spacing utilities (padding, margin, space)
-fn parse_spacing_utility(class: &str, _is_negative: bool) -> Option<(String, String)> {
+fn parse_spacing_utility(
+    class: &str,
+    _is_negative: bool,
+) -> Option<(&'static str, Cow<'static, str>)> {
     // Note: is_negative is handled at a higher level in TailwindClass::to_static_style()
     // We don't apply the negative sign here to avoid double-negation
 
     // Padding
     if let Some(rest) = class.strip_prefix("px-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-inline".to_string(), value.to_string()));
+            return Some(tw("padding-inline", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("py-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-block".to_string(), value.to_string()));
+            return Some(tw("padding-block", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("pt-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-top".to_string(), value.to_string()));
+            return Some(tw("padding-top", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("pr-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-right".to_string(), value.to_string()));
+            return Some(tw("padding-right", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("pb-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-bottom".to_string(), value.to_string()));
+            return Some(tw("padding-bottom", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("pl-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-left".to_string(), value.to_string()));
+            return Some(tw("padding-left", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("ps-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-inline-start".to_string(), value.to_string()));
+            return Some(tw("padding-inline-start", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("pe-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding-inline-end".to_string(), value.to_string()));
+            return Some(tw("padding-inline-end", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("p-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("padding".to_string(), value.to_string()));
+            return Some(tw("padding", Cow::Borrowed(value)));
         }
     }
 
     // Margin
     if let Some(rest) = class.strip_prefix("mx-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-inline".to_string(), value.to_string()));
+            return Some(tw("margin-inline", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("my-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-block".to_string(), value.to_string()));
+            return Some(tw("margin-block", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("mt-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-top".to_string(), value.to_string()));
+            return Some(tw("margin-top", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("mr-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-right".to_string(), value.to_string()));
+            return Some(tw("margin-right", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("mb-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-bottom".to_string(), value.to_string()));
+            return Some(tw("margin-bottom", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("ml-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-left".to_string(), value.to_string()));
+            return Some(tw("margin-left", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("ms-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-inline-start".to_string(), value.to_string()));
+            return Some(tw("margin-inline-start", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("me-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin-inline-end".to_string(), value.to_string()));
+            return Some(tw("margin-inline-end", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("m-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("margin".to_string(), value.to_string()));
+            return Some(tw("margin", Cow::Borrowed(value)));
         }
     }
 
     // Space between
     if let Some(rest) = class.strip_prefix("space-x-") {
         if rest == "reverse" {
-            return Some(("--tw-space-x-reverse".to_string(), "1".to_string()));
+            return Some(tw("--tw-space-x-reverse", Cow::Borrowed("1")));
         }
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("column-gap".to_string(), value.to_string()));
+            return Some(tw("column-gap", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("space-y-") {
         if rest == "reverse" {
-            return Some(("--tw-space-y-reverse".to_string(), "1".to_string()));
+            return Some(tw("--tw-space-y-reverse", Cow::Borrowed("1")));
         }
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("row-gap".to_string(), value.to_string()));
+            return Some(tw("row-gap", Cow::Borrowed(value)));
         }
     }
 
@@ -2065,132 +2102,132 @@ fn parse_spacing_utility(class: &str, _is_negative: bool) -> Option<(String, Str
 }
 
 /// Parse sizing utilities (width, height, min/max)
-fn parse_sizing_utility(class: &str) -> Option<(String, String)> {
+fn parse_sizing_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Width
     if let Some(rest) = class.strip_prefix("w-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("width".to_string(), value.to_string()));
+            return Some(tw("width", Cow::Borrowed(value)));
         }
     }
 
     // Min width
     if let Some(rest) = class.strip_prefix("min-w-") {
         let value = match rest {
-            "0" => "0px".to_string(),
-            "full" => "100%".to_string(),
-            "min" => "min-content".to_string(),
-            "max" => "max-content".to_string(),
-            "fit" => "fit-content".to_string(),
+            "0" => Cow::Borrowed("0px"),
+            "full" => Cow::Borrowed("100%"),
+            "min" => Cow::Borrowed("min-content"),
+            "max" => Cow::Borrowed("max-content"),
+            "fit" => Cow::Borrowed("fit-content"),
             _ => {
                 if let Some(&v) = SPACING_SCALE.get(rest) {
-                    v.to_string()
+                    Cow::Borrowed(v)
                 } else {
                     return None;
                 }
             }
         };
-        return Some(("min-width".to_string(), value));
+        return Some(tw("min-width", value));
     }
 
     // Max width
     if let Some(rest) = class.strip_prefix("max-w-") {
         let value = match rest {
-            "none" => "none".to_string(),
-            "0" => "0rem".to_string(),
-            "xs" => "20rem".to_string(),
-            "sm" => "24rem".to_string(),
-            "md" => "28rem".to_string(),
-            "lg" => "32rem".to_string(),
-            "xl" => "36rem".to_string(),
-            "2xl" => "42rem".to_string(),
-            "3xl" => "48rem".to_string(),
-            "4xl" => "56rem".to_string(),
-            "5xl" => "64rem".to_string(),
-            "6xl" => "72rem".to_string(),
-            "7xl" => "80rem".to_string(),
-            "full" => "100%".to_string(),
-            "min" => "min-content".to_string(),
-            "max" => "max-content".to_string(),
-            "fit" => "fit-content".to_string(),
-            "prose" => "65ch".to_string(),
-            "screen-sm" => "640px".to_string(),
-            "screen-md" => "768px".to_string(),
-            "screen-lg" => "1024px".to_string(),
-            "screen-xl" => "1280px".to_string(),
-            "screen-2xl" => "1536px".to_string(),
+            "none" => Cow::Borrowed("none"),
+            "0" => Cow::Borrowed("0rem"),
+            "xs" => Cow::Borrowed("20rem"),
+            "sm" => Cow::Borrowed("24rem"),
+            "md" => Cow::Borrowed("28rem"),
+            "lg" => Cow::Borrowed("32rem"),
+            "xl" => Cow::Borrowed("36rem"),
+            "2xl" => Cow::Borrowed("42rem"),
+            "3xl" => Cow::Borrowed("48rem"),
+            "4xl" => Cow::Borrowed("56rem"),
+            "5xl" => Cow::Borrowed("64rem"),
+            "6xl" => Cow::Borrowed("72rem"),
+            "7xl" => Cow::Borrowed("80rem"),
+            "full" => Cow::Borrowed("100%"),
+            "min" => Cow::Borrowed("min-content"),
+            "max" => Cow::Borrowed("max-content"),
+            "fit" => Cow::Borrowed("fit-content"),
+            "prose" => Cow::Borrowed("65ch"),
+            "screen-sm" => Cow::Borrowed("640px"),
+            "screen-md" => Cow::Borrowed("768px"),
+            "screen-lg" => Cow::Borrowed("1024px"),
+            "screen-xl" => Cow::Borrowed("1280px"),
+            "screen-2xl" => Cow::Borrowed("1536px"),
             _ => {
                 if let Some(&v) = SPACING_SCALE.get(rest) {
-                    v.to_string()
+                    Cow::Borrowed(v)
                 } else {
                     return None;
                 }
             }
         };
-        return Some(("max-width".to_string(), value));
+        return Some(tw("max-width", value));
     }
 
     // Height
     if let Some(rest) = class.strip_prefix("h-") {
         let value = match rest {
-            "screen" => "100vh".to_string(),
-            "svh" => "100svh".to_string(),
-            "lvh" => "100lvh".to_string(),
-            "dvh" => "100dvh".to_string(),
+            "screen" => Cow::Borrowed("100vh"),
+            "svh" => Cow::Borrowed("100svh"),
+            "lvh" => Cow::Borrowed("100lvh"),
+            "dvh" => Cow::Borrowed("100dvh"),
             _ => {
                 if let Some(&v) = SPACING_SCALE.get(rest) {
-                    v.to_string()
+                    Cow::Borrowed(v)
                 } else {
                     return None;
                 }
             }
         };
-        return Some(("height".to_string(), value));
+        return Some(tw("height", value));
     }
 
     // Min height
     if let Some(rest) = class.strip_prefix("min-h-") {
         let value = match rest {
-            "0" => "0px".to_string(),
-            "full" => "100%".to_string(),
-            "screen" => "100vh".to_string(),
-            "svh" => "100svh".to_string(),
-            "lvh" => "100lvh".to_string(),
-            "dvh" => "100dvh".to_string(),
-            "min" => "min-content".to_string(),
-            "max" => "max-content".to_string(),
-            "fit" => "fit-content".to_string(),
+            "0" => Cow::Borrowed("0px"),
+            "full" => Cow::Borrowed("100%"),
+            "screen" => Cow::Borrowed("100vh"),
+            "svh" => Cow::Borrowed("100svh"),
+            "lvh" => Cow::Borrowed("100lvh"),
+            "dvh" => Cow::Borrowed("100dvh"),
+            "min" => Cow::Borrowed("min-content"),
+            "max" => Cow::Borrowed("max-content"),
+            "fit" => Cow::Borrowed("fit-content"),
             _ => {
                 if let Some(&v) = SPACING_SCALE.get(rest) {
-                    v.to_string()
+                    Cow::Borrowed(v)
                 } else {
                     return None;
                 }
             }
         };
-        return Some(("min-height".to_string(), value));
+        return Some(tw("min-height", value));
     }
 
     // Max height
     if let Some(rest) = class.strip_prefix("max-h-") {
         let value = match rest {
-            "none" => "none".to_string(),
-            "full" => "100%".to_string(),
-            "screen" => "100vh".to_string(),
-            "svh" => "100svh".to_string(),
-            "lvh" => "100lvh".to_string(),
-            "dvh" => "100dvh".to_string(),
-            "min" => "min-content".to_string(),
-            "max" => "max-content".to_string(),
-            "fit" => "fit-content".to_string(),
+            "none" => Cow::Borrowed("none"),
+            "full" => Cow::Borrowed("100%"),
+            "screen" => Cow::Borrowed("100vh"),
+            "svh" => Cow::Borrowed("100svh"),
+            "lvh" => Cow::Borrowed("100lvh"),
+            "dvh" => Cow::Borrowed("100dvh"),
+            "min" => Cow::Borrowed("min-content"),
+            "max" => Cow::Borrowed("max-content"),
+            "fit" => Cow::Borrowed("fit-content"),
             _ => {
                 if let Some(&v) = SPACING_SCALE.get(rest) {
-                    v.to_string()
+                    Cow::Borrowed(v)
                 } else {
                     return None;
                 }
             }
         };
-        return Some(("max-height".to_string(), value));
+        return Some(tw("max-height", value));
     }
 
     // Size (width and height)
@@ -2198,7 +2235,7 @@ fn parse_sizing_utility(class: &str) -> Option<(String, String)> {
         if let Some(&value) = SPACING_SCALE.get(rest) {
             // This should set both width and height
             // For simplicity, we'll use the width shorthand and handle height separately
-            return Some(("width".to_string(), value.to_string()));
+            return Some(tw("width", Cow::Borrowed(value)));
         }
     }
 
@@ -2206,12 +2243,31 @@ fn parse_sizing_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse typography utilities
-fn parse_typography_utility(class: &str) -> Option<(String, String)> {
+fn parse_typography_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Font family
     match class {
-        "font-sans" => return Some(("font-family".to_string(), "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'".to_string())),
-        "font-serif" => return Some(("font-family".to_string(), "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif".to_string())),
-        "font-mono" => return Some(("font-family".to_string(), "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace".to_string())),
+        "font-sans" => {
+            return Some(tw(
+                "font-family",
+                Cow::Borrowed(
+                    "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'",
+                ),
+            ));
+        }
+        "font-serif" => {
+            return Some(tw(
+                "font-family",
+                Cow::Borrowed("ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif"),
+            ));
+        }
+        "font-mono" => {
+            return Some(tw(
+                "font-family",
+                Cow::Borrowed(
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                ),
+            ));
+        }
         _ => {}
     }
 
@@ -2219,21 +2275,21 @@ fn parse_typography_utility(class: &str) -> Option<(String, String)> {
     if let Some(rest) = class.strip_prefix("text-") {
         // First check if it's a color
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("color".to_string(), color.to_string()));
+            return Some(tw("color", Cow::Borrowed(color)));
         }
         // Then check if it's a font size
         if let Some(&(size, _line_height)) = FONT_SIZE_SCALE.get(rest) {
             // Return font-size (line-height would need separate handling)
-            return Some(("font-size".to_string(), size.to_string()));
+            return Some(tw("font-size", Cow::Borrowed(size)));
         }
         // Text alignment
         match rest {
-            "left" => return Some(("text-align".to_string(), "left".to_string())),
-            "center" => return Some(("text-align".to_string(), "center".to_string())),
-            "right" => return Some(("text-align".to_string(), "right".to_string())),
-            "justify" => return Some(("text-align".to_string(), "justify".to_string())),
-            "start" => return Some(("text-align".to_string(), "start".to_string())),
-            "end" => return Some(("text-align".to_string(), "end".to_string())),
+            "left" => return Some(tw("text-align", Cow::Borrowed("left"))),
+            "center" => return Some(tw("text-align", Cow::Borrowed("center"))),
+            "right" => return Some(tw("text-align", Cow::Borrowed("right"))),
+            "justify" => return Some(tw("text-align", Cow::Borrowed("justify"))),
+            "start" => return Some(tw("text-align", Cow::Borrowed("start"))),
+            "end" => return Some(tw("text-align", Cow::Borrowed("end"))),
             _ => {}
         }
     }
@@ -2241,135 +2297,132 @@ fn parse_typography_utility(class: &str) -> Option<(String, String)> {
     // Font weight
     if let Some(rest) = class.strip_prefix("font-") {
         if let Some(&weight) = FONT_WEIGHT_SCALE.get(rest) {
-            return Some(("font-weight".to_string(), weight.to_string()));
+            return Some(tw("font-weight", Cow::Borrowed(weight)));
         }
     }
 
     // Font style
     match class {
-        "italic" => return Some(("font-style".to_string(), "italic".to_string())),
-        "not-italic" => return Some(("font-style".to_string(), "normal".to_string())),
+        "italic" => return Some(tw("font-style", Cow::Borrowed("italic"))),
+        "not-italic" => return Some(tw("font-style", Cow::Borrowed("normal"))),
         _ => {}
     }
 
     // Text decoration
     match class {
-        "underline" => return Some(("text-decoration-line".to_string(), "underline".to_string())),
-        "overline" => return Some(("text-decoration-line".to_string(), "overline".to_string())),
+        "underline" => return Some(tw("text-decoration-line", Cow::Borrowed("underline"))),
+        "overline" => return Some(tw("text-decoration-line", Cow::Borrowed("overline"))),
         "line-through" => {
-            return Some((
-                "text-decoration-line".to_string(),
-                "line-through".to_string(),
-            ));
+            return Some(tw("text-decoration-line", Cow::Borrowed("line-through")));
         }
-        "no-underline" => return Some(("text-decoration-line".to_string(), "none".to_string())),
+        "no-underline" => return Some(tw("text-decoration-line", Cow::Borrowed("none"))),
         _ => {}
     }
 
     // Text transform
     match class {
-        "uppercase" => return Some(("text-transform".to_string(), "uppercase".to_string())),
-        "lowercase" => return Some(("text-transform".to_string(), "lowercase".to_string())),
-        "capitalize" => return Some(("text-transform".to_string(), "capitalize".to_string())),
-        "normal-case" => return Some(("text-transform".to_string(), "none".to_string())),
+        "uppercase" => return Some(tw("text-transform", Cow::Borrowed("uppercase"))),
+        "lowercase" => return Some(tw("text-transform", Cow::Borrowed("lowercase"))),
+        "capitalize" => return Some(tw("text-transform", Cow::Borrowed("capitalize"))),
+        "normal-case" => return Some(tw("text-transform", Cow::Borrowed("none"))),
         _ => {}
     }
 
     // Text overflow
     match class {
         "truncate" => {
-            return Some(("text-overflow".to_string(), "ellipsis".to_string()));
+            return Some(tw("text-overflow", Cow::Borrowed("ellipsis")));
         }
-        "text-ellipsis" => return Some(("text-overflow".to_string(), "ellipsis".to_string())),
-        "text-clip" => return Some(("text-overflow".to_string(), "clip".to_string())),
+        "text-ellipsis" => return Some(tw("text-overflow", Cow::Borrowed("ellipsis"))),
+        "text-clip" => return Some(tw("text-overflow", Cow::Borrowed("clip"))),
         _ => {}
     }
 
     // Text wrap
     match class {
-        "text-wrap" => return Some(("text-wrap".to_string(), "wrap".to_string())),
-        "text-nowrap" => return Some(("text-wrap".to_string(), "nowrap".to_string())),
-        "text-balance" => return Some(("text-wrap".to_string(), "balance".to_string())),
-        "text-pretty" => return Some(("text-wrap".to_string(), "pretty".to_string())),
+        "text-wrap" => return Some(tw("text-wrap", Cow::Borrowed("wrap"))),
+        "text-nowrap" => return Some(tw("text-wrap", Cow::Borrowed("nowrap"))),
+        "text-balance" => return Some(tw("text-wrap", Cow::Borrowed("balance"))),
+        "text-pretty" => return Some(tw("text-wrap", Cow::Borrowed("pretty"))),
         _ => {}
     }
 
     // Whitespace
     if let Some(rest) = class.strip_prefix("whitespace-") {
-        return Some(("white-space".to_string(), rest.to_string()));
+        return Some(tw("white-space", Cow::Owned(rest.to_string())));
     }
 
     // Word break
     match class {
-        "break-normal" => return Some(("word-break".to_string(), "normal".to_string())),
-        "break-words" => return Some(("overflow-wrap".to_string(), "break-word".to_string())),
-        "break-all" => return Some(("word-break".to_string(), "break-all".to_string())),
-        "break-keep" => return Some(("word-break".to_string(), "keep-all".to_string())),
+        "break-normal" => return Some(tw("word-break", Cow::Borrowed("normal"))),
+        "break-words" => return Some(tw("overflow-wrap", Cow::Borrowed("break-word"))),
+        "break-all" => return Some(tw("word-break", Cow::Borrowed("break-all"))),
+        "break-keep" => return Some(tw("word-break", Cow::Borrowed("keep-all"))),
         _ => {}
     }
 
     // Hyphens
     if let Some(rest) = class.strip_prefix("hyphens-") {
-        return Some(("hyphens".to_string(), rest.to_string()));
+        return Some(tw("hyphens", Cow::Owned(rest.to_string())));
     }
 
     // Letter spacing
     if let Some(rest) = class.strip_prefix("tracking-") {
         let value = match rest {
-            "tighter" => "-0.05em".to_string(),
-            "tight" => "-0.025em".to_string(),
-            "normal" => "0em".to_string(),
-            "wide" => "0.025em".to_string(),
-            "wider" => "0.05em".to_string(),
-            "widest" => "0.1em".to_string(),
-            _ => rest.to_string(),
+            "tighter" => Cow::Borrowed("-0.05em"),
+            "tight" => Cow::Borrowed("-0.025em"),
+            "normal" => Cow::Borrowed("0em"),
+            "wide" => Cow::Borrowed("0.025em"),
+            "wider" => Cow::Borrowed("0.05em"),
+            "widest" => Cow::Borrowed("0.1em"),
+            _ => Cow::Owned(rest.to_string()),
         };
-        return Some(("letter-spacing".to_string(), value));
+        return Some(tw("letter-spacing", value));
     }
 
     // Line height
     if let Some(rest) = class.strip_prefix("leading-") {
         let value = match rest {
-            "none" => "1".to_string(),
-            "tight" => "1.25".to_string(),
-            "snug" => "1.375".to_string(),
-            "normal" => "1.5".to_string(),
-            "relaxed" => "1.625".to_string(),
-            "loose" => "2".to_string(),
-            "3" => ".75rem".to_string(),
-            "4" => "1rem".to_string(),
-            "5" => "1.25rem".to_string(),
-            "6" => "1.5rem".to_string(),
-            "7" => "1.75rem".to_string(),
-            "8" => "2rem".to_string(),
-            "9" => "2.25rem".to_string(),
-            "10" => "2.5rem".to_string(),
-            _ => rest.to_string(),
+            "none" => Cow::Borrowed("1"),
+            "tight" => Cow::Borrowed("1.25"),
+            "snug" => Cow::Borrowed("1.375"),
+            "normal" => Cow::Borrowed("1.5"),
+            "relaxed" => Cow::Borrowed("1.625"),
+            "loose" => Cow::Borrowed("2"),
+            "3" => Cow::Borrowed(".75rem"),
+            "4" => Cow::Borrowed("1rem"),
+            "5" => Cow::Borrowed("1.25rem"),
+            "6" => Cow::Borrowed("1.5rem"),
+            "7" => Cow::Borrowed("1.75rem"),
+            "8" => Cow::Borrowed("2rem"),
+            "9" => Cow::Borrowed("2.25rem"),
+            "10" => Cow::Borrowed("2.5rem"),
+            _ => Cow::Owned(rest.to_string()),
         };
-        return Some(("line-height".to_string(), value));
+        return Some(tw("line-height", value));
     }
 
     // List style type
     if let Some(rest) = class.strip_prefix("list-") {
         match rest {
-            "inside" => return Some(("list-style-position".to_string(), "inside".to_string())),
-            "outside" => return Some(("list-style-position".to_string(), "outside".to_string())),
-            "none" => return Some(("list-style-type".to_string(), "none".to_string())),
-            "disc" => return Some(("list-style-type".to_string(), "disc".to_string())),
-            "decimal" => return Some(("list-style-type".to_string(), "decimal".to_string())),
+            "inside" => return Some(tw("list-style-position", Cow::Borrowed("inside"))),
+            "outside" => return Some(tw("list-style-position", Cow::Borrowed("outside"))),
+            "none" => return Some(tw("list-style-type", Cow::Borrowed("none"))),
+            "disc" => return Some(tw("list-style-type", Cow::Borrowed("disc"))),
+            "decimal" => return Some(tw("list-style-type", Cow::Borrowed("decimal"))),
             _ => {}
         }
     }
 
     // Vertical align
     if let Some(rest) = class.strip_prefix("align-") {
-        return Some(("vertical-align".to_string(), rest.to_string()));
+        return Some(tw("vertical-align", Cow::Owned(rest.to_string())));
     }
 
     // Content
     if let Some(rest) = class.strip_prefix("content-") {
         if rest == "none" {
-            return Some(("content".to_string(), "none".to_string()));
+            return Some(tw("content", Cow::Borrowed("none")));
         }
     }
 
@@ -2377,89 +2430,86 @@ fn parse_typography_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse background utilities
-fn parse_background_utility(class: &str) -> Option<(String, String)> {
+fn parse_background_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Background color
     if let Some(rest) = class.strip_prefix("bg-") {
         // Check if it's a color
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("background-color".to_string(), color.to_string()));
+            return Some(tw("background-color", Cow::Borrowed(color)));
         }
         // Background attachment
         match rest {
-            "fixed" => return Some(("background-attachment".to_string(), "fixed".to_string())),
-            "local" => return Some(("background-attachment".to_string(), "local".to_string())),
-            "scroll" => return Some(("background-attachment".to_string(), "scroll".to_string())),
+            "fixed" => return Some(tw("background-attachment", Cow::Borrowed("fixed"))),
+            "local" => return Some(tw("background-attachment", Cow::Borrowed("local"))),
+            "scroll" => return Some(tw("background-attachment", Cow::Borrowed("scroll"))),
             // Background clip
             "clip-border" => {
-                return Some(("background-clip".to_string(), "border-box".to_string()));
+                return Some(tw("background-clip", Cow::Borrowed("border-box")));
             }
             "clip-padding" => {
-                return Some(("background-clip".to_string(), "padding-box".to_string()));
+                return Some(tw("background-clip", Cow::Borrowed("padding-box")));
             }
             "clip-content" => {
-                return Some(("background-clip".to_string(), "content-box".to_string()));
+                return Some(tw("background-clip", Cow::Borrowed("content-box")));
             }
-            "clip-text" => return Some(("background-clip".to_string(), "text".to_string())),
+            "clip-text" => return Some(tw("background-clip", Cow::Borrowed("text"))),
             // Background origin
             "origin-border" => {
-                return Some(("background-origin".to_string(), "border-box".to_string()));
+                return Some(tw("background-origin", Cow::Borrowed("border-box")));
             }
             "origin-padding" => {
-                return Some(("background-origin".to_string(), "padding-box".to_string()));
+                return Some(tw("background-origin", Cow::Borrowed("padding-box")));
             }
             "origin-content" => {
-                return Some(("background-origin".to_string(), "content-box".to_string()));
+                return Some(tw("background-origin", Cow::Borrowed("content-box")));
             }
             // Background position
-            "bottom" => return Some(("background-position".to_string(), "bottom".to_string())),
-            "center" => return Some(("background-position".to_string(), "center".to_string())),
-            "left" => return Some(("background-position".to_string(), "left".to_string())),
+            "bottom" => return Some(tw("background-position", Cow::Borrowed("bottom"))),
+            "center" => return Some(tw("background-position", Cow::Borrowed("center"))),
+            "left" => return Some(tw("background-position", Cow::Borrowed("left"))),
             "left-bottom" => {
-                return Some(("background-position".to_string(), "left bottom".to_string()));
+                return Some(tw("background-position", Cow::Borrowed("left bottom")));
             }
-            "left-top" => return Some(("background-position".to_string(), "left top".to_string())),
-            "right" => return Some(("background-position".to_string(), "right".to_string())),
+            "left-top" => return Some(tw("background-position", Cow::Borrowed("left top"))),
+            "right" => return Some(tw("background-position", Cow::Borrowed("right"))),
             "right-bottom" => {
-                return Some((
-                    "background-position".to_string(),
-                    "right bottom".to_string(),
-                ));
+                return Some(tw("background-position", Cow::Borrowed("right bottom")));
             }
             "right-top" => {
-                return Some(("background-position".to_string(), "right top".to_string()));
+                return Some(tw("background-position", Cow::Borrowed("right top")));
             }
-            "top" => return Some(("background-position".to_string(), "top".to_string())),
+            "top" => return Some(tw("background-position", Cow::Borrowed("top"))),
             // Background repeat
-            "repeat" => return Some(("background-repeat".to_string(), "repeat".to_string())),
-            "no-repeat" => return Some(("background-repeat".to_string(), "no-repeat".to_string())),
-            "repeat-x" => return Some(("background-repeat".to_string(), "repeat-x".to_string())),
-            "repeat-y" => return Some(("background-repeat".to_string(), "repeat-y".to_string())),
-            "repeat-round" => return Some(("background-repeat".to_string(), "round".to_string())),
-            "repeat-space" => return Some(("background-repeat".to_string(), "space".to_string())),
+            "repeat" => return Some(tw("background-repeat", Cow::Borrowed("repeat"))),
+            "no-repeat" => return Some(tw("background-repeat", Cow::Borrowed("no-repeat"))),
+            "repeat-x" => return Some(tw("background-repeat", Cow::Borrowed("repeat-x"))),
+            "repeat-y" => return Some(tw("background-repeat", Cow::Borrowed("repeat-y"))),
+            "repeat-round" => return Some(tw("background-repeat", Cow::Borrowed("round"))),
+            "repeat-space" => return Some(tw("background-repeat", Cow::Borrowed("space"))),
             // Background size
-            "auto" => return Some(("background-size".to_string(), "auto".to_string())),
-            "cover" => return Some(("background-size".to_string(), "cover".to_string())),
-            "contain" => return Some(("background-size".to_string(), "contain".to_string())),
+            "auto" => return Some(tw("background-size", Cow::Borrowed("auto"))),
+            "cover" => return Some(tw("background-size", Cow::Borrowed("cover"))),
+            "contain" => return Some(tw("background-size", Cow::Borrowed("contain"))),
             // Gradients
-            "none" => return Some(("background-image".to_string(), "none".to_string())),
+            "none" => return Some(tw("background-image", Cow::Borrowed("none"))),
             _ => {}
         }
 
         // Gradient directions
         if let Some(dir) = rest.strip_prefix("gradient-to-") {
             let direction = match dir {
-                "t" => "to top".to_string(),
-                "tr" => "to top right".to_string(),
-                "r" => "to right".to_string(),
-                "br" => "to bottom right".to_string(),
-                "b" => "to bottom".to_string(),
-                "bl" => "to bottom left".to_string(),
-                "l" => "to left".to_string(),
-                "tl" => "to top left".to_string(),
+                "t" => Cow::Borrowed("to top"),
+                "tr" => Cow::Borrowed("to top right"),
+                "r" => Cow::Borrowed("to right"),
+                "br" => Cow::Borrowed("to bottom right"),
+                "b" => Cow::Borrowed("to bottom"),
+                "bl" => Cow::Borrowed("to bottom left"),
+                "l" => Cow::Borrowed("to left"),
+                "tl" => Cow::Borrowed("to top left"),
                 _ => return None,
             };
-            return Some((
-                "background-image".to_string(),
+            return Some(tw(
+                "background-image",
                 format!("linear-gradient({direction}, var(--tw-gradient-stops))"),
             ));
         }
@@ -2468,17 +2518,17 @@ fn parse_background_utility(class: &str) -> Option<(String, String)> {
     // Gradient color stops
     if let Some(rest) = class.strip_prefix("from-") {
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("--tw-gradient-from".to_string(), color.to_string()));
+            return Some(tw("--tw-gradient-from", Cow::Borrowed(color)));
         }
     }
     if let Some(rest) = class.strip_prefix("via-") {
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("--tw-gradient-via".to_string(), color.to_string()));
+            return Some(tw("--tw-gradient-via", Cow::Borrowed(color)));
         }
     }
     if let Some(rest) = class.strip_prefix("to-") {
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("--tw-gradient-to".to_string(), color.to_string()));
+            return Some(tw("--tw-gradient-to", Cow::Borrowed(color)));
         }
     }
 
@@ -2486,227 +2536,224 @@ fn parse_background_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse border utilities
-fn parse_border_utility(class: &str) -> Option<(String, String)> {
+fn parse_border_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Border radius
     if let Some(rest) = class.strip_prefix("rounded-") {
         // Specific corners
         if let Some(corner) = rest.strip_prefix("t-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-top-left-radius".to_string(), value.to_string()));
+                return Some(tw("border-top-left-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("r-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-top-right-radius".to_string(), value.to_string()));
+                return Some(tw("border-top-right-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("b-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-bottom-right-radius".to_string(), value.to_string()));
+                return Some(tw("border-bottom-right-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("l-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-bottom-left-radius".to_string(), value.to_string()));
+                return Some(tw("border-bottom-left-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("tl-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-top-left-radius".to_string(), value.to_string()));
+                return Some(tw("border-top-left-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("tr-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-top-right-radius".to_string(), value.to_string()));
+                return Some(tw("border-top-right-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("br-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-bottom-right-radius".to_string(), value.to_string()));
+                return Some(tw("border-bottom-right-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(corner) = rest.strip_prefix("bl-") {
             if let Some(&value) = BORDER_RADIUS_SCALE.get(corner) {
-                return Some(("border-bottom-left-radius".to_string(), value.to_string()));
+                return Some(tw("border-bottom-left-radius", Cow::Borrowed(value)));
             }
         }
         if let Some(&value) = BORDER_RADIUS_SCALE.get(rest) {
-            return Some(("border-radius".to_string(), value.to_string()));
+            return Some(tw("border-radius", Cow::Borrowed(value)));
         }
     }
 
     // Standalone "rounded" (without suffix) - note: "rounded-*" variants are handled
     // via BORDER_RADIUS_SCALE lookup above in the strip_prefix("rounded-") branch
     if class == "rounded" {
-        return Some(("border-radius".to_string(), "0.25rem".to_string()));
+        return Some(tw("border-radius", Cow::Borrowed("0.25rem")));
     }
 
     // Border width
     if let Some(rest) = class.strip_prefix("border-") {
         // Border color
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("border-color".to_string(), color.to_string()));
+            return Some(tw("border-color", Cow::Borrowed(color)));
         }
 
         // Border width per side
         if let Some(width) = rest.strip_prefix("t-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-top-width".to_string(), value.to_string()));
+                return Some(tw("border-top-width", Cow::Borrowed(value)));
             }
         }
         if let Some(width) = rest.strip_prefix("r-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-right-width".to_string(), value.to_string()));
+                return Some(tw("border-right-width", Cow::Borrowed(value)));
             }
         }
         if let Some(width) = rest.strip_prefix("b-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-bottom-width".to_string(), value.to_string()));
+                return Some(tw("border-bottom-width", Cow::Borrowed(value)));
             }
         }
         if let Some(width) = rest.strip_prefix("l-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-left-width".to_string(), value.to_string()));
+                return Some(tw("border-left-width", Cow::Borrowed(value)));
             }
         }
         if let Some(width) = rest.strip_prefix("x-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-inline-width".to_string(), value.to_string()));
+                return Some(tw("border-inline-width", Cow::Borrowed(value)));
             }
         }
         if let Some(width) = rest.strip_prefix("y-") {
             if let Some(&value) = BORDER_WIDTH_SCALE.get(width) {
-                return Some(("border-block-width".to_string(), value.to_string()));
+                return Some(tw("border-block-width", Cow::Borrowed(value)));
             }
         }
 
         // Border width
         if let Some(&value) = BORDER_WIDTH_SCALE.get(rest) {
-            return Some(("border-width".to_string(), value.to_string()));
+            return Some(tw("border-width", Cow::Borrowed(value)));
         }
 
         // Border style
         match rest {
-            "solid" => return Some(("border-style".to_string(), "solid".to_string())),
-            "dashed" => return Some(("border-style".to_string(), "dashed".to_string())),
-            "dotted" => return Some(("border-style".to_string(), "dotted".to_string())),
-            "double" => return Some(("border-style".to_string(), "double".to_string())),
-            "hidden" => return Some(("border-style".to_string(), "hidden".to_string())),
-            "none" => return Some(("border-style".to_string(), "none".to_string())),
+            "solid" => return Some(tw("border-style", Cow::Borrowed("solid"))),
+            "dashed" => return Some(tw("border-style", Cow::Borrowed("dashed"))),
+            "dotted" => return Some(tw("border-style", Cow::Borrowed("dotted"))),
+            "double" => return Some(tw("border-style", Cow::Borrowed("double"))),
+            "hidden" => return Some(tw("border-style", Cow::Borrowed("hidden"))),
+            "none" => return Some(tw("border-style", Cow::Borrowed("none"))),
             _ => {}
         }
 
         // Border collapse (for tables)
         if rest == "collapse" {
-            return Some(("border-collapse".to_string(), "collapse".to_string()));
+            return Some(tw("border-collapse", Cow::Borrowed("collapse")));
         }
         if rest == "separate" {
-            return Some(("border-collapse".to_string(), "separate".to_string()));
+            return Some(tw("border-collapse", Cow::Borrowed("separate")));
         }
     }
 
     // Standalone "border" (without suffix) - note: "border-0/2/4/8" variants are handled
     // via BORDER_WIDTH_SCALE lookup above in the strip_prefix("border-") branch
     if class == "border" {
-        return Some(("border-width".to_string(), "1px".to_string()));
+        return Some(tw("border-width", Cow::Borrowed("1px")));
     }
 
     // Outline
     if let Some(rest) = class.strip_prefix("outline-") {
         match rest {
             "none" => {
-                return Some(("outline".to_string(), "2px solid transparent".to_string()));
+                return Some(tw("outline", Cow::Borrowed("2px solid transparent")));
             }
-            "0" => return Some(("outline-width".to_string(), "0px".to_string())),
-            "1" => return Some(("outline-width".to_string(), "1px".to_string())),
-            "2" => return Some(("outline-width".to_string(), "2px".to_string())),
-            "4" => return Some(("outline-width".to_string(), "4px".to_string())),
-            "8" => return Some(("outline-width".to_string(), "8px".to_string())),
-            "dashed" => return Some(("outline-style".to_string(), "dashed".to_string())),
-            "dotted" => return Some(("outline-style".to_string(), "dotted".to_string())),
-            "double" => return Some(("outline-style".to_string(), "double".to_string())),
+            "0" => return Some(tw("outline-width", Cow::Borrowed("0px"))),
+            "1" => return Some(tw("outline-width", Cow::Borrowed("1px"))),
+            "2" => return Some(tw("outline-width", Cow::Borrowed("2px"))),
+            "4" => return Some(tw("outline-width", Cow::Borrowed("4px"))),
+            "8" => return Some(tw("outline-width", Cow::Borrowed("8px"))),
+            "dashed" => return Some(tw("outline-style", Cow::Borrowed("dashed"))),
+            "dotted" => return Some(tw("outline-style", Cow::Borrowed("dotted"))),
+            "double" => return Some(tw("outline-style", Cow::Borrowed("double"))),
             _ => {
                 if let Some(&color) = TAILWIND_COLORS.get(rest) {
-                    return Some(("outline-color".to_string(), color.to_string()));
+                    return Some(tw("outline-color", Cow::Borrowed(color)));
                 }
             }
         }
     }
     if class == "outline" {
-        return Some(("outline-style".to_string(), "solid".to_string()));
+        return Some(tw("outline-style", Cow::Borrowed("solid")));
     }
 
     // Ring
     if let Some(rest) = class.strip_prefix("ring-") {
         match rest {
             "0" => {
-                return Some((
-                    "--tw-ring-offset-shadow".to_string(),
-                    "0 0 #0000".to_string(),
-                ));
+                return Some(tw("--tw-ring-offset-shadow", Cow::Borrowed("0 0 #0000")));
             }
             "1" => {
-                return Some((
-                    "box-shadow".to_string(),
-                    "0 0 0 1px var(--tw-ring-color)".to_string(),
+                return Some(tw(
+                    "box-shadow",
+                    Cow::Borrowed("0 0 0 1px var(--tw-ring-color)"),
                 ));
             }
             "2" => {
-                return Some((
-                    "box-shadow".to_string(),
-                    "0 0 0 2px var(--tw-ring-color)".to_string(),
+                return Some(tw(
+                    "box-shadow",
+                    Cow::Borrowed("0 0 0 2px var(--tw-ring-color)"),
                 ));
             }
             "4" => {
-                return Some((
-                    "box-shadow".to_string(),
-                    "0 0 0 4px var(--tw-ring-color)".to_string(),
+                return Some(tw(
+                    "box-shadow",
+                    Cow::Borrowed("0 0 0 4px var(--tw-ring-color)"),
                 ));
             }
             "8" => {
-                return Some((
-                    "box-shadow".to_string(),
-                    "0 0 0 8px var(--tw-ring-color)".to_string(),
+                return Some(tw(
+                    "box-shadow",
+                    Cow::Borrowed("0 0 0 8px var(--tw-ring-color)"),
                 ));
             }
-            "inset" => return Some(("--tw-ring-inset".to_string(), "inset".to_string())),
+            "inset" => return Some(tw("--tw-ring-inset", Cow::Borrowed("inset"))),
             _ => {
                 if let Some(&color) = TAILWIND_COLORS.get(rest) {
-                    return Some(("--tw-ring-color".to_string(), color.to_string()));
+                    return Some(tw("--tw-ring-color", Cow::Borrowed(color)));
                 }
             }
         }
     }
     if class == "ring" {
-        return Some((
-            "box-shadow".to_string(),
-            "0 0 0 3px var(--tw-ring-color)".to_string(),
+        return Some(tw(
+            "box-shadow",
+            Cow::Borrowed("0 0 0 3px var(--tw-ring-color)"),
         ));
     }
 
     // Divide
     if let Some(rest) = class.strip_prefix("divide-") {
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("--tw-divide-color".to_string(), color.to_string()));
+            return Some(tw("--tw-divide-color", Cow::Borrowed(color)));
         }
         match rest {
-            "x" => return Some(("--tw-divide-x-reverse".to_string(), "0".to_string())),
-            "x-0" => return Some(("border-inline-width".to_string(), "0px".to_string())),
-            "x-2" => return Some(("border-inline-width".to_string(), "2px".to_string())),
-            "x-4" => return Some(("border-inline-width".to_string(), "4px".to_string())),
-            "x-8" => return Some(("border-inline-width".to_string(), "8px".to_string())),
-            "x-reverse" => return Some(("--tw-divide-x-reverse".to_string(), "1".to_string())),
-            "y" => return Some(("--tw-divide-y-reverse".to_string(), "0".to_string())),
-            "y-0" => return Some(("border-block-width".to_string(), "0px".to_string())),
-            "y-2" => return Some(("border-block-width".to_string(), "2px".to_string())),
-            "y-4" => return Some(("border-block-width".to_string(), "4px".to_string())),
-            "y-8" => return Some(("border-block-width".to_string(), "8px".to_string())),
-            "y-reverse" => return Some(("--tw-divide-y-reverse".to_string(), "1".to_string())),
-            "solid" => return Some(("border-style".to_string(), "solid".to_string())),
-            "dashed" => return Some(("border-style".to_string(), "dashed".to_string())),
-            "dotted" => return Some(("border-style".to_string(), "dotted".to_string())),
-            "double" => return Some(("border-style".to_string(), "double".to_string())),
-            "none" => return Some(("border-style".to_string(), "none".to_string())),
+            "x" => return Some(tw("--tw-divide-x-reverse", Cow::Borrowed("0"))),
+            "x-0" => return Some(tw("border-inline-width", Cow::Borrowed("0px"))),
+            "x-2" => return Some(tw("border-inline-width", Cow::Borrowed("2px"))),
+            "x-4" => return Some(tw("border-inline-width", Cow::Borrowed("4px"))),
+            "x-8" => return Some(tw("border-inline-width", Cow::Borrowed("8px"))),
+            "x-reverse" => return Some(tw("--tw-divide-x-reverse", Cow::Borrowed("1"))),
+            "y" => return Some(tw("--tw-divide-y-reverse", Cow::Borrowed("0"))),
+            "y-0" => return Some(tw("border-block-width", Cow::Borrowed("0px"))),
+            "y-2" => return Some(tw("border-block-width", Cow::Borrowed("2px"))),
+            "y-4" => return Some(tw("border-block-width", Cow::Borrowed("4px"))),
+            "y-8" => return Some(tw("border-block-width", Cow::Borrowed("8px"))),
+            "y-reverse" => return Some(tw("--tw-divide-y-reverse", Cow::Borrowed("1"))),
+            "solid" => return Some(tw("border-style", Cow::Borrowed("solid"))),
+            "dashed" => return Some(tw("border-style", Cow::Borrowed("dashed"))),
+            "dotted" => return Some(tw("border-style", Cow::Borrowed("dotted"))),
+            "double" => return Some(tw("border-style", Cow::Borrowed("double"))),
+            "none" => return Some(tw("border-style", Cow::Borrowed("none"))),
             _ => {}
         }
     }
@@ -2715,323 +2762,340 @@ fn parse_border_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse effects utilities (shadow, opacity, mix-blend, etc.)
-fn parse_effects_utility(class: &str) -> Option<(String, String)> {
+fn parse_effects_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Box shadow
     if let Some(rest) = class.strip_prefix("shadow-") {
         if let Some(&value) = BOX_SHADOW_SCALE.get(rest) {
-            return Some(("box-shadow".to_string(), value.to_string()));
+            return Some(tw("box-shadow", Cow::Borrowed(value)));
         }
         // Shadow color
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("--tw-shadow-color".to_string(), color.to_string()));
+            return Some(tw("--tw-shadow-color", Cow::Borrowed(color)));
         }
     }
     if class == "shadow" {
-        return Some((
-            "box-shadow".to_string(),
-            "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)".to_string(),
+        return Some(tw(
+            "box-shadow",
+            Cow::Borrowed("0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"),
         ));
     }
 
     // Opacity
     if let Some(rest) = class.strip_prefix("opacity-") {
         if let Some(&value) = OPACITY_SCALE.get(rest) {
-            return Some(("opacity".to_string(), value.to_string()));
+            return Some(tw("opacity", Cow::Borrowed(value)));
         }
     }
 
     // Mix blend mode
     if let Some(rest) = class.strip_prefix("mix-blend-") {
-        return Some(("mix-blend-mode".to_string(), rest.to_string()));
+        return Some(tw("mix-blend-mode", Cow::Owned(rest.to_string())));
     }
 
     // Background blend mode
     if let Some(rest) = class.strip_prefix("bg-blend-") {
-        return Some(("background-blend-mode".to_string(), rest.to_string()));
+        return Some(tw("background-blend-mode", Cow::Owned(rest.to_string())));
     }
 
     None
 }
 
 /// Parse filter utilities (blur, brightness, contrast, etc.)
-fn parse_filter_utility(class: &str) -> Option<(String, String)> {
+fn parse_filter_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Blur
     if let Some(rest) = class.strip_prefix("blur-") {
         let value = match rest {
-            "none" => "0".to_string(),
-            "sm" => "4px".to_string(),
-            "md" => "12px".to_string(),
-            "lg" => "16px".to_string(),
-            "xl" => "24px".to_string(),
-            "2xl" => "40px".to_string(),
-            "3xl" => "64px".to_string(),
+            "none" => Cow::Borrowed("0"),
+            "sm" => Cow::Borrowed("4px"),
+            "md" => Cow::Borrowed("12px"),
+            "lg" => Cow::Borrowed("16px"),
+            "xl" => Cow::Borrowed("24px"),
+            "2xl" => Cow::Borrowed("40px"),
+            "3xl" => Cow::Borrowed("64px"),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("blur({value})")));
+        return Some(tw("filter", format!("blur({value})")));
     }
     if class == "blur" {
-        return Some(("filter".to_string(), "blur(8px)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("blur(8px)")));
     }
 
     // Brightness
     if let Some(rest) = class.strip_prefix("brightness-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "75" => ".75".to_string(),
-            "90" => ".9".to_string(),
-            "95" => ".95".to_string(),
-            "100" => "1".to_string(),
-            "105" => "1.05".to_string(),
-            "110" => "1.1".to_string(),
-            "125" => "1.25".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "75" => Cow::Borrowed(".75"),
+            "90" => Cow::Borrowed(".9"),
+            "95" => Cow::Borrowed(".95"),
+            "100" => Cow::Borrowed("1"),
+            "105" => Cow::Borrowed("1.05"),
+            "110" => Cow::Borrowed("1.1"),
+            "125" => Cow::Borrowed("1.25"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("brightness({value})")));
+        return Some(tw("filter", format!("brightness({value})")));
     }
 
     // Contrast
     if let Some(rest) = class.strip_prefix("contrast-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "75" => ".75".to_string(),
-            "100" => "1".to_string(),
-            "125" => "1.25".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "75" => Cow::Borrowed(".75"),
+            "100" => Cow::Borrowed("1"),
+            "125" => Cow::Borrowed("1.25"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("contrast({value})")));
+        return Some(tw("filter", format!("contrast({value})")));
     }
 
     // Drop shadow
     if let Some(rest) = class.strip_prefix("drop-shadow-") {
         let value = match rest {
-            "sm" => "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))".to_string(),
-            "md" => "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))".to_string(),
-            "lg" => "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))".to_string(),
-            "xl" => "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))".to_string(),
-            "2xl" => "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))".to_string(),
-            "none" => "drop-shadow(0 0 #0000)".to_string(),
+            "sm" => Cow::Borrowed("drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))"),
+            "md" => Cow::Borrowed(
+                "drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06))",
+            ),
+            "lg" => Cow::Borrowed(
+                "drop-shadow(0 10px 8px rgb(0 0 0 / 0.04)) drop-shadow(0 4px 3px rgb(0 0 0 / 0.1))",
+            ),
+            "xl" => Cow::Borrowed(
+                "drop-shadow(0 20px 13px rgb(0 0 0 / 0.03)) drop-shadow(0 8px 5px rgb(0 0 0 / 0.08))",
+            ),
+            "2xl" => Cow::Borrowed("drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"),
+            "none" => Cow::Borrowed("drop-shadow(0 0 #0000)"),
             _ => return None,
         };
-        return Some(("filter".to_string(), value));
+        return Some(tw("filter", value));
     }
     if class == "drop-shadow" {
-        return Some((
-            "filter".to_string(),
-            "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))"
-                .to_string(),
+        return Some(tw(
+            "filter",
+            Cow::Borrowed(
+                "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))",
+            ),
         ));
     }
 
     // Grayscale
     if class == "grayscale" {
-        return Some(("filter".to_string(), "grayscale(100%)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("grayscale(100%)")));
     }
     if class == "grayscale-0" {
-        return Some(("filter".to_string(), "grayscale(0)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("grayscale(0)")));
     }
 
     // Hue rotate
     if let Some(rest) = class.strip_prefix("hue-rotate-") {
         let value = match rest {
-            "0" => "0deg".to_string(),
-            "15" => "15deg".to_string(),
-            "30" => "30deg".to_string(),
-            "60" => "60deg".to_string(),
-            "90" => "90deg".to_string(),
-            "180" => "180deg".to_string(),
+            "0" => Cow::Borrowed("0deg"),
+            "15" => Cow::Borrowed("15deg"),
+            "30" => Cow::Borrowed("30deg"),
+            "60" => Cow::Borrowed("60deg"),
+            "90" => Cow::Borrowed("90deg"),
+            "180" => Cow::Borrowed("180deg"),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("hue-rotate({value})")));
+        return Some(tw("filter", format!("hue-rotate({value})")));
     }
 
     // Invert
     if class == "invert" {
-        return Some(("filter".to_string(), "invert(100%)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("invert(100%)")));
     }
     if class == "invert-0" {
-        return Some(("filter".to_string(), "invert(0)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("invert(0)")));
     }
 
     // Saturate
     if let Some(rest) = class.strip_prefix("saturate-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "100" => "1".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "100" => Cow::Borrowed("1"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some(("filter".to_string(), format!("saturate({value})")));
+        return Some(tw("filter", format!("saturate({value})")));
     }
 
     // Sepia
     if class == "sepia" {
-        return Some(("filter".to_string(), "sepia(100%)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("sepia(100%)")));
     }
     if class == "sepia-0" {
-        return Some(("filter".to_string(), "sepia(0)".to_string()));
+        return Some(tw("filter", Cow::Borrowed("sepia(0)")));
     }
 
     // Backdrop filters
     if let Some(rest) = class.strip_prefix("backdrop-blur-") {
         let value = match rest {
-            "none" => "0".to_string(),
-            "sm" => "4px".to_string(),
-            "md" => "12px".to_string(),
-            "lg" => "16px".to_string(),
-            "xl" => "24px".to_string(),
-            "2xl" => "40px".to_string(),
-            "3xl" => "64px".to_string(),
+            "none" => Cow::Borrowed("0"),
+            "sm" => Cow::Borrowed("4px"),
+            "md" => Cow::Borrowed("12px"),
+            "lg" => Cow::Borrowed("16px"),
+            "xl" => Cow::Borrowed("24px"),
+            "2xl" => Cow::Borrowed("40px"),
+            "3xl" => Cow::Borrowed("64px"),
             _ => return None,
         };
-        return Some(("backdrop-filter".to_string(), format!("blur({value})")));
+        return Some(tw("backdrop-filter", format!("blur({value})")));
     }
     if class == "backdrop-blur" {
-        return Some(("backdrop-filter".to_string(), "blur(8px)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("blur(8px)")));
     }
 
     if let Some(rest) = class.strip_prefix("backdrop-brightness-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "75" => ".75".to_string(),
-            "90" => ".9".to_string(),
-            "95" => ".95".to_string(),
-            "100" => "1".to_string(),
-            "105" => "1.05".to_string(),
-            "110" => "1.1".to_string(),
-            "125" => "1.25".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "75" => Cow::Borrowed(".75"),
+            "90" => Cow::Borrowed(".9"),
+            "95" => Cow::Borrowed(".95"),
+            "100" => Cow::Borrowed("1"),
+            "105" => Cow::Borrowed("1.05"),
+            "110" => Cow::Borrowed("1.1"),
+            "125" => Cow::Borrowed("1.25"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some((
-            "backdrop-filter".to_string(),
-            format!("brightness({value})"),
-        ));
+        return Some(tw("backdrop-filter", format!("brightness({value})")));
     }
 
     if let Some(rest) = class.strip_prefix("backdrop-contrast-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "75" => ".75".to_string(),
-            "100" => "1".to_string(),
-            "125" => "1.25".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "75" => Cow::Borrowed(".75"),
+            "100" => Cow::Borrowed("1"),
+            "125" => Cow::Borrowed("1.25"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some(("backdrop-filter".to_string(), format!("contrast({value})")));
+        return Some(tw("backdrop-filter", format!("contrast({value})")));
     }
 
     if class == "backdrop-grayscale" {
-        return Some(("backdrop-filter".to_string(), "grayscale(100%)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("grayscale(100%)")));
     }
     if class == "backdrop-grayscale-0" {
-        return Some(("backdrop-filter".to_string(), "grayscale(0)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("grayscale(0)")));
     }
 
     if class == "backdrop-invert" {
-        return Some(("backdrop-filter".to_string(), "invert(100%)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("invert(100%)")));
     }
     if class == "backdrop-invert-0" {
-        return Some(("backdrop-filter".to_string(), "invert(0)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("invert(0)")));
     }
 
     if let Some(rest) = class.strip_prefix("backdrop-opacity-") {
         if let Some(&value) = OPACITY_SCALE.get(rest) {
-            return Some(("backdrop-filter".to_string(), format!("opacity({value})")));
+            return Some(tw("backdrop-filter", format!("opacity({value})")));
         }
     }
 
     if let Some(rest) = class.strip_prefix("backdrop-saturate-") {
         let value = match rest {
-            "0" => "0".to_string(),
-            "50" => ".5".to_string(),
-            "100" => "1".to_string(),
-            "150" => "1.5".to_string(),
-            "200" => "2".to_string(),
+            "0" => Cow::Borrowed("0"),
+            "50" => Cow::Borrowed(".5"),
+            "100" => Cow::Borrowed("1"),
+            "150" => Cow::Borrowed("1.5"),
+            "200" => Cow::Borrowed("2"),
             _ => return None,
         };
-        return Some(("backdrop-filter".to_string(), format!("saturate({value})")));
+        return Some(tw("backdrop-filter", format!("saturate({value})")));
     }
 
     if class == "backdrop-sepia" {
-        return Some(("backdrop-filter".to_string(), "sepia(100%)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("sepia(100%)")));
     }
     if class == "backdrop-sepia-0" {
-        return Some(("backdrop-filter".to_string(), "sepia(0)".to_string()));
+        return Some(tw("backdrop-filter", Cow::Borrowed("sepia(0)")));
     }
 
     None
 }
 
 /// Parse transition and animation utilities
-fn parse_transition_utility(class: &str) -> Option<(String, String)> {
+fn parse_transition_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Transition
     match class {
-        "transition-none" => return Some(("transition-property".to_string(), "none".to_string())),
-        "transition-all" => return Some(("transition-property".to_string(), "all".to_string())),
-        "transition" => return Some(("transition-property".to_string(), "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter".to_string())),
-        "transition-colors" => return Some(("transition-property".to_string(), "color, background-color, border-color, text-decoration-color, fill, stroke".to_string())),
-        "transition-opacity" => return Some(("transition-property".to_string(), "opacity".to_string())),
-        "transition-shadow" => return Some(("transition-property".to_string(), "box-shadow".to_string())),
-        "transition-transform" => return Some(("transition-property".to_string(), "transform".to_string())),
+        "transition-none" => return Some(tw("transition-property", Cow::Borrowed("none"))),
+        "transition-all" => return Some(tw("transition-property", Cow::Borrowed("all"))),
+        "transition" => {
+            return Some(tw(
+                "transition-property",
+                Cow::Borrowed(
+                    "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter",
+                ),
+            ));
+        }
+        "transition-colors" => {
+            return Some(tw(
+                "transition-property",
+                Cow::Borrowed(
+                    "color, background-color, border-color, text-decoration-color, fill, stroke",
+                ),
+            ));
+        }
+        "transition-opacity" => return Some(tw("transition-property", Cow::Borrowed("opacity"))),
+        "transition-shadow" => return Some(tw("transition-property", Cow::Borrowed("box-shadow"))),
+        "transition-transform" => {
+            return Some(tw("transition-property", Cow::Borrowed("transform")));
+        }
         _ => {}
     }
 
     // Duration
     if let Some(rest) = class.strip_prefix("duration-") {
         if let Some(&value) = DURATION_SCALE.get(rest) {
-            return Some(("transition-duration".to_string(), value.to_string()));
+            return Some(tw("transition-duration", Cow::Borrowed(value)));
         }
     }
 
     // Ease (timing function)
     if let Some(rest) = class.strip_prefix("ease-") {
         if let Some(&value) = EASE_SCALE.get(rest) {
-            return Some(("transition-timing-function".to_string(), value.to_string()));
+            return Some(tw("transition-timing-function", Cow::Borrowed(value)));
         }
     }
 
     // Delay
     if let Some(rest) = class.strip_prefix("delay-") {
         if let Some(&value) = DURATION_SCALE.get(rest) {
-            return Some(("transition-delay".to_string(), value.to_string()));
+            return Some(tw("transition-delay", Cow::Borrowed(value)));
         }
     }
 
     // Animation
     match class {
-        "animate-none" => return Some(("animation".to_string(), "none".to_string())),
+        "animate-none" => return Some(tw("animation", Cow::Borrowed("none"))),
         "animate-spin" => {
-            return Some((
-                "animation".to_string(),
-                "spin 1s linear infinite".to_string(),
-            ));
+            return Some(tw("animation", Cow::Borrowed("spin 1s linear infinite")));
         }
         "animate-ping" => {
-            return Some((
-                "animation".to_string(),
-                "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite".to_string(),
+            return Some(tw(
+                "animation",
+                Cow::Borrowed("ping 1s cubic-bezier(0, 0, 0.2, 1) infinite"),
             ));
         }
         "animate-pulse" => {
-            return Some((
-                "animation".to_string(),
-                "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite".to_string(),
+            return Some(tw(
+                "animation",
+                Cow::Borrowed("pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"),
             ));
         }
         "animate-bounce" => {
-            return Some(("animation".to_string(), "bounce 1s infinite".to_string()));
+            return Some(tw("animation", Cow::Borrowed("bounce 1s infinite")));
         }
         _ => {}
     }
@@ -3040,111 +3104,99 @@ fn parse_transition_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse transform utilities (scale, rotate, translate, skew)
-fn parse_transform_utility(class: &str, is_negative: bool) -> Option<(String, String)> {
+fn parse_transform_utility(
+    class: &str,
+    is_negative: bool,
+) -> Option<(&'static str, Cow<'static, str>)> {
     // Scale
     if let Some(rest) = class.strip_prefix("scale-x-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scaleX({value})")));
+        return Some(tw("transform", format!("scaleX({value})")));
     }
     if let Some(rest) = class.strip_prefix("scale-y-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scaleY({value})")));
+        return Some(tw("transform", format!("scaleY({value})")));
     }
     if let Some(rest) = class.strip_prefix("scale-") {
         let value = parse_scale_value(rest)?;
-        return Some(("transform".to_string(), format!("scale({value})")));
+        return Some(tw("transform", format!("scale({value})")));
     }
 
     // Rotate
     if let Some(rest) = class.strip_prefix("rotate-") {
         let value = match rest {
-            "0" => "0deg".to_string(),
-            "1" => "1deg".to_string(),
-            "2" => "2deg".to_string(),
-            "3" => "3deg".to_string(),
-            "6" => "6deg".to_string(),
-            "12" => "12deg".to_string(),
-            "45" => "45deg".to_string(),
-            "90" => "90deg".to_string(),
-            "180" => "180deg".to_string(),
+            "0" => Cow::Borrowed("0deg"),
+            "1" => Cow::Borrowed("1deg"),
+            "2" => Cow::Borrowed("2deg"),
+            "3" => Cow::Borrowed("3deg"),
+            "6" => Cow::Borrowed("6deg"),
+            "12" => Cow::Borrowed("12deg"),
+            "45" => Cow::Borrowed("45deg"),
+            "90" => Cow::Borrowed("90deg"),
+            "180" => Cow::Borrowed("180deg"),
             _ => return None,
         };
         let neg_prefix = if is_negative { "-" } else { "" };
-        return Some((
-            "transform".to_string(),
-            format!("rotate({neg_prefix}{value})"),
-        ));
+        return Some(tw("transform", format!("rotate({neg_prefix}{value})")));
     }
 
     // Translate
     if let Some(rest) = class.strip_prefix("translate-x-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
             let neg_prefix = if is_negative { "-" } else { "" };
-            return Some((
-                "transform".to_string(),
-                format!("translateX({neg_prefix}{value})"),
-            ));
+            return Some(tw("transform", format!("translateX({neg_prefix}{value})")));
         }
     }
     if let Some(rest) = class.strip_prefix("translate-y-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
             let neg_prefix = if is_negative { "-" } else { "" };
-            return Some((
-                "transform".to_string(),
-                format!("translateY({neg_prefix}{value})"),
-            ));
+            return Some(tw("transform", format!("translateY({neg_prefix}{value})")));
         }
     }
 
     // Skew
     if let Some(rest) = class.strip_prefix("skew-x-") {
         let value = match rest {
-            "0" => "0deg".to_string(),
-            "1" => "1deg".to_string(),
-            "2" => "2deg".to_string(),
-            "3" => "3deg".to_string(),
-            "6" => "6deg".to_string(),
-            "12" => "12deg".to_string(),
+            "0" => Cow::Borrowed("0deg"),
+            "1" => Cow::Borrowed("1deg"),
+            "2" => Cow::Borrowed("2deg"),
+            "3" => Cow::Borrowed("3deg"),
+            "6" => Cow::Borrowed("6deg"),
+            "12" => Cow::Borrowed("12deg"),
             _ => return None,
         };
         let neg_prefix = if is_negative { "-" } else { "" };
-        return Some((
-            "transform".to_string(),
-            format!("skewX({neg_prefix}{value})"),
-        ));
+        return Some(tw("transform", format!("skewX({neg_prefix}{value})")));
     }
     if let Some(rest) = class.strip_prefix("skew-y-") {
         let value = match rest {
-            "0" => "0deg".to_string(),
-            "1" => "1deg".to_string(),
-            "2" => "2deg".to_string(),
-            "3" => "3deg".to_string(),
-            "6" => "6deg".to_string(),
-            "12" => "12deg".to_string(),
+            "0" => Cow::Borrowed("0deg"),
+            "1" => Cow::Borrowed("1deg"),
+            "2" => Cow::Borrowed("2deg"),
+            "3" => Cow::Borrowed("3deg"),
+            "6" => Cow::Borrowed("6deg"),
+            "12" => Cow::Borrowed("12deg"),
             _ => return None,
         };
         let neg_prefix = if is_negative { "-" } else { "" };
-        return Some((
-            "transform".to_string(),
-            format!("skewY({neg_prefix}{value})"),
-        ));
+        return Some(tw("transform", format!("skewY({neg_prefix}{value})")));
     }
 
     // Transform origin
     if let Some(rest) = class.strip_prefix("origin-") {
         let value = match rest {
-            "center" => "center".to_string(),
-            "top" => "top".to_string(),
-            "top-right" => "top right".to_string(),
-            "right" => "right".to_string(),
-            "bottom-right" => "bottom right".to_string(),
-            "bottom" => "bottom".to_string(),
-            "bottom-left" => "bottom left".to_string(),
-            "left" => "left".to_string(),
-            "top-left" => "top left".to_string(),
+            "center" => Cow::Borrowed("center"),
+            "top" => Cow::Borrowed("top"),
+            "top-right" => Cow::Borrowed("top right"),
+            "right" => Cow::Borrowed("right"),
+            "bottom-right" => Cow::Borrowed("bottom right"),
+            "bottom" => Cow::Borrowed("bottom"),
+            "bottom-left" => Cow::Borrowed("bottom left"),
+            "left" => Cow::Borrowed("left"),
+            "top-left" => Cow::Borrowed("top left"),
             _ => return None,
         };
-        return Some(("transform-origin".to_string(), value));
+        return Some(tw("transform-origin", value));
     }
 
     None
@@ -3157,55 +3209,55 @@ fn parse_scale_value(s: &str) -> Option<f64> {
 }
 
 /// Parse interactivity utilities (cursor, pointer-events, resize, etc.)
-fn parse_interactivity_utility(class: &str) -> Option<(String, String)> {
+fn parse_interactivity_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Accent color
     if let Some(rest) = class.strip_prefix("accent-") {
         if rest == "auto" {
-            return Some(("accent-color".to_string(), "auto".to_string()));
+            return Some(tw("accent-color", Cow::Borrowed("auto")));
         }
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("accent-color".to_string(), color.to_string()));
+            return Some(tw("accent-color", Cow::Borrowed(color)));
         }
     }
 
     // Appearance
     match class {
-        "appearance-none" => return Some(("appearance".to_string(), "none".to_string())),
-        "appearance-auto" => return Some(("appearance".to_string(), "auto".to_string())),
+        "appearance-none" => return Some(tw("appearance", Cow::Borrowed("none"))),
+        "appearance-auto" => return Some(tw("appearance", Cow::Borrowed("auto"))),
         _ => {}
     }
 
     // Cursor
     if let Some(rest) = class.strip_prefix("cursor-") {
-        return Some(("cursor".to_string(), rest.to_string()));
+        return Some(tw("cursor", Cow::Owned(rest.to_string())));
     }
 
     // Caret color
     if let Some(rest) = class.strip_prefix("caret-") {
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("caret-color".to_string(), color.to_string()));
+            return Some(tw("caret-color", Cow::Borrowed(color)));
         }
     }
 
     // Pointer events
     if let Some(rest) = class.strip_prefix("pointer-events-") {
-        return Some(("pointer-events".to_string(), rest.to_string()));
+        return Some(tw("pointer-events", Cow::Owned(rest.to_string())));
     }
 
     // Resize
     match class {
-        "resize-none" => return Some(("resize".to_string(), "none".to_string())),
-        "resize-y" => return Some(("resize".to_string(), "vertical".to_string())),
-        "resize-x" => return Some(("resize".to_string(), "horizontal".to_string())),
-        "resize" => return Some(("resize".to_string(), "both".to_string())),
+        "resize-none" => return Some(tw("resize", Cow::Borrowed("none"))),
+        "resize-y" => return Some(tw("resize", Cow::Borrowed("vertical"))),
+        "resize-x" => return Some(tw("resize", Cow::Borrowed("horizontal"))),
+        "resize" => return Some(tw("resize", Cow::Borrowed("both"))),
         _ => {}
     }
 
     // Scroll behavior
     if let Some(rest) = class.strip_prefix("scroll-") {
         match rest {
-            "auto" => return Some(("scroll-behavior".to_string(), "auto".to_string())),
-            "smooth" => return Some(("scroll-behavior".to_string(), "smooth".to_string())),
+            "auto" => return Some(tw("scroll-behavior", Cow::Borrowed("auto"))),
+            "smooth" => return Some(tw("scroll-behavior", Cow::Borrowed("smooth"))),
             _ => {}
         }
     }
@@ -3213,111 +3265,111 @@ fn parse_interactivity_utility(class: &str) -> Option<(String, String)> {
     // Scroll margin/padding
     if let Some(rest) = class.strip_prefix("scroll-m-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("scroll-margin".to_string(), value.to_string()));
+            return Some(tw("scroll-margin", Cow::Borrowed(value)));
         }
     }
     if let Some(rest) = class.strip_prefix("scroll-p-") {
         if let Some(&value) = SPACING_SCALE.get(rest) {
-            return Some(("scroll-padding".to_string(), value.to_string()));
+            return Some(tw("scroll-padding", Cow::Borrowed(value)));
         }
     }
 
     // Scroll snap
     if let Some(rest) = class.strip_prefix("snap-") {
         match rest {
-            "start" => return Some(("scroll-snap-align".to_string(), "start".to_string())),
-            "end" => return Some(("scroll-snap-align".to_string(), "end".to_string())),
-            "center" => return Some(("scroll-snap-align".to_string(), "center".to_string())),
-            "align-none" => return Some(("scroll-snap-align".to_string(), "none".to_string())),
-            "none" => return Some(("scroll-snap-type".to_string(), "none".to_string())),
+            "start" => return Some(tw("scroll-snap-align", Cow::Borrowed("start"))),
+            "end" => return Some(tw("scroll-snap-align", Cow::Borrowed("end"))),
+            "center" => return Some(tw("scroll-snap-align", Cow::Borrowed("center"))),
+            "align-none" => return Some(tw("scroll-snap-align", Cow::Borrowed("none"))),
+            "none" => return Some(tw("scroll-snap-type", Cow::Borrowed("none"))),
             "x" => {
-                return Some((
-                    "scroll-snap-type".to_string(),
-                    "x var(--tw-scroll-snap-strictness)".to_string(),
+                return Some(tw(
+                    "scroll-snap-type",
+                    Cow::Borrowed("x var(--tw-scroll-snap-strictness)"),
                 ));
             }
             "y" => {
-                return Some((
-                    "scroll-snap-type".to_string(),
-                    "y var(--tw-scroll-snap-strictness)".to_string(),
+                return Some(tw(
+                    "scroll-snap-type",
+                    Cow::Borrowed("y var(--tw-scroll-snap-strictness)"),
                 ));
             }
             "both" => {
-                return Some((
-                    "scroll-snap-type".to_string(),
-                    "both var(--tw-scroll-snap-strictness)".to_string(),
+                return Some(tw(
+                    "scroll-snap-type",
+                    Cow::Borrowed("both var(--tw-scroll-snap-strictness)"),
                 ));
             }
             "mandatory" => {
-                return Some((
-                    "--tw-scroll-snap-strictness".to_string(),
-                    "mandatory".to_string(),
+                return Some(tw(
+                    "--tw-scroll-snap-strictness",
+                    Cow::Borrowed("mandatory"),
                 ));
             }
             "proximity" => {
-                return Some((
-                    "--tw-scroll-snap-strictness".to_string(),
-                    "proximity".to_string(),
+                return Some(tw(
+                    "--tw-scroll-snap-strictness",
+                    Cow::Borrowed("proximity"),
                 ));
             }
-            "normal" => return Some(("scroll-snap-stop".to_string(), "normal".to_string())),
-            "always" => return Some(("scroll-snap-stop".to_string(), "always".to_string())),
+            "normal" => return Some(tw("scroll-snap-stop", Cow::Borrowed("normal"))),
+            "always" => return Some(tw("scroll-snap-stop", Cow::Borrowed("always"))),
             _ => {}
         }
     }
 
     // Touch action
     if let Some(rest) = class.strip_prefix("touch-") {
-        return Some(("touch-action".to_string(), rest.to_string()));
+        return Some(tw("touch-action", Cow::Owned(rest.to_string())));
     }
 
     // User select
     if let Some(rest) = class.strip_prefix("select-") {
-        return Some(("user-select".to_string(), rest.to_string()));
+        return Some(tw("user-select", Cow::Owned(rest.to_string())));
     }
 
     // Will change
     if let Some(rest) = class.strip_prefix("will-change-") {
         let value = match rest {
-            "auto" => "auto".to_string(),
-            "scroll" => "scroll-position".to_string(),
-            "contents" => "contents".to_string(),
-            "transform" => "transform".to_string(),
+            "auto" => Cow::Borrowed("auto"),
+            "scroll" => Cow::Borrowed("scroll-position"),
+            "contents" => Cow::Borrowed("contents"),
+            "transform" => Cow::Borrowed("transform"),
             _ => return None,
         };
-        return Some(("will-change".to_string(), value));
+        return Some(tw("will-change", value));
     }
 
     None
 }
 
 /// Parse SVG utilities (fill, stroke)
-fn parse_svg_utility(class: &str) -> Option<(String, String)> {
+fn parse_svg_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     // Fill
     if let Some(rest) = class.strip_prefix("fill-") {
         if rest == "none" {
-            return Some(("fill".to_string(), "none".to_string()));
+            return Some(tw("fill", Cow::Borrowed("none")));
         }
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("fill".to_string(), color.to_string()));
+            return Some(tw("fill", Cow::Borrowed(color)));
         }
     }
 
     // Stroke
     if let Some(rest) = class.strip_prefix("stroke-") {
         if rest == "none" {
-            return Some(("stroke".to_string(), "none".to_string()));
+            return Some(tw("stroke", Cow::Borrowed("none")));
         }
         // Stroke width
         match rest {
-            "0" => return Some(("stroke-width".to_string(), "0".to_string())),
-            "1" => return Some(("stroke-width".to_string(), "1".to_string())),
-            "2" => return Some(("stroke-width".to_string(), "2".to_string())),
+            "0" => return Some(tw("stroke-width", Cow::Borrowed("0"))),
+            "1" => return Some(tw("stroke-width", Cow::Borrowed("1"))),
+            "2" => return Some(tw("stroke-width", Cow::Borrowed("2"))),
             _ => {}
         }
         // Stroke color
         if let Some(&color) = TAILWIND_COLORS.get(rest) {
-            return Some(("stroke".to_string(), color.to_string()));
+            return Some(tw("stroke", Cow::Borrowed(color)));
         }
     }
 
@@ -3325,14 +3377,14 @@ fn parse_svg_utility(class: &str) -> Option<(String, String)> {
 }
 
 /// Parse accessibility utilities (screen reader only)
-fn parse_accessibility_utility(class: &str) -> Option<(String, String)> {
+fn parse_accessibility_utility(class: &str) -> Option<(&'static str, Cow<'static, str>)> {
     match class {
         "sr-only" => {
             // This utility requires multiple CSS properties
             // We'll return the most important one
-            Some(("position".to_string(), "absolute".to_string()))
+            Some(tw("position", Cow::Borrowed("absolute")))
         }
-        "not-sr-only" => Some(("position".to_string(), "static".to_string())),
+        "not-sr-only" => Some(tw("position", Cow::Borrowed("static"))),
         _ => None,
     }
 }
@@ -3706,7 +3758,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("bg-red-500 p-4 flex", None);
+        let styles = parse_tailwind_to_styles("bg-red-500 p-4 flex");
         assert_eq!(styles.len(), 3);
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3718,7 +3770,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("sm:bg-blue-500 md:p-8 lg:flex", None);
+        let styles = parse_tailwind_to_styles("sm:bg-blue-500 md:p-8 lg:flex");
         assert_eq!(styles.len(), 3);
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3731,7 +3783,7 @@ mod tests {
         reset_file_map();
 
         let styles =
-            parse_tailwind_to_styles("hover:bg-blue-500 focus:outline-none dark:text-white", None);
+            parse_tailwind_to_styles("hover:bg-blue-500 focus:outline-none dark:text-white");
 
         assert_debug_snapshot!(sort_styles(styles));
     }
@@ -3744,7 +3796,6 @@ mod tests {
 
         let styles = parse_tailwind_to_styles(
             "flex items-center justify-between p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200",
-            None,
         );
 
         assert_debug_snapshot!(sort_styles(styles));
@@ -3885,7 +3936,7 @@ mod tests {
 
     #[test]
     fn test_empty_string() {
-        let styles = parse_tailwind_to_styles("", None);
+        let styles = parse_tailwind_to_styles("");
         assert!(styles.is_empty());
     }
 
@@ -4068,6 +4119,87 @@ mod tests {
             assert!(nested.is_some());
         } else {
             panic!("Expected At selector");
+        }
+    }
+
+    #[test]
+    fn test_remove_all_substr_matches_str_replace() {
+        for (haystack, needle) in [
+            (":root[data-theme=dark] &", " &"),
+            (".peer:hover ~ & &", " &"),
+            (" & & &", " &"),
+            ("no-match-here", " &"),
+            ("", " &"),
+            (" &", " &"),
+            (":is([role=group],[data-group]):hover &", " &"),
+        ] {
+            let mut buf = haystack.to_string();
+            remove_all_substr(&mut buf, needle);
+            assert_eq!(buf, haystack.replace(needle, ""), "haystack={haystack:?}");
+        }
+    }
+
+    #[test]
+    fn test_combine_selectors_byte_identical_to_prior_impl() {
+        // Oracle: the exact previous implementation of the multi-variant join loop.
+        fn old_combine(variants: &[TailwindVariant]) -> String {
+            let mut selector_str = String::new();
+            for variant in variants {
+                if let StyleSelector::Selector(s) = variant.to_selector() {
+                    if selector_str.is_empty() {
+                        selector_str = s;
+                    } else {
+                        selector_str =
+                            format!("{}{}", selector_str.replace(" &", ""), s.replace('&', ""));
+                        if !selector_str.contains(" &") && !selector_str.ends_with(" &") {
+                            selector_str.push_str(" &");
+                        }
+                    }
+                }
+            }
+            selector_str
+        }
+
+        // A representative spread of &-prefixed, &-suffixed and multi-segment selectors
+        // in several orderings — exercises every branch of the in-place rewrite.
+        let combos: &[&[TailwindVariant]] = &[
+            &[TailwindVariant::Dark, TailwindVariant::Hover],
+            &[TailwindVariant::Hover, TailwindVariant::Dark],
+            &[TailwindVariant::GroupHover, TailwindVariant::Focus],
+            &[TailwindVariant::PeerHover, TailwindVariant::Active],
+            &[
+                TailwindVariant::Hover,
+                TailwindVariant::Focus,
+                TailwindVariant::Dark,
+            ],
+            &[
+                TailwindVariant::Dark,
+                TailwindVariant::GroupHover,
+                TailwindVariant::Before,
+            ],
+            &[TailwindVariant::Before, TailwindVariant::After],
+            &[
+                TailwindVariant::PeerHover,
+                TailwindVariant::GroupFocus,
+                TailwindVariant::Hover,
+            ],
+        ];
+
+        for variants in combos {
+            let cls = TailwindClass {
+                responsive: 0,
+                variants: variants.to_vec(),
+                property: "color",
+                value: Cow::Borrowed("red"),
+                negative: false,
+            };
+            let expected = old_combine(variants);
+            match cls.combine_selectors() {
+                StyleSelector::Selector(actual) => {
+                    assert_eq!(actual, expected, "variants={variants:?}");
+                }
+                other => panic!("expected Selector, got {other:?} for {variants:?}"),
+            }
         }
     }
 
@@ -5945,7 +6077,6 @@ mod tests {
 
         let styles = parse_tailwind_to_styles(
             "rounded-none rounded-sm rounded-md rounded-lg rounded-xl rounded-2xl rounded-3xl rounded-full",
-            None,
         );
         assert_eq!(styles.len(), 8);
     }
@@ -5957,7 +6088,7 @@ mod tests {
         reset_class_map();
         reset_file_map();
 
-        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8", None);
+        let styles = parse_tailwind_to_styles("border border-0 border-2 border-4 border-8");
         assert_eq!(styles.len(), 5);
     }
 

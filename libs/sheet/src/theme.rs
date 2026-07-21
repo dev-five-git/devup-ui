@@ -1,6 +1,7 @@
 use css::optimize_value::optimize_value;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
@@ -25,6 +26,17 @@ pub struct ColorEntry {
 pub struct ColorTheme {
     /// Map from `css_key` to `ColorEntry` for quick lookup
     entries: HashMap<String, ColorEntry>,
+}
+
+/// Derive the CSS-variable key from a raw name: dots become dashes.
+/// `replace('.', "-")` always allocates + scans even for the common dot-free
+/// name, so borrow the name as-is when it has no `.`. Byte-identical output.
+fn css_key_from(name: &str) -> Cow<'_, str> {
+    if name.contains('.') {
+        Cow::Owned(name.replace('.', "-"))
+    } else {
+        Cow::Borrowed(name)
+    }
 }
 
 /// Recursively flatten a JSON value into `ColorEntry` list
@@ -54,10 +66,11 @@ fn flatten_color_value(
                 } else {
                     format!("{interface_prefix}.{key}")
                 };
+                let key_css = css_key_from(key);
                 let new_css_prefix = if css_prefix.is_empty() {
-                    key.replace('.', "-")
+                    key_css.into_owned()
                 } else {
-                    format!("{}-{}", css_prefix, key.replace('.', "-"))
+                    format!("{css_prefix}-{key_css}")
                 };
                 flatten_color_value(&new_interface_prefix, &new_css_prefix, val, result)?;
             }
@@ -80,7 +93,7 @@ impl<'de> Deserialize<'de> for ColorTheme {
         let mut entries = HashMap::new();
 
         for (key, value) in raw {
-            let css_key = key.replace('.', "-");
+            let css_key = css_key_from(&key);
             flatten_color_value(&key, &css_key, &value, &mut entries).map_err(D::Error::custom)?;
         }
 
@@ -90,7 +103,9 @@ impl<'de> Deserialize<'de> for ColorTheme {
 
 impl ColorTheme {
     pub fn add_color(&mut self, name: &str, value: &str) {
-        let css_key = name.replace('.', "-");
+        // The map key must own a `String` regardless; `css_key_from` borrows on
+        // the common dot-free path so only the `.`-present case rebuilds.
+        let css_key = css_key_from(name).into_owned();
         self.entries.insert(
             css_key.clone(),
             ColorEntry {
@@ -104,11 +119,6 @@ impl ColorTheme {
     /// Get all interface keys (for TypeScript interface generation, with dots)
     pub fn interface_keys(&self) -> impl Iterator<Item = &String> {
         self.entries.values().map(|e| &e.interface_key)
-    }
-
-    /// Get all CSS keys (for CSS variable generation, with dashes)
-    pub fn css_keys(&self) -> impl Iterator<Item = &String> {
-        self.entries.keys()
     }
 
     /// Get iterator over (`css_key`, value) pairs for CSS generation
@@ -276,13 +286,6 @@ impl<'de> Deserialize<'de> for Typographies {
                     .map_err(D::Error::custom)?
                     .unwrap_or_else(|| vec![None]);
 
-                let font_style = obj
-                    .get("fontStyle")
-                    .map(deserialize_typo_prop)
-                    .transpose()
-                    .map_err(D::Error::custom)?
-                    .unwrap_or_else(|| vec![None]);
-
                 // Find the maximum length among all properties
                 let max_len = [
                     font_family.len(),
@@ -290,7 +293,6 @@ impl<'de> Deserialize<'de> for Typographies {
                     font_weight.len(),
                     line_height.len(),
                     letter_spacing.len(),
-                    font_style.len(),
                 ]
                 .into_iter()
                 .max()
@@ -304,15 +306,9 @@ impl<'de> Deserialize<'de> for Typographies {
                     let fw = font_weight.get(i).cloned().unwrap_or(None);
                     let lh = line_height.get(i).cloned().unwrap_or(None);
                     let ls = letter_spacing.get(i).cloned().unwrap_or(None);
-                    let fst = font_style.get(i).cloned().unwrap_or(None);
 
                     // If all properties are None for this level, push None
-                    if ff.is_none()
-                        && fs.is_none()
-                        && fw.is_none()
-                        && lh.is_none()
-                        && ls.is_none()
-                        && fst.is_none()
+                    if ff.is_none() && fs.is_none() && fw.is_none() && lh.is_none() && ls.is_none()
                     {
                         result.push(None);
                     } else {
@@ -384,13 +380,107 @@ pub type LengthTheme = BTreeMap<String, TokenValues>;
 /// e.g., `{ "sm": "0 1px 2px rgba(0,0,0,0.1)", "md": ["0 2px 4px rgba(0,0,0,0.1)", null, "0 4px 8px rgba(0,0,0,0.2)"] }`
 pub type ShadowTheme = BTreeMap<String, TokenValues>;
 
+/// Collect, per token name, the breakpoint levels that have a value in any theme variant.
+fn token_levels(
+    themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
+) -> BTreeMap<String, Vec<u8>> {
+    // Accumulate presence per name in a `u16` bitmask over levels instead of an
+    // `entry.contains(&level)` linear rescan of a growing `Vec<u8>` (bounded O(k²)
+    // per token). Levels index breakpoints (realistically < 16), so a `u16` mask
+    // covers every reachable level; any level >= 16 falls back to the linear probe
+    // so behavior is preserved for out-of-range inputs. The ascending `Vec<u8>` is
+    // materialized at the end, keeping the existing output ordering byte-identical.
+    let masks = themes.values().flat_map(|theme| theme.iter()).fold(
+        BTreeMap::<String, (u16, Option<Vec<u8>>)>::new(),
+        |mut acc, (name, values)| {
+            // Borrow-probe before allocating an owned key: only clone `name`
+            // into a new entry on a genuine miss. Re-inserting the same token
+            // name across every theme variant would otherwise clone ~N·K owned
+            // `String` keys for only ~K distinct entries (the standard
+            // "borrow-probe before owned-key insert" pattern used elsewhere in
+            // this repo, e.g. `class_num_for_key`, `add_property`).
+            let (mask, overflow) = match acc.get_mut(name) {
+                Some(entry) => entry,
+                None => acc.entry(name.clone()).or_default(),
+            };
+            for (idx, value) in values.0.iter().enumerate() {
+                if value.is_some()
+                    && let Ok(level) = u8::try_from(idx)
+                {
+                    if level < 16 {
+                        *mask |= 1u16 << level;
+                    } else {
+                        // Levels >= 16 never occur for realistic themes
+                        // (breakpoints < 16), so the overflow `Vec` is only
+                        // allocated on first use, keeping the common case
+                        // allocation-free instead of a per-token empty `Vec`.
+                        //
+                        // This branch is COLD by construction: every reachable
+                        // theme has fewer than 16 breakpoints, so the `u16` mask
+                        // above absorbs all real inputs and this `contains`-guarded
+                        // O(k²) dedupe never runs in practice. The `debug_assert!`
+                        // documents that expectation and would fire in dev/test if a
+                        // future change ever drove a level into the overflow path,
+                        // signalling the mask width (and this fallback) needs review.
+                        // It compiles out entirely in release, so the hot path is
+                        // unaffected.
+                        debug_assert!(
+                            false,
+                            "overflow branch entered for level < 16, which the u16 mask should have handled"
+                        );
+                        let overflow = overflow.get_or_insert_with(Vec::new);
+                        if !overflow.contains(&level) {
+                            overflow.push(level);
+                        }
+                    }
+                }
+            }
+            acc
+        },
+    );
+    masks
+        .into_iter()
+        .map(|(name, (mask, overflow))| {
+            // Expand only the SET bits (lowest-first) instead of scanning the
+            // full 0..16 range per token, and presize the Vec exactly. Bits are
+            // still visited ascending, so the output order is byte-identical.
+            let overflow_len = overflow.as_ref().map_or(0, Vec::len);
+            let mut levels: Vec<u8> = Vec::with_capacity(mask.count_ones() as usize + overflow_len);
+            let mut m = mask;
+            while m != 0 {
+                levels.push(m.trailing_zeros() as u8);
+                m &= m - 1;
+            }
+            if let Some(mut overflow) = overflow {
+                overflow.sort_unstable();
+                levels.extend(overflow);
+            }
+            (name, levels)
+        })
+        .collect()
+}
+
 fn default_variant_key<T>(themes: &BTreeMap<String, T>) -> Option<&str> {
-    themes
-        .keys()
-        .find(|k| *k == "default")
-        .or_else(|| themes.keys().find(|k| *k == "light"))
-        .or_else(|| themes.keys().next())
-        .map(String::as_str)
+    if themes.contains_key("default") {
+        Some("default")
+    } else if themes.contains_key("light") {
+        Some("light")
+    } else {
+        themes.keys().next().map(String::as_str)
+    }
+}
+
+/// Sort variant `(name, value)` entries so the `default_key` variant sorts first, with the
+/// remaining variants ordered by name. Encoded as a bool-tuple compare (`is-not-default`, name):
+/// `false < true` places the default key ahead of every other, then names order the rest.
+/// This is the single authoritative definition of the "default first, then name" variant order
+/// shared by the color and length/shadow CSS-variable emitters. Allocation-free.
+fn sort_variants_default_first<T>(entries: &mut [(&String, T)], default_key: &str) {
+    entries.sort_by(|a, b| {
+        (a.0.as_str() != default_key)
+            .cmp(&(b.0.as_str() != default_key))
+            .then_with(|| a.0.cmp(b.0))
+    });
 }
 
 /// Convert a JSON number to a length value: `n * 4` + "px".
@@ -442,9 +532,9 @@ where
     let mut result = BTreeMap::new();
     for (variant, tokens) in raw {
         let mut theme = BTreeMap::new();
-        for (name, value) in &tokens {
-            let tv = deserialize_length_value(value).map_err(serde::de::Error::custom)?;
-            theme.insert(name.clone(), tv);
+        for (name, value) in tokens {
+            let tv = deserialize_length_value(&value).map_err(serde::de::Error::custom)?;
+            theme.insert(name, tv);
         }
         result.insert(variant, theme);
     }
@@ -522,40 +612,12 @@ impl Theme {
 
     #[must_use]
     pub fn get_length_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
-        self.length.values().flat_map(|theme| theme.iter()).fold(
-            BTreeMap::<String, Vec<u8>>::new(),
-            |mut acc, (name, values)| {
-                let entry = acc.entry(name.clone()).or_default();
-                for (idx, value) in values.0.iter().enumerate() {
-                    if value.is_some()
-                        && let Ok(level) = u8::try_from(idx)
-                        && !entry.contains(&level)
-                    {
-                        entry.push(level);
-                    }
-                }
-                acc
-            },
-        )
+        token_levels(&self.length)
     }
 
     #[must_use]
     pub fn get_shadow_token_levels(&self) -> BTreeMap<String, Vec<u8>> {
-        self.shadows.values().flat_map(|theme| theme.iter()).fold(
-            BTreeMap::<String, Vec<u8>>::new(),
-            |mut acc, (name, values)| {
-                let entry = acc.entry(name.clone()).or_default();
-                for (idx, value) in values.0.iter().enumerate() {
-                    if value.is_some()
-                        && let Ok(level) = u8::try_from(idx)
-                        && !entry.contains(&level)
-                    {
-                        entry.push(level);
-                    }
-                }
-                acc
-            },
-        )
+        token_levels(&self.shadows)
     }
 
     #[must_use]
@@ -582,36 +644,77 @@ impl Theme {
 
     #[must_use]
     pub fn to_css(&self) -> String {
-        let mut theme_declaration = String::new();
+        // Seed a cheap lower-bound capacity so the initial 0→8→16→… grow chain
+        // before the first `:root{` write is skipped. `colors.len()` is a safe
+        // lower bound (at least one `:root`-ish block per variant); byte-identical.
+        let mut theme_declaration = String::with_capacity(self.colors.len().saturating_mul(64));
 
-        let default_theme_key = self.get_default_theme();
+        let default_theme_key = default_variant_key(&self.colors);
         if let Some(default_theme_key) = default_theme_key {
-            let entries = {
+            let single_theme = self.colors.len() <= 1;
+            // For a single (or zero) color variant the `default`-first sort is a no-op, so the
+            // intermediate `Vec` collect + `sort_variants_default_first` only reproduces the
+            // map's own iteration order. Skip the sort call entirely then; iterate the map
+            // straight into the Vec. The multi-variant path still sorts (order matters there).
+            // Byte-identical: a single-element BTreeMap yields the same lone `(name, theme)`.
+            let entries: Vec<(&String, &ColorTheme)> = if single_theme {
+                self.colors.iter().collect()
+            } else {
                 let mut col: Vec<_> = self.colors.iter().collect();
-                col.sort_by(|a, b| {
-                    if *a.0 == default_theme_key {
-                        std::cmp::Ordering::Less
-                    } else if *b.0 == default_theme_key {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        a.0.cmp(b.0)
-                    }
-                });
+                sort_variants_default_first(&mut col, default_theme_key);
                 col
             };
-            let single_theme = entries.len() <= 1;
             // if other theme is exists, should use light-dark function
-            let other_theme_key = if entries.len() == 2 {
+            let other_theme_key: Option<&str> = if entries.len() == 2 {
                 entries
                     .iter()
-                    .find(|(k, _)| *k != &default_theme_key)
-                    .map(|(k, _)| (*k).clone())
+                    .find(|(k, _)| **k != default_theme_key)
+                    .map(|(k, _)| k.as_str())
             } else {
                 None
             };
+            // The default variant's optimized color values are invariant across variants, yet the
+            // non-default (`theme_key.is_some()`, 3+ theme) branch re-optimizes them once per
+            // variant. Precompute them once so each `optimize_value` runs a single time per color.
+            // Only worth materializing when a second variant re-reads the map: for a single
+            // variant each value is used exactly once, so building the intermediate `HashMap`
+            // (extra hashing + one allocation) buys nothing over the default arm's inline
+            // `Cow::Owned(optimize_value(value))` map-miss fallback. Skip it entirely then.
+            let default_optimized_colors: HashMap<&str, String> = if single_theme {
+                HashMap::new()
+            } else {
+                self.colors
+                    .get(default_theme_key)
+                    .map(|d| {
+                        d.css_entries()
+                            .map(|(k, v)| (k.as_str(), optimize_value(v).into_owned()))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            // `single_theme` is loop-invariant across every default-variant color, so decide the
+            // optimized-value source ONCE here instead of re-testing the branch per color inside the
+            // inner loop below. In the `single_theme` case `default_optimized_colors` is empty, so
+            // the probe would always miss and fall through to `optimize_value` anyway — collapse it
+            // to a direct owned optimize. Otherwise borrow the precomputed value, recomputing only on
+            // the rare map miss. Emitted bytes are identical to the old per-color branch.
+            let resolve_default_optimized = |prop: &str, value: &str| -> Cow<str> {
+                // `optimize_value` now returns `Cow` borrowing from its `value`
+                // parameter; the closure's return borrow is tied to the captured
+                // map, so materialize the (rare) locally-optimized result. A
+                // borrowed result costs exactly the one `String` it always did.
+                if single_theme {
+                    Cow::Owned(optimize_value(value).into_owned())
+                } else {
+                    default_optimized_colors.get(prop).map_or_else(
+                        || Cow::Owned(optimize_value(value).into_owned()),
+                        |v| Cow::Borrowed(v.as_str()),
+                    )
+                }
+            };
             for (theme_name, theme_properties) in entries {
                 let mut theme_contents = String::new();
-                let theme_key = if *theme_name == *default_theme_key {
+                let theme_key = if *theme_name == default_theme_key {
                     None
                 } else {
                     Some(theme_name)
@@ -627,26 +730,37 @@ impl Theme {
                         push_css_declaration(&mut theme_contents, "color-scheme:light");
                     }
                 }
-                for (prop, value) in theme_properties.css_entries() {
-                    let optimized_value = optimize_value(value);
-                    if theme_key.is_some() {
-                        if other_theme_key.is_none()
-                            && let Some(default_value) =
-                                self.colors.get(&default_theme_key).and_then(|v| {
-                                    v.get(prop).and_then(|v| {
-                                        if optimize_value(v) == optimized_value {
-                                            None
-                                        } else {
-                                            Some(optimized_value)
-                                        }
-                                    })
+                // Non-default variants in a two-theme pair only contribute `color-scheme:dark`;
+                // the default variant already emits their colors via `light-dark(...)`. Guard the
+                // whole per-color pass so that partner variant skips the otherwise no-op iterator.
+                if theme_key.is_none() || other_theme_key.is_none() {
+                    for (prop, value) in theme_properties.css_entries() {
+                        if theme_key.is_some() {
+                            // The map may not contain `prop` (a color present in this variant but
+                            // absent from the default), so optimize it here.
+                            let optimized_value = optimize_value(value);
+                            if let Some(default_value) = default_optimized_colors
+                                .get(prop.as_str())
+                                .and_then(|default_optimized| {
+                                    if *default_optimized == optimized_value {
+                                        None
+                                    } else {
+                                        Some(optimized_value)
+                                    }
                                 })
-                        {
-                            push_css_variable(&mut theme_contents, prop, &default_value);
-                        }
-                    } else {
-                        let other_theme_value =
-                            other_theme_key.as_ref().and_then(|other_theme_key| {
+                            {
+                                push_css_variable(&mut theme_contents, prop, &default_value);
+                            }
+                        } else {
+                            // Default variant. The `single_theme`-invariant source selection is decided
+                            // once by `resolve_default_optimized` (hoisted above the entries loop): for
+                            // the single-variant case it optimizes directly (the map is empty, so the
+                            // probe would always miss); otherwise it borrows the precomputed value keyed
+                            // by `prop`, recomputing only on a rare miss (saves one `optimize_value` call
+                            // and one `String` allocation per default-variant color).
+                            let optimized_value = resolve_default_optimized(prop.as_str(), value);
+                            let optimized_value: &str = &optimized_value;
+                            let other_theme_value = other_theme_key.and_then(|other_theme_key| {
                                 self.colors.get(other_theme_key).and_then(|v| {
                                     v.get(prop).and_then(|v| {
                                         let other_theme_value = optimize_value(v.as_str());
@@ -658,21 +772,22 @@ impl Theme {
                                     })
                                 })
                             });
-                        // default theme
-                        if !theme_contents.is_empty() {
-                            theme_contents.push(';');
-                        }
-                        theme_contents.push_str("--");
-                        theme_contents.push_str(prop);
-                        theme_contents.push(':');
-                        if let Some(other_theme_value) = other_theme_value {
-                            theme_contents.push_str("light-dark(");
-                            theme_contents.push_str(&optimized_value);
-                            theme_contents.push(',');
-                            theme_contents.push_str(&other_theme_value);
-                            theme_contents.push(')');
-                        } else {
-                            theme_contents.push_str(&optimized_value);
+                            // default theme
+                            if !theme_contents.is_empty() {
+                                theme_contents.push(';');
+                            }
+                            theme_contents.push_str("--");
+                            theme_contents.push_str(prop);
+                            theme_contents.push(':');
+                            if let Some(other_theme_value) = other_theme_value {
+                                theme_contents.push_str("light-dark(");
+                                theme_contents.push_str(optimized_value);
+                                theme_contents.push(',');
+                                theme_contents.push_str(&other_theme_value);
+                                theme_contents.push(')');
+                            } else {
+                                theme_contents.push_str(optimized_value);
+                            }
                         }
                     }
                 }
@@ -682,46 +797,58 @@ impl Theme {
         }
         let mut css = theme_declaration;
         let mut level_map = BTreeMap::<u8, String>::new();
+        // Reuse a single buffer across every typography entry×level: `clear()` keeps the
+        // backing capacity alive so populated levels amortize to ~1 allocation total
+        // instead of one allocate→grow→copy→free cycle per non-empty level.
+        let mut css_content = String::new();
+        // Loop-invariant: `resolve_into` captures no loop variable (it only calls the free fn
+        // `optimize_value`), so define it once instead of reconstructing the closure on every
+        // typography entry×level iteration. For the `$token` path it writes `var(--token)`
+        // byte-for-byte straight into the target buffer, avoiding the throwaway `format!`
+        // `String` the old `resolve` allocated per themed property; only the non-`$` path
+        // still needs `optimize_value`'s owned `String`.
+        let resolve_into = |out: &mut String, v: &str| {
+            if let Some(token) = v.strip_prefix('$') {
+                out.push_str("var(--");
+                out.push_str(token);
+                out.push(')');
+            } else {
+                out.push_str(&optimize_value(v));
+            }
+        };
         for ty in &self.typography {
             for (idx, t) in ty.1.0.iter().enumerate() {
                 if let Some(t) = t {
-                    let resolve = |v: &str| -> String {
-                        if let Some(token) = v.strip_prefix('$') {
-                            format!("var(--{token})")
-                        } else {
-                            optimize_value(v)
-                        }
-                    };
-                    let mut css_content = String::new();
+                    css_content.clear();
                     push_typography_property(
                         &mut css_content,
                         "font-family",
                         t.font_family.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "font-size",
                         t.font_size.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "font-weight",
                         t.font_weight.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "line-height",
                         t.line_height.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
                     push_typography_property(
                         &mut css_content,
                         "letter-spacing",
                         t.letter_spacing.as_deref(),
-                        &resolve,
+                        &resolve_into,
                     );
 
                     if !css_content.is_empty() {
@@ -760,54 +887,81 @@ impl Theme {
         themes: &BTreeMap<String, BTreeMap<String, TokenValues>>,
         breakpoints: &[u16],
     ) {
-        let Some(default_key) = themes
-            .keys()
-            .find(|k| *k == "default")
-            .or_else(|| themes.keys().next())
-            .cloned()
-        else {
+        let Some(default_key) = default_variant_key(themes) else {
             return;
         };
 
-        // Sort variants: default first, then alphabetical
+        // Sort variants: default first, then alphabetical.
+        // For a single (or zero) variant the `default`-first sort is a no-op that only
+        // reproduces the map's own iteration order (a 1-element BTreeMap yields the same lone
+        // entry). Skip the comparator setup + `sort_by` then, mirroring the color path's
+        // `single_theme` guard in `to_css` (and the `sorted_variants.len() <= 1` guard just
+        // below). Byte-identical output; the multi-variant path still sorts (order matters there).
         let mut sorted_variants: Vec<_> = themes.iter().collect();
-        let dk = &default_key;
-        sorted_variants.sort_by(|a, b| {
-            let ad = a.0 == dk;
-            let bd = b.0 == dk;
-            if ad || bd { bd.cmp(&ad) } else { a.0.cmp(b.0) }
-        });
+        if sorted_variants.len() > 1 {
+            sort_variants_default_first(&mut sorted_variants, default_key);
+        }
+
+        let default_theme = themes.get(default_key);
+
+        // The default variant's optimized token values are invariant across variants, yet the
+        // `is_same_as_default` check below re-optimizes them once per non-default variant.
+        // Precompute them once so each `optimize_value` on a default value runs a single time.
+        // The map is read only inside `is_same_as_default` (`!is_default && …`), which is never
+        // true when there is a single variant — mirroring the color path's `single_theme` guard,
+        // skip building it entirely then so its `optimize_value` calls and owned `String`s (one
+        // per default token value) are not allocated just to be discarded.
+        let default_optimized: HashMap<(&str, usize), String> = if sorted_variants.len() <= 1 {
+            HashMap::new()
+        } else {
+            default_theme
+                .map(|dt| {
+                    dt.iter()
+                        .flat_map(|(name, values)| {
+                            values.0.iter().enumerate().filter_map(move |(idx, dval)| {
+                                dval.as_ref()
+                                    .map(|d| ((name.as_str(), idx), optimize_value(d).into_owned()))
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
 
         for (variant_name, token_theme) in &sorted_variants {
-            let is_default = *variant_name == &default_key;
-            let selector = if is_default {
-                ":root".to_string()
-            } else {
-                format!(":root[data-theme={variant_name}]")
+            let is_default = *variant_name == default_key;
+            // Write the `:root` / `:root[data-theme=<name>]` prefix directly into
+            // `css` at each use site instead of allocating one owned `String` per
+            // variant. Emitted bytes are identical to the former `format!`.
+            let write_selector = |css: &mut String| {
+                css.push_str(":root");
+                if !is_default {
+                    css.push_str("[data-theme=");
+                    css.push_str(variant_name);
+                    css.push(']');
+                }
             };
 
             // Group variables by breakpoint level without allocating one String per variable.
             let mut level_map = BTreeMap::<usize, String>::new();
             for (name, values) in *token_theme {
+                // `name` is invariant across the `idx` iteration, so borrow it as `&str`
+                // once here instead of re-`as_str()`ing it inside every value probe/push.
+                let name_str = name.as_str();
                 for (idx, val) in values.0.iter().enumerate() {
                     if let Some(v) = val {
                         let optimized = optimize_value(v);
                         let is_same_as_default = !is_default
-                            && themes
-                                .get(default_key.as_str())
-                                .and_then(|dt| dt.get(name))
-                                .and_then(|dv| dv.0.get(idx))
-                                .is_some_and(|dval| {
-                                    dval.as_ref()
-                                        .is_some_and(|d| optimize_value(d) == optimized)
-                                });
+                            && default_optimized
+                                .get(&(name_str, idx))
+                                .is_some_and(|d| *d == optimized);
                         if !is_same_as_default {
                             let vars = level_map.entry(idx).or_default();
                             if !vars.is_empty() {
                                 vars.push(';');
                             }
                             vars.push_str("--");
-                            vars.push_str(name);
+                            vars.push_str(name_str);
                             vars.push(':');
                             vars.push_str(&optimized);
                         }
@@ -818,14 +972,14 @@ impl Theme {
             for (level, vars) in &level_map {
                 if !vars.is_empty() {
                     if *level == 0 {
-                        css.push_str(&selector);
+                        write_selector(css);
                         css.push('{');
                         css.push_str(vars);
                         css.push('}');
                     } else if let Some(bp) = breakpoints.get(*level) {
                         write!(css, "@media(min-width:{bp}px){{")
                             .unwrap_or_else(|err| panic!("failed to write CSS into string: {err}"));
-                        css.push_str(&selector);
+                        write_selector(css);
                         css.push('{');
                         css.push_str(vars);
                         css.push_str("}}");
@@ -840,7 +994,7 @@ fn push_typography_property(
     css_content: &mut String,
     property: &str,
     value: Option<&str>,
-    resolve: &impl Fn(&str) -> String,
+    resolve_into: &impl Fn(&mut String, &str),
 ) {
     let Some(value) = value else {
         return;
@@ -854,7 +1008,7 @@ fn push_typography_property(
     }
     css_content.push_str(property);
     css_content.push(':');
-    css_content.push_str(&resolve(value));
+    resolve_into(css_content, value);
 }
 
 fn push_css_declaration(css_content: &mut String, declaration: &str) {
@@ -893,7 +1047,7 @@ mod tests {
         let mut color_theme = ColorTheme::default();
         color_theme.add_color("primary", "#000");
 
-        assert_eq!(color_theme.css_keys().count(), 1);
+        assert_eq!(color_theme.css_entries().count(), 1);
 
         theme.add_color_theme("default", color_theme);
         let mut color_theme = ColorTheme::default();
@@ -1214,7 +1368,7 @@ mod tests {
         // Collect interface keys
         let interface_keys: Vec<_> = light.interface_keys().cloned().collect();
         // Collect CSS keys
-        let css_keys: Vec<_> = light.css_keys().cloned().collect();
+        let css_keys: Vec<_> = light.css_entries().map(|(k, _)| k.clone()).collect();
 
         // Interface keys should use dots for nested objects
         assert!(interface_keys.contains(&"gray.100".to_string()));
@@ -1249,7 +1403,7 @@ mod tests {
         // Interface key uses dots
         assert!(light.interface_keys().any(|key| key == "a.b.c"));
         // CSS key uses dashes
-        assert!(light.css_keys().any(|key| key == "a-b-c"));
+        assert!(light.css_entries().any(|(key, _)| key == "a-b-c"));
     }
 
     #[test]
@@ -1717,7 +1871,7 @@ mod tests {
     #[test]
     fn test_color_theme_empty() {
         let color_theme = ColorTheme::default();
-        assert_eq!(color_theme.css_keys().count(), 0);
+        assert_eq!(color_theme.css_entries().count(), 0);
         assert_eq!(color_theme.interface_keys().count(), 0);
         assert_eq!(color_theme.css_entries().count(), 0);
         assert!(!color_theme.contains_key("any"));
@@ -2440,7 +2594,12 @@ mod tests {
     fn test_push_typography_property_none_value() {
         // Covers early return when value is None
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", None, &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            None,
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
     }
 
@@ -2448,12 +2607,22 @@ mod tests {
     fn test_push_typography_property_empty_value() {
         // Covers early return when trimmed value is empty
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some(""), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some(""),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
 
         // Whitespace-only also returns early
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some("   "), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some("   "),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "");
     }
 
@@ -2461,11 +2630,21 @@ mod tests {
     fn test_push_typography_property_appends_separator() {
         // Empty css → no leading semicolon
         let mut css = String::new();
-        push_typography_property(&mut css, "font-family", Some("Arial"), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-family",
+            Some("Arial"),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "font-family:Arial");
 
         // Non-empty css → prepends ';' before declaration
-        push_typography_property(&mut css, "font-size", Some("16px"), &|v| v.to_string());
+        push_typography_property(
+            &mut css,
+            "font-size",
+            Some("16px"),
+            &|out: &mut String, v: &str| out.push_str(v),
+        );
         assert_eq!(css, "font-family:Arial;font-size:16px");
     }
 

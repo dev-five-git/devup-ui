@@ -1,12 +1,11 @@
-use strum::IntoEnumIterator;
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumIter, EnumString};
 
 use crate::extract_style::{
     extract_static_style::ExtractStaticStyle, extract_style_value::ExtractStyleValue,
 };
 
 /// devup-ui export variable kind
-#[derive(Debug, PartialEq, Eq, Clone, EnumIter, Display)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumIter, Display, EnumString)]
 pub enum ExportVariableKind {
     Box,
     Text,
@@ -21,7 +20,7 @@ pub enum ExportVariableKind {
 
 impl ExportVariableKind {
     /// Convert the kind to a tag
-    pub const fn to_tag(&self) -> &str {
+    pub const fn to_tag(&self) -> &'static str {
         match self {
             ExportVariableKind::Center
             | ExportVariableKind::VStack
@@ -34,9 +33,7 @@ impl ExportVariableKind {
             ExportVariableKind::Input => "input",
         }
     }
-}
 
-impl ExportVariableKind {
     pub fn extract(&self) -> Vec<ExtractStyleValue> {
         match self {
             ExportVariableKind::Input
@@ -94,18 +91,7 @@ impl TryFrom<String> for ExportVariableKind {
     type Error = ();
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        ExportVariableKind::from_str(&value)
-    }
-}
-
-impl ExportVariableKind {
-    pub fn from_str(value: &str) -> Result<Self, ()> {
-        for kind in ExportVariableKind::iter() {
-            if kind.to_string() == value {
-                return Ok(kind);
-            }
-        }
-        Err(())
+        value.parse().map_err(|_| ())
     }
 }
 

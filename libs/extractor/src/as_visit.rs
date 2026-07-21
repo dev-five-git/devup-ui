@@ -1,10 +1,10 @@
 use crate::utils::get_string_by_literal_expression;
-use oxc_allocator::{Allocator, CloneIn};
-use oxc_ast::ast::{Expression, JSXElement};
+use oxc_allocator::{Allocator, CloneIn, GetAllocator};
+use oxc_ast::ast::{Expression, JSXElement, JSXElementName, Str};
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::walk_expression;
 
-use oxc_ast::AstBuilder;
+use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
 
 pub struct AsVisitor<'a> {
@@ -22,25 +22,25 @@ impl<'a> AsVisitor<'a> {
 }
 
 fn change_element_name<'a>(ast: &AstBuilder<'a>, element: &mut JSXElement<'a>, element_name: &str) {
-    let element_name = ast.jsx_element_name_identifier(SPAN, ast.str(element_name));
-    element.opening_element.name = element_name.clone_in(ast.allocator);
+    let element_name = JSXElementName::new_identifier(SPAN, Str::from(element_name), ast);
+    element.opening_element.name = element_name.clone_in(ast.allocator());
     if let Some(el) = &mut element.closing_element {
-        el.name = element_name;
+        el.name = element_name.clone_in(ast.allocator());
     }
 }
 
 impl<'a> VisitMut<'a> for AsVisitor<'a> {
     fn visit_expression(&mut self, it: &mut oxc_ast::ast::Expression<'a>) {
         if let Some(element_name) = get_string_by_literal_expression(it) {
-            let mut element = self.element.clone_in(self.ast.allocator);
+            let mut element = self.element.clone_in(self.ast.allocator());
             change_element_name(&self.ast, &mut element, &element_name);
-            *it = Expression::JSXElement(self.ast.alloc(element));
+            *it = Expression::JSXElement(oxc_allocator::Box::new_in(element, &self.ast));
         } else if let Expression::Identifier(ident) = it {
             let element_name = ident.name.to_string();
             if element_name != "undefined" {
-                let mut element = self.element.clone_in(self.ast.allocator);
+                let mut element = self.element.clone_in(self.ast.allocator());
                 change_element_name(&self.ast, &mut element, &element_name);
-                *it = Expression::JSXElement(self.ast.alloc(element));
+                *it = Expression::JSXElement(oxc_allocator::Box::new_in(element, &self.ast));
             }
         } else if let Expression::ConditionalExpression(conditional) = it {
             self.visit_expression(&mut conditional.consequent);
