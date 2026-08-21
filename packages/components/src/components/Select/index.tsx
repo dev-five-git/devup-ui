@@ -153,9 +153,9 @@ export function Select({
             <SelectContainer {...containerProps}>
               {options?.map((option) => (
                 <SelectOption
+                  key={'option-' + option.value}
                   {...optionProps}
                   {...option}
-                  key={'option-' + option.value}
                 >
                   {option.label ?? option.value}
                 </SelectOption>

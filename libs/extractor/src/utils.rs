@@ -536,10 +536,10 @@ mod tests {
                     JSXAttributeName::new_identifier(SPAN, "styleOrder", &builder),
                     Some(JSXAttributeValue::new_element(
                         SPAN,
-                        JSXOpeningElement::new(
+                        JSXOpeningElement::boxed(
                             SPAN,
                             JSXElementName::new_identifier(SPAN, "div", &builder),
-                            Some(TSTypeParameterInstantiation::new(
+                            Some(TSTypeParameterInstantiation::boxed(
                                 SPAN,
                                 Vec::new_in(&builder),
                                 &builder,
@@ -548,7 +548,7 @@ mod tests {
                             &builder,
                         ),
                         Vec::new_in(&builder),
-                        Some(JSXClosingElement::new(
+                        Some(JSXClosingElement::boxed(
                             SPAN,
                             JSXElementName::new_identifier(SPAN, "div", &builder),
                             &builder,

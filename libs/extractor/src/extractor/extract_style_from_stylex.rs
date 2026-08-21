@@ -10,7 +10,7 @@ use crate::utils::get_string_by_literal_expression;
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
-use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind, Statement};
+use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind};
 use rustc_hash::FxHashMap;
 
 use crate::utils::{get_str_by_property_key, get_string_by_property_key};
@@ -290,18 +290,8 @@ fn extract_stylex_dynamic_namespace<'a>(
     }
 
     // 2. Get body ObjectExpression from expression body: (x) => ({ ... })
-    if !arrow.expression {
-        return None;
-    }
-    // Expression arrow body: Oxc always wraps in ExpressionStatement.
     // Unwrap ParenthesizedExpression since Oxc preserves parens for `(x) => ({...})`.
-    let body_expr = arrow.body.statements.first().and_then(|stmt| {
-        if let Statement::ExpressionStatement(e) = stmt {
-            Some(&e.expression)
-        } else {
-            None
-        }
-    })?;
+    let body_expr = arrow.body.as_expression()?;
     let inner = if let Expression::ParenthesizedExpression(paren) = body_expr {
         &paren.expression
     } else {

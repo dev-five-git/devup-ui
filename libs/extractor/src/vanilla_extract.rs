@@ -443,8 +443,8 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
     for stmt in &ret.program.body {
         match stmt {
             // Exported variable declarations
-            oxc_ast::ast::Statement::ExportNamedDeclaration(export) => {
-                if let Some(oxc_ast::ast::Declaration::VariableDeclaration(var_decl)) =
+            oxc_ast::ast::Statement::ExportDeclaration(export) => {
+                if let oxc_ast::ast::Declaration::VariableDeclaration(var_decl) =
                     &export.declaration
                 {
                     for decl in &var_decl.declarations {

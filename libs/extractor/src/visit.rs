@@ -31,7 +31,7 @@ use oxc_ast::ast::{
     ImportDeclaration, ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild,
     JSXClosingFragment, JSXElement, JSXElementName, JSXExpressionContainer, JSXOpeningFragment,
     ObjectPropertyKind, Program, PropertyKey, PropertyKind, Statement, Str, StringLiteral,
-    VariableDeclarator, WithClause,
+    VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
 use oxc_ast_visit::walk_mut::{
@@ -384,22 +384,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             for css_file in self.css_files.iter().rev() {
                 it.body.insert(
                     0,
-                    Statement::ImportDeclaration(
-                        ImportDeclaration::boxed::<_, Option<WithClause>>(
+                    Statement::ImportDeclaration(ImportDeclaration::boxed(
+                        SPAN,
+                        None,
+                        StringLiteral::new(
                             SPAN,
+                            Str::from_in(css_file, self.ast.allocator()),
                             None,
-                            StringLiteral::new(
-                                SPAN,
-                                Str::from_in(css_file, self.ast.allocator()),
-                                None,
-                                &self.ast,
-                            ),
-                            None,
-                            None,
-                            ImportOrExportKind::Value,
                             &self.ast,
                         ),
-                    ),
+                        None,
+                        None,
+                        ImportOrExportKind::Value,
+                        &self.ast,
+                    )),
                 );
             }
         }

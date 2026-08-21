@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@vanilla-extract/css": "^1.21",
-    "next": "^16.2",
+    "next": "^16.3",
     "react": "^19.2",
     "react-dom": "^19.2",
     "react-icons": "^5.7"
