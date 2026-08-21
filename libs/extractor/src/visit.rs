@@ -1149,6 +1149,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             walk_import_declaration(self, it);
         }
     }
+    #[allow(clippy::set_contains_or_insert)]
     fn visit_jsx_element(&mut self, elem: &mut JSXElement<'a>) {
         walk_jsx_element(self, elem);
         // after run to convert css literal
@@ -1187,7 +1188,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         // heap-copied the `Cow::Owned` String for every non-phf-mapped
                         // camelCase prop. The lint's suggested single `insert` would
                         // force that clone back, since the body still needs the name.
-                        #[allow(clippy::set_contains_or_insert)]
+                        // The `allow` sits on `visit_jsx_element` rather than here so
+                        // coverage does not report the attribute line itself as unrun.
                         if !duplicate_set.contains(&disassembled) {
                             if property_name == "styleOrder" {
                                 if let Some(value) = attr.value.as_ref() {
@@ -1342,5 +1344,67 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use css::{class_map::reset_class_map, file_map::reset_file_map};
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+    use serial_test::serial;
+
+    #[test]
+    fn test_style_property_variable_into_string() {
+        let value = style_property_into_string(StyleProperty::Variable {
+            class_name: "dynamic".to_string(),
+            variable_name: "--color".to_string(),
+            identifier: "color".to_string(),
+        });
+
+        assert_eq!(value, "var(--color)");
+    }
+
+    #[test]
+    fn test_stylex_named_and_unrelated_imports() {
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path("test.ts").unwrap();
+        let mut program = Parser::new(&allocator, "import { create, props as sxProps, keyframes, unknown } from '@stylexjs/stylex'; import value from 'other';", source_type).parse().program;
+        let mut visitor =
+            DevupVisitor::new(&allocator, "test.ts", "@devup-ui/react", Vec::new(), None);
+
+        visitor.visit_program(&mut program);
+
+        assert_eq!(
+            visitor.stylex_named_imports.get("create"),
+            Some(&StylexFunction::Create)
+        );
+        assert_eq!(
+            visitor.stylex_named_imports.get("sxProps"),
+            Some(&StylexFunction::Props)
+        );
+        assert_eq!(
+            visitor.stylex_named_imports.get("keyframes"),
+            Some(&StylexFunction::Keyframes)
+        );
+        assert!(!visitor.stylex_named_imports.contains_key("unknown"));
+    }
+
+    #[test]
+    #[serial]
+    fn test_jsx_conditional_style_order() {
+        reset_class_map();
+        reset_file_map();
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path("test.tsx").unwrap();
+        let mut program = Parser::new(&allocator, "import { Box } from '@devup-ui/react'; const view = <Box styleOrder={active ? 1 : 2} p={4} padding={8} />;", source_type).parse().program;
+        let mut visitor =
+            DevupVisitor::new(&allocator, "test.tsx", "@devup-ui/react", Vec::new(), None);
+
+        visitor.visit_program(&mut program);
+
+        assert!(!visitor.styles.is_empty());
     }
 }

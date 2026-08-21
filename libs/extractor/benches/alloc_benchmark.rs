@@ -38,13 +38,6 @@ struct CountingAlloc {
 }
 
 impl CountingAlloc {
-    const fn new() -> Self {
-        Self {
-            allocations: AtomicUsize::new(0),
-            bytes: AtomicUsize::new(0),
-        }
-    }
-
     fn snapshot(&self) -> (usize, usize) {
         (
             self.allocations.load(Ordering::Relaxed),
@@ -67,6 +60,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
         unsafe { System.dealloc(ptr, layout) }
     }
 
+    #[cfg(not(tarpaulin_include))]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         self.allocations.fetch_add(1, Ordering::Relaxed);
         self.bytes.fetch_add(layout.size(), Ordering::Relaxed);
@@ -81,7 +75,10 @@ unsafe impl GlobalAlloc for CountingAlloc {
 }
 
 #[global_allocator]
-static COUNTER: CountingAlloc = CountingAlloc::new();
+static COUNTER: CountingAlloc = CountingAlloc {
+    allocations: AtomicUsize::new(0),
+    bytes: AtomicUsize::new(0),
+};
 
 fn make_option() -> ExtractOption {
     ExtractOption {

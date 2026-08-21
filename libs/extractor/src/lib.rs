@@ -484,6 +484,8 @@ mod tests {
     use css::class_map::reset_class_map;
     use css::file_map::reset_file_map;
     use insta::assert_debug_snapshot;
+    use oxc_ast::builder::AstBuilder;
+    use oxc_span::SPAN;
     use rstest::rstest;
     use serial_test::serial;
 
@@ -519,6 +521,101 @@ mod tests {
         assert!(!option.single_css);
         assert!(!option.import_main_css);
         assert!(option.import_aliases.is_empty());
+    }
+
+    #[test]
+    fn extract_style_prop_conditional_collects_present_branches() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let condition = || Expression::new_identifier(SPAN, "condition", &builder);
+        let style = |value: &str| {
+            ExtractStyleProp::Static(ExtractStyleValue::Typography(value.to_string()))
+        };
+
+        let consequent_only = ExtractStyleProp::Conditional {
+            condition: condition(),
+            consequent: Some(Box::new(style("consequent"))),
+            alternate: None,
+        };
+        assert_eq!(
+            consequent_only.extract(),
+            vec![ExtractStyleValue::Typography("consequent".to_string())]
+        );
+
+        let alternate_only = ExtractStyleProp::Conditional {
+            condition: condition(),
+            consequent: None,
+            alternate: Some(Box::new(style("alternate"))),
+        };
+        assert_eq!(
+            alternate_only.extract(),
+            vec![ExtractStyleValue::Typography("alternate".to_string())]
+        );
+
+        let both = ExtractStyleProp::Conditional {
+            condition: condition(),
+            consequent: Some(Box::new(style("consequent"))),
+            alternate: Some(Box::new(style("alternate"))),
+        };
+        assert_eq!(
+            both.extract(),
+            vec![
+                ExtractStyleValue::Typography("consequent".to_string()),
+                ExtractStyleValue::Typography("alternate".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_style_prop_empty_conditional_is_empty_for_borrowed_and_owned_extraction() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let empty = ExtractStyleProp::Conditional {
+            condition: Expression::new_identifier(SPAN, "condition", &builder),
+            consequent: None,
+            alternate: None,
+        };
+
+        assert!(empty.extract().is_empty());
+        assert!(empty.into_extract().is_empty());
+    }
+
+    #[test]
+    fn extract_style_prop_expression_and_enum_collect_all_styles() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let expression = || Expression::new_identifier(SPAN, "variant", &builder);
+        let expression_style = ExtractStyleValue::Typography("expression".to_string());
+        let expression_prop = ExtractStyleProp::Expression {
+            styles: vec![expression_style.clone()],
+            expression: expression(),
+        };
+        assert_eq!(expression_prop.extract(), vec![expression_style]);
+
+        let mut map = BTreeMap::new();
+        map.insert(
+            "primary".to_string(),
+            vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
+                "primary".to_string(),
+            ))],
+        );
+        map.insert(
+            "secondary".to_string(),
+            vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
+                "secondary".to_string(),
+            ))],
+        );
+        let enum_prop = ExtractStyleProp::Enum {
+            condition: expression(),
+            map,
+        };
+        assert_eq!(
+            enum_prop.extract(),
+            vec![
+                ExtractStyleValue::Typography("primary".to_string()),
+                ExtractStyleValue::Typography("secondary".to_string())
+            ]
+        );
     }
 
     #[test]

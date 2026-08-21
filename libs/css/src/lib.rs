@@ -38,6 +38,7 @@ mod prefix_state {
         GLOBAL_PREFIX.with(|p| p.borrow().clone())
     }
     /// Run `f` with the current prefix as `&str` (empty when unset) without cloning.
+    #[cfg(not(tarpaulin_include))]
     pub(crate) fn with_prefix<R>(f: impl FnOnce(&str) -> R) -> R {
         GLOBAL_PREFIX.with(|p| f(p.borrow().as_deref().unwrap_or_default()))
     }
@@ -582,6 +583,18 @@ mod tests {
     use super::*;
     use rstest::rstest;
     use serial_test::serial;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[serial]
+    fn test_with_prefix_borrows_host_prefix() {
+        set_prefix(Some("host-".to_string()));
+
+        let prefix = with_prefix(str::to_string);
+
+        assert_eq!(prefix, "host-");
+        set_prefix(None);
+    }
 
     #[rstest]
     #[case("hover", "hover")]

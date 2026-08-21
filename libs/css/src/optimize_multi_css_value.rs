@@ -161,6 +161,7 @@ mod tests {
     #[case("\"", "\"")]
     #[case("A", "A")]
     #[case("x", "x")]
+    #[case("' '", "\" \"")]
     #[case("url(abc)", "url(abc)")]
     #[case("url(\"a bc\")", "url(\"a bc\")")]
     #[case("'A', 'B', 'C'", "A,B,C")]

@@ -41,6 +41,7 @@ mod tests {
     #[case("/* comment */ div", "div")]
     #[case("div /* comment */", "div")]
     #[case("div /* comment */ div", "div div")]
+    #[case("div /* unterminated", "div /* unterminated")]
     #[case("div /* comment */ div /* comment */", "div div")]
     #[case("div /* comment */ div /* comment */ div", "div div div")]
     #[case("div /* comment */ div /* comment */ div /* comment */", "div div div")]

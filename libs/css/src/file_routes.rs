@@ -134,4 +134,16 @@ mod tests {
         assert_eq!(route_count_for_files(["a.tsx", "zzz.tsx"]), 2);
         reset_file_routes();
     }
+
+    #[test]
+    #[serial]
+    fn test_route_count_for_files_without_registered_routes() {
+        let mut m = HashMap::new();
+        m.insert("registered.tsx".to_string(), HashSet::from([0u32]));
+        set_file_routes(m);
+
+        assert_eq!(route_count_for_files(["missing.tsx"]), 0);
+
+        reset_file_routes();
+    }
 }

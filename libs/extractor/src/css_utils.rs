@@ -444,34 +444,35 @@ pub fn css_to_style(
 
                 // Find the selector part (the last part that doesn't contain ':')
                 // or if all parts contain ':', then the last part is the selector
-                if parts.len() > 1 {
-                    // Check if any part doesn't contain ':' (which would be a selector)
-                    let mut selector_idx = parts.len();
-                    for (i, part) in parts.iter().enumerate().rev() {
-                        if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
-                            selector_idx = i;
-                            break;
-                        }
+                // `before_brace` contains `;`, so `split` always yields at least two parts.
+                // Check if any part doesn't contain ':' (which would be a selector).
+                let mut selector_idx = parts.len();
+                for (i, part) in parts.iter().enumerate().rev() {
+                    if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
+                        selector_idx = i;
+                        break;
                     }
+                }
 
-                    // Borrow the props/selector partition directly from `before_brace`
-                    // instead of allocating two `join(";")` Strings. The split boundary is the
-                    // byte offset of the `selector_idx`-th `;` (parts are `;`-separated), so
-                    // `[..boundary]` is the props run and `[boundary + 1..]` the selector run.
-                    // `css_to_style_block` re-splits/re-trims each `;` part on the props side and
-                    // the selector side is `.trim()`ed downstream, so the parsed output stays
-                    // byte-identical to the previous `join(";")` form.
-                    let boundary = before_brace
-                        .match_indices(';')
-                        .nth(selector_idx - 1)
-                        .map(|(idx, _)| idx);
-                    match boundary {
-                        Some(b) => (before_brace[..b].trim(), before_brace[b + 1..].trim()),
-                        // `selector_idx == 0`: no props, whole `before_brace` is the selector.
-                        None => ("", before_brace),
-                    }
-                } else {
-                    ("", before_brace)
+                // Borrow the props/selector partition directly from `before_brace`
+                // instead of allocating two `join(";")` Strings. The split boundary is the
+                // byte offset of the `selector_idx`-th `;` (parts are `;`-separated), so
+                // `[..boundary]` is the props run and `[boundary + 1..]` the selector run.
+                // `css_to_style_block` re-splits/re-trims each `;` part on the props side and
+                // the selector side is `.trim()`ed downstream, so the parsed output stays
+                // byte-identical to the previous `join(";")` form.
+                // `selector_idx` is 0 when the very first `;`-part is the selector
+                // (e.g. `foo;color:red { .. }`), leaving no props run before it.
+                // `checked_sub` yields `None` there, which the match below already
+                // treats as "the whole run is the selector" - the same result release
+                // builds reached by wrapping, without the debug-build overflow panic.
+                let boundary = selector_idx
+                    .checked_sub(1)
+                    .and_then(|nth| before_brace.match_indices(';').nth(nth).map(|(idx, _)| idx));
+                match boundary {
+                    Some(b) => (before_brace[..b].trim(), before_brace[b + 1..].trim()),
+                    // No selector boundary: whole `before_brace` is the selector.
+                    None => ("", before_brace),
                 }
             } else {
                 ("", before_brace)
@@ -1228,6 +1229,18 @@ mod tests {
     #[case("`width: ${(props)=>props.b ? \"hello\\\"world\\\"more\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello\"world\"more`:`test`)(rest)}px`", None)])]
     #[case("`width: ${(props)=>props.b ? \"hello\" + \"world\" : \"test\"}px;`", vec![("width", "`${(props=>props.b?`hello`+`world`:`test`)(rest)}px`", None)])]
     #[case("`width: ${function(props){return props.b}}px;`", vec![("width", "`${(function(props){return props.b})(rest)}px`", None)])]
+    #[case(
+        "`__EXPR_bad: red; width: ${value};`",
+        vec![("__EXPR_bad", "red", None), ("width", "value", None)]
+    )]
+    #[case(
+        "`width: __EXPR_9__ __EXPR_bad ${1};`",
+        vec![("width", "__EXPR_9__ __EXPR_bad 1", None)]
+    )]
+    #[case(
+        "`width: __EXPR_9__ __EXPR_bad ${value};`",
+        vec![("width", "`__EXPR_9__ __EXPR_bad ${value}`", None)]
+    )]
     // wrong cases
     #[case(
         "`@media (min-width: 768px) {
@@ -1602,6 +1615,29 @@ mod tests {
             ("color", "red", Some(StyleSelector::Selector("div".to_string()))),
             ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
         ]
+    )]
+    #[case(
+        "color:red;background:blue { width: 1px; }",
+        vec![(
+            "width",
+            "1px",
+            Some(StyleSelector::Selector(
+                "color:red;background:blue".to_string()
+            ))
+        )]
+    )]
+    // The selector is the very first `;`-part, so there is no props run before it.
+    #[case(
+        "foo;color:red { width: 1px; }",
+        vec![(
+            "width",
+            "1px",
+            Some(StyleSelector::Selector("foo;color:red".to_string()))
+        )]
+    )]
+    #[case(
+        "color: red;;invalid;display: block;",
+        vec![("color", "red", None), ("display", "block", None)]
     )]
     fn test_css_to_style(
         #[case] input: &str,

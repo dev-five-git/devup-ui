@@ -2624,6 +2624,18 @@ export const computed = 1 + 2;
     }
 
     #[test]
+    fn test_extract_var_names_skips_declaration_without_initializer() {
+        let code = r"import { style } from '@devup-ui/react'
+let pending;
+export const ready = style({ color: 'red' });";
+
+        let vars = super::extract_var_names(code, "@devup-ui/react");
+
+        assert!(!vars.iter().any(|(name, _)| name == "pending"));
+        assert!(vars.iter().any(|(name, _)| name == "ready"));
+    }
+
+    #[test]
     fn test_preprocess_typescript_single_quotes() {
         // Test preprocess with single quotes in import
         let code = r"import { style } from '@devup-ui/react'

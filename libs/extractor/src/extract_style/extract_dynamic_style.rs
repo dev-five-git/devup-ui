@@ -171,6 +171,24 @@ mod tests {
     }
 
     #[test]
+    fn test_debug_dynamic_style() {
+        let style = ExtractDynamicStyle::new("color", 2, "value", None);
+
+        assert_eq!(
+            format!("{style:?}"),
+            "ExtractDynamicStyle { property: \"color\", level: 2, identifier: \"value\", selector: None, style_order: None }"
+        );
+    }
+
+    #[test]
+    fn test_strip_important_when_not_a_suffix() {
+        let (id, important) = strip_important("color !important fallback".to_string());
+
+        assert_eq!(id, "color !important fallback");
+        assert!(!important);
+    }
+
+    #[test]
     fn test_strip_important_template_literal() {
         // Template literal: `${color} !important`
         let (id, important) = strip_important("`${color} !important`".to_string());

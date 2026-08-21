@@ -3534,6 +3534,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        "font-sans",
+        "font-family",
+        "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'"
+    )]
+    #[case(
+        "font-serif",
+        "font-family",
+        "ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif"
+    )]
+    #[case(
+        "font-mono",
+        "font-family",
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+    )]
     #[case("font-bold", "font-weight", "700")]
     #[case("font-normal", "font-weight", "400")]
     #[case("text-sm", "font-size", "0.875rem")]
@@ -3549,6 +3564,18 @@ mod tests {
     ) {
         let parsed = parse_single_class(class).expect("Should parse");
         assert_eq!(parsed.property, expected_prop);
+        assert_eq!(parsed.value, expected_value);
+    }
+
+    #[rstest]
+    #[case(
+        "transition-colors",
+        "color, background-color, border-color, text-decoration-color, fill, stroke"
+    )]
+    #[case("transition-transform", "transform")]
+    fn test_parse_transition_property_utilities(#[case] class: &str, #[case] expected_value: &str) {
+        let parsed = parse_single_class(class).expect("Should parse");
+        assert_eq!(parsed.property, "transition-property");
         assert_eq!(parsed.value, expected_value);
     }
 

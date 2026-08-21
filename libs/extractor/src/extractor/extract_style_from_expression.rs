@@ -881,3 +881,81 @@ pub fn dynamic_style<'a>(
         )))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use oxc_allocator::Allocator;
+    use oxc_ast::ast::Statement;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+
+    #[test]
+    fn test_extract_selector_object_styles() {
+        let allocator = Allocator::default();
+        let mut program = Parser::new(
+            &allocator,
+            "({ '&:hover': { color: 'red' } });",
+            SourceType::ts(),
+        )
+        .parse()
+        .program;
+        let Statement::ExpressionStatement(statement) = &mut program.body[0] else {
+            panic!("expected expression statement");
+        };
+
+        let result = extract_style_from_expression(
+            &AstBuilder::new(&allocator),
+            Some("selectors"),
+            &mut statement.expression,
+            0,
+            &None,
+            LiteralHandling::ExpandResponsiveThemeToken,
+        );
+
+        assert_eq!(result.styles.len(), 1);
+        let ExtractStyleProp::Static(ExtractStyleValue::Static(style)) = &result.styles[0] else {
+            panic!("expected static selector style");
+        };
+        assert_eq!(style.property(), "color");
+        assert_eq!(
+            style.selector().map(ToString::to_string).as_deref(),
+            Some("&:hover")
+        );
+    }
+
+    #[test]
+    fn test_extract_selector_params() {
+        let allocator = Allocator::default();
+        let mut program = Parser::new(
+            &allocator,
+            "({ params: ['checked'], color: 'red' });",
+            SourceType::ts(),
+        )
+        .parse()
+        .program;
+        let Statement::ExpressionStatement(statement) = &mut program.body[0] else {
+            panic!("expected expression statement");
+        };
+
+        let result = extract_style_from_expression(
+            &AstBuilder::new(&allocator),
+            None,
+            &mut statement.expression,
+            0,
+            &Some(StyleSelector::from("is")),
+            LiteralHandling::ExpandResponsiveThemeToken,
+        );
+
+        assert_eq!(result.styles.len(), 1);
+        let ExtractStyleProp::Static(ExtractStyleValue::Static(style)) = &result.styles[0] else {
+            panic!("expected static selector style");
+        };
+        assert_eq!(style.property(), "color");
+        assert_eq!(
+            style.selector().map(ToString::to_string).as_deref(),
+            Some("&:is(checked)")
+        );
+    }
+}

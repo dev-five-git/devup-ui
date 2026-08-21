@@ -396,18 +396,13 @@ fn extract_tailwind_from_class_name<'a>(
                     filename,
                 );
 
+                // Tailwind className styles are always `Static`, for which
+                // `into_extract` yields exactly `vec![style]`. Flattening through it
+                // keeps that hot path allocation-equivalent while staying total, so
+                // there is no unreachable arm to carve out of coverage.
                 let tailwind_styles = tailwind_style_props
                     .into_iter()
-                    .map(|style_prop| match style_prop {
-                        ExtractStyleProp::Static(style) => style,
-                        ExtractStyleProp::StaticArray(_)
-                        | ExtractStyleProp::Conditional { .. }
-                        | ExtractStyleProp::Enum { .. }
-                        | ExtractStyleProp::Expression { .. }
-                        | ExtractStyleProp::MemberExpression { .. } => {
-                            unreachable!("tailwind className styles are always static")
-                        }
-                    })
+                    .flat_map(ExtractStyleProp::into_extract)
                     .collect();
 
                 return (tailwind_styles, class_names_expr);
@@ -922,4 +917,48 @@ pub fn convert_style_vars<'a>(
         }
     }
     style_vars
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::extract_style::{
+        extract_dynamic_style::ExtractDynamicStyle, extract_static_style::ExtractStaticStyle,
+    };
+    use crate::utils::expression_to_code;
+    use oxc_allocator::Allocator;
+
+    #[test]
+    fn test_apply_style_order_to_all_styles() {
+        let mut styles = [
+            ExtractStyleValue::Static(ExtractStaticStyle::new("color", "red", 0, None)),
+            ExtractStyleValue::Dynamic(ExtractDynamicStyle::new("padding", 0, "size", None)),
+        ];
+
+        apply_style_order_to_styles(&mut styles, Some(7));
+
+        let ExtractStyleValue::Static(static_style) = &styles[0] else {
+            panic!("expected static style");
+        };
+        let ExtractStyleValue::Dynamic(dynamic_style) = &styles[1] else {
+            panic!("expected dynamic style");
+        };
+        assert_eq!(static_style.style_order(), Some(7));
+        assert_eq!(dynamic_style.style_order(), Some(7));
+    }
+
+    #[test]
+    fn test_merge_string_expressions_builds_template() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let expressions = [
+            Expression::new_string_literal(SPAN, "base", None, &builder),
+            Expression::new_identifier(SPAN, "dynamicClass", &builder),
+        ];
+
+        let merged = merge_string_expressions(&builder, &expressions).unwrap();
+
+        assert_eq!(expression_to_code(&merged), "`base ${dynamicClass}`;");
+    }
 }

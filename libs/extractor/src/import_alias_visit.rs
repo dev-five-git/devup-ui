@@ -182,6 +182,8 @@ fn generate_transformed_import(
 mod tests {
     use super::*;
     use insta::assert_snapshot;
+    use oxc_ast::builder::AstBuilder;
+    use oxc_span::SPAN;
 
     fn emotion_alias() -> HashMap<String, ImportAlias> {
         let mut aliases = HashMap::new();
@@ -400,5 +402,90 @@ const x = 1;",
             "@devup-ui/react",
             &vanilla_extract_alias()
         ));
+    }
+
+    #[test]
+    fn test_identifier_reference_imported_name_with_and_without_alias() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+
+        for (code, local, expected) in [
+            (
+                "import { imported } from 'source'",
+                "imported",
+                "import { imported } from '@devup-ui/react';",
+            ),
+            (
+                "import { imported as local } from 'source'",
+                "local",
+                "import { imported as local } from '@devup-ui/react';",
+            ),
+        ] {
+            let mut parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
+            let oxc_ast::ast::Statement::ImportDeclaration(import_decl) =
+                &mut parsed.program.body[0]
+            else {
+                panic!("expected import declaration");
+            };
+            let Some(specifiers) = import_decl.specifiers.as_mut() else {
+                panic!("expected import specifiers");
+            };
+            let ImportDeclarationSpecifier::ImportSpecifier(spec) = &mut specifiers[0] else {
+                panic!("expected import specifier");
+            };
+            spec.imported = ModuleExportName::new_identifier_reference(SPAN, "imported", &builder);
+            assert_eq!(spec.local.name.as_str(), local);
+            assert_eq!(
+                generate_transformed_import(
+                    import_decl,
+                    &ImportAlias::NamedToNamed,
+                    "@devup-ui/react"
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_string_literal_imported_name_with_and_without_alias() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+
+        for (code, expected) in [
+            (
+                "import { 'imported' as local } from 'source'",
+                "import { \"imported\" as local } from '@devup-ui/react';",
+            ),
+            (
+                "import { imported } from 'source'",
+                "import { \"imported\" } from '@devup-ui/react';",
+            ),
+        ] {
+            let mut parsed = Parser::new(&allocator, code, SourceType::ts()).parse();
+            let oxc_ast::ast::Statement::ImportDeclaration(import_decl) =
+                &mut parsed.program.body[0]
+            else {
+                panic!("expected import declaration");
+            };
+            let Some(specifiers) = import_decl.specifiers.as_mut() else {
+                panic!("expected import specifiers");
+            };
+            let ImportDeclarationSpecifier::ImportSpecifier(spec) = &mut specifiers[0] else {
+                panic!("expected import specifier");
+            };
+            if spec.local.name == "imported" {
+                spec.imported =
+                    ModuleExportName::new_string_literal(SPAN, "imported", None, &builder);
+                spec.local.name = "\"imported\"".into();
+            }
+            assert_eq!(
+                generate_transformed_import(
+                    import_decl,
+                    &ImportAlias::NamedToNamed,
+                    "@devup-ui/react"
+                ),
+                expected
+            );
+        }
     }
 }

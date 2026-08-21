@@ -415,18 +415,14 @@ fn token_levels(
                         // allocated on first use, keeping the common case
                         // allocation-free instead of a per-token empty `Vec`.
                         //
-                        // This branch is COLD by construction: every reachable
-                        // theme has fewer than 16 breakpoints, so the `u16` mask
-                        // above absorbs all real inputs and this `contains`-guarded
-                        // O(k²) dedupe never runs in practice. The `debug_assert!`
-                        // documents that expectation and would fire in dev/test if a
-                        // future change ever drove a level into the overflow path,
-                        // signalling the mask width (and this fallback) needs review.
-                        // It compiles out entirely in release, so the hot path is
-                        // unaffected.
+                        // This branch is cold for normal themes, but the public
+                        // breakpoint and token APIs permit larger responsive sets.
+                        // Keep the fallback functional in debug builds as well as
+                        // release builds and assert the invariant established by the
+                        // branch above.
                         debug_assert!(
-                            false,
-                            "overflow branch entered for level < 16, which the u16 mask should have handled"
+                            level >= 16,
+                            "overflow branch requires a level outside the u16 mask"
                         );
                         let overflow = overflow.get_or_insert_with(Vec::new);
                         if !overflow.contains(&level) {
@@ -2566,6 +2562,24 @@ mod tests {
         let levels = theme.get_shadow_token_levels();
         assert_eq!(levels.get("sm").unwrap(), &vec![0u8, 2]);
         assert_eq!(levels.get("md").unwrap(), &vec![0u8]);
+    }
+
+    #[test]
+    fn test_get_length_token_levels_with_more_than_sixteen_breakpoints() {
+        let mut theme = Theme::default();
+        theme.update_breakpoints((0u16..18).map(|level| level * 100).collect());
+
+        let mut dark_values = vec![None; 18];
+        dark_values[16] = Some("16px".to_string());
+        dark_values[17] = Some("17px".to_string());
+        theme.add_length("dark", "wide", dark_values);
+
+        let mut default_values = vec![None; 18];
+        default_values[2] = Some("2px".to_string());
+        default_values[17] = Some("17px".to_string());
+        theme.add_length("default", "wide", default_values);
+
+        assert_eq!(theme.get_length_token_levels()["wide"], vec![2, 16, 17]);
     }
 
     #[test]

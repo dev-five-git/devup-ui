@@ -40,18 +40,23 @@ pub fn get_responsive_theme_token(value: &str) -> Option<Vec<u8>> {
 /// Mirrors [`get_responsive_theme_token`] but without cloning the levels `Vec`;
 /// use this at call sites that only need existence (`.is_some()`).
 pub fn is_responsive_theme_token(value: &str) -> bool {
-    let Some(token) = value.strip_prefix('$') else {
-        return false;
-    };
-    let Ok(registry) = TOKEN_REGISTRY.read() else {
-        return false;
-    };
+    // Same `?` shape as `get_responsive_theme_token` above: a poisoned registry
+    // and a non-`$` value both fall out through the shared `unwrap_or(false)`
+    // instead of each getting its own `return false;` statement.
+    fn lookup(value: &str) -> Option<bool> {
+        let token = value.strip_prefix('$')?;
+        let registry = TOKEN_REGISTRY.read().ok()?;
 
-    registry
-        .length
-        .get(token)
-        .or_else(|| registry.shadow.get(token))
-        .is_some_and(|levels| levels.len() > 1)
+        Some(
+            registry
+                .length
+                .get(token)
+                .or_else(|| registry.shadow.get(token))
+                .is_some_and(|levels| levels.len() > 1),
+        )
+    }
+
+    lookup(value).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -87,5 +92,12 @@ mod tests {
         assert!(!is_responsive_theme_token("$single"));
         assert!(!is_responsive_theme_token("$unknown"));
         assert!(!is_responsive_theme_token("noprefix"));
+    }
+
+    #[test]
+    fn test_is_responsive_theme_token_without_prefix() {
+        let value = std::hint::black_box("noprefix");
+
+        assert!(!is_responsive_theme_token(value));
     }
 }

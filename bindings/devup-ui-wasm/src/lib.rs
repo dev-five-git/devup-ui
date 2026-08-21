@@ -345,9 +345,9 @@ pub fn code_extract_internal(
     }
 }
 
+#[cfg(not(tarpaulin_include))]
 #[wasm_bindgen(js_name = "codeExtract")]
 #[allow(clippy::too_many_arguments)]
-#[cfg(not(tarpaulin_include))]
 pub fn code_extract(
     filename: &str,
     code: &str,

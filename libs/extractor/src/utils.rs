@@ -357,17 +357,18 @@ pub(super) fn wrap_direct_call<'a>(
     expr: &Expression<'a>,
     args: &[Expression<'a>],
 ) -> Expression<'a> {
+    // Built before the call rather than as an inline block argument: a block
+    // argument stops rustfmt collapsing the call, and coverage cannot attribute
+    // hits to the plain `SPAN,` continuation line that leaves behind.
+    let mut call_args = oxc_allocator::Vec::with_capacity_in(args.len(), builder);
+    for e in args {
+        call_args.push(e.clone_in(builder.allocator()).into());
+    }
     Expression::new_call_expression(
         SPAN,
         expr.clone_in(builder.allocator()),
         None::<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeParameterInstantiation<'_>>>,
-        {
-            let mut call_args = oxc_allocator::Vec::with_capacity_in(args.len(), builder);
-            for e in args {
-                call_args.push(e.clone_in(builder.allocator()).into());
-            }
-            call_args
-        },
+        call_args,
         false,
         builder,
     )
@@ -383,21 +384,18 @@ pub(super) fn merge_object_expressions<'a>(
     if expressions.len() == 1 {
         return Some(expressions[0].clone_in(ast_builder.allocator()));
     }
-    Some(Expression::new_object_expression(
-        SPAN,
-        {
-            let mut props = oxc_allocator::Vec::with_capacity_in(expressions.len(), ast_builder);
-            for ex in expressions {
-                props.push(ObjectPropertyKind::new_spread_property(
-                    SPAN,
-                    ex.clone_in(ast_builder.allocator()),
-                    ast_builder,
-                ));
-            }
-            props
-        },
-        ast_builder,
-    ))
+    // Built before the call for the same reason as `wrap_direct_call`: an inline
+    // block argument blocks rustfmt from collapsing the call, and coverage cannot
+    // attribute hits to the bare `SPAN,` continuation line that leaves behind.
+    let mut props = oxc_allocator::Vec::with_capacity_in(expressions.len(), ast_builder);
+    for ex in expressions {
+        props.push(ObjectPropertyKind::new_spread_property(
+            SPAN,
+            ex.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ));
+    }
+    Some(Expression::new_object_expression(SPAN, props, ast_builder))
 }
 
 /// Borrowing variant of [`get_string_by_property_key`].
@@ -655,6 +653,37 @@ mod tests {
         // Identifier 등 기타 타입 - None 반환
         let expr = Expression::new_identifier(SPAN, "foo", &builder);
         assert_eq!(super::get_string_by_literal_expression(&expr), None);
+    }
+
+    #[test]
+    fn test_merge_object_expressions() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let expressions = [
+            Expression::new_identifier(SPAN, "first", &builder),
+            Expression::new_identifier(SPAN, "second", &builder),
+        ];
+
+        let merged = merge_object_expressions(&builder, &expressions).unwrap();
+
+        assert_eq!(expression_to_code(&merged), "({...first,...second});");
+    }
+
+    #[test]
+    fn test_wrap_direct_call() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let expression = Expression::new_identifier(SPAN, "callback", &builder);
+        let arguments = [Expression::new_identifier(SPAN, "value", &builder)];
+
+        let wrapped = wrap_direct_call(&builder, &expression, &arguments);
+
+        assert_eq!(expression_to_code(&wrapped), "callback(value);");
+    }
+
+    #[test]
+    fn test_parsed_style_order_non_static() {
+        assert_eq!(ParsedStyleOrder::None.as_static(), None);
     }
 
     use insta::assert_snapshot;

@@ -50,6 +50,24 @@ fn keyed_prop_cmp<K: Ord>(
         .then_with(|| a.3.value.cmp(&b.3.value))
 }
 
+fn global_prop_key(prop: &StyleSheetProperty) -> (bool, u8, &str, &StyleSheetProperty) {
+    match &prop.selector {
+        Some(StyleSelector::Global(selector, _)) => {
+            if let Some(i) = selector.find(':') {
+                (
+                    true,
+                    global_selector_order(&selector[i..]),
+                    selector.as_str(),
+                    prop,
+                )
+            } else {
+                (false, 0u8, selector.as_str(), prop)
+            }
+        }
+        _ => (false, 0u8, "", prop),
+    }
+}
+
 #[derive(Debug, Hash, Eq, PartialEq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleSheetProperty {
@@ -751,21 +769,7 @@ impl StyleSheet {
             } else {
                 let mut global_keyed: Vec<(bool, u8, &str, &StyleSheetProperty)> =
                     Vec::with_capacity(global_props.len());
-                global_keyed.extend(global_props.into_iter().map(|prop| match &prop.selector {
-                    Some(StyleSelector::Global(selector, _)) => {
-                        if let Some(i) = selector.find(':') {
-                            (
-                                true,
-                                global_selector_order(&selector[i..]),
-                                selector.as_str(),
-                                prop,
-                            )
-                        } else {
-                            (false, 0u8, selector.as_str(), prop)
-                        }
-                    }
-                    _ => (false, 0u8, "", prop),
-                }));
+                global_keyed.extend(global_props.into_iter().map(global_prop_key));
                 global_keyed.sort_by(keyed_prop_cmp);
                 global_keyed
                     .into_iter()
@@ -1306,6 +1310,7 @@ mod tests {
     #[case("$primary.100", "var(--primary-100)")]
     #[case("$gray.200 $blue.500", "var(--gray-200) var(--blue-500)")]
     #[case("1px solid $border.primary", "1px solid var(--border-primary)")]
+    #[case("$-", "$-")]
     // Test deep nested dot notation
     #[case("$color.brand.primary.100", "var(--color-brand-primary-100)")]
     fn test_convert_theme_variable_value(#[case] input: &str, #[case] expected: &str) {
@@ -2920,6 +2925,88 @@ mod tests {
         assert!(make("color", "red") < make("color", "white"));
         assert!(make("color", "red") < make("display", "block"));
         assert!(make("display", "block") > make("color", "white"));
+    }
+
+    #[test]
+    fn test_stylesheet_property_ord_with_selectors() {
+        let make =
+            |selector: Option<StyleSelector>, property: &str, value: &str| StyleSheetProperty {
+                class_name: "a".to_string(),
+                property: property.to_string(),
+                value: value.to_string(),
+                selector,
+                layer: None,
+            };
+        let hover = || Some(StyleSelector::Selector("&:hover".to_string()));
+
+        assert!(make(hover(), "color", "red") < make(hover(), "color", "white"));
+        assert!(make(hover(), "color", "red") < make(hover(), "display", "block"));
+        assert_ne!(
+            make(hover(), "color", "red").cmp(&make(
+                Some(StyleSelector::Selector("&:focus".to_string())),
+                "color",
+                "red"
+            )),
+            Equal
+        );
+        assert!(make(None, "color", "red") < make(hover(), "color", "red"));
+    }
+
+    #[test]
+    fn test_global_prop_key_variants() {
+        let make = |selector: Option<StyleSelector>| StyleSheetProperty {
+            class_name: "a".to_string(),
+            property: "color".to_string(),
+            value: "red".to_string(),
+            selector,
+            layer: None,
+        };
+        let pseudo = make(Some(StyleSelector::Global(
+            "a:hover".to_string(),
+            "test.tsx".to_string(),
+        )));
+        let plain = make(Some(StyleSelector::Global(
+            "body".to_string(),
+            "test.tsx".to_string(),
+        )));
+        let local = make(Some(StyleSelector::Selector("&:hover".to_string())));
+
+        assert!(global_prop_key(&pseudo).0);
+        assert_eq!(global_prop_key(&pseudo).2, "a:hover");
+        assert!(!global_prop_key(&plain).0);
+        assert_eq!(global_prop_key(&plain).2, "body");
+        assert_eq!(global_prop_key(&local).2, "");
+    }
+
+    #[test]
+    fn test_existing_collection_buckets_are_reused() {
+        let mut sheet = StyleSheet::default();
+        assert!(sheet.add_property("a", "color", 0, "red", None, None, Some("test.tsx")));
+        assert!(sheet.add_property("b", "display", 0, "block", None, None, Some("test.tsx")));
+
+        sheet.add_import("test.tsx", "base.css");
+        sheet.add_import("test.tsx", "theme.css");
+
+        let first_font = BTreeMap::from([("font-family".to_string(), "First".to_string())]);
+        let second_font = BTreeMap::from([("font-family".to_string(), "Second".to_string())]);
+        sheet.add_font_face("test.tsx", &first_font);
+        sheet.add_font_face("test.tsx", &second_font);
+
+        assert!(sheet.add_css("test.tsx", "html { color:red }"));
+        assert!(sheet.add_css("test.tsx", "body { color:blue }"));
+
+        assert_eq!(sheet.properties["test.tsx"].len(), 1);
+        assert_eq!(sheet.imports["test.tsx"].len(), 2);
+        assert_eq!(sheet.font_faces["test.tsx"].len(), 2);
+        assert_eq!(sheet.css["test.tsx"].len(), 2);
+    }
+
+    #[test]
+    fn test_compute_hoisted_atoms_skips_base_style_order() {
+        let mut sheet = StyleSheet::default();
+        sheet.add_property("base", "color", 0, "red", None, Some(0), Some("test.tsx"));
+
+        assert!(sheet.compute_hoisted_atoms(0).is_empty());
     }
 
     #[test]

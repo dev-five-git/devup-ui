@@ -160,7 +160,12 @@ fn gen_style<'a>(
                 FxHashSet::with_capacity_and_hasher(collect_c.len(), FxBuildHasher);
 
             for p in &collect_c {
-                let matched = if let ObjectPropertyKind::ObjectProperty(p) = p
+                // Written as "default false, set on success" rather than an
+                // if/else chain: the `else { false }` arms only ever existed to
+                // supply that default, and as bare `false` lines coverage could
+                // not attribute hits to them.
+                let mut matched = false;
+                if let ObjectPropertyKind::ObjectProperty(p) = p
                     && let Some(name) = p.key.name()
                 {
                     c_keys.insert(name.clone());
@@ -183,13 +188,9 @@ fn gen_style<'a>(
                             false,
                             ast_builder,
                         ));
-                        true
-                    } else {
-                        false
+                        matched = true;
                     }
-                } else {
-                    false
-                };
+                }
                 if !matched && let ObjectPropertyKind::ObjectProperty(p) = p {
                     properties.push(ObjectPropertyKind::new_object_property(
                         SPAN,
@@ -320,5 +321,81 @@ fn object_property_key<'k>(p: &ObjectPropertyKind<'k>) -> Option<std::borrow::Co
         p.key.name()
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::extract_style::{
+        extract_dynamic_style::ExtractDynamicStyle, extract_style_value::ExtractStyleValue,
+    };
+    use crate::utils::expression_to_code;
+    use oxc_allocator::Allocator;
+
+    fn dynamic_style<'a>(property: &str, identifier: &str) -> ExtractStyleProp<'a> {
+        ExtractStyleProp::Static(ExtractStyleValue::Dynamic(ExtractDynamicStyle::new(
+            property, 0, identifier, None,
+        )))
+    }
+
+    #[test]
+    fn test_gen_styles_for_alternate_only_conditional() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let styles = [ExtractStyleProp::Conditional {
+            condition: Expression::new_identifier(SPAN, "enabled", &builder),
+            consequent: None,
+            alternate: Some(Box::new(dynamic_style("color", "fallbackColor"))),
+        }];
+
+        let generated = gen_styles(&builder, &styles, None).unwrap();
+        let code = expression_to_code(&generated);
+
+        assert!(code.contains("enabled?undefined:fallbackColor"));
+    }
+
+    #[test]
+    fn test_gen_styles_for_dynamic_member_expression() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let mut map = BTreeMap::new();
+        map.insert(
+            "primary".to_string(),
+            Box::new(dynamic_style("color", "primaryColor")),
+        );
+        map.insert(
+            "secondary".to_string(),
+            Box::new(dynamic_style("color", "secondaryColor")),
+        );
+        let styles = [ExtractStyleProp::MemberExpression {
+            map,
+            expression: Expression::new_identifier(SPAN, "variant", &builder),
+        }];
+
+        let generated = gen_styles(&builder, &styles, None).unwrap();
+        let code = expression_to_code(&generated);
+
+        assert!(code.contains("primaryColor"));
+        assert!(code.contains("secondaryColor"));
+        assert!(code.contains("[variant]"));
+    }
+
+    #[test]
+    fn test_gen_styles_for_conditional_with_distinct_properties() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+        let styles = [ExtractStyleProp::Conditional {
+            condition: Expression::new_identifier(SPAN, "enabled", &builder),
+            consequent: Some(Box::new(dynamic_style("color", "enabledColor"))),
+            alternate: Some(Box::new(dynamic_style("background", "disabledBackground"))),
+        }];
+
+        let generated = gen_styles(&builder, &styles, None).unwrap();
+        let code = expression_to_code(&generated);
+
+        assert!(code.contains("enabledColor"));
+        assert!(code.contains("disabledBackground"));
     }
 }
