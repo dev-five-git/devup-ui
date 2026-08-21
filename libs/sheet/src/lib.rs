@@ -1187,9 +1187,6 @@ impl StyleSheet {
                 }
                 for (style_order, map) in aggregated {
                     let current_css = self.create_style(&map);
-                    if current_css.is_empty() {
-                        continue;
-                    }
                     if style_order == 255 {
                         css.push_str(&current_css);
                     } else {
@@ -1334,8 +1331,6 @@ mod tests {
     // compute_hoisted_atoms / create_css were uncovered:
     //   * compute_hoisted_atoms skips style_order 0
     //   * the global hoist emission skips style_order 0
-    //   * the global hoist emission skips an aggregated order whose CSS is empty
-    //     (a hoisted atom that is a *layered global* prop -> no direct output)
     //   * the global hoist emission wraps a hoisted order != 255 in `@layer o{N}`
     //   * the per-route emission skips a chunk whose atoms were all hoisted away
     #[test]
@@ -1366,9 +1361,8 @@ mod tests {
         sheet.add_property("ho", "padding", 0, "1px", None, Some(1), Some("b.tsx"));
         // Base style (style_order 0) -> exercises the style_order == 0 skips.
         sheet.add_property("hb", "margin", 0, "0", None, Some(0), Some("a.tsx"));
-        // Hoisted LAYERED GLOBAL atom (style_order 2): when aggregated, its
-        // create_style produces no direct CSS (it goes to the discarded layer
-        // map), so that aggregated order is skipped as empty.
+        // Hoisted layered global atom (style_order 2). Hoist emission does not
+        // collect custom layers, so create_style emits this directly in o2.
         let ga = StyleSelector::Global("div".to_string(), "a.tsx".to_string());
         sheet.add_property_with_layer(
             "hg",
@@ -1439,6 +1433,46 @@ mod tests {
 
         set_atom_hoist(None);
         reset_file_routes();
+    }
+
+    #[test]
+    #[serial]
+    fn create_css_hoists_layered_global_atom_as_direct_css() {
+        use css::atom_hoist::set_atom_hoist;
+        use css::file_routes::{get_file_routes, set_file_routes};
+        use std::collections::{HashMap, HashSet};
+
+        let previous_threshold = atom_hoist_threshold();
+        let previous_routes = get_file_routes();
+        set_atom_hoist(Some(1));
+        set_file_routes(HashMap::from([(
+            "test.tsx".to_string(),
+            HashSet::from([0u32]),
+        )]));
+
+        let mut sheet = StyleSheet::default();
+        sheet.add_property_with_layer(
+            "hg",
+            "border-radius",
+            0,
+            "9px",
+            Some(&StyleSelector::Global(
+                "div".to_string(),
+                "test.tsx".to_string(),
+            )),
+            Some(2),
+            Some("test.tsx"),
+            Some("components"),
+        );
+
+        let css = sheet.create_css(None, false);
+        set_atom_hoist(previous_threshold);
+        set_file_routes(previous_routes);
+
+        assert!(
+            css.contains("@layer o2{div{border-radius:9px}}"),
+            "layered global hoist must emit direct CSS: {css}"
+        );
     }
 
     // Under single-importer collapse, a collapsed file's globalCss atoms are

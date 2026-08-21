@@ -1244,4 +1244,18 @@ mod tests {
             sheet_to_classname("background", 0, Some("red"), None, None, Some("other.tsx"));
         assert_ne!(class1, class3);
     }
+
+    #[test]
+    fn test_disassemble_property_size_hint() {
+        // Mapped arm: the hint comes straight from the borrowed slice iterator.
+        let mapped = disassemble_property("bg");
+        assert_eq!(mapped.size_hint(), (1, Some(1)));
+        assert_eq!(mapped.count(), 1);
+
+        // Fallback arm: one pending kebab-cased property, then nothing.
+        let mut fallback = disassemble_property("someUnmappedProperty");
+        assert_eq!(fallback.size_hint(), (1, Some(1)));
+        assert_eq!(fallback.next().as_deref(), Some("some-unmapped-property"));
+        assert_eq!(fallback.size_hint(), (0, Some(0)));
+    }
 }

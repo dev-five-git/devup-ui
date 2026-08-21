@@ -744,4 +744,26 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_get_str_by_property_key_variants() {
+        let allocator = Allocator::default();
+        let builder = AstBuilder::new(&allocator);
+
+        // Static identifier: borrowed straight out of the AST.
+        let ident = PropertyKey::new_static_identifier(SPAN, "color", &builder);
+        assert_eq!(get_str_by_property_key(&ident).as_deref(), Some("color"));
+
+        // Expression key: resolved through the literal reader.
+        let literal = PropertyKey::new_string_literal(SPAN, "padding", None, &builder);
+        assert_eq!(
+            get_str_by_property_key(&literal).as_deref(),
+            Some("padding")
+        );
+
+        // `#private` keys are neither a static identifier nor an expression, so
+        // there is no name to read.
+        let private = PropertyKey::new_private_identifier(SPAN, "secret", &builder);
+        assert_eq!(get_str_by_property_key(&private), None);
+    }
 }
