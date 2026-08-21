@@ -1,7 +1,12 @@
-import { beforeEach } from 'node:test'
-
-import { describe, expect, it, mock, spyOn } from 'bun:test'
-import { afterAll } from 'bun:test'
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from 'bun:test'
 
 import { initTheme } from '../init-theme'
 
