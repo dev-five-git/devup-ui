@@ -49,4 +49,13 @@ rstest = "0.26.1"
 workspace = true
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+# `sign-ext` is on by default for the wasm32 target in current rustc, so the
+# emitted module carries `i32.extend8_s` and friends. wasm-opt validates against
+# only the features listed here, so it has to be allowed explicitly. It is part
+# of the WebAssembly 2.0 baseline (Chrome 74, Firefox 62, Safari 14.1, Node 12).
+wasm-opt = [
+    "-Oz",
+    "--enable-bulk-memory",
+    "--enable-nontrapping-float-to-int",
+    "--enable-sign-ext",
+]
