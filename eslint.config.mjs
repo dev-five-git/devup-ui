@@ -50,7 +50,7 @@ export default [
   {
     files: ['**/*.mjs'],
     rules: {
-      'react/no-children-prop': 'off',
+      '@eslint-react/jsx-no-children-prop': 'off',
     },
   },
   // eslint-plugin rule

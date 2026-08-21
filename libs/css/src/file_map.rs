@@ -72,7 +72,17 @@ pub fn get_file_map() -> BiHashMap<String, usize> {
 #[inline]
 #[must_use]
 pub fn get_file_num_by_filename(filename: &str) -> usize {
+    // Hot path: a file is inserted once but read on every one of its many styles,
+    // so the overwhelmingly common case is a repeat lookup of an already-registered
+    // file. Probe under the shared read guard first (no exclusive lock / no
+    // RefCell::borrow_mut contention); only fall back to the write guard on a
+    // genuine miss.
+    if let Some(file_num) = with_file_map(|map| map.get_by_left(filename).copied()) {
+        return file_num;
+    }
     with_file_map_mut(|map| {
+        // Re-check under the write lock in case another registration slipped in
+        // during the brief unlocked window between the two guards.
         if let Some(&file_num) = map.get_by_left(filename) {
             file_num
         } else {
@@ -239,6 +249,58 @@ mod tests {
         assert_eq!(get_canonical_map(), m);
         reset_canonical_map();
         assert!(get_canonical_map().is_empty());
+    }
+
+    /// Drives the double-checked-locking re-check inside `get_file_num_by_filename`.
+    ///
+    /// Every thread meets at a barrier before racing for the SAME unregistered
+    /// filename, so exactly one wins the write guard and the losers observe the
+    /// entry that appeared between their read probe and their own write guard -
+    /// the re-check arm. Whichever way each thread got there, they must all agree
+    /// on the number, which is what the assertion below pins down.
+    // The handles must all be spawned before any is joined, otherwise the
+    // threads run one at a time and never contend - so the `collect` clippy
+    // flags as needless is exactly what makes this test do its job.
+    #[allow(clippy::needless_collect)]
+    #[test]
+    #[serial]
+    fn test_get_file_num_by_filename_is_consistent_under_contention() {
+        use std::sync::Arc;
+        use std::sync::Barrier;
+
+        const THREADS: usize = 8;
+        const FILES: usize = 200;
+
+        reset_file_map();
+
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    (0..FILES)
+                        .map(|i| {
+                            barrier.wait();
+                            get_file_num_by_filename(&format!("contended-{i}.tsx"))
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        let mut expected: Option<Vec<usize>> = None;
+        for handle in handles {
+            let Ok(observed) = handle.join() else {
+                panic!("worker thread panicked")
+            };
+            match &expected {
+                Some(first) => assert_eq!(&observed, first),
+                None => expected = Some(observed),
+            }
+        }
+        assert_eq!(get_file_map().len(), FILES);
+
+        reset_file_map();
     }
 
     #[test]

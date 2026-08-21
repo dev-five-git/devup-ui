@@ -9,6 +9,9 @@ beforeAll(() => {
 
 afterAll(() => {
   document.documentElement.removeAttribute('data-theme')
+  // `setTheme` also persists the choice, and localStorage is shared across test
+  // files on CI - leaving it set makes `initTheme()` resolve to it elsewhere.
+  localStorage.removeItem('__DF_THEME_SELECTED__')
 })
 
 describe('setTheme', () => {

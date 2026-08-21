@@ -3,33 +3,52 @@ use crate::constant::{M_BASE_ARRAY, N_BASE_ARRAY};
 #[inline]
 pub fn num_to_nm_base(num: usize) -> String {
     if num == 0 {
-        return N_BASE_ARRAY[0].to_string();
+        return String::from(N_BASE_ARRAY[0] as char);
     }
-
-    let mut n = num;
-    let mut result = String::new();
 
     let first_base = N_BASE_ARRAY.len();
     let other_base = M_BASE_ARRAY.len();
 
+    // Emit ASCII digits least-significant first into a stack buffer,
+    // then build the string in reverse; usize::MAX needs at most 13 digits here.
+    let mut buf = [0u8; 16];
+    let mut len = 0;
+    let mut n = num;
+
     while n > 0 {
         if n < first_base {
-            result.insert(0, N_BASE_ARRAY[n]);
+            buf[len] = N_BASE_ARRAY[n];
+            len += 1;
             break;
         }
-        result.insert(0, M_BASE_ARRAY[(n - first_base) % other_base]);
+        buf[len] = M_BASE_ARRAY[(n - first_base) % other_base];
+        len += 1;
         n = (n - first_base) / other_base;
         if n == 0 {
-            result.insert(0, N_BASE_ARRAY[0]);
+            buf[len] = N_BASE_ARRAY[0];
+            len += 1;
             break;
         }
     }
-    if result.ends_with("ad") {
-        // avoid g-ad class (google ad)
-        result.replace("ad", "a-d")
-    } else {
-        result
+    // Reversed bytes are all ASCII; build directly into a pre-sized String.
+    // The class must never end in "ad" (avoids g-ad / google-ad blocking), so
+    // when the final two chars would be "a","d" we splice a '-' between them.
+    // Exact capacity: `len` bytes, plus 1 for the possible "a-d" fixup.
+    let needs_fixup = len >= 2 && buf[0] == b'd' && buf[1] == b'a';
+    let mut result = String::with_capacity(len + usize::from(needs_fixup));
+    // buf is stored least-significant-first, so the reversed suffix "ad"
+    // corresponds to buf[0]=='d' (last emitted char) preceded by buf[1]=='a'.
+    // The '-' splice only ever lands immediately before that final char, so emit
+    // all but the last byte plainly, then splice + push the last byte once —
+    // dropping the `i == len - 1` re-test from every loop iteration.
+    for &b in buf[1..len].iter().rev() {
+        result.push(char::from(b));
     }
+    if needs_fixup {
+        result.push('-');
+    }
+    result.push(char::from(buf[0]));
+    result
 }
 
 #[cfg(test)]

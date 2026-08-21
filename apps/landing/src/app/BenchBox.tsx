@@ -54,7 +54,6 @@ export function BenchBox({ children }: BenchBoxProps) {
   return (
     <Box
       ref={scrollRef}
-      WebkitOverflowScrolling="touch"
       cursor={['grab', null, null, null, 'default']}
       onMouseDown={handleMouseDown}
       onMouseLeave={handleMouseLeave}
@@ -62,6 +61,7 @@ export function BenchBox({ children }: BenchBoxProps) {
       onMouseUp={handleMouseUp}
       overflow={['auto', null, null, null, 'visible']}
       scrollbarWidth="none"
+      WebkitOverflowScrolling="touch"
     >
       {children}
     </Box>

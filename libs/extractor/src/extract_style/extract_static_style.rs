@@ -1,7 +1,8 @@
+use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
 use css::{
-    optimize_multi_css_value::{check_multi_css_optimize, optimize_mutli_css_value},
+    optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     optimize_value::optimize_value,
     sheet_to_classname,
     style_selector::{StyleSelector, optimize_selector},
@@ -53,25 +54,43 @@ impl Debug for ExtractStaticStyle {
 }
 
 impl ExtractStaticStyle {
+    /// Normalize a static style value, shared by `new` and `new_basic`.
+    ///
+    /// When `apply_aspect_ratio` is `true`, the `aspect-ratio` value is reduced
+    /// by its GCD (the behavior of `new`); when `false`, the raw value is kept
+    /// verbatim for `MAINTAIN_VALUE_PROPERTIES` (the behavior of `new_basic`).
+    fn normalize_static_value(property: &str, value: &str, apply_aspect_ratio: bool) -> String {
+        // Build a `Cow<str>` so the common "kept-verbatim" `MAINTAIN_VALUE_PROPERTIES`
+        // branch borrows `value` instead of allocating a throwaway `String` that is
+        // immediately re-copied by `optimize_value` (which takes `&str` and owns its
+        // own result). Only the aspect-ratio reduction and the `convert_value` branch
+        // must own; both already produce owned `String`s. Byte-identical output.
+        let normalized: Cow<str> = if MAINTAIN_VALUE_PROPERTIES.contains(property) {
+            if apply_aspect_ratio && property == "aspect-ratio" && value.contains('/') {
+                if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
+                    Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
+                }) {
+                    let gcd = gcd(a, b);
+                    Cow::Owned(format!("{}/{}", a / gcd, b / gcd))
+                } else {
+                    Cow::Borrowed(value)
+                }
+            } else {
+                Cow::Borrowed(value)
+            }
+        } else {
+            convert_value(value)
+        };
+        // `optimize_value` returns `Cow` (borrowed when no optimization pass
+        // fires); this constructor stores an owned `String`, so materialize it
+        // here — a borrowed result costs exactly the one copy it always did.
+        optimize_value(normalized.as_ref()).into_owned()
+    }
+
     /// create a new `ExtractStaticStyle`
     pub fn new(property: &str, value: &str, level: u8, selector: Option<StyleSelector>) -> Self {
         Self {
-            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                if property == "aspect-ratio" && value.contains('/') {
-                    if let Some((a, b)) = value.split_once('/').and_then(|(a, b)| {
-                        Some((a.trim().parse::<u32>().ok()?, b.trim().parse::<u32>().ok()?))
-                    }) {
-                        let gcd = gcd(a, b);
-                        format!("{}/{}", a / gcd, b / gcd)
-                    } else {
-                        value.to_string()
-                    }
-                } else {
-                    value.to_string()
-                }
-            } else {
-                convert_value(value)
-            }),
+            value: Self::normalize_static_value(property, value, true),
             property: property.to_string(),
             level,
             selector: selector.map(optimize_selector),
@@ -103,11 +122,7 @@ impl ExtractStaticStyle {
         selector: Option<StyleSelector>,
     ) -> Self {
         Self {
-            value: optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(property) {
-                value.to_string()
-            } else {
-                convert_value(value)
-            }),
+            value: Self::normalize_static_value(property, value, false),
             property: property.to_string(),
             level,
             selector,
@@ -162,21 +177,19 @@ impl ExtractStaticStyle {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.selector.clone().map(|s| s.to_string());
-        let v = optimize_value(&if MAINTAIN_VALUE_PROPERTIES.contains(&self.property) {
-            self.value.clone()
-        } else {
-            convert_value(&self.value)
-        });
+        let s = self.selector.as_ref().map(StyleSelector::as_class_str);
+        // `self.value` is already the result of `optimize_value(convert_value(..))`
+        // (computed in the constructors), so re-running convert_value + optimize_value
+        // here is redundant. Only the multi-css optimization is not applied at construction.
         let v = if check_multi_css_optimize(&self.property) {
-            optimize_mutli_css_value(&v)
+            optimize_multi_css_value(&self.value)
         } else {
-            v
+            std::borrow::Cow::Borrowed(self.value.as_str())
         };
         StyleProperty::ClassName(sheet_to_classname(
             &self.property,
             self.level,
-            Some(&v),
+            Some(v.as_ref()),
             s.as_deref(),
             self.style_order,
             filename,

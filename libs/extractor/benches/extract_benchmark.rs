@@ -20,16 +20,6 @@ fn make_option() -> ExtractOption {
     }
 }
 
-fn make_vanilla_option() -> ExtractOption {
-    ExtractOption {
-        package: "@devup-ui/react".to_string(),
-        css_dir: "@devup-ui/react".to_string(),
-        single_css: true,
-        import_main_css: false,
-        import_aliases: HashMap::new(),
-    }
-}
-
 fn reset_state() {
     reset_class_map();
     reset_file_map();
@@ -86,12 +76,155 @@ const a = <Flex direction="column" gap={4}>
 const TAILWIND_INPUT: &str = r#"import {Box} from '@devup-ui/react'
 const a = <Box className="flex flex-col gap-4 p-4 m-2 bg-red-500 text-white hover:bg-blue-500 focus:outline-none active:scale-95 disabled:opacity-50 md:flex-row lg:grid lg:grid-cols-3 xl:gap-8 rounded-lg shadow-lg border border-gray-200 w-full h-screen overflow-hidden items-center justify-between" />"#;
 
+// Box whose `className` is a *template literal* mixing static tailwind classes
+// with a conditional interpolation (`${active ? ... : ...}`). Exercises the
+// template-literal className extraction path (static-chunk handling plus the
+// `${expr}` conditional reconstruction) that the plain string-literal
+// `TAILWIND_INPUT` and `PLAIN_CLASSNAME_INPUT` benches never reach.
+const TAILWIND_TEMPLATE_INPUT: &str = r"import {Box} from '@devup-ui/react'
+const a = <Box className={`p-4 m-2 ${active ? 'text-red-500' : 'text-blue-500'} hover:bg-blue-500 rounded-lg`} />";
+
 const VANILLA_INPUT: &str = r"import { style } from '@devup-ui/react'
 const base = style({ padding: 12, borderRadius: 4 })
 const interactive = style({ cursor: 'pointer', transition: 'all 0.2s' })
 export const button = style([base, interactive, { background: 'blue', color: 'white' }])
 export const danger = style([button, { background: 'red', color: 'white' }])
 export const ghost = style([base, { background: 'transparent', color: 'blue' }])";
+
+const CSS_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  color: red;
+  background-color: blue;
+  padding: 4px;
+  margin: 0;
+  border: 1px solid #000;
+  font-size: 16px;
+  width: ${dynamicWidth}px;
+  border-radius: 8px;
+`";
+
+// Multiple dynamic interpolations interleaved with static text. Exercises the
+// dynamic-reconstruction branch of `css_to_style_literal` (placeholder-map build,
+// `found_placeholders` scan, reverse-position decorate-sort, per-placeholder
+// `${expr}` rebuild) that the single-interpolation `CSS_TEMPLATE_INPUT` only
+// shallowly covers.
+const CSS_MULTI_TEMPLATE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  margin: ${topGap}px ${sideGap}px ${bottomGap}px ${sideGap}px;
+  padding: ${padY}px ${padX}px;
+  color: ${textColor};
+  background: ${bgColor};
+  border: ${borderWidth}px solid ${borderColor};
+  width: calc(${baseWidth}px + ${extraWidth}px);
+  transform: translate(${offsetX}px, ${offsetY}px);
+`";
+
+// `css`-tagged template carrying a multi-`@media` block plus nested `&`/`&:hover`
+// selectors. Exercises the `css_to_style` at-rule path: the `present[]`
+// classification that re-walks every `@` position and the recursive
+// `split(at_rule)` + rejoin that no other criterion bench covers (the existing
+// `css` templates are flat declaration lists with no at-rules, and the
+// `globalCss` benches route through a different splitter).
+const CSS_TEMPLATE_ATRULE_INPUT: &str = r"import { css } from '@devup-ui/react'
+const cls = css`
+  color: red;
+  padding: 4px;
+  & {
+    background-color: blue;
+  }
+  &:hover {
+    color: green;
+  }
+  @media (max-width: 600px) {
+    color: blue;
+    padding: 2px;
+    &:hover {
+      color: red;
+    }
+  }
+  @media (min-width: 900px) {
+    color: black;
+    padding: 8px;
+  }
+`";
+
+// Tagged-template `globalCss` block: exercises the `optimize_css_block` hot path
+// (comment removal -> brace-trim pass -> per-decl `split(';')` -> per-value
+// `optimize_multi_css_value` on `font-family`) which the object-form globalCss
+// and the `css`-template benches do NOT cover. Includes a comment, a
+// multi-value `font-family` declaration, nested rules and an `@media` block so
+// every pass in `optimize_css_block` is walked.
+const GLOBAL_CSS_INPUT: &str = r"import { globalCss } from '@devup-ui/react'
+globalCss`
+  /* reset + base typography */
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Roboto Hello', 'Segoe UI', Arial, sans-serif;
+    line-height: 1.5;
+    background-color: #ffffff;
+  }
+  a {
+    color: #0070f3;
+    text-decoration: none;
+  }
+  .card {
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  @media (max-width: 600px) {
+    .card {
+      padding: 8px;
+      font-family: 'Roboto Hello', sans-serif;
+    }
+  }
+`";
+
+// Object-form `globalCss({...})`: routes through `optimize_css_block` end-to-end
+// (comment strip -> brace-trim -> per-decl `split(';')` -> `optimize_multi_css_value`
+// on the multi-value `font-family`) which the tagged-template `globalCss` and the
+// `css` templates do NOT cover. Includes a multi-value `font-family`, a nested
+// selector group and an `@media` block so the whole `optimize_css_block` walk is
+// measured.
+const GLOBAL_CSS_OBJECT_INPUT: &str = r#"import { globalCss } from '@devup-ui/react'
+globalCss({
+  'html, body': {
+    margin: 0,
+    padding: 0,
+    fontFamily: "'Roboto Hello', 'Segoe UI', Arial, sans-serif",
+    lineHeight: 1.5,
+    backgroundColor: '#ffffff',
+  },
+  a: {
+    color: '#0070f3',
+    textDecoration: 'none',
+  },
+  '.card': {
+    border: '1px solid #eaeaea',
+    borderRadius: '8px',
+    padding: '16px',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+  },
+  '@media (max-width: 600px)': {
+    '.card': {
+      padding: '8px',
+      fontFamily: "'Roboto Hello', sans-serif",
+    },
+  },
+})"#;
+
+const STYLED_INPUT: &str = r"import { styled } from '@devup-ui/react'
+const Card = styled('div', { bg: 'red', p: 4, borderRadius: '8px', _hover: { bg: 'blue' } })
+const Button = styled('button', { px: 4, py: 2, bg: 'green', color: 'white', _hover: { bg: 'darkgreen' }, _focus: { outline: 'none' } })";
+
+const STYLEX_INPUT: &str = r"import stylex from '@stylexjs/stylex'
+const s = stylex.create({ base: { color: 'red', padding: 4 }, hovered: { color: 'blue' } })
+const c = stylex.props(s.base, s.hovered)";
+
+const PLAIN_CLASSNAME_INPUT: &str = r#"import {Box} from '@devup-ui/react'
+const a = <Box className="app-header brand logo" bg="red" />"#;
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("extract_small", |b| {
@@ -132,13 +265,121 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
+    c.bench_function("extract_tailwind_template", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("tailwind.tsx"),
+                black_box(TAILWIND_TEMPLATE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
     c.bench_function("extract_vanilla_placeholders", |b| {
         b.iter(|| {
             reset_state();
             extract(
                 black_box("styles.css.ts"),
                 black_box(VANILLA_INPUT),
-                make_vanilla_option(),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_css_template", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_TEMPLATE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_css_template_multi", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_MULTI_TEMPLATE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_css_template_atrule", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(CSS_TEMPLATE_ATRULE_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_styled", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(STYLED_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_stylex", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(STYLEX_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_global_css", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(GLOBAL_CSS_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_global_css_object", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(GLOBAL_CSS_OBJECT_INPUT),
+                make_option(),
+            )
+            .unwrap()
+        });
+    });
+
+    c.bench_function("extract_plain_classname", |b| {
+        b.iter(|| {
+            reset_state();
+            extract(
+                black_box("test.tsx"),
+                black_box(PLAIN_CLASSNAME_INPUT),
+                make_option(),
             )
             .unwrap()
         });

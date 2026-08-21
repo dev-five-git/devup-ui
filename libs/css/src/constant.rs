@@ -1,31 +1,16 @@
-use std::collections::HashMap;
-
+use crate::utils::compile_regex;
 use phf::{phf_map, phf_set};
 use regex_lite::Regex;
 use std::sync::LazyLock;
 
-fn compile_regex(pattern: &str) -> Regex {
-    Regex::new(pattern)
-        .unwrap_or_else(|err| panic!("invalid built-in regex pattern `{pattern}`: {err}"))
-}
-
-pub(super) static SELECTOR_ORDER_MAP: LazyLock<HashMap<String, u8>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
-    for (idx, selector) in [
-        "hover",
-        "focus-visible",
-        "focus",
-        "active",
-        "selected",
-        "disabled",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        map.insert(format!(":{selector}"), idx as u8);
-    }
-    map
-});
+pub(super) const SELECTOR_ORDER: [(&str, u8); 6] = [
+    (":hover", 0),
+    (":focus-visible", 1),
+    (":focus", 2),
+    (":active", 3),
+    (":selected", 4),
+    (":disabled", 5),
+];
 
 pub(super) static GLOBAL_STYLE_PROPERTY: phf::Map<&str, &[&str]> = phf_map! {
     "bg" => &["background"],
@@ -169,7 +154,6 @@ pub(super) static ZERO_PERCENT_FUNCTION: phf::Set<&str> = phf_set! {
 pub(super) static F_SPACE_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"\s*,\s*"));
 pub(super) static CSS_FUNCTION_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"^[a-zA-Z-]+(\(.*\))"));
-pub(super) static CHECK_QUOTES_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"[()\s]"));
 
 pub(super) static CSS_COMMENT_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"/\*[\s\S]*?\*/"));
@@ -201,12 +185,6 @@ pub(super) static F_RGBA_RE: LazyLock<Regex> =
 pub(super) static F_RGB_RE: LazyLock<Regex> =
     LazyLock::new(|| compile_regex(r"rgb\((\d+),(\d+),(\d+)\)"));
 
-pub(super) static N_BASE_ARRAY: [char; 27] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', '_',
-];
+pub(super) static N_BASE_ARRAY: [u8; 27] = *b"abcdefghijklmnopqrstuvwxyz_";
 
-pub(super) static M_BASE_ARRAY: [char; 37] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_',
-];
+pub(super) static M_BASE_ARRAY: [u8; 37] = *b"abcdefghijklmnopqrstuvwxyz0123456789_";

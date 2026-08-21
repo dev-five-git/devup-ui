@@ -37,6 +37,8 @@ export interface BuildCanonicalMapOptions {
   cwd: string
   hoistV?: number
   keyBy?: GraphKeyMode
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
 }
 
 interface ImportReference {
@@ -74,19 +76,43 @@ const leafRouteFileRegex = /(^|\/)page\.(tsx|ts|jsx|js)$/
 
 let cachedOxcParser: false | OxcParser | undefined
 
-export function buildCanonicalMap(
-  opts: BuildCanonicalMapOptions,
-): Record<string, string> {
-  const cwd = resolve(opts.cwd)
-  const srcDir = resolve(opts.srcDir)
-  const files = listSourceFiles(srcDir)
+/**
+ * The static import graph of every source file under `srcDir` — the shared
+ * input of `buildCanonicalMap`, `computeFileRoutes` and `computeFileReach`.
+ * Build it once with `buildStaticImportGraph` and pass it to each builder via
+ * their optional `graph` field so a plugin enabling both collapse and atom
+ * hoisting reads and parses every source file only ONCE per build.
+ */
+export interface StaticImportGraph {
+  /** absolute paths, sorted by POSIX path relative to `srcDir`. */
+  files: string[]
+  fileSet: Set<string>
+  /** file -> statically imported files (within `srcDir`). */
+  staticImports: Map<string, Set<string>>
+  /** file -> files statically importing it (within `srcDir`). */
+  staticImporters: Map<string, Set<string>>
+  /** files loaded via dynamic `import()` somewhere under `srcDir`. */
+  dynamicTargets: Set<string>
+}
+
+/**
+ * Scan `srcDir` once (`listSourceFiles` -> read -> parse imports -> resolve)
+ * and return the full static import graph. All three graph consumers accept
+ * the result, so the file I/O and parsing cost is paid a single time.
+ */
+export function buildStaticImportGraph(
+  srcDir: string,
+  tsconfigPath?: string,
+): StaticImportGraph {
+  const resolvedSrcDir = resolve(srcDir)
+  const files = listSourceFiles(resolvedSrcDir)
   const fileSet = new Set(files)
-  const aliases = readPathAliases(opts.tsconfigPath)
+  const aliases = readPathAliases(tsconfigPath)
   const context: ResolveContext = {
     aliases: aliases.aliases,
     aliasBaseDir: aliases.baseDir,
     files: fileSet,
-    srcDir,
+    srcDir: resolvedSrcDir,
   }
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
@@ -110,6 +136,17 @@ export function buildCanonicalMap(
       staticImports.get(file)?.add(target)
     }
   }
+
+  return { files, fileSet, staticImports, staticImporters, dynamicTargets }
+}
+
+export function buildCanonicalMap(
+  opts: BuildCanonicalMapOptions,
+): Record<string, string> {
+  const cwd = resolve(opts.cwd)
+  const srcDir = resolve(opts.srcDir)
+  const { files, staticImports, staticImporters, dynamicTargets } =
+    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
 
   const globalFiles = getRouteReachableGlobalFiles(
     files,
@@ -135,14 +172,7 @@ export function buildCanonicalMap(
     roots.add(cycleRoot)
   }
 
-  const parents = new Map<string, string>()
-  for (const file of files) {
-    if (roots.has(file)) continue
-    const importers = staticImporters.get(file)
-    if (importers?.size !== 1) continue
-    const [importer] = importers
-    parents.set(file, importer)
-  }
+  const parents = buildParentsMap(files, roots, staticImporters)
 
   const toKey = makeToKey(cwd, opts.keyBy ?? 'cwd-relative')
   const map: Record<string, string> = {}
@@ -164,6 +194,8 @@ export interface ComputeFileRoutesOptions {
   srcDir: string
   tsconfigPath?: string
   cwd: string
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
 }
 
 /**
@@ -183,25 +215,8 @@ export function computeFileRoutes(
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
   const srcDir = resolve(opts.srcDir)
-  const files = listSourceFiles(srcDir)
-  const fileSet = new Set(files)
-  const aliases = readPathAliases(opts.tsconfigPath)
-  const context: ResolveContext = {
-    aliases: aliases.aliases,
-    aliasBaseDir: aliases.baseDir,
-    files: fileSet,
-    srcDir,
-  }
-
-  const staticImports = new Map<string, Set<string>>()
-  for (const file of files) staticImports.set(file, new Set())
-  for (const file of files) {
-    for (const importRef of parseImports(file, readFileSync(file, 'utf-8'))) {
-      if (importRef.kind !== 'static') continue
-      const target = resolveImport(importRef.specifier, file, context)
-      if (target) staticImports.get(file)?.add(target)
-    }
-  }
+  const { files, staticImports } =
+    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
 
   const leafRoutes = files
     .filter((file) => leafRouteFileRegex.test(toPosixRelative(srcDir, file)))
@@ -240,6 +255,8 @@ export interface ComputeFileReachOptions {
    */
   entries?: string[]
   keyBy?: GraphKeyMode
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
 }
 
 /**
@@ -262,35 +279,8 @@ export function computeFileReach(
 ): Record<string, number[]> {
   const cwd = resolve(opts.cwd)
   const srcDir = resolve(opts.srcDir)
-  const files = listSourceFiles(srcDir)
-  const fileSet = new Set(files)
-  const aliases = readPathAliases(opts.tsconfigPath)
-  const context: ResolveContext = {
-    aliases: aliases.aliases,
-    aliasBaseDir: aliases.baseDir,
-    files: fileSet,
-    srcDir,
-  }
-
-  const staticImporters = new Map<string, Set<string>>()
-  const staticImports = new Map<string, Set<string>>()
-  for (const file of files) {
-    staticImporters.set(file, new Set())
-    staticImports.set(file, new Set())
-  }
-  const dynamicTargets = new Set<string>()
-  for (const file of files) {
-    for (const importRef of parseImports(file, readFileSync(file, 'utf-8'))) {
-      const target = resolveImport(importRef.specifier, file, context)
-      if (!target) continue
-      if (importRef.kind === 'dynamic') {
-        dynamicTargets.add(target)
-        continue
-      }
-      staticImporters.get(target)?.add(file)
-      staticImports.get(file)?.add(target)
-    }
-  }
+  const { files, fileSet, staticImports, staticImporters, dynamicTargets } =
+    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
 
   let entries: string[]
   if (opts.entries && opts.entries.length > 0) {
@@ -914,11 +904,11 @@ function isInsideDir(dir: string, file: string): boolean {
   return relPath === '' || (!relPath.startsWith('..') && !isAbsolute(relPath))
 }
 
-function findClosedCycles(
+function buildParentsMap(
   files: string[],
   roots: Set<string>,
   staticImporters: Map<string, Set<string>>,
-): Set<string> {
+): Map<string, string> {
   const parents = new Map<string, string>()
   for (const file of files) {
     if (roots.has(file)) continue
@@ -927,6 +917,15 @@ function findClosedCycles(
     const [importer] = importers
     parents.set(file, importer)
   }
+  return parents
+}
+
+function findClosedCycles(
+  files: string[],
+  roots: Set<string>,
+  staticImporters: Map<string, Set<string>>,
+): Set<string> {
+  const parents = buildParentsMap(files, roots, staticImporters)
 
   const cycleRoots = new Set<string>()
   const visiting = new Set<string>()

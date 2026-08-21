@@ -57,6 +57,26 @@ function parseConfig(content: string): DevupConfig {
 }
 
 /**
+ * Merge resolved parent configs with the current config
+ * Extends are merged in order (first is the base, subsequent ones override),
+ * then the current config is merged last (highest priority) with its
+ * already-resolved extends field removed
+ */
+function mergeExtendedConfigs(
+  config: DevupConfig,
+  extendedConfigs: DevupConfig[],
+): DevupConfig {
+  let mergedConfig: DevupConfig = {}
+
+  for (const extendedConfig of extendedConfigs) {
+    mergedConfig = deepMerge(mergedConfig, extendedConfig)
+  }
+
+  const { extends: _, ...currentConfig } = config
+  return deepMerge(mergedConfig, currentConfig)
+}
+
+/**
  * Load and resolve a devup.json config file synchronously
  * Handles the extends field by loading and merging parent configs
  *
@@ -78,20 +98,12 @@ export function loadDevupConfigSync(configPath: string): DevupConfig {
 
   const configDir = dirname(configPath)
 
-  // Start with empty base and merge extends in order
-  // First extend is the base, subsequent ones override
-  let mergedConfig: DevupConfig = {}
-
-  for (const extendPath of config.extends) {
-    const resolvedPath = resolve(configDir, extendPath)
-    const extendedConfig = loadDevupConfigSync(resolvedPath)
-    mergedConfig = deepMerge(mergedConfig, extendedConfig)
-  }
-
-  // Finally, merge the current config (highest priority)
-  // Remove extends from the result as it's already resolved
-  const { extends: _, ...currentConfig } = config
-  return deepMerge(mergedConfig, currentConfig)
+  return mergeExtendedConfigs(
+    config,
+    config.extends.map((extendPath) =>
+      loadDevupConfigSync(resolve(configDir, extendPath)),
+    ),
+  )
 }
 
 /**
@@ -118,18 +130,11 @@ export async function loadDevupConfig(
 
   const configDir = dirname(configPath)
 
-  // Start with empty base and merge extends in order
-  // First extend is the base, subsequent ones override
-  let mergedConfig: DevupConfig = {}
-
+  // Load extends sequentially to preserve merge order
+  const extendedConfigs: DevupConfig[] = []
   for (const extendPath of config.extends) {
-    const resolvedPath = resolve(configDir, extendPath)
-    const extendedConfig = await loadDevupConfig(resolvedPath)
-    mergedConfig = deepMerge(mergedConfig, extendedConfig)
+    extendedConfigs.push(await loadDevupConfig(resolve(configDir, extendPath)))
   }
 
-  // Finally, merge the current config (highest priority)
-  // Remove extends from the result as it's already resolved
-  const { extends: _, ...currentConfig } = config
-  return deepMerge(mergedConfig, currentConfig)
+  return mergeExtendedConfigs(config, extendedConfigs)
 }

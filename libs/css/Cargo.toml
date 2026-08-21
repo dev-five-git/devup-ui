@@ -12,14 +12,14 @@ categories = ["development-tools", "wasm", "web-programming"]
 workspace = true
 
 [dependencies]
-phf = { version = "0.13", features = ["macros"] }
-serde = { version = "1.0.228", features = ["derive"] }
+phf = { version = "0.14", features = ["macros"] }
+serde = { version = "1.0.229", features = ["derive"] }
 regex-lite = "0.1"
 bimap = { version = "0.6.3" }
 
 [dev-dependencies]
 rstest = "0.26.1"
-serial_test = "3.5.0"
+serial_test = "4.0.1"
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]

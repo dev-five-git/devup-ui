@@ -2,10 +2,10 @@ use crate::extractor::{
     ExtractResult,
     extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
 };
-use oxc_allocator::CloneIn;
+use oxc_allocator::{CloneIn, GetAllocator};
 use oxc_ast::{
-    AstBuilder,
     ast::{Expression, JSXAttributeValue},
+    builder::AstBuilder,
 };
 
 pub fn extract_style_from_jsx<'a>(
@@ -17,9 +17,9 @@ pub fn extract_style_from_jsx<'a>(
         JSXAttributeValue::ExpressionContainer(expression) => expression
             .expression
             .as_expression()
-            .map(|expression| expression.clone_in(ast_builder.allocator)),
+            .map(|expression| expression.clone_in(ast_builder.allocator())),
         JSXAttributeValue::StringLiteral(literal) => Some(Expression::StringLiteral(
-            literal.clone_in(ast_builder.allocator),
+            literal.clone_in(ast_builder.allocator()),
         )),
         _ => None,
     };

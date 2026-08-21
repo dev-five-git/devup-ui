@@ -26,7 +26,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -49,7 +48,7 @@
     "@rsbuild/core": "*"
   },
   "devDependencies": {
-    "@rsbuild/core": "^2.0",
-    "typescript": "^6.0"
+    "@rsbuild/core": "^2.1",
+    "typescript": "^7.0"
   }
 }

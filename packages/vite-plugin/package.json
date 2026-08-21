@@ -26,7 +26,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -45,7 +44,7 @@
     "@devup-ui/wasm": "workspace:^"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^7.0"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*",

@@ -209,9 +209,7 @@ export const DevupUI = ({
           const addSharedCssGroup = (rspackConfig: {
             optimization?: {
               splitChunks?:
-                | false
-                | { cacheGroups?: Record<string, unknown> }
-                | undefined
+                false | { cacheGroups?: Record<string, unknown> } | undefined
             }
           }) => {
             rspackConfig.optimization ??= {}

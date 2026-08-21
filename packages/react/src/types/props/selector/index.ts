@@ -32,9 +32,10 @@ export type ExtractSelector<T> = T extends `::${infer R}`
     : never
 
 export type AdvancedSelectorProps = {
-  [K in ExtractSelector<Exclude<AdvancedSelector, SimpleSelector>> as
-    | `_${CamelCase<K>}`
-    | `_group${PascalCase<K>}`]?: SimpleSelectorProps &
+  [
+    K in ExtractSelector<Exclude<AdvancedSelector, SimpleSelector>> as
+      `_${CamelCase<K>}` | `_group${PascalCase<K>}`
+  ]?: SimpleSelectorProps &
     AdvancedSelectorProps & {
       params: string[]
       selectors?: Selectors
@@ -42,17 +43,19 @@ export type AdvancedSelectorProps = {
 }
 
 export type MultipleSelectorProps = {
-  [K in ExtractSelector<Extract<AdvancedSelector, SimpleSelector>> as
-    | `_${CamelCase<K>}`
-    | `_group${PascalCase<K>}`]?: SelectorProps<DevupProps> & {
+  [
+    K in ExtractSelector<Extract<AdvancedSelector, SimpleSelector>> as
+      `_${CamelCase<K>}` | `_group${PascalCase<K>}`
+  ]?: SelectorProps<DevupProps> & {
     params?: string[]
   }
 }
 
 export type SimpleSelectorProps = {
-  [K in ExtractSelector<Exclude<SimpleSelector, AdvancedSelector>> as
-    | `_${CamelCase<K>}`
-    | `_group${PascalCase<K>}`]?: SelectorProps<DevupProps>
+  [
+    K in ExtractSelector<Exclude<SimpleSelector, AdvancedSelector>> as
+      `_${CamelCase<K>}` | `_group${PascalCase<K>}`
+  ]?: SelectorProps<DevupProps>
 }
 
 export type Selectors = Partial<
