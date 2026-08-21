@@ -6,18 +6,18 @@ describe('useSafeEffect', () => {
 
   afterAll(() => {
     globalThis.window = originalWindow
-    // Clear module cache
-    Loader.registry.delete(require.resolve('../use-safe-effect'))
   })
 
+  // The module picks its effect at evaluation time, so each case needs a fresh
+  // evaluation. A unique query string gives every import its own cache entry -
+  // `Loader.registry`, the previous way to evict it, was removed in Bun 1.4.
   it('should return useEffect when window is undefined (server)', async () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: undefined,
     })
-    Loader.registry.delete(require.resolve('../use-safe-effect'))
 
-    const { useSafeEffect } = await import('../use-safe-effect')
+    const { useSafeEffect } = await import('../use-safe-effect?server')
     expect(useSafeEffect).toBe(useEffect)
   })
 
@@ -26,9 +26,8 @@ describe('useSafeEffect', () => {
       configurable: true,
       value: {},
     })
-    Loader.registry.delete(require.resolve('../use-safe-effect'))
 
-    const { useSafeEffect } = await import('../use-safe-effect')
+    const { useSafeEffect } = await import('../use-safe-effect?client')
     expect(useSafeEffect).toBe(useLayoutEffect)
   })
 })
