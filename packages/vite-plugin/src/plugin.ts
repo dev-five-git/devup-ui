@@ -27,6 +27,80 @@ import {
 } from '@devup-ui/wasm'
 import type { ModuleNode, PluginOption, UserConfig } from 'vite'
 
+/** CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ... */
+const DEVUP_CSS_FILE_RE = /devup-ui(-\d+)?\.css$/
+
+/**
+ * Names each devup CSS module after its own file, so every module is emitted
+ * once and shared by all of its importers.
+ */
+function getDevupCssChunkName(id: string): string | undefined {
+  const fileName = basename(id).split('?')[0]
+  return DEVUP_CSS_FILE_RE.test(fileName) ? fileName : undefined
+}
+
+/**
+ * Subset of the plugin context Vite binds to the `config` hook. Vite >= 6.1
+ * exposes `meta.viteVersion`; a Rolldown-powered Vite also exposes
+ * `meta.rolldownVersion`.
+ */
+interface ConfigHookMeta {
+  viteVersion?: string
+  rolldownVersion?: string
+}
+
+/**
+ * Build options that merge devup-ui CSS modules into shared chunks.
+ *
+ * Rollup only understands `output.manualChunks`. Rolldown (Vite 8) removed the
+ * object form and *silently ignores* the function form as soon as anything sets
+ * `output.codeSplitting` — which framework plugins do per environment (vinext
+ * sets it for its client and rsc environments, so only its ssr environment
+ * still honors `manualChunks`). The shared CSS then gets copied into every
+ * route chunk instead of being emitted once.
+ *
+ * `output.codeSplitting.groups` is Rolldown's replacement, and merges with the
+ * groups a framework plugin already registered.
+ *
+ * @see https://vite.dev/guide/migration.html#removed-object-form-build-rollupoptions-output-manualchunks-and-deprecate-function-form-one
+ * @see https://rolldown.rs/in-depth/manual-code-splitting
+ */
+function createCssChunkBuildOptions(
+  meta: ConfigHookMeta | undefined,
+): UserConfig['build'] {
+  if (!meta?.rolldownVersion) {
+    return {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            return getDevupCssChunkName(id)
+          },
+        },
+      },
+    }
+  }
+  const output = {
+    codeSplitting: {
+      groups: [
+        {
+          name: (id: string) => getDevupCssChunkName(id) ?? null,
+          // Opt out of any framework-level `minSize` / `minShareCount`
+          // fallback, which would otherwise fold these small CSS chunks back
+          // into every route chunk that imports them.
+          minSize: 0,
+          minShareCount: 1,
+        },
+      ],
+    },
+  }
+  // Vite 8 renamed `build.rollupOptions` to `build.rolldownOptions`. Older
+  // Rolldown-powered builds (rolldown-vite on Vite 7) keep the old name, and
+  // supplying both would make Vite drop one of them.
+  return Number.parseInt(meta.viteVersion ?? '', 10) >= 8
+    ? { rolldownOptions: { output } }
+    : { rollupOptions: { output } }
+}
+
 export interface DevupUIPluginOptions {
   package: string
   cssDir: string
@@ -175,7 +249,7 @@ export function DevupUI({
         }
       }
     },
-    config() {
+    config(this: { meta?: ConfigHookMeta } | void) {
       const theme = getDefaultTheme()
       const define: Record<string, string> = {}
       if (theme) {
@@ -196,19 +270,7 @@ export function DevupUI({
         },
       }
       if (extractCss) {
-        ret.build = {
-          rollupOptions: {
-            output: {
-              manualChunks(id) {
-                // merge devup css files
-                const fileName = basename(id).split('?')[0]
-                if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
-                  return fileName
-                }
-              },
-            },
-          },
-        }
+        ret.build = createCssChunkBuildOptions(this?.meta)
       }
       return ret
     },
