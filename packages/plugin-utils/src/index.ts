@@ -3,6 +3,8 @@ export {
   buildCanonicalMap,
   type BuildCanonicalMapOptions,
   buildStaticImportGraph,
+  computeCompiledFiles,
+  type ComputeCompiledFilesOptions,
   computeFileReach,
   type ComputeFileReachOptions,
   computeFileRoutes,
