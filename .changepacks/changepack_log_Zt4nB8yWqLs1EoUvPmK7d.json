@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Assign devup file numbers by sorted path so builds are reproducible",
+  "date": "2026-08-23T05:40:00.000000000Z"
+}
