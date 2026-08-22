@@ -50,6 +50,20 @@ interface ConfigHookMeta {
 }
 
 /**
+ * Vite merges a plugin's `config()` result over the user's, replacing function
+ * values outright, so returning a bare `manualChunks` silently drops one the
+ * app already had. Rolldown's `codeSplitting.groups` needs no equivalent —
+ * arrays are concatenated, not replaced.
+ */
+function getUserManualChunks(userConfig: UserConfig | undefined) {
+  const output = userConfig?.build?.rollupOptions?.output
+  const first = Array.isArray(output) ? output[0] : output
+  return typeof first?.manualChunks === 'function'
+    ? first.manualChunks
+    : undefined
+}
+
+/**
  * Build options that merge devup-ui CSS modules into shared chunks.
  *
  * Rollup only understands `output.manualChunks`. Rolldown (Vite 8) removed the
@@ -67,13 +81,15 @@ interface ConfigHookMeta {
  */
 function createCssChunkBuildOptions(
   meta: ConfigHookMeta | undefined,
+  userConfig?: UserConfig,
 ): UserConfig['build'] {
   if (!meta?.rolldownVersion) {
+    const userManualChunks = getUserManualChunks(userConfig)
     return {
       rollupOptions: {
         output: {
-          manualChunks(id: string) {
-            return getDevupCssChunkName(id)
+          manualChunks(id, ...rest) {
+            return getDevupCssChunkName(id) ?? userManualChunks?.(id, ...rest)
           },
         },
       },
@@ -150,14 +166,14 @@ async function writeDataFiles(
     console.error(error)
     registerTheme({})
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
-      : Promise.resolve(),
-  ])
+  // Sequential: writing into cssDir concurrently with its own mkdir loses the
+  // race on a cold start (no `df/`) and fails the build with ENOENT.
+  if (!existsSync(options.cssDir)) {
+    await mkdir(options.cssDir, { recursive: true })
+  }
+  if (!options.singleCss) {
+    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+  }
 }
 
 export function DevupUI({
@@ -179,9 +195,11 @@ export function DevupUI({
   }
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
+  let isServe = false
   return {
     name: 'devup-ui',
     async configResolved(config) {
+      isServe = config?.command === 'serve'
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeDataFiles({
@@ -249,7 +267,7 @@ export function DevupUI({
         }
       }
     },
-    config(this: { meta?: ConfigHookMeta } | void) {
+    config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
       const theme = getDefaultTheme()
       const define: Record<string, string> = {}
       if (theme) {
@@ -270,7 +288,7 @@ export function DevupUI({
         },
       }
       if (extractCss) {
-        ret.build = createCssChunkBuildOptions(this?.meta)
+        ret.build = createCssChunkBuildOptions(this?.meta, userConfig)
       }
       return ret
     },
@@ -320,10 +338,15 @@ export function DevupUI({
     resolveId(id, importer) {
       const fileName = basename(id).split('?')[0]
       if (
-        /devup-ui(-\d+)?\.css$/.test(fileName) &&
+        DEVUP_CSS_FILE_RE.test(fileName) &&
         resolve(importer ? join(dirname(importer), id) : id) ===
           resolve(join(cssDir, fileName))
       ) {
+        // Dev re-resolves through a changing id so a growing sheet invalidates
+        // the module. A build must not: a per-resolution id forks one file into
+        // several modules and makes output hashes differ between identical
+        // builds.
+        if (!isServe) return join(cssDir, fileName)
         return join(
           cssDir,
           `${fileName}?t=${
@@ -335,7 +358,7 @@ export function DevupUI({
     },
     load(id) {
       const fileName = basename(id).split('?')[0]
-      if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
+      if (DEVUP_CSS_FILE_RE.test(fileName)) {
         const fileNum = getFileNumByFilename(fileName)
         const css = getCss(fileNum, false)
         cssMap.set(fileNum, css)
@@ -402,11 +425,17 @@ export function DevupUI({
     async generateBundle(_options, bundle) {
       if (!extractCss) return
 
-      const cssFile = Object.keys(bundle).find(
-        (file) => bundle[file].name === 'devup-ui.css',
-      )
-      if (cssFile && 'source' in bundle[cssFile]) {
-        bundle[cssFile].source = cssMap.get(null) ?? ''
+      // `load` can only snapshot the sheet as it stood when the module was
+      // pulled in, and module order varies per build, so the emitted asset was
+      // neither complete nor reproducible. Every transform has run by now, so
+      // re-read each file's finished sheet instead. Applies to `devup-ui-N.css`
+      // too, not just the base sheet.
+      for (const file of Object.keys(bundle)) {
+        const asset = bundle[file]
+        const name = asset.name
+        if (!name || !DEVUP_CSS_FILE_RE.test(name)) continue
+        if (!('source' in asset)) continue
+        asset.source = getCss(getFileNumByFilename(name), false)
       }
     },
   }
