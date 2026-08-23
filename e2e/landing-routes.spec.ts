@@ -36,16 +36,35 @@ test.describe('Landing static export routes', () => {
   test('serves every local asset referenced by exported HTML and CSS', async ({
     request,
   }) => {
-    const failures: string[] = []
+    // This sweep shares one single-threaded static server with the route-render
+    // tests, which walk 63 routes each to `networkidle`. Under that contention a
+    // serial request per asset starved past the 60s default (it takes ~4s
+    // alone), so fetch through a bounded pool AND state the real budget.
+    test.setTimeout(180_000)
 
-    for (const assetPath of getLocalAssetPaths()) {
-      const response = await request.get(assetPath)
-      if (response.status() >= 400) {
-        failures.push(`${response.status()} ${assetPath}`)
+    const assetPaths = getLocalAssetPaths()
+    const failures: string[] = []
+    const CONCURRENCY = 8
+    let cursor = 0
+
+    async function drain(): Promise<void> {
+      while (cursor < assetPaths.length) {
+        const assetPath = assetPaths[cursor++]
+        const response = await request.get(assetPath)
+        if (response.status() >= 400) {
+          failures.push(`${response.status()} ${assetPath}`)
+        }
       }
     }
 
-    expect(failures, `Broken local assets:\n${failures.join('\n')}`).toEqual([])
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, assetPaths.length) }, drain),
+    )
+
+    expect(
+      failures.sort(),
+      `Broken local assets:\n${failures.join('\n')}`,
+    ).toEqual([])
   })
 
   for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {

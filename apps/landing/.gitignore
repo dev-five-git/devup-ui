@@ -16,10 +16,11 @@ public/storybook
 # testing
 /coverage
 
-# vinext
+# vinext (deployed) and the CI-only Next build
 /.next/
 /.vinext/
 /dist/
+/out/
 
 # production
 /build

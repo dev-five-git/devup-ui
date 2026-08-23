@@ -36,9 +36,12 @@ export default defineConfig({
     },
   ],
   webServer: {
+    // LANDING_BUILD_MODE=next runs the same suite against the CI-only Next
+    // build, which keeps @devup-ui/next-plugin's Turbopack production path
+    // gated by these assertions and pixels.
     command: process.env.CI
       ? 'node e2e/serve-static.mjs 3099'
-      : 'bun run --filter landing build && node e2e/serve-static.mjs 3099',
+      : `bun run --filter landing ${process.env.LANDING_BUILD_MODE === 'next' ? 'build:next' : 'build'} && node e2e/serve-static.mjs 3099`,
     url: 'http://localhost:3099',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

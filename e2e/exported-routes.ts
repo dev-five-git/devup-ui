@@ -1,12 +1,23 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 
+/**
+ * Which bundler produced the artifact under test. `vinext` (the deployed
+ * build) is the default; `next` is the CI-only build that keeps
+ * `@devup-ui/next-plugin`'s Turbopack production path covered by this same
+ * suite. Both must satisfy every assertion in `e2e/`.
+ */
+export const LANDING_BUILD_MODE =
+  process.env.LANDING_BUILD_MODE === 'next' ? 'next' : 'vinext'
+
 export const LANDING_OUTPUT_ROOT = resolve(
   process.cwd(),
-  'apps',
-  'landing',
-  'dist',
-  'client',
+  process.env.LANDING_OUTPUT_ROOT ??
+    join(
+      'apps',
+      'landing',
+      ...(LANDING_BUILD_MODE === 'next' ? ['out'] : ['dist', 'client']),
+    ),
 )
 
 export const EXPECTED_EXPORTED_ROUTES = [
@@ -75,8 +86,17 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/team',
 ] as const
 
+/**
+ * Not-found documents are artifacts of the static host contract, not routable
+ * pages, so they are asserted separately from `EXPECTED_EXPORTED_ROUTES`.
+ * Next's export additionally emits `_not-found.html` next to `404.html`;
+ * vinext emits `404.html` alone.
+ */
+export const NOT_FOUND_HTML_FILES =
+  LANDING_BUILD_MODE === 'next' ? ['404.html', '_not-found.html'] : ['404.html']
+
 export const EXPECTED_EXPORTED_HTML_FILES = [
-  '404.html',
+  ...NOT_FOUND_HTML_FILES,
   ...EXPECTED_EXPORTED_ROUTES.map((route) =>
     route === '/' ? 'index.html' : `${route.slice(1)}.html`,
   ),
@@ -103,7 +123,7 @@ export function getExportedHtmlFiles(): string[] {
 
 export function getExportedRoutes(): string[] {
   return getExportedHtmlFiles()
-    .filter((path) => path !== '404.html')
+    .filter((path) => !NOT_FOUND_HTML_FILES.includes(path))
     .map((path) =>
       path === 'index.html' ? '/' : `/${path.replace(/\.html$/, '')}`,
     )

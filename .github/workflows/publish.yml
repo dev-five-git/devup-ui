@@ -54,6 +54,77 @@ jobs:
       - name: Benchmark
         run: bun run benchmark
 
+  # The landing app is the only real-scale acceptance target in this repo, and
+  # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
+  # This job runs the SAME 128 assertions and the SAME screenshot baselines
+  # against a Next 16 + Turbopack build, so @devup-ui/next-plugin's production
+  # CSS path stays gated at 64 routes — the scale where extraction-wave races
+  # actually reproduce. It runs in parallel so it stays off the publish critical
+  # path, and its artifact is never deployed.
+  landing-next-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: cargo-landing-next-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+        name: Install bun
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "latest"
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install
+      - run: bun run build
+      - name: Build Landing (Next)
+        run: |
+          bun run --filter @devup-ui/components build-storybook
+          mv ./packages/components/storybook-static ./apps/landing/public/storybook
+          bun run --filter landing build:next
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-landing-next-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+      - name: Install Playwright Browsers
+        run: bunx playwright install chromium --with-deps
+      - name: Run E2E Tests (Next)
+        run: bun run test:e2e:next
+      - name: Build Landing (Next, singleCss)
+        run: |
+          rm -rf apps/landing/out apps/landing/.next apps/landing/df
+          DEVUP_SINGLE_CSS=1 bun run --filter landing build:next
+      - name: Run E2E Tests (Next, singleCss)
+        run: bun run test:e2e:next
+      - name: Upload Next Playwright Report
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-next
+          path: playwright-report/
+          retention-days: 1
+
   publish:
     runs-on: ubuntu-latest
     steps:

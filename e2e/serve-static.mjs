@@ -1,6 +1,12 @@
 /**
- * Custom static file server for the vinext client export.
+ * Custom static file server for the landing export.
  * Handles clean URLs by preferring .html files over directories.
+ *
+ * Serves whichever bundler produced the artifact: vinext writes
+ * `apps/landing/dist/client`, the CI-only Next build writes
+ * `apps/landing/out`. Override with LANDING_OUTPUT_ROOT (or LANDING_BUILD_MODE
+ * = next) so the same suite gates both.
+ *
  * Usage: node e2e/serve-static.mjs [port]
  */
 import { readFile, stat } from 'node:fs/promises'
@@ -8,7 +14,14 @@ import { createServer } from 'node:http'
 import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const PORT = parseInt(process.argv[2] || '3099', 10)
-const ROOT = resolve(process.cwd(), 'apps', 'landing', 'dist', 'client')
+const DEFAULT_ROOT =
+  process.env.LANDING_BUILD_MODE === 'next'
+    ? join('apps', 'landing', 'out')
+    : join('apps', 'landing', 'dist', 'client')
+const ROOT = resolve(
+  process.cwd(),
+  process.env.LANDING_OUTPUT_ROOT ?? DEFAULT_ROOT,
+)
 const NOT_FOUND = join(ROOT, '404.html')
 
 const MIME_TYPES = {
@@ -40,6 +53,31 @@ async function exists(path) {
   }
 }
 
+/**
+ * Next's segment-cache prefetch asks for a flat, dot-joined payload name
+ * (`__next.<key>.<segment>.<segment>.__PAGE__.txt`), while `output: 'export'`
+ * writes that payload as a directory tree
+ * (`__next.<key>/<segment>/<segment>/__PAGE__.txt`) and leaves the mapping to
+ * the host. Resolving it here keeps the CI-only Next artifact under the same
+ * "no 404, no console error" assertions as the deployed vinext artifact.
+ *
+ * Returns undefined for the flat payloads Next writes as real files
+ * (`__next._tree.txt`, `__next._index.txt`, `__next._full.txt`,
+ * `__next.__PAGE__.txt`), which resolve through the exact-path check.
+ */
+function toNextSegmentPath(cleanPath) {
+  const separator = cleanPath.lastIndexOf('/')
+  const directory = separator === -1 ? '' : cleanPath.slice(0, separator + 1)
+  const name = cleanPath.slice(separator + 1)
+
+  if (!name.startsWith('__next.') || !name.endsWith('.txt')) return undefined
+
+  const segments = name.slice('__next.'.length, -'.txt'.length).split('.')
+  if (segments.length < 2) return undefined
+
+  return `${directory}__next.${segments[0]}/${segments.slice(1).join('/')}.txt`
+}
+
 async function resolveFile(urlPath) {
   const cleanPath = urlPath.replace(/^\/+/, '')
   const exact = resolve(ROOT, cleanPath)
@@ -51,6 +89,15 @@ async function resolveFile(urlPath) {
 
   // 1. Try exact file path
   if ((await exists(exact)) === 'file') return { filePath: exact, status: 200 }
+
+  // 1b. Try the nested layout of a Next segment-cache payload
+  const segmentPath = toNextSegmentPath(cleanPath)
+  if (segmentPath) {
+    const nested = resolve(ROOT, segmentPath)
+    if ((await exists(nested)) === 'file') {
+      return { filePath: nested, status: 200 }
+    }
+  }
 
   // 2. Try with .html extension (clean URLs — PRIORITY over directory)
   const withHtml = `${exact}.html`
