@@ -100,6 +100,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: bun install
       - run: bun run build
+      - name: Verify built package entry points
+        run: bun run verify:dist
       - run: |
           bun run lint
           # rust coverage issue
