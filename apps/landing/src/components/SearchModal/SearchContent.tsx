@@ -1,11 +1,12 @@
 'use client'
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 
+import { useQueryParam } from '@/utils/use-query-param'
+
 export function SearchContent() {
-  const query = useSearchParams().get('query')
+  const query = useQueryParam('query')
   const [data, setData] = useState<
     {
       title: string

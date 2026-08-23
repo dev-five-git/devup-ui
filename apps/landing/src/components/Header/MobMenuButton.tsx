@@ -1,7 +1,9 @@
 'use client'
 
 import { css } from '@devup-ui/react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+
+import { replaceQuery, useQueryParam } from '@/utils/use-query-param'
 
 interface MobMenuButtonProps {
   children: React.ReactNode
@@ -9,7 +11,7 @@ interface MobMenuButtonProps {
 
 export function MobMenuButton({ children }: MobMenuButtonProps) {
   const { replace } = useRouter()
-  const menu = useSearchParams().get('menu') === '1'
+  const menu = useQueryParam('menu') === '1'
   return (
     <>
       <svg
@@ -19,7 +21,7 @@ export function MobMenuButton({ children }: MobMenuButtonProps) {
         })}
         fill="none"
         height="32"
-        onClick={() => replace(`?menu=${menu ? '0' : '1'}`)}
+        onClick={() => replaceQuery({ replace }, `?menu=${menu ? '0' : '1'}`)}
         viewBox="0 0 32 32"
         width="32"
         xmlns="http://www.w3.org/2000/svg"

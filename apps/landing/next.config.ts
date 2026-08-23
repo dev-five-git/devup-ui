@@ -1,19 +1,8 @@
-import { DevupUI } from '@devup-ui/next-plugin'
-import createMDX from '@next/mdx'
+import { staticExportDeploymentId } from './static-export-config.js'
 
-const withMDX = createMDX({
-  extension: /\.mdx?$/,
-})
-
-export default withMDX(
-  DevupUI(
-    {
-      pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
-      output: 'export',
-      reactCompiler: true,
-    },
-    {
-      singleCss: process.env.DEVUP_SINGLE_CSS === '1',
-    },
-  ),
-)
+export default {
+  deploymentId: staticExportDeploymentId,
+  output: 'export',
+  pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
+  reactCompiler: true,
+}

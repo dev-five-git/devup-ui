@@ -1,5 +1,6 @@
 'use client'
-import { useSearchParams } from 'next/navigation'
+
+import { useQueryParam } from '@/utils/use-query-param'
 
 interface MobMenuWrapperProps {
   openChildren?: React.ReactNode
@@ -10,6 +11,6 @@ export function MobMenuWrapper({
   children,
   openChildren,
 }: MobMenuWrapperProps) {
-  const menu = useSearchParams().get('menu') === '1'
+  const menu = useQueryParam('menu') === '1'
   return menu ? openChildren : children
 }

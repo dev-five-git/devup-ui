@@ -1,6 +1,8 @@
 'use client'
 import { useRouter } from 'next/navigation'
 
+import { replaceQuery } from '@/utils/use-query-param'
+
 import { HeaderInput } from '../Header/HeaderInput'
 
 export function SearchInput() {
@@ -15,7 +17,7 @@ export function SearchInput() {
         }
       }}
       onChange={(e) => {
-        router.replace('?search=1&query=' + e.target.value)
+        replaceQuery(router, '?search=1&query=' + e.target.value)
       }}
     />
   )

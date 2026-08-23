@@ -1,5 +1,5 @@
 import { Box } from '@devup-ui/react'
-import SyntaxHighlighter from 'react-syntax-highlighter'
+import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/default-highlight'
 import Dark from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-dark'
 import Light from 'react-syntax-highlighter/dist/esm/styles/hljs/atom-one-light'
 

@@ -18,6 +18,7 @@ public/storybook
 
 # next.js
 /.next/
+/.vinext/
 /out/
 
 # production
