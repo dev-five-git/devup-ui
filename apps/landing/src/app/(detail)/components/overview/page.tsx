@@ -1,4 +1,5 @@
 import { Center, css, Flex, Grid, Text, VStack } from '@devup-ui/react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 
 import { Icons } from '@/components/icons/components'
@@ -7,23 +8,38 @@ import { COMPONENT_GROUPS } from '@/constants'
 import Card from '../Card'
 import Description from './Description.mdx'
 
+export const metadata: Metadata = {
+  title: 'Devup UI Components',
+  description: 'Explore the component library available in Devup UI.',
+  alternates: {
+    canonical: '/components/overview',
+  },
+  openGraph: {
+    title: 'Devup UI Components',
+    description: 'Explore the component library available in Devup UI.',
+    url: '/components/overview',
+    siteName: 'Devup UI',
+    images: ['/og-image.png'],
+  },
+}
+
 export default function Page() {
   return (
     <VStack gap="16px">
       <Text color="$primary" typography="captionBold">
         Overview
       </Text>
-      <Text color="$title" typography="h4">
+      <Text as="h1" color="$title" m="0" typography="h4">
         Devup UI Components
       </Text>
       <Text color="$text" typography="bodyReg">
         <Description />
       </Text>
-      <Text color="$title" pt="30px" typography="h4">
+      <Text as="h2" color="$title" m="0" pt="30px" typography="h4">
         Examples
       </Text>
       <VStack gap="16px" overflow="visible" pb="30px">
-        <Text color="$title" typography="h6">
+        <Text as="h3" color="$title" m="0" typography="h6">
           Form
         </Text>
         <Grid
@@ -82,7 +98,7 @@ export default function Page() {
         </Grid>
       </VStack>
       <VStack gap="16px" overflow="visible" py="30px">
-        <Text color="$title" typography="h6">
+        <Text as="h3" color="$title" m="0" typography="h6">
           Layout
         </Text>
         <Grid
@@ -142,7 +158,7 @@ export default function Page() {
         </Grid>
       </VStack>
       <VStack gap="16px" overflow="visible" py="30px">
-        <Text color="$title" typography="h6">
+        <Text as="h3" color="$title" m="0" typography="h6">
           Theme
         </Text>
         <Grid

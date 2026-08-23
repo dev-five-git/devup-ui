@@ -46,13 +46,21 @@ export function TopBanner() {
           justifyContent="center"
           textAlign={['center', null, 'left']}
         >
-          <Text color="$title" px={[6, null, 0]} typography="h1">
-            <Text color="$primary">Zero</Text> Config
+          <Text as="h1" color="$title" m="0" px={[6, null, 0]} typography="h1">
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            Config
             <br />
-            <Text color="$primary">Zero</Text> FOUC
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            FOUC
             <br />
-            <Text color="$primary">Zero</Text> Runtime{' '}
-            <Box as="br" display={['none', null, 'initial']} />
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            Runtime <Box as="br" display={['none', null, 'initial']} />
             CSS in JS Preprocessor
           </Text>
           <Text

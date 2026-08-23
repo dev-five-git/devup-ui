@@ -3,6 +3,7 @@ import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
 import type { Metadata } from 'next'
 
+import { AnchorScroll } from '../components/AnchorScroll'
 import { Footer } from '../components/Footer'
 import { Header } from '../components/Header'
 import { SearchModal } from '../components/SearchModal'
@@ -151,10 +152,11 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           />
         </noscript>
         <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
+          <AnchorScroll />
           <SearchModal />
           <Box bg="$background">
             <Header />
-            {children}
+            <Box as="main">{children}</Box>
           </Box>
           <Footer />
         </ReactLenis>

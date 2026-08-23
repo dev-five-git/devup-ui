@@ -38,7 +38,7 @@ export function Feature() {
     <VStack alignItems="center" py={['30px', null, '50px']} w="100%">
       <VStack gap="40px" maxW="1440px" px={['16px', null, '40px']} w="100%">
         <VStack gap="16px">
-          <Text color="$title" typography="h4">
+          <Text as="h2" color="$title" m="0" typography="h4">
             Features
           </Text>
           <Text color="$text" typography="textL">
@@ -64,7 +64,7 @@ export function Feature() {
             >
               <Image boxSize="32px" src={icon} />
               <VStack gap="10px">
-                <Text color="$title" typography="h6">
+                <Text as="h3" color="$title" m="0" typography="h6">
                   {title}
                 </Text>
                 <Text color="$text" typography="body">
@@ -77,20 +77,6 @@ export function Feature() {
         </Grid>
       </VStack>
     </VStack>
-  )
-}
-export function Icons() {
-  return (
-    <Flex boxSize="24px">
-      <Box
-        bg="$text"
-        h="16px"
-        maskImage="url(/icons/Union.svg)"
-        maskRepeat="no-repeat"
-        maskSize="contain"
-        w="16px"
-      />
-    </Flex>
   )
 }
 export function FigmaButton() {

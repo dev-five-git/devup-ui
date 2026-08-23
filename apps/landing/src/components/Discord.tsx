@@ -22,7 +22,7 @@ export function Discord() {
         pr={[null, null, '100px']}
       >
         <VStack gap="16px" px={5} textAlign={['center', null, 'left']}>
-          <Text color="$title" typography="h4">
+          <Text as="h2" color="$title" m="0" typography="h4">
             Join our community
           </Text>
           <Text color="$text" typography="textL">

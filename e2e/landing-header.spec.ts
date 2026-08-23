@@ -2,12 +2,6 @@ import { expect, test } from '@playwright/test'
 
 import { waitForStyleSettle } from './helpers'
 
-/**
- * NOTE: Sub-page navigation is not possible in the current static export +
- * `serve -s` setup. Header tests that required sub-page navigation have been
- * replaced with home-page-only equivalents.
- */
-
 test.describe('Landing Page - Header & Navigation', () => {
   test.describe('Header visibility', () => {
     test('header is visible on home page', async ({ page }) => {
@@ -129,11 +123,15 @@ test.describe('Landing Page - Header & Navigation', () => {
       // Logo should still be visible because header is fixed/sticky
       await expect(logoLink).toBeVisible()
 
-      const isInViewport = await logoLink.evaluate((el) => {
-        const rect = el.getBoundingClientRect()
-        return rect.top >= 0 && rect.top < window.innerHeight
+      const headerState = await page.locator('header').evaluate((element) => {
+        const rect = element.getBoundingClientRect()
+        return {
+          position: getComputedStyle(element).position,
+          top: rect.top,
+        }
       })
-      expect(isInViewport).toBeTruthy()
+      expect(headerState.position).toBe('fixed')
+      expect(headerState.top).toBe(0)
     })
   })
 
@@ -147,19 +145,7 @@ test.describe('Landing Page - Header & Navigation', () => {
         document.documentElement.getAttribute('data-theme'),
       )
 
-      // ThemeSwitch is a Box with cursor:pointer containing two SVGs
-      await page.evaluate(() => {
-        const allElements = document.querySelectorAll('*')
-        for (const el of allElements) {
-          if (
-            getComputedStyle(el).cursor === 'pointer' &&
-            el.querySelectorAll(':scope > svg').length === 2
-          ) {
-            ;(el as HTMLElement).click()
-            return
-          }
-        }
-      })
+      await page.getByRole('button', { name: 'Toggle color theme' }).click()
 
       await waitForStyleSettle(page)
 
@@ -213,11 +199,20 @@ test.describe('Landing Page - Header & Navigation', () => {
       await expect(menuButton).toBeVisible()
 
       await menuButton.click()
-      await page.waitForTimeout(1000)
+      await expect(page).toHaveURL(/\?menu=1$/)
+      await expect
+        .poll(() =>
+          page.evaluate(() => getComputedStyle(document.body).overflow),
+        )
+        .toBe('hidden')
 
-      // After clicking menu, the URL should contain menu=1
-      const url = page.url()
-      expect(url).toContain('menu=1')
+      await page.locator('svg[aria-label="Menu Button"]').click()
+      await expect(page).toHaveURL(/\?menu=0$/)
+      await expect
+        .poll(() =>
+          page.evaluate(() => getComputedStyle(document.body).overflow),
+        )
+        .not.toBe('hidden')
     })
   })
 

@@ -5,12 +5,18 @@ import { Box, css, getTheme, setTheme } from '@devup-ui/react'
 export function ThemeSwitch() {
   return (
     <Box
+      aria-label="Toggle color theme"
+      as="button"
+      bg="transparent"
+      border="0"
       boxSize="24px"
       color="$title"
       cursor="pointer"
       onClick={() => {
         setTheme(getTheme() === 'dark' ? 'light' : 'dark')
       }}
+      p="0"
+      type="button"
     >
       <svg
         className={css({

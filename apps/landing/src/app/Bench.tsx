@@ -76,7 +76,7 @@ export function Bench() {
           textAlign={['center', null, 'left']}
           wordBreak="keep-all"
         >
-          <Text color="$title" typography="h4">
+          <Text as="h2" color="$title" m="0" typography="h4">
             Comparison Bechmarks
           </Text>
           <Text color="$text" typography="textL">

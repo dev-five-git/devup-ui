@@ -1,6 +1,8 @@
 import type { Locator } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import { waitForFontsReady } from './helpers'
+
 /** Read the background color of a button's inner bg-bearing <div> (or itself). */
 function readInnerBg(locator: Locator): Promise<string> {
   return locator.evaluate((el) => {
@@ -20,12 +22,32 @@ async function expectHoverBg(
   link: Locator,
   expectedHex: string,
 ): Promise<void> {
-  await link.hover()
   await expect
-    .poll(async () => normalizeColor(await readInnerBg(link)), {
-      timeout: 5_000,
+    .poll(
+      async () => {
+        await link.hover()
+
+        const state = await link.evaluate((element) => {
+          const inner = element.querySelector('div') || element
+          return {
+            backgroundColor: getComputedStyle(inner).backgroundColor,
+            hovered: element.matches(':hover'),
+          }
+        })
+
+        return {
+          ...state,
+          backgroundColor: normalizeColor(state.backgroundColor),
+        }
+      },
+      {
+        timeout: 5_000,
+      },
+    )
+    .toEqual({
+      backgroundColor: expectedHex,
+      hovered: true,
     })
-    .toBe(expectedHex)
 }
 
 function normalizeColor(raw: string): string {
@@ -49,8 +71,16 @@ function normalizeColor(raw: string): string {
 
 test.describe('Landing Page - Interactions', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route('**/api.github.com/repos/dev-five-git/devup-ui', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ stargazers_count: 1234 }),
+      }),
+    )
     await page.goto('/')
     await page.waitForLoadState('networkidle')
+    await waitForFontsReady(page)
   })
 
   test('GetStarted button background changes on hover', async ({ page }) => {
@@ -112,5 +142,54 @@ test.describe('Landing Page - Interactions', () => {
 
     // After hover should be $menuHover = #F6F4FF
     await expectHoverBg(figmaLink, '#f6f4ff')
+  })
+
+  test('client navigation preserves browser state', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.evaluate(() => {
+      ;(
+        window as Window & { __landingNavigationMarker?: string }
+      ).__landingNavigationMarker = 'preserved'
+    })
+
+    await page.getByRole('link', { name: 'Docs', exact: true }).click()
+    await expect(page).toHaveURL(/\/docs\/overview$/)
+    await expect(
+      page.getByRole('heading', { name: 'What is Devup UI?' }),
+    ).toBeVisible()
+    expect(
+      await page.evaluate(
+        () =>
+          (window as Window & { __landingNavigationMarker?: string })
+            .__landingNavigationMarker,
+      ),
+    ).toBe('preserved')
+  })
+
+  test('Lenis responds to wheel scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.mouse.wheel(0, 900)
+
+    await expect
+      .poll(() => page.evaluate(() => window.scrollY), { timeout: 5_000 })
+      .toBeGreaterThan(100)
+  })
+
+  test('direct docs anchors scroll to their heading', async ({ page }) => {
+    await page.goto('/docs/overview#proven-performance')
+    await page.waitForLoadState('networkidle')
+    await waitForFontsReady(page)
+
+    const heading = page.locator('#proven-performance')
+    await expect(heading).toHaveText('Proven Performance')
+    await expect
+      .poll(() =>
+        heading.evaluate((element) => {
+          const rect = element.getBoundingClientRect()
+          return rect.top >= 0 && rect.top < window.innerHeight
+        }),
+      )
+      .toBe(true)
+    await expect(page).toHaveURL(/#proven-performance$/)
   })
 })

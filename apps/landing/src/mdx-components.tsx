@@ -1,11 +1,34 @@
 import { Box, Text } from '@devup-ui/react'
 import type { MDXComponents } from 'mdx/types'
+import { isValidElement, type ReactNode } from 'react'
 
 import { Code } from './components/Code'
 
 interface MarkdownCodeProps extends React.ComponentProps<'code'> {
   inline?: boolean
   node?: unknown
+}
+
+function getNodeText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node)
+  }
+  if (Array.isArray(node)) {
+    return node.map(getNodeText).join('')
+  }
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return getNodeText(node.props.children)
+  }
+  return ''
+}
+
+function getHeadingId(children: ReactNode): string {
+  return getNodeText(children)
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
 }
 
 export const _components = {
@@ -25,21 +48,39 @@ export const _components = {
   },
   h1({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="h1" color="$title" typography="h1">
+      <Text
+        as="h1"
+        color="$title"
+        id={getHeadingId(children)}
+        scrollMarginTop="100px"
+        typography="h1"
+      >
         {children}
       </Text>
     )
   },
   h2({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="h2" color="$title" typography="h2">
+      <Text
+        as="h2"
+        color="$title"
+        id={getHeadingId(children)}
+        scrollMarginTop="100px"
+        typography="h2"
+      >
         {children}
       </Text>
     )
   },
   h3({ children }: { children: React.ReactNode }) {
     return (
-      <Text as="h3" color="$title" typography="h3">
+      <Text
+        as="h3"
+        color="$title"
+        id={getHeadingId(children)}
+        scrollMarginTop="100px"
+        typography="h3"
+      >
         {children}
       </Text>
     )
