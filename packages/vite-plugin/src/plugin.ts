@@ -29,8 +29,14 @@ import {
 } from '@devup-ui/wasm'
 import type { ModuleNode, PluginOption, UserConfig } from 'vite'
 
-/** CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ... */
-const DEVUP_CSS_FILE_RE = /devup-ui(-\d+)?\.css$/
+/**
+ * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
+ *
+ * Anchored at BOTH ends and matched against a bare file name. Without `^` it
+ * also accepts an app's own `vendor-devup-ui.css`, which `generateBundle` would
+ * then overwrite with the devup sheet.
+ */
+const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
 
 const SOURCE_DIR_CANDIDATES = ['src', 'app']
 
@@ -484,10 +490,11 @@ export function DevupUI({
       // too, not just the base sheet.
       for (const file of Object.keys(bundle)) {
         const asset = bundle[file]
-        const name = asset.name
-        if (!name || !DEVUP_CSS_FILE_RE.test(name)) continue
+        if (!asset.name) continue
+        const cssName = getDevupCssChunkName(asset.name)
+        if (!cssName) continue
         if (!('source' in asset)) continue
-        asset.source = getCss(getFileNumByFilename(name), false)
+        asset.source = getCss(getFileNumByFilename(cssName), false)
       }
     },
   }
