@@ -143,4 +143,96 @@ test.describe('Landing Page - Theme Switching', () => {
     expect(normalizeColor(darkBg)).toBe('#2e303c')
     expect(normalizeColor(lightBgAgain)).toBe('#f4f4f6')
   })
+
+  test('theme switch persists the selection across reloads', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.evaluate(() => {
+      localStorage.setItem('__DF_THEME_SELECTED__', 'light')
+    })
+    await page.reload({ waitUntil: 'networkidle' })
+
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await page.getByRole('button', { name: 'Toggle color theme' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    expect(
+      await page.evaluate(() => localStorage.getItem('__DF_THEME_SELECTED__')),
+    ).toBe('dark')
+
+    await page.reload({ waitUntil: 'networkidle' })
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  })
 })
+
+const FIRST_PAINT_VIEWPORTS = {
+  desktop: { width: 1440, height: 900 },
+  mobile: { width: 375, height: 812 },
+} as const
+
+const FIRST_PAINT_BACKGROUND = {
+  dark: '#2e303c',
+  light: '#f4f4f6',
+} as const
+
+for (const [viewportName, viewport] of Object.entries(FIRST_PAINT_VIEWPORTS)) {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`applies ${theme} before first paint at ${viewportName} width`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        colorScheme: theme === 'dark' ? 'light' : 'dark',
+        viewport,
+      })
+      await context.addInitScript((selectedTheme) => {
+        localStorage.setItem('__DF_THEME_SELECTED__', selectedTheme)
+
+        const changes: string[] = []
+        ;(
+          window as Window & { __landingThemeChanges?: string[] }
+        ).__landingThemeChanges = changes
+
+        const originalSetAttribute = Element.prototype.setAttribute
+        Element.prototype.setAttribute = function setAttribute(name, value) {
+          if (name === 'data-theme') changes.push(value)
+          originalSetAttribute.call(this, name, value)
+        }
+      }, theme)
+
+      const page = await context.newPage()
+      await page.route(
+        '**/api.github.com/repos/dev-five-git/devup-ui',
+        (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ stargazers_count: 1234 }),
+          }),
+      )
+      await page.route('**/www.googletagmanager.com/**', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/javascript',
+          body: '',
+        }),
+      )
+
+      await page.goto('/', { waitUntil: 'domcontentloaded' })
+      const firstPaintState = await page.evaluate(() => ({
+        background: getComputedStyle(document.body).backgroundColor,
+        changes:
+          (window as Window & { __landingThemeChanges?: string[] })
+            .__landingThemeChanges ?? [],
+        theme: document.documentElement.getAttribute('data-theme'),
+      }))
+
+      expect(firstPaintState.theme).toBe(theme)
+      expect([...new Set(firstPaintState.changes)]).toEqual([theme])
+      expect(normalizeColor(firstPaintState.background)).toBe(
+        FIRST_PAINT_BACKGROUND[theme],
+      )
+
+      await context.close()
+    })
+  }
+}

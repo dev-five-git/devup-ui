@@ -66,7 +66,7 @@ export default async function Page({
       <Text as="strong" color="$primary" m="0" typography="captionBold">
         {componentName}
       </Text>
-      <Text as="h4" color="$title" m="0" typography="h4">
+      <Text as="h1" color="$title" m="0" typography="h4">
         {componentName}
       </Text>
       <Index
@@ -79,7 +79,7 @@ export default async function Page({
         }}
       />
       <VStack gap="16px" py="30px">
-        <Text as="h6" color="$title" m="0" typography="h6">
+        <Text as="h2" color="$title" m="0" typography="h6">
           Examples
         </Text>
         <Flex flexWrap="wrap" gap="16px">

@@ -1,14 +1,15 @@
 /**
- * Custom static file server for Next.js static export.
+ * Custom static file server for the vinext client export.
  * Handles clean URLs by preferring .html files over directories.
  * Usage: node e2e/serve-static.mjs [port]
  */
 import { readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { extname, join } from 'node:path'
+import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const PORT = parseInt(process.argv[2] || '3099', 10)
-const ROOT = join(process.cwd(), 'apps', 'landing', 'out')
+const ROOT = resolve(process.cwd(), 'apps', 'landing', 'dist', 'client')
+const NOT_FOUND = join(ROOT, '404.html')
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -26,6 +27,7 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
+  '.rsc': 'text/x-component',
   '.map': 'application/json',
 }
 
@@ -39,34 +41,44 @@ async function exists(path) {
 }
 
 async function resolveFile(urlPath) {
+  const cleanPath = urlPath.replace(/^\/+/, '')
+  const exact = resolve(ROOT, cleanPath)
+  const relativePath = relative(ROOT, exact)
+
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    return { filePath: NOT_FOUND, status: 404 }
+  }
+
   // 1. Try exact file path
-  const exact = join(ROOT, urlPath)
-  if ((await exists(exact)) === 'file') return exact
+  if ((await exists(exact)) === 'file') return { filePath: exact, status: 200 }
 
   // 2. Try with .html extension (clean URLs — PRIORITY over directory)
-  const withHtml = join(ROOT, urlPath + '.html')
-  if ((await exists(withHtml)) === 'file') return withHtml
+  const withHtml = `${exact}.html`
+  if ((await exists(withHtml)) === 'file') {
+    return { filePath: withHtml, status: 200 }
+  }
 
   // 3. Try index.html inside directory
-  const indexHtml = join(ROOT, urlPath, 'index.html')
-  if ((await exists(indexHtml)) === 'file') return indexHtml
+  const indexHtml = join(exact, 'index.html')
+  if ((await exists(indexHtml)) === 'file') {
+    return { filePath: indexHtml, status: 200 }
+  }
 
-  // 4. Fallback to root index.html (SPA fallback)
-  return join(ROOT, 'index.html')
+  return { filePath: NOT_FOUND, status: 404 }
 }
 
 const server = createServer(async (req, res) => {
   const urlPath = decodeURIComponent(
     new URL(req.url, `http://localhost:${PORT}`).pathname,
   )
-  const filePath = await resolveFile(urlPath)
+  const { filePath, status } = await resolveFile(urlPath)
   const ext = extname(filePath)
   const contentType = MIME_TYPES[ext] || 'application/octet-stream'
 
   try {
     const data = await readFile(filePath)
-    res.writeHead(200, { 'Content-Type': contentType })
-    res.end(data)
+    res.writeHead(status, { 'Content-Type': contentType })
+    res.end(req.method === 'HEAD' ? undefined : data)
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not Found')

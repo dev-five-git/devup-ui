@@ -1,6 +1,22 @@
 import { Text, VStack } from '@devup-ui/react'
+import type { Metadata } from 'next'
 
 import { ShowcaseContent } from '@/components/showcase/ShowcaseContent'
+
+export const metadata: Metadata = {
+  title: 'Devup UI Showcase',
+  description: 'Websites and apps built with Devup UI.',
+  alternates: {
+    canonical: '/showcase',
+  },
+  openGraph: {
+    title: 'Devup UI Showcase',
+    description: 'Websites and apps built with Devup UI.',
+    url: '/showcase',
+    siteName: 'Devup UI',
+    images: ['/og-image.png'],
+  },
+}
 
 const SHOWCASE_LIST = [
   {
@@ -101,7 +117,7 @@ export default function Page() {
       w="100%"
     >
       <VStack gap="12px">
-        <Text color="$title" typography="h4">
+        <Text as="h1" color="$title" m="0" typography="h4">
           Showcase
         </Text>
         <Text color="$text" typography="bodyReg">

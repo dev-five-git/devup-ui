@@ -1,34 +1,22 @@
-import { existsSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+type DemoModule = {
+  default: React.ComponentType
+}
+
+const demoModules = import.meta.glob<DemoModule>('../app/**/demo/*.tsx', {
+  eager: true,
+})
 
 export async function getDemos(
   dir: string,
 ): Promise<[React.ComponentType, string][]> {
-  const dirPath = join(
-    process.cwd(),
-    'src',
-    'app',
-    '(detail)',
-    'components',
-    '[component]',
-    dir,
-    'demo',
-  )
-  if (!existsSync(dirPath)) {
-    return []
-  }
-  const demos = await readdir(dirPath)
+  const directoryMarker = `/${dir}/demo/`
 
-  return Promise.all(
-    demos.map<Promise<[React.ComponentType, string]>>((item) =>
-      import(
-        './../' +
-          relative(process.cwd(), `${dirPath}/${item}`)
-            .replace('.tsx', '')
-            .replaceAll('\\', '/')
-            .slice(4)
-      ).then((m) => [m.default, `${dir}/demo/${item}`]),
-    ),
-  )
+  return Object.entries(demoModules)
+    .filter(([path]) => path.includes(directoryMarker))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([path, module]) => {
+      const filename = path.slice(path.lastIndexOf('/') + 1)
+
+      return [module.default, `${dir}/demo/${filename}`]
+    })
 }

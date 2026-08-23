@@ -2,6 +2,8 @@
 import { Box } from '@devup-ui/react'
 import { usePathname, useRouter } from 'next/navigation'
 
+import { replaceQuery } from '@/utils/use-query-param'
+
 import { isRoot } from '../../utils/is-root'
 
 interface HeaderInputWrapProps {
@@ -16,7 +18,7 @@ export function HeaderInputWrap({ children }: HeaderInputWrapProps) {
   return root ? null : (
     <Box
       onClick={() => {
-        router.replace('?search=1')
+        replaceQuery(router, '?search=1')
       }}
     >
       {children}

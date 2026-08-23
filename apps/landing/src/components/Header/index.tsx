@@ -107,6 +107,8 @@ export function Header() {
       </Flex>
       <Flex
         alignItems="center"
+        aria-label="Primary navigation"
+        as="nav"
         display={['none', null, null, 'flex']}
         gap={[null, null, '4px', '10px']}
       >

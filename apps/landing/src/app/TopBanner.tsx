@@ -1,5 +1,7 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 
+import { LandingTitle } from '@/LandingTitle'
+
 import { GetStartedButton } from './GetStartedButton'
 import SponsorButton from './SponsorButton'
 import StarButton from './StarButton'
@@ -46,15 +48,23 @@ export function TopBanner() {
           justifyContent="center"
           textAlign={['center', null, 'left']}
         >
-          <Text color="$title" px={[6, null, 0]} typography="h1">
-            <Text color="$primary">Zero</Text> Config
+          <LandingTitle>
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            Config
             <br />
-            <Text color="$primary">Zero</Text> FOUC
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            FOUC
             <br />
-            <Text color="$primary">Zero</Text> Runtime{' '}
-            <Box as="br" display={['none', null, 'initial']} />
+            <Text as="span" color="$primary">
+              Zero
+            </Text>{' '}
+            Runtime <Box as="br" display={['none', null, 'initial']} />
             CSS in JS Preprocessor
-          </Text>
+          </LandingTitle>
           <Text
             color="$text"
             textShadow="0 -2px 4px var(--base, #FFF), 0 2px 4px var(--base, #FFF)"

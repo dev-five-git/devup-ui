@@ -10,6 +10,7 @@ export function HeaderWrap({ children }: { children: React.ReactNode }) {
   const root = isRoot(path)
   return (
     <Box
+      as="header"
       pos={root ? 'fixed' : 'sticky'}
       pt={root ? [null, null, null, 5] : undefined}
       px={root ? [null, null, null, 4] : undefined}

@@ -15,6 +15,9 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
     const initialStyleCount = await page.evaluate(
       () => document.querySelectorAll('style').length,
     )
+    expect(initialStyleCount, 'Static export should not need style tags').toBe(
+      0,
+    )
 
     // Interact with the page: scroll, hover, etc.
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
@@ -63,20 +66,48 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
     ).toBe(false)
   })
 
-  test('all styling comes from <link rel="stylesheet"> tags', async ({
+  test('all styling arrives from static CSS files', async ({
     page,
+    request,
   }) => {
     const stylesheetLinks = await page.evaluate(() => {
       const links = Array.from(
         document.querySelectorAll('link[rel="stylesheet"]'),
       )
-      return links.map((link) => link.getAttribute('href')).filter(Boolean)
+      return links
+        .map((link) => link.getAttribute('href'))
+        .filter((href): href is string => Boolean(href))
     })
 
     expect(
       stylesheetLinks.length,
       'Expected stylesheets to be loaded via <link> tags',
     ).toBeGreaterThan(0)
+
+    for (const href of stylesheetLinks) {
+      const url = new URL(href, page.url())
+      expect(url.origin).toBe(new URL(page.url()).origin)
+      expect(url.pathname).toMatch(/\.css$/)
+
+      const response = await request.get(url.href)
+      expect(response.status(), href).toBe(200)
+      expect(response.headers()['content-type'], href).toContain('text/css')
+    }
+
+    const staticCssResourceCount = await page.evaluate(
+      () =>
+        performance
+          .getEntriesByType('resource')
+          .filter(
+            (entry) =>
+              entry instanceof PerformanceResourceTiming &&
+              entry.initiatorType === 'link' &&
+              new URL(entry.name).pathname.endsWith('.css'),
+          ).length,
+    )
+    expect(staticCssResourceCount).toBeGreaterThanOrEqual(
+      stylesheetLinks.length,
+    )
 
     // Verify CSS files contain devup-ui generated styles
     // (Next.js bundles CSS into hashed chunk filenames, so check content)
@@ -106,6 +137,37 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
     expect(hasDevupCss, 'Expected devup-ui CSS variables in stylesheets').toBe(
       true,
     )
+  })
+
+  test('representative elements use compiled short class names', async ({
+    page,
+  }) => {
+    const headingClasses = await page
+      .locator('main h1')
+      .evaluate((element) => Array.from(element.classList))
+
+    expect(headingClasses.length).toBeGreaterThan(1)
+    const atomicClasses = headingClasses.filter((className) =>
+      /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className),
+    )
+    expect(atomicClasses.length).toBeGreaterThan(1)
+    expect(
+      headingClasses.every(
+        (className) =>
+          /^(?:[a-z]-)?[a-z0-9_]{1,3}$/i.test(className) ||
+          /^typo-[a-z0-9]+$/i.test(className),
+      ),
+      `Expected compact base-37 classes, received: ${headingClasses.join(' ')}`,
+    ).toBe(true)
+
+    const generatedRuntimeClasses = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[class]'))
+        .flatMap((element) => Array.from(element.classList))
+        .filter((className) =>
+          /^(?:css|emotion|sc|styled|stitches)-[a-z0-9]+/i.test(className),
+        ),
+    )
+    expect(generatedRuntimeClasses).toEqual([])
   })
 
   test('no inline style attributes from CSS-in-JS runtime', async ({

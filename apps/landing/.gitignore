@@ -16,9 +16,10 @@ public/storybook
 # testing
 /coverage
 
-# next.js
+# vinext
 /.next/
-/out/
+/.vinext/
+/dist/
 
 # production
 /build

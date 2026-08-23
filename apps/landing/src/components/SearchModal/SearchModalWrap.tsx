@@ -1,10 +1,12 @@
 'use client'
 
 import { Box } from '@devup-ui/react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+
+import { replaceQuery, useQueryParam } from '@/utils/use-query-param'
 
 export function SearchModalWrap({ children }: { children?: React.ReactNode }) {
-  const search = useSearchParams().get('search')
+  const search = useQueryParam('search')
   const router = useRouter()
 
   return search !== '1' ? null : (
@@ -12,7 +14,7 @@ export function SearchModalWrap({ children }: { children?: React.ReactNode }) {
       bg="rgba(0, 0, 0, 0.70)"
       boxSize="100%"
       onClick={(event) => {
-        if (event.target === event.currentTarget) router.replace('?')
+        if (event.target === event.currentTarget) replaceQuery(router, '?')
       }}
       pos="fixed"
       zIndex={10000}

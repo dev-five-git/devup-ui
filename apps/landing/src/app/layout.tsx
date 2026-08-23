@@ -3,9 +3,16 @@ import { resetCss } from '@devup-ui/reset-css'
 import ReactLenis from 'lenis/react'
 import type { Metadata } from 'next'
 
+import { AnchorScroll } from '../components/AnchorScroll'
 import { Footer } from '../components/Footer'
 import { Header } from '../components/Header'
 import { SearchModal } from '../components/SearchModal'
+import {
+  installStaticExportRscTransport,
+  STATIC_EXPORT_DEPLOYMENT_ID,
+} from '../utils/static-export-rsc-transport'
+
+const staticExportRscTransport = `(${installStaticExportRscTransport.toString()})(${JSON.stringify(STATIC_EXPORT_DEPLOYMENT_ID)})`
 
 export const metadata: Metadata = {
   title: 'Devup UI',
@@ -98,6 +105,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {process.env.NODE_ENV === 'production' && (
+          <script
+            dangerouslySetInnerHTML={{ __html: staticExportRscTransport }}
+            data-vinext-static-rsc-transport=""
+          />
+        )}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -151,10 +164,11 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           />
         </noscript>
         <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
+          <AnchorScroll />
           <SearchModal />
           <Box bg="$background">
             <Header />
-            {children}
+            <Box as="main">{children}</Box>
           </Box>
           <Footer />
         </ReactLenis>

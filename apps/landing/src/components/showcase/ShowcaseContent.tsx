@@ -1,7 +1,7 @@
 'use client'
 
 import { css, Flex, Grid, Text } from '@devup-ui/react'
-import Link from 'next/dist/client/link'
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { ShowcaseCard } from '@/components/showcase/ShowcaseCard'
