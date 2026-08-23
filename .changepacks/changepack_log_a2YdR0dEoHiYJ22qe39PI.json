@@ -1,8 +1,0 @@
-{
-  "changes": {
-    "packages/next-plugin/package.json": "Patch",
-    "packages/plugin-utils/package.json": "Patch"
-  },
-  "note": "Prevent incomplete CSS in Turbopack production builds by prewarming application and external global style entries",
-  "date": "2026-08-23T15:00:44.533442300Z"
-}
