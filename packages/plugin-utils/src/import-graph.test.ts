@@ -951,6 +951,29 @@ describe('buildStaticImportGraph sharing', () => {
       computeFileReach({ cwd, srcDir }),
     )
   })
+
+  it('records bare runtime imports that resolve outside the source graph', () => {
+    writeFixture(
+      'src/app/page.tsx',
+      [
+        "import '@devup-ui/reset-css'",
+        "import type { ReactNode } from 'react'",
+        "import { type Metadata } from 'next'",
+        "import './local'",
+        "export const load = () => import('@devup-ui/components')",
+      ].join('\n'),
+    )
+    writeFixture('src/app/local.tsx', 'export const local = true\n')
+
+    const graph = buildStaticImportGraph(srcDir)
+
+    expect(graph.externalImports?.get(join(srcDir, 'app/page.tsx'))).toEqual(
+      new Set(['@devup-ui/reset-css', '@devup-ui/components']),
+    )
+    expect(graph.externalImports?.get(join(srcDir, 'app/local.tsx'))).toEqual(
+      new Set(),
+    )
+  })
 })
 
 describe('planAtomHoist', () => {

@@ -17,6 +17,7 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
@@ -43,6 +44,7 @@ import {
 import { type NextConfig } from 'next'
 
 import { startCoordinator } from './coordinator'
+import { collectProductionPrewarmFiles } from './prewarm'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -151,12 +153,14 @@ export function DevupUI(
     // deterministic base-css completion signal handed to the coordinator. Stays
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
+    let staticGraph: StaticImportGraph | undefined
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      staticGraph = graph
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -211,15 +215,24 @@ export function DevupUI(
     }
 
     // Turbopack can request a CSS module before it has scheduled every source
-    // loader in the route. Waiting for a quiet window is not a compilation-
-    // complete signal: a CSS request can itself hold up the next extraction
-    // wave. In one-shot builds, extract the route closure synchronously first
-    // so every CSS snapshot is complete from its first request. Loader-time
-    // extraction uses the same keys/options and is idempotent.
+    // loader. Waiting for a quiet window is not a compilation-complete signal:
+    // a CSS request can itself hold up the next extraction wave. In one-shot
+    // builds, extract every source candidate plus accepted external package
+    // entries synchronously first. The wider set covers template imports, MDX
+    // dependencies and package-level globalCss (notably reset-css) that the
+    // route graph cannot represent. Loader-time extraction uses the same
+    // keys/options and is idempotent.
     const prewarmedFiles: string[] = []
-    if (!watch) {
+    if (!watch && staticGraph) {
       const cwd = process.cwd()
-      for (const filename of expectedBaseFiles) {
+      const prewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph: staticGraph,
+        expectedBaseFiles,
+        libPackage,
+        include,
+      })
+      for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
         const relCssDir = `./${relative(
           dirname(resourcePath),

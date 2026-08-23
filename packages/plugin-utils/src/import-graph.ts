@@ -100,6 +100,12 @@ export interface StaticImportGraph {
    * is itself unreachable would be treated as compiled.
    */
   dynamicImports: Map<string, Set<string>>
+  /**
+   * file -> bare runtime import specifiers that resolve outside `srcDir`.
+   * Bundler plugins use this to prewarm explicitly included package entries
+   * (for example `@devup-ui/reset-css`) before their first CSS snapshot.
+   */
+  externalImports?: Map<string, Set<string>>
 }
 
 /**
@@ -125,18 +131,29 @@ export function buildStaticImportGraph(
   const staticImports = new Map<string, Set<string>>()
   const dynamicImports = new Map<string, Set<string>>()
   const dynamicTargets = new Set<string>()
+  const externalImports = new Map<string, Set<string>>()
 
   for (const file of files) {
     staticImporters.set(file, new Set())
     staticImports.set(file, new Set())
     dynamicImports.set(file, new Set())
+    externalImports.set(file, new Set())
   }
 
   for (const file of files) {
     const imports = parseImports(file, readFileSync(file, 'utf-8'))
     for (const importRef of imports) {
       const target = resolveImport(importRef.specifier, file, context)
-      if (!target) continue
+      if (!target) {
+        if (
+          !importRef.specifier.startsWith('.') &&
+          !importRef.specifier.startsWith('/') &&
+          !isAbsolute(importRef.specifier)
+        ) {
+          externalImports.get(file)?.add(importRef.specifier)
+        }
+        continue
+      }
       if (importRef.kind === 'dynamic') {
         dynamicTargets.add(target)
         dynamicImports.get(file)?.add(target)
@@ -154,6 +171,7 @@ export function buildStaticImportGraph(
     staticImporters,
     dynamicTargets,
     dynamicImports,
+    externalImports,
   }
 }
 

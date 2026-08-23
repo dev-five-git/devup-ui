@@ -785,6 +785,57 @@ describe('DevupUINextPlugin', () => {
       }
     })
 
+    it('prewarms source candidates hidden from the route closure', () => {
+      process.env.TURBOPACK = '1'
+      const page = resolve('src/app/page.tsx')
+      const templateTarget = resolve('src/demos/template-target.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue({
+        files: [page, templateTarget],
+        fileSet: new Set([page, templateTarget]),
+        staticImports: new Map([
+          [page, new Set<string>()],
+          [templateTarget, new Set<string>()],
+        ]),
+        staticImporters: new Map([
+          [page, new Set<string>()],
+          [templateTarget, new Set<string>()],
+        ]),
+        dynamicTargets: new Set(),
+        dynamicImports: new Map([
+          [page, new Set<string>()],
+          [templateTarget, new Set<string>()],
+        ]),
+        externalImports: new Map([
+          [page, new Set<string>()],
+          [templateTarget, new Set<string>()],
+        ]),
+      })
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      try {
+        DevupUI({})
+
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedBaseFiles: ['src/app/page.tsx'],
+            prewarmedFiles: [
+              'src/app/page.tsx',
+              'src/demos/template-target.tsx',
+            ],
+          }),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+      } finally {
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
+    })
+
     it('prewarms the same complete file set in singleCss mode', () => {
       process.env.TURBOPACK = '1'
       const compiledSpy = spyOn(
@@ -808,7 +859,7 @@ describe('DevupUINextPlugin', () => {
         expect(startCoordinatorSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             singleCss: true,
-            prewarmedFiles: ['src/app/page.tsx', 'src/app/card.tsx'],
+            prewarmedFiles: ['src/app/card.tsx', 'src/app/page.tsx'],
           }),
         )
       } finally {
