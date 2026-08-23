@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Prevent incomplete CSS in Turbopack production builds",
+  "date": "2026-08-23T15:00:44.533442300Z"
+}

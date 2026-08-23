@@ -17,6 +17,7 @@ import {
 import * as coordinatorModule from '../coordinator'
 import { DevupUI } from '../plugin'
 
+type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type NextWebpackConfig = Parameters<
   NonNullable<ReturnType<typeof DevupUI>['webpack']>
 >[0]
@@ -38,6 +39,18 @@ function setNodeEnv(value: string): void {
   process.env.NODE_ENV = value
 }
 
+function createCodeExtractResult(contents: string): CodeExtractResult {
+  return {
+    css: '',
+    code: contents,
+    cssFile: '',
+    map: undefined,
+    updatedBaseStyle: false,
+    free: mock(),
+    [Symbol.dispose]: mock(),
+  } as unknown as CodeExtractResult
+}
+
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -54,6 +67,7 @@ let importFileMapSpy: ReturnType<typeof spyOn>
 let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
+let codeExtractSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
 
@@ -91,6 +105,9 @@ beforeEach(() => {
   exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue(
     JSON.stringify({}),
   )
+  codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
+    (_path: string, contents: string) => createCodeExtractResult(contents),
+  )
   devupUIWebpackPluginSpy = spyOn(
     webpackPluginModule,
     'DevupUIWebpackPlugin',
@@ -126,6 +143,7 @@ afterEach(() => {
   exportSheetSpy.mockRestore()
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
+  codeExtractSpy.mockRestore()
   devupUIWebpackPluginSpy.mockRestore()
   startCoordinatorSpy.mockRestore()
 })
@@ -488,6 +506,7 @@ describe('DevupUINextPlugin', () => {
         coordinatorPortFile: join('df', 'coordinator.port'),
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
+        prewarmedFiles: expect.any(Array),
       })
     })
     it('should create theme.d.ts file', async () => {
@@ -676,7 +695,9 @@ describe('DevupUINextPlugin', () => {
         coordinatorPortFile: join('df', 'coordinator.port'),
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
+        prewarmedFiles: [],
       })
+      expect(codeExtractSpy).not.toHaveBeenCalled()
 
       // Verify initial CSS file is written
       expect(writeFileSyncSpy).toHaveBeenCalledWith(
@@ -710,19 +731,88 @@ describe('DevupUINextPlugin', () => {
         importGraphModule,
         'computeFileRoutes',
       ).mockReturnValue({ 'src/app/page.tsx': [0] })
+      const events: string[] = []
+      codeExtractSpy.mockImplementation(
+        (filename: string, contents: string) => {
+          events.push(`extract:${filename}`)
+          return createCodeExtractResult(contents)
+        },
+      )
+      startCoordinatorSpy.mockImplementation(() => {
+        events.push('startCoordinator')
+        return { close: mock() as () => void }
+      })
       try {
         DevupUI({})
 
         expect(startCoordinatorSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             expectedBaseFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
+            prewarmedFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
           }),
         )
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/app/page.tsx',
+          '{}',
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/lazy/panel.tsx',
+          '{}',
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(events).toEqual([
+          'extract:src/app/page.tsx',
+          'extract:src/lazy/panel.tsx',
+          'startCoordinator',
+        ])
         // the static-only route map is not consulted outside atom-hoist mode
         expect(routesSpy).not.toHaveBeenCalled()
       } finally {
         compiledSpy.mockRestore()
         routesSpy.mockRestore()
+      }
+    })
+
+    it('prewarms the same complete file set in singleCss mode', () => {
+      process.env.TURBOPACK = '1'
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx', 'src/app/card.tsx'])
+      try {
+        DevupUI({}, { singleCss: true })
+
+        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractSpy).toHaveBeenCalledWith(
+          'src/app/card.tsx',
+          '{}',
+          '@devup-ui/react',
+          expect.any(String),
+          true,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            singleCss: true,
+            prewarmedFiles: ['src/app/page.tsx', 'src/app/card.tsx'],
+          }),
+        )
+      } finally {
+        compiledSpy.mockRestore()
       }
     })
 

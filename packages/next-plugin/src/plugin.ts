@@ -5,7 +5,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
@@ -19,6 +19,7 @@ import {
   planAtomHoist,
 } from '@devup-ui/plugin-utils'
 import {
+  codeExtract,
   exportClassMap,
   exportFileMap,
   exportSheet,
@@ -142,6 +143,7 @@ export function DevupUI(
     // coordinator shares this WASM instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    const watch = process.env.NODE_ENV === 'development'
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
@@ -208,6 +210,35 @@ export function DevupUI(
       // merge) and atom hoisting stays off.
     }
 
+    // Turbopack can request a CSS module before it has scheduled every source
+    // loader in the route. Waiting for a quiet window is not a compilation-
+    // complete signal: a CSS request can itself hold up the next extraction
+    // wave. In one-shot builds, extract the route closure synchronously first
+    // so every CSS snapshot is complete from its first request. Loader-time
+    // extraction uses the same keys/options and is idempotent.
+    const prewarmedFiles: string[] = []
+    if (!watch) {
+      const cwd = process.cwd()
+      for (const filename of expectedBaseFiles) {
+        const resourcePath = resolve(cwd, filename)
+        const relCssDir = `./${relative(
+          dirname(resourcePath),
+          cssDir,
+        ).replaceAll('\\', '/')}`
+        codeExtract(
+          filename,
+          readFileSync(resourcePath, 'utf-8'),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases as unknown as Record<string, string | null>,
+        )
+        prewarmedFiles.push(filename)
+      }
+    }
+
     // create devup-ui.css file
     writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
 
@@ -231,6 +262,7 @@ export function DevupUI(
       coordinatorPortFile,
       canonicalMap,
       expectedBaseFiles,
+      prewarmedFiles,
     })
 
     // Cleanup on exit
@@ -255,7 +287,7 @@ export function DevupUI(
         {
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
-            watch: process.env.NODE_ENV === 'development',
+            watch,
             coordinatorPortFile,
             sheetFile,
             classMapFile,
@@ -288,7 +320,7 @@ export function DevupUI(
               defaultSheet,
               defaultClassMap,
               defaultFileMap,
-              watch: process.env.NODE_ENV === 'development',
+              watch,
               singleCss,
               // for turbopack, load theme is required on loader
               theme,

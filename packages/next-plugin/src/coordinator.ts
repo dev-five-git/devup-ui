@@ -28,16 +28,20 @@ export interface CoordinatorOptions {
    */
   canonicalMap: Record<string, string>
   /**
-   * Route-reachable runtime source files (cwd-relative POSIX), i.e. exactly the
-   * files the bundler will compile and POST to `/extract`. Used to resolve the
-   * base-css `/css` wait DETERMINISTICALLY — block until every one of these has
-   * been extracted, instead of guessing completion from an idle gap. Comes from
-   * `computeFileRoutes` (already type-filtered and orphan-free), so it can never
-   * contain a phantom file the bundler skips. Empty when no routes are detected
-   * (e.g. pages-router) or the best-effort pre-pass failed, in which case the
-   * legacy idle heuristic below is the fallback.
+   * Route-reachable source graph closure (cwd-relative POSIX). Used both as the
+   * production prewarm target and as the deterministic base-css completion
+   * signal. It may include imports Turbopack later erases, but prewarming still
+   * extracts those files into the sheet. Empty when no routes are detected or
+   * the best-effort graph pass failed, in which case the legacy idle heuristic
+   * below is the fallback.
    */
   expectedBaseFiles?: string[]
+  /**
+   * Files synchronously extracted before a production Turbopack build starts.
+   * They seed completion tracking because their atoms already exist in the
+   * shared WASM sheet even though their loaders have not POSTed `/extract` yet.
+   */
+  prewarmedFiles?: string[]
   /**
    * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
    * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
@@ -45,16 +49,11 @@ export interface CoordinatorOptions {
    */
   idleThresholdMs?: number
   /**
-   * Full-quiet window (ms) after which a wait with still-missing members
-   * concludes those members will NEVER be compiled by the bundler and serves
-   * the CSS. Member sets come from the static import graph, which can
-   * over-approximate the bundle: an edge whose bindings the bundler erases
-   * (a type imported without the `type` keyword, or an unused import) keeps
-   * the member in the graph while the bundler never runs a loader for it.
-   * Once at least one extraction happened and NOTHING has been in flight for
-   * this window, the module graph is exhausted — serving now is complete for
-   * the actual bundle (a never-compiled file contributes no runtime markup).
-   * Defaults to 10000. Exposed for tests; the plugin omits it.
+   * Legacy fail-open window (ms) used when completion was not prewarmed and a
+   * graph member never reports. A quiet window cannot prove that Turbopack is
+   * finished scheduling loaders, so the production plugin avoids depending on
+   * this heuristic by extracting its complete route closure up front. Defaults
+   * to 10000. Exposed for tests; the plugin omits it.
    */
   quietMs?: number
   /**
@@ -162,13 +161,10 @@ let idleThresholdMs = 2500
 let quietMs = 10_000
 let maxWaitMs = 60_000
 
-// The bundler invokes the extract loader for every compilable source file it
-// discovers. Once at least one extraction happened and nothing has been in
-// flight for a full quiet window, the module graph is exhausted: a member that
-// still has not reported will never be compiled (its only import edges were
-// erased at build time — see CoordinatorOptions.quietMs). Serving then is
-// complete for the ACTUAL bundle, so waits use this as an early exit instead
-// of stalling until the wall-clock backstop.
+// Legacy fail-open signal for callers that could not prewarm a deterministic
+// file set. It only observes extraction traffic; it is NOT a Turbopack
+// compilation-complete signal. Production builds seed `extractedFiles` with
+// their prewarmed route closure and therefore do not depend on this path.
 function bundlerQuiet(now: number): boolean {
   return (
     totalExtractions > 0 &&
@@ -179,10 +175,8 @@ function bundlerQuiet(now: number): boolean {
 }
 
 function baseFilesComplete(): boolean {
-  // Deterministic: the base sheet is complete once every route-reachable runtime
-  // file has been extracted. Each `/extract` (success OR failure) adds its file
-  // to `extractedFiles`, and `expectedBaseFiles` is phantom-free, so this is a
-  // device-independent superset check — no idle gap to guess.
+  // Deterministic: the base sheet is complete once every route-reachable file
+  // has been extracted by either the production prewarm or `/extract`.
   if (expectedBaseFiles.size === 0) return false
   for (const file of expectedBaseFiles) {
     if (!extractedFiles.has(file)) return false
@@ -207,9 +201,8 @@ function waitForBase(): Promise<void> {
         resolve()
         return
       }
-      // The graph over-approximated: some expected file's import edges were
-      // erased by the bundler, so it will never extract. Once the bundler has
-      // gone fully quiet the sheet is complete for the actual bundle.
+      // Legacy fail-open for a caller that supplied expected files without
+      // prewarming them. The Next plugin's production path completes above.
       if (expectedBaseFiles.size > 0 && bundlerQuiet(now)) {
         resolve()
         return
@@ -286,18 +279,14 @@ function waitForBucket(bucket: string): Promise<void> {
         return
       }
       const now = Date.now()
-      // A bucket's member set comes from the import graph (`canonicalMap`),
-      // which excludes type-only edges (`import type` / `export type` /
-      // all-inline-type specifier lists) — but it CANNOT statically see
-      // bundler usage-based elision (a type imported without the `type`
-      // keyword, or an unused import). Such phantom members never POST
-      // /extract. Once the bundler has gone fully quiet, conclude the
-      // remaining members are phantoms and serve: the sheet is complete for
-      // the actual bundle, since a never-compiled file renders no markup.
+      // Legacy fail-open for a caller that did not seed the bucket through
+      // prewarming. Quiet time alone cannot distinguish an erased import from
+      // a later Turbopack extraction wave; production builds complete via the
+      // allExtracted branch above.
       if (bundlerQuiet(now)) {
         const missing = [...members].filter((m) => !extractedFiles.has(m))
         console.info(
-          `[devup-ui] coordinator: bucket "${bucket}" member(s) were never compiled by the bundler (likely type-only or unused imports, erased at build time): ${missing.join(', ')}; CSS is complete for the compiled bundle`,
+          `[devup-ui] coordinator: serving bucket "${bucket}" through the legacy quiet fallback; treating unreported member(s) as erased imports: ${missing.join(', ')}`,
         )
         resolve()
         return
@@ -342,6 +331,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   bucketToMembers = buildBucketToMembers(options.canonicalMap)
   expectedBaseFiles = new Set(options.expectedBaseFiles ?? [])
   extractedFiles.clear()
+  for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   fileNumToBucket.clear()
 
   server = createServer(async (req, res) => {
