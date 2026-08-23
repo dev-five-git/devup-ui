@@ -392,6 +392,115 @@ describe('devupUIVitePlugin', () => {
     })
   })
 
+  describe('deterministic file numbering', () => {
+    let listSourceFilesSpy: ReturnType<typeof spyOn>
+    let importFileMapSpy: ReturnType<typeof spyOn>
+    let exportFileMapSpy: ReturnType<typeof spyOn>
+
+    beforeEach(() => {
+      listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
+      importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
+      exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
+    })
+
+    afterEach(() => {
+      listSourceFilesSpy.mockRestore()
+      importFileMapSpy.mockRestore()
+      exportFileMapSpy.mockRestore()
+    })
+
+    function onlyDirs(...dirs: string[]) {
+      const wanted = new Set(dirs.map((d) => resolve('/p', d)))
+      existsSyncSpy.mockImplementation((path: string) => wanted.has(path))
+    }
+
+    it('numbers files by sorted path, not by transform arrival order', async () => {
+      onlyDirs('src')
+      // returned out of order on purpose: arrival order must not leak through
+      listSourceFilesSpy.mockReturnValue([
+        '/p/src/z.tsx',
+        '/p/src/a.tsx',
+        '/p/src/m.tsx',
+      ])
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).toHaveBeenCalledWith({
+        '/p/src/a.tsx': 0,
+        '/p/src/m.tsx': 1,
+        '/p/src/z.tsx': 2,
+      })
+    })
+
+    it('normalizes windows separators to match vite module ids', async () => {
+      onlyDirs('src')
+      listSourceFilesSpy.mockReturnValue(['C:\\p\\src\\a.tsx'])
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).toHaveBeenCalledWith({ 'C:/p/src/a.tsx': 0 })
+    })
+
+    // A framework plugin resolves the config once per environment. Re-seeding
+    // drops the numbers already given to files outside src/ and app/, and since
+    // the sheet does not reset with the map, the next such file reuses a live
+    // number and its atoms overwrite the previous owner's.
+    it('leaves an already-populated map alone on a second configResolved', async () => {
+      onlyDirs('src')
+      listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
+      exportFileMapSpy.mockReturnValue(
+        '{"/p/src/a.tsx":0,"/monorepo/packages/ui/X.tsx":1}',
+      )
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).not.toHaveBeenCalled()
+    })
+
+    it('scans app/ for App Router projects and dedupes across roots', async () => {
+      onlyDirs('src', 'app')
+      listSourceFilesSpy.mockImplementation((dir: string) =>
+        dir === resolve('/p', 'app')
+          ? ['/p/app/page.tsx', '/p/shared.tsx']
+          : ['/p/src/b.tsx', '/p/shared.tsx'],
+      )
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).toHaveBeenCalledWith({
+        '/p/app/page.tsx': 0,
+        '/p/shared.tsx': 1,
+        '/p/src/b.tsx': 2,
+      })
+    })
+
+    it.each([
+      ['no conventional source dir exists', () => onlyDirs()],
+      [
+        'the source dir is empty',
+        () => {
+          onlyDirs('src')
+          listSourceFilesSpy.mockReturnValue([])
+        },
+      ],
+    ])('leaves numbering alone when %s', async (_name, setup) => {
+      setup()
+      await createPlugin({}).configResolved({ root: '/p' })
+      expect(importFileMapSpy).not.toHaveBeenCalled()
+    })
+
+    it('keeps building when the scan fails', async () => {
+      onlyDirs('src')
+      listSourceFilesSpy.mockImplementation(() => {
+        throw new Error('scan boom')
+      })
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('deterministic css output', () => {
     it('creates the css dir before writing into it', async () => {
       const order: string[] = []
@@ -974,6 +1083,39 @@ describe('devupUIVitePlugin atom hoisting', () => {
       '/p/src/r1.tsx': [1],
     })
     expect(setAtomHoistSpy).toHaveBeenCalledWith(2)
+  })
+
+  it.each([
+    ['app', 'app'],
+    ['src', 'src'],
+  ])('scans %s/ when that is where the sources live', async (_name, dir) => {
+    existsSyncSpy.mockImplementation(
+      (path: string) => path === resolve('/p', dir),
+    )
+    computeFileReachSpy.mockReturnValue({
+      '/p/a.tsx': [0],
+      '/p/b.tsx': [1],
+    })
+
+    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+
+    expect(computeFileReachSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ srcDir: resolve('/p', dir) }),
+    )
+  })
+
+  it('falls back to src/ when neither conventional dir exists', async () => {
+    existsSyncSpy.mockReturnValue(false)
+    computeFileReachSpy.mockReturnValue({
+      '/p/a.tsx': [0],
+      '/p/b.tsx': [1],
+    })
+
+    await runConfigResolved({ atomHoist: 2 }, { root: '/p' })
+
+    expect(computeFileReachSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ srcDir: resolve('/p', 'src') }),
+    )
   })
 
   it('clamps the threshold to a minimum of 2', async () => {

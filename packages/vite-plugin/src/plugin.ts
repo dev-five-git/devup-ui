@@ -9,16 +9,19 @@ import {
   createThemeInterfaceArgs,
   getFileNumByFilename,
   type ImportAliases,
+  listSourceFiles,
   loadDevupConfig,
   mergeImportAliases,
   planAtomHoist,
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  exportFileMap,
   getCss,
   getDefaultTheme,
   getThemeInterface,
   importCanonicalMap,
+  importFileMap,
   importFileRoutes,
   registerTheme,
   setAtomHoist,
@@ -35,6 +38,59 @@ import type { ModuleNode, PluginOption, UserConfig } from 'vite'
  * then overwrite with the devup sheet.
  */
 const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
+
+const SOURCE_DIR_CANDIDATES = ['src', 'app']
+
+/**
+ * Source roots to scan, or an empty list when none of the conventional layouts
+ * are present. Scanning the project root instead would sweep in config files
+ * and other never-transformed modules, so callers skip the scan entirely rather
+ * than guess.
+ */
+function resolveSourceDirs(root: string): string[] {
+  return SOURCE_DIR_CANDIDATES.map((dir) => resolve(root, dir)).filter((dir) =>
+    existsSync(dir),
+  )
+}
+
+/**
+ * Assigns each source file its devup file number up front, ordered by path.
+ *
+ * The engine otherwise hands numbers out on first sight, and the bundler
+ * transforms in parallel, so two identical builds produce different per-file
+ * class prefixes and therefore different CSS *and* JS asset hashes. Seeding
+ * from a sorted scan makes the numbering a pure function of the file paths.
+ * Every source file now holds a slot, where before only the ones that emitted
+ * styles consumed a number. Prefix length is a step function of the highest
+ * number handed out (1 char up to 26, 2 up to 1025, 3 beyond), so this is free
+ * until a project passes 1026 files under the scanned roots, at which point
+ * prefixes that used to be 2 chars become 3.
+ *
+ * Vite reports module ids as absolute POSIX-style paths even on Windows, so the
+ * scanned paths are normalized to match the keys `codeExtract` will look up.
+ *
+ * `importFileMap` REPLACES the engine's map, and a framework plugin resolves the
+ * config once per environment, so seeding unconditionally would wipe the numbers
+ * already handed to files outside `sourceDirs`: a monorepo sibling, or anything
+ * reached through `include`. The style sheet does not reset with the map, so the
+ * next such file reuses a live number and its atoms overwrite the previous
+ * owner's. Seeding only into an empty map keeps numbering deterministic on the
+ * first pass and stable for every later one.
+ */
+function seedFileMap(sourceDirs: string[]): void {
+  if (Object.keys(JSON.parse(exportFileMap())).length > 0) return
+  const sorted = [
+    ...new Set(
+      sourceDirs
+        .flatMap((dir) => listSourceFiles(dir))
+        .map((file) => file.replaceAll('\\', '/')),
+    ),
+  ].sort()
+  if (sorted.length === 0) return
+  const fileMap: Record<string, number> = {}
+  for (const [index, file] of sorted.entries()) fileMap[file] = index
+  importFileMap(fileMap)
+}
 
 /**
  * Names each devup CSS module after its own file, so every module is emitted
@@ -206,6 +262,13 @@ export function DevupUI({
     name: 'devup-ui',
     async configResolved(config) {
       isServe = config?.command === 'serve'
+      const projectRoot = config?.root ?? process.cwd()
+      const sourceDirs = resolveSourceDirs(projectRoot)
+      try {
+        seedFileMap(sourceDirs)
+      } catch {
+        // Best-effort; on failure numbering falls back to arrival order.
+      }
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeDataFiles({
@@ -225,8 +288,10 @@ export function DevupUI({
         atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
       if (atomMode) {
         try {
-          const root = config.root ?? process.cwd()
-          const srcDir = resolve(root, 'src')
+          const root = projectRoot
+          // App Router projects keep their sources in `app/`, so a hardcoded
+          // `src/` made the whole pre-pass a silent no-op for them.
+          const srcDir = sourceDirs[0] ?? resolve(root, 'src')
           const tsconfigPath = resolve(root, 'tsconfig.json')
           // C: prefer the bundler's real JS entries; fall back to the heuristic
           // (files with no importer) when input is html-only / unavailable.
