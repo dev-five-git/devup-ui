@@ -153,6 +153,33 @@ Support Theme with Typing
 <Text color="$text" />
 ```
 
+## Custom Shorthand Types
+
+Build plugins accept a `shorthands` option separately from `devup.json`. After
+the plugin runs, it augments `DevupCustomShorthands` in `df/theme.d.ts` so the
+configured names are available on `DevupProps` and nested selector props.
+
+```ts
+DevupUI({
+  shorthands: {
+    insetX: ['left', 'right'],
+  },
+})
+```
+
+```tsx
+<Box
+  insetX={[0, null, 'auto']}
+  _hover={{ insetX: 4 }}
+  selectors={{ '& > *': { insetX: 2 } }}
+/>
+```
+
+Restart the build plugin after changing shorthand configuration so the
+generated declaration is refreshed.
+If `tsconfig.json` only includes `src`, add `df/*.d.ts` (or your plugin's custom
+`distDir`) to `include`.
+
 Support Responsive And Pseudo Selector
 
 You can use responsive and pseudo selector.

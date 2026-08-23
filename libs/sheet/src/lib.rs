@@ -5,7 +5,7 @@ use css::{
     atom_hoist::{atom_hoist_threshold, is_atom_hoist},
     file_map::canonical,
     file_routes::route_count_for_files,
-    sheet_to_classname,
+    get_custom_shorthand_names, sheet_to_classname,
     style_selector::{AtRuleKind, StyleSelector, get_selector_order, global_selector_order},
     theme_tokens::set_theme_token_levels,
     utils::compile_regex,
@@ -640,11 +640,13 @@ impl StyleSheet {
         let typography_keys = collect_keys(&mut self.theme.typography.keys());
         let length_keys = collect_keys(&mut self.theme.length.values().flat_map(|t| t.keys()));
         let shadows_keys = collect_keys(&mut self.theme.shadows.values().flat_map(|t| t.keys()));
+        let shorthand_keys = get_custom_shorthand_names();
 
         if color_keys.is_empty()
             && typography_keys.is_empty()
             && length_keys.is_empty()
             && shadows_keys.is_empty()
+            && shorthand_keys.is_empty()
         {
             String::new()
         } else {
@@ -689,9 +691,27 @@ impl StyleSheet {
                 }
                 contents
             };
+            let shorthand_interface = if shorthand_keys.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "interface DevupCustomShorthands{{{}}}",
+                    shorthand_keys
+                        .iter()
+                        .map(|key| format!("{}?:DevupProps[\"w\"]", convert_interface_key(key)))
+                        .collect::<Vec<_>>()
+                        .join(";")
+                )
+            };
+            let shorthand_import = if shorthand_keys.is_empty() {
+                String::new()
+            } else {
+                format!("import type{{DevupProps}}from\"{package_name}\";")
+            };
             format!(
-                "import \"{}\";declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}}}",
+                "import \"{}\";{}declare module \"{}\"{{interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}interface {}{{{}}}{}interface {}{{{}}}}}",
                 package_name,
+                shorthand_import,
                 package_name,
                 color_interface_name,
                 emit_keys(color_keys, true),
@@ -701,6 +721,7 @@ impl StyleSheet {
                 emit_keys(length_keys, true),
                 shadows_interface_name,
                 emit_keys(shadows_keys, true),
+                shorthand_interface,
                 theme_interface_name,
                 emit_keys(theme_keys, false)
             )

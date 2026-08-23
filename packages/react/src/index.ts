@@ -10,6 +10,7 @@ export { ThemeScript } from './components/ThemeScript'
 export { VStack } from './components/VStack'
 export { useTheme } from './hooks/use-theme'
 export type { DevupProps } from './types/props'
+export type { DevupCustomShorthands } from './types/shorthand'
 export type { DevupTheme } from './types/theme'
 export type {
   DevupThemeTypography,

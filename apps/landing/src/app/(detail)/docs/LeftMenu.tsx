@@ -97,6 +97,10 @@ export function LeftMenu() {
             children: 'Style Props',
           },
           {
+            to: '/docs/api/custom-shorthands',
+            children: 'Custom Shorthands',
+          },
+          {
             to: '/docs/api/selector',
             children: 'Selector',
           },

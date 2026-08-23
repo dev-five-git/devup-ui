@@ -32,52 +32,46 @@ bun add @devup-ui/react @devup-ui/bun-plugin
 
 ## Usage
 
-### With Bun.build()
+Add the zero-config entry to Bun's preload list:
 
-```typescript
-import { DevupUI, getDevupDefine } from '@devup-ui/bun-plugin'
+```toml
+# bunfig.toml
+[test]
+preload = ["@devup-ui/bun-plugin"]
+```
 
-await Bun.build({
-  entrypoints: ['./src/index.tsx'],
-  outdir: './dist',
-  plugins: [DevupUI()],
-  define: getDevupDefine(),
+## Custom Shorthands
+
+To configure custom shorthands, preload a local module instead of the
+zero-config entry:
+
+```toml
+# bunfig.toml
+[test]
+preload = ["./devup-ui.preload.ts"]
+```
+
+```ts
+// devup-ui.preload.ts
+import { register } from '@devup-ui/bun-plugin/register'
+
+await register({
+  shorthands: {
+    insetX: ['left', 'right'],
+    scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+  },
 })
 ```
 
-### Configuration Options
+Custom shorthands are plugin configuration, not theme tokens. Every target
+receives the same value, and target names may use camelCase or kebab-case. The
+generated `df/theme.d.ts` provides type completion for component props,
+responsive values, and selectors. Restart Bun after changing the option.
+If `tsconfig.json` only includes your source directory, add `df/*.d.ts` to
+`include`.
 
-```typescript
-import { DevupUI } from '@devup-ui/bun-plugin'
-
-DevupUI({
-  // Package to import components from (default: '@devup-ui/react')
-  package: '@devup-ui/react',
-
-  // CSS directory path (default: 'df/devup-ui')
-  cssDir: 'df/devup-ui',
-
-  // Theme configuration file path (default: 'devup.json')
-  devupFile: 'devup.json',
-
-  // Distribution directory for generated files (default: 'df')
-  distDir: 'df',
-
-  // Enable CSS extraction and transformation (default: true)
-  extractCss: true,
-
-  // Enable debug logging (default: false)
-  debug: false,
-
-  // Additional packages to include in processing (default: [])
-  include: [],
-
-  // Merge all CSS into single file (default: false)
-  singleCss: false,
-
-  // CSS class name prefix (default: undefined)
-  prefix: 'my-prefix',
-})
+```tsx
+<Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
 ```
 
 ## Features

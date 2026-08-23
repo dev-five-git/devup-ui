@@ -164,3 +164,31 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 // Same
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
+
+## Custom Shorthands
+
+Custom shorthands belong to the plugin options rather than `devup.json` because
+they extend build-time extraction, not design tokens.
+
+```ts
+// next.config.ts
+const nextConfig = {}
+
+export default DevupUI(nextConfig, {
+  shorthands: {
+    insetX: ['left', 'right'],
+    scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+  },
+})
+```
+
+Every target receives the same value, and target names accept camelCase or
+kebab-case. The generated `df/theme.d.ts` adds type completion for direct,
+responsive, pseudo-selector, and custom-selector usage. Restart Next.js after
+changing the option.
+If your `tsconfig.json` does not already match `df/*.d.ts`, add it (or your
+custom `distDir`) to `include`.
+
+```tsx
+<Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
+```

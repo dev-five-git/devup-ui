@@ -164,3 +164,27 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 // Same
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
+
+## Custom Shorthands
+
+```ts
+// webpack.config.ts
+new DevupUIWebpackPlugin({
+  shorthands: {
+    insetX: ['left', 'right'],
+    scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+  },
+})
+```
+
+Custom shorthands extend build-time extraction and are intentionally separate
+from `devup.json`. Every target receives the same value; camelCase and CSS
+kebab-case target names are supported. After Webpack runs, the generated
+`df/theme.d.ts` provides type completion on component props, responsive values,
+and selectors. Restart Webpack after changing the option.
+If `tsconfig.json` only includes `src`, add `df/*.d.ts` (or your custom
+`distDir`) to `include`.
+
+```tsx
+<Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
+```

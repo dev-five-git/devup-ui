@@ -9,6 +9,12 @@ import type {
 } from '..'
 import type { Selectors } from '../selector'
 
+declare module '../../shorthand' {
+  interface DevupCustomShorthands {
+    insetX?: DevupProps['w']
+  }
+}
+
 describe('index', () => {
   it('DevupCommonProps', () => {
     assertType<DevupCommonProps>({
@@ -21,6 +27,20 @@ describe('index', () => {
     expectTypeOf<DevupProps>()
       .toHaveProperty('bg')
       .toEqualTypeOf<ResponsiveValue<Property.Background>>()
+  })
+
+  it('custom shorthand module augmentation', () => {
+    assertType<DevupComponentProps<'div'>>({
+      insetX: [0, null, 'auto'],
+      _hover: {
+        insetX: 4,
+      },
+      selectors: {
+        '& > *': {
+          insetX: '$contentWidth',
+        },
+      },
+    })
   })
 
   it('Selectors', () => {

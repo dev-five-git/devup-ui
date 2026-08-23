@@ -30,6 +30,7 @@ import {
   importFileMap,
   importFileRoutes,
   importSheet,
+  registerShorthands,
   registerTheme,
   setAtomHoist,
   setPrefix,
@@ -72,9 +73,12 @@ export function DevupUI(
       devupFile = 'devup.json',
       include = [],
       prefix,
+      shorthands,
       atomHoist,
       importAliases: userImportAliases,
     } = options
+
+    registerShorthands(shorthands ?? {})
 
     if (prefix) {
       setPrefix(prefix)

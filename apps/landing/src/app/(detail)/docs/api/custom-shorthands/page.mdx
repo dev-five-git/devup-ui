@@ -1,0 +1,186 @@
+export const metadata = {
+  title: 'Custom Shorthands',
+  description:
+    'Configure build-time Devup UI prop aliases with generated TypeScript completion.',
+  alternates: {
+    canonical: '/docs/api/custom-shorthands',
+  },
+  openGraph: {
+    title: 'Devup UI - Custom Shorthands',
+    description:
+      'Configure build-time Devup UI prop aliases with generated TypeScript completion.',
+    url: '/docs/api/custom-shorthands',
+    siteName: 'Devup UI',
+  },
+}
+
+# Custom Shorthands
+
+Custom shorthands define build-time prop aliases that apply one value to
+multiple CSS properties. They are plugin options, not design tokens, so define
+them in your bundler configuration rather than `devup.json`.
+
+```ts
+DevupUI({
+  shorthands: {
+    insetX: ['left', 'right'],
+    scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+  },
+})
+```
+
+```tsx
+const pinned = <Box insetX={0} />
+const responsive = <Box insetX={[0, null, 'auto']} />
+const interactive = <Box _hover={{ insetX: 4 }} />
+const nested = <Box selectors={{ '& > *': { insetX: 2 } }} />
+```
+
+For `insetX={4}`, both `left` and `right` receive the same resolved value. Every
+target follows the existing Devup UI value rules.
+
+## Plugin Configuration
+
+### Vite
+
+```ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+})
+```
+
+### Next.js
+
+```ts
+import { DevupUI } from '@devup-ui/next-plugin'
+
+const nextConfig = {}
+
+export default DevupUI(nextConfig, {
+  shorthands: {
+    insetX: ['left', 'right'],
+  },
+})
+```
+
+The second argument is shared by the Webpack and Turbopack paths.
+
+### Webpack
+
+```ts
+import { DevupUIWebpackPlugin } from '@devup-ui/webpack-plugin'
+
+export default {
+  plugins: [
+    new DevupUIWebpackPlugin({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+}
+```
+
+### Rsbuild
+
+```ts
+import { DevupUI } from '@devup-ui/rsbuild-plugin'
+import { defineConfig } from '@rsbuild/core'
+
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+      },
+    }),
+  ],
+})
+```
+
+### Bun
+
+Use a local preload module when options are required:
+
+```toml
+# bunfig.toml
+[test]
+preload = ["./devup-ui.preload.ts"]
+```
+
+```ts
+// devup-ui.preload.ts
+import { register } from '@devup-ui/bun-plugin/register'
+
+await register({
+  shorthands: {
+    insetX: ['left', 'right'],
+  },
+})
+```
+
+## Property Names
+
+Target properties may use either camelCase or CSS kebab-case:
+
+```ts
+DevupUI({
+  shorthands: {
+    scrollMarginX: ['scrollMarginLeft', 'scroll-margin-right'],
+  },
+})
+```
+
+Targets can also use built-in Devup UI shorthands. For example, `py` expands
+to both `padding-top` and `padding-bottom`:
+
+```ts
+DevupUI({
+  shorthands: {
+    sectionSpacing: ['py', 'gap'],
+  },
+})
+```
+
+## Type Completion
+
+When the plugin starts, it writes the configured prop names to
+`<distDir>/theme.d.ts` (`df/theme.d.ts` by default). The declaration augments
+`DevupProps`, so completion and type checking work for:
+
+- Component props such as `<Box insetX={0} />`
+- Responsive arrays such as `insetX={[0, null, 'auto']}`
+- Pseudo selectors such as `_hover={{ insetX: 4 }}`
+- Custom selectors such as `selectors={{ '& > *': { insetX: 2 } }}`
+
+If `tsconfig.json` limits `include` to your source directory, include the
+generated declaration as well:
+
+```json
+{
+  "include": ["src", "df/*.d.ts"]
+}
+```
+
+Restart the build tool after changing `shorthands`, because bundler
+configuration changes do not use the `devup.json` hot-reload path.
+
+## Design Tokens vs. Shorthands
+
+Use `devup.json` for values that belong to the design system, such as colors,
+typography, lengths, and shadows. Use plugin `shorthands` for prop vocabulary
+and extraction behavior.
+
+```tsx
+// $contentX is a design-token value; insetX is a custom prop alias.
+const content = <Box insetX="$contentX" />
+```
