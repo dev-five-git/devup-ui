@@ -17,13 +17,24 @@ import {
 import { DevupUI } from '../plugin'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
+interface ConfigHookMeta {
+  viteVersion?: string
+  rollupVersion?: string
+  rolldownVersion?: string
+}
+interface CodeSplittingGroup {
+  name: (id: string) => string | null
+  minSize?: number
+  minShareCount?: number
+}
+interface ViteOutputOptions {
+  manualChunks?: (id: string, code: string) => string | undefined
+  codeSplitting?: { groups?: CodeSplittingGroup[] }
+}
 interface ViteConfig {
   build?: {
-    rollupOptions?: {
-      output?: {
-        manualChunks?: (id: string, code: string) => string | undefined
-      }
-    }
+    rollupOptions?: { output?: ViteOutputOptions }
+    rolldownOptions?: { output?: ViteOutputOptions }
   }
   optimizeDeps?: { exclude?: string[] }
   ssr?: { noExternal?: RegExp[] }
@@ -34,8 +45,14 @@ interface ViteTestPlugin {
   name: string
   enforce: 'pre'
   apply: () => boolean
-  config: () => ViteConfig
-  configResolved: () => Promise<void>
+  config: (
+    this: { meta?: ConfigHookMeta } | void,
+    userConfig?: ViteConfig,
+  ) => ViteConfig
+  configResolved: (config?: {
+    command?: 'serve' | 'build'
+    root?: string
+  }) => Promise<void>
   watchChange: (id: string) => Promise<void>
   handleHotUpdate: (context: {
     file: string
@@ -76,7 +93,30 @@ function createPlugin(options?: Parameters<typeof DevupUI>[0]): ViteTestPlugin {
   return DevupUI(options) as unknown as ViteTestPlugin
 }
 
-const { join, resolve, relative: originalRelative } = nodePath
+const ROLLUP_META: ConfigHookMeta = {
+  viteVersion: '7.1.14',
+  rollupVersion: '4.52.5',
+}
+const ROLLDOWN_META: ConfigHookMeta = {
+  viteVersion: '8.2.2',
+  rollupVersion: '4.52.5',
+  rolldownVersion: '1.2.5',
+}
+const ROLLDOWN_VITE_META: ConfigHookMeta = {
+  viteVersion: '7.1.14',
+  rollupVersion: '4.52.5',
+  rolldownVersion: '1.2.5',
+}
+
+function callConfig(
+  plugin: ViteTestPlugin,
+  meta?: ConfigHookMeta,
+  userConfig?: ViteConfig,
+): ViteConfig {
+  return plugin.config.call(meta ? { meta } : undefined, userConfig)
+}
+
+const { basename, join, resolve, relative: originalRelative } = nodePath
 
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSpy: ReturnType<typeof spyOn>
@@ -158,30 +198,306 @@ describe('devupUIVitePlugin', () => {
     expect(setDebugSpy).toHaveBeenCalledWith(options.debug)
     if (options.extractCss) {
       expect(
-        plugin
-          .config()
-          .build?.rollupOptions?.output?.manualChunks?.('devup-ui.css', 'code'),
+        callConfig(
+          plugin,
+          ROLLUP_META,
+        ).build?.rollupOptions?.output?.manualChunks?.('devup-ui.css', 'code'),
       ).toEqual('devup-ui.css')
 
       expect(
-        plugin
-          .config()
-          .build?.rollupOptions?.output?.manualChunks?.('other.css', 'code'),
+        callConfig(
+          plugin,
+          ROLLUP_META,
+        ).build?.rollupOptions?.output?.manualChunks?.('other.css', 'code'),
       ).toEqual(undefined)
+
+      expect(
+        callConfig(
+          plugin,
+          ROLLDOWN_META,
+        ).build?.rolldownOptions?.output?.codeSplitting?.groups?.[0]?.name(
+          'devup-ui.css',
+        ),
+      ).toEqual('devup-ui.css')
+
+      expect(
+        callConfig(
+          plugin,
+          ROLLDOWN_META,
+        ).build?.rolldownOptions?.output?.codeSplitting?.groups?.[0]?.name(
+          'other.css',
+        ),
+      ).toBeNull()
     } else {
-      expect(plugin.config().build).toBeUndefined()
+      expect(callConfig(plugin, ROLLUP_META).build).toBeUndefined()
+      expect(callConfig(plugin, ROLLDOWN_META).build).toBeUndefined()
     }
+  })
+
+  describe('devup css chunk merging', () => {
+    const devupCssIds = [
+      'devup-ui.css',
+      'devup-ui-0.css',
+      'devup-ui-12.css',
+      join('/p', 'df', 'devup-ui', 'devup-ui-3.css'),
+      `${join('/p', 'df', 'devup-ui', 'devup-ui.css')}?t=1730000000000`,
+    ]
+    const otherIds = [
+      'other.css',
+      'devup-ui.js',
+      'my-devup-ui-styles.css',
+      'my-devup-ui.css',
+      'vendor-devup-ui.css',
+      'vendor-devup-ui-3.css',
+      join('/p', 'src', 'app.tsx'),
+    ]
+
+    function rolldownGroup(meta: ConfigHookMeta) {
+      const build = callConfig(createPlugin({}), meta).build
+      const groups =
+        build?.rolldownOptions?.output?.codeSplitting?.groups ??
+        build?.rollupOptions?.output?.codeSplitting?.groups
+      expect(groups).toHaveLength(1)
+      return groups![0]!
+    }
+
+    it('names every devup css module after its own file on rollup', () => {
+      const manualChunks = callConfig(createPlugin({}), ROLLUP_META).build
+        ?.rollupOptions?.output?.manualChunks
+      for (const id of devupCssIds) {
+        expect(manualChunks?.(id, 'code')).toEqual(basename(id).split('?')[0])
+      }
+      for (const id of otherIds) {
+        expect(manualChunks?.(id, 'code')).toBeUndefined()
+      }
+    })
+
+    it('names every devup css module after its own file on rolldown', () => {
+      const group = rolldownGroup(ROLLDOWN_META)
+      for (const id of devupCssIds) {
+        expect(group.name(id)).toEqual(basename(id).split('?')[0])
+      }
+      for (const id of otherIds) {
+        expect(group.name(id)).toBeNull()
+      }
+    })
+
+    it('opts the group out of a framework minSize / minShareCount fallback', () => {
+      // Framework plugins set `codeSplitting.minSize` (vinext uses 10_000 for
+      // its client environment); without an explicit per-group value that
+      // fallback folds the devup css chunks back into every route chunk.
+      const group = rolldownGroup(ROLLDOWN_META)
+      expect(group.minSize).toBe(0)
+      expect(group.minShareCount).toBe(1)
+    })
+
+    const chunkingCases: [
+      string,
+      ConfigHookMeta | undefined,
+      'manualChunks' | 'codeSplitting',
+    ][] = [
+      ['rollup', ROLLUP_META, 'manualChunks'],
+      ['rolldown on vite 8', ROLLDOWN_META, 'codeSplitting'],
+      ['rolldown on vite 7', ROLLDOWN_VITE_META, 'codeSplitting'],
+      ['unknown bundler', undefined, 'manualChunks'],
+      [
+        'rolldown without a vite version',
+        { rolldownVersion: '1.2.5' },
+        'codeSplitting',
+      ],
+    ]
+
+    it.each(chunkingCases)(
+      'picks the %s chunking option',
+      (_name, meta, expected) => {
+        const build = callConfig(createPlugin({}), meta).build
+        // Vite drops one of the two when a plugin returns both.
+        expect(build?.rollupOptions && build?.rolldownOptions).toBeFalsy()
+        const output =
+          build?.rolldownOptions?.output ?? build?.rollupOptions?.output
+        expect(output?.manualChunks !== undefined).toBe(
+          expected === 'manualChunks',
+        )
+        expect(output?.codeSplitting !== undefined).toBe(
+          expected === 'codeSplitting',
+        )
+      },
+    )
+
+    const optionKeyCases: [string, ConfigHookMeta, boolean][] = [
+      ['vite 8', ROLLDOWN_META, true],
+      ['rolldown-vite on vite 7', ROLLDOWN_VITE_META, false],
+    ]
+
+    it.each(optionKeyCases)(
+      'puts rolldown options under the right key on %s',
+      (_name, meta, usesRolldownOptions) => {
+        const build = callConfig(createPlugin({}), meta).build
+        expect(build?.rolldownOptions !== undefined).toBe(usesRolldownOptions)
+        expect(build?.rollupOptions !== undefined).toBe(!usesRolldownOptions)
+      },
+    )
+
+    it('chains the user manualChunks instead of replacing it', () => {
+      const userManualChunks = mock((id: string) =>
+        id === 'vendor.js' ? 'vendor' : undefined,
+      )
+      const output = callConfig(createPlugin({}), ROLLUP_META, {
+        build: {
+          rollupOptions: { output: { manualChunks: userManualChunks } },
+        },
+      }).build?.rollupOptions?.output
+
+      expect(output?.manualChunks?.('devup-ui.css', 'code')).toEqual(
+        'devup-ui.css',
+      )
+      expect(output?.manualChunks?.('vendor.js', 'code')).toEqual('vendor')
+      expect(output?.manualChunks?.('other.js', 'code')).toBeUndefined()
+      expect(userManualChunks).not.toHaveBeenCalledWith('devup-ui.css', 'code')
+    })
+
+    it('reads the user manualChunks from the array form of output', () => {
+      const userManualChunks = mock(() => 'vendor')
+      const output = callConfig(createPlugin({}), ROLLUP_META, {
+        build: {
+          rollupOptions: {
+            output: [{ manualChunks: userManualChunks }] as never,
+          },
+        },
+      }).build?.rollupOptions?.output
+
+      expect(output?.manualChunks?.('devup-ui.css', 'code')).toEqual(
+        'devup-ui.css',
+      )
+      expect(output?.manualChunks?.('vendor.js', 'code')).toEqual('vendor')
+    })
+
+    it.each([
+      ['no user output', {} as ViteConfig],
+      [
+        'a non-function manualChunks',
+        {
+          build: {
+            rollupOptions: { output: { manualChunks: { a: ['b'] } as never } },
+          },
+        } as ViteConfig,
+      ],
+    ])('tolerates %s', (_name, userConfig) => {
+      const output = callConfig(createPlugin({}), ROLLUP_META, userConfig).build
+        ?.rollupOptions?.output
+      expect(output?.manualChunks?.('devup-ui.css', 'code')).toEqual(
+        'devup-ui.css',
+      )
+      expect(output?.manualChunks?.('other.js', 'code')).toBeUndefined()
+    })
+  })
+
+  describe('deterministic css output', () => {
+    it('creates the css dir before writing into it', async () => {
+      const order: string[] = []
+      existsSyncSpy.mockReturnValue(false)
+      mkdirSpy.mockImplementation(async (dir: string) => {
+        order.push(`mkdir:${dir}`)
+        await new Promise((r) => setTimeout(r, 5))
+        order.push(`mkdir-done:${dir}`)
+        return undefined
+      })
+      writeFileSpy.mockImplementation(async (file: string) => {
+        order.push(`write:${file}`)
+        return undefined
+      })
+
+      await createPlugin({}).configResolved()
+
+      const cssDir = resolve('df', 'devup-ui')
+      const mkdirDone = order.indexOf(`mkdir-done:${cssDir}`)
+      const wroteCss = order.indexOf(`write:${join(cssDir, 'devup-ui.css')}`)
+      expect(mkdirDone).toBeGreaterThanOrEqual(0)
+      expect(wroteCss).toBeGreaterThan(mkdirDone)
+    })
+
+    it('rewrites every devup css asset from the finished sheet', async () => {
+      getCssSpy.mockImplementation(
+        (fileNum: number | null) => `sheet:${fileNum}`,
+      )
+      const plugin = createPlugin({})
+      const bundle = {
+        'base.css': { source: 'stale', name: 'devup-ui.css' },
+        'three.css': { source: 'stale', name: 'devup-ui-3.css' },
+        'nested.css': { source: 'stale', name: 'assets/devup-ui-4.css' },
+        'other.css': { source: 'keep', name: 'other.css' },
+        'chunk.js': { name: 'devup-ui-9.css' },
+      } as unknown as Record<string, { source: string; name: string }>
+
+      await plugin.generateBundle({}, bundle)
+
+      expect(bundle['base.css'].source).toEqual('sheet:null')
+      expect(bundle['three.css'].source).toEqual('sheet:3')
+      expect(bundle['nested.css'].source).toEqual('sheet:4')
+      expect(bundle['other.css'].source).toEqual('keep')
+      expect(bundle['chunk.js']).not.toHaveProperty('source')
+    })
+
+    it('leaves an app asset whose name merely ends in devup-ui.css alone', async () => {
+      getCssSpy.mockImplementation(
+        (fileNum: number | null) => `sheet:${fileNum}`,
+      )
+      const bundle = {
+        'vendor.css': { source: 'app styles', name: 'vendor-devup-ui.css' },
+      } as unknown as Record<string, { source: string; name: string }>
+
+      await createPlugin({}).generateBundle({}, bundle)
+
+      expect(bundle['vendor.css'].source).toEqual('app styles')
+    })
+
+    it('ignores the load-time snapshot so output does not depend on module order', async () => {
+      getCssSpy.mockReturnValue('early partial sheet')
+      const plugin = createPlugin({})
+      plugin.load('devup-ui.css')
+
+      getCssSpy.mockReturnValue('final complete sheet')
+      const bundle = { 'base.css': { source: '', name: 'devup-ui.css' } }
+      await plugin.generateBundle({}, bundle)
+
+      expect(bundle['base.css'].source).toEqual('final complete sheet')
+    })
+
+    it('resolves a stable id during build', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved({ command: 'build' })
+      const importer = join('df', 'devup-ui', 'devup-ui.css')
+
+      const first = plugin.resolveId('devup-ui.css', importer)
+      const second = plugin.resolveId('devup-ui.css', importer)
+
+      expect(first).toEqual(join(resolve('df', 'devup-ui'), 'devup-ui.css'))
+      expect(first).toEqual(second)
+      expect(first).not.toContain('?t=')
+    })
+
+    it('cache-busts the id during dev so a growing sheet invalidates', async () => {
+      const plugin = createPlugin({})
+      await plugin.configResolved({ command: 'serve' })
+
+      expect(
+        plugin.resolveId(
+          'devup-ui.css',
+          join('df', 'devup-ui', 'devup-ui.css'),
+        ),
+      ).toContain('?t=')
+    })
   })
 
   it('should include default editor packages in vite config', () => {
     const plugin = createPlugin({})
-    const config = plugin.config()
+    const config = callConfig(plugin)
 
-    expect(config.optimizeDeps.exclude).toEqual([
+    expect(config.optimizeDeps!.exclude).toEqual([
       '@devup-ui/components',
       '@devup-editor/react',
     ])
-    expect(config.ssr.noExternal).toEqual([/@devup-ui/, /@devup-editor/])
+    expect(config.ssr!.noExternal).toEqual([/@devup-ui/, /@devup-editor/])
   })
 
   it.each(
@@ -233,7 +549,7 @@ describe('devupUIVitePlugin', () => {
       expect(registerThemeSpy).toHaveBeenCalledWith({})
     }
 
-    const config = plugin.config()
+    const config = callConfig(plugin)
     if (options.getDefaultTheme) {
       expect(config.define).toEqual({
         'process.env.DEVUP_UI_DEFAULT_THEME': JSON.stringify(

@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/vite-plugin/package.json": "Patch"
+  },
+  "note": "Fix vite plugin cold-start build, css determinism, and manualChunks merge",
+  "date": "2026-08-23T04:15:00.000000000Z"
+}

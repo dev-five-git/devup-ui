@@ -27,6 +27,102 @@ import {
 } from '@devup-ui/wasm'
 import type { ModuleNode, PluginOption, UserConfig } from 'vite'
 
+/**
+ * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
+ *
+ * Anchored at BOTH ends and matched against a bare file name. Without `^` it
+ * also accepts an app's own `vendor-devup-ui.css`, which `generateBundle` would
+ * then overwrite with the devup sheet.
+ */
+const DEVUP_CSS_FILE_RE = /^devup-ui(-\d+)?\.css$/
+
+/**
+ * Names each devup CSS module after its own file, so every module is emitted
+ * once and shared by all of its importers.
+ */
+function getDevupCssChunkName(id: string): string | undefined {
+  const fileName = basename(id).split('?')[0]
+  return DEVUP_CSS_FILE_RE.test(fileName) ? fileName : undefined
+}
+
+/**
+ * Subset of the plugin context Vite binds to the `config` hook. Vite >= 6.1
+ * exposes `meta.viteVersion`; a Rolldown-powered Vite also exposes
+ * `meta.rolldownVersion`.
+ */
+interface ConfigHookMeta {
+  viteVersion?: string
+  rolldownVersion?: string
+}
+
+/**
+ * Vite merges a plugin's `config()` result over the user's, replacing function
+ * values outright, so returning a bare `manualChunks` silently drops one the
+ * app already had. Rolldown's `codeSplitting.groups` needs no equivalent —
+ * arrays are concatenated, not replaced.
+ */
+function getUserManualChunks(userConfig: UserConfig | undefined) {
+  const output = userConfig?.build?.rollupOptions?.output
+  const first = Array.isArray(output) ? output[0] : output
+  return typeof first?.manualChunks === 'function'
+    ? first.manualChunks
+    : undefined
+}
+
+/**
+ * Build options that merge devup-ui CSS modules into shared chunks.
+ *
+ * Rollup only understands `output.manualChunks`. Rolldown (Vite 8) removed the
+ * object form and *silently ignores* the function form as soon as anything sets
+ * `output.codeSplitting` — which framework plugins do per environment (vinext
+ * sets it for its client and rsc environments, so only its ssr environment
+ * still honors `manualChunks`). The shared CSS then gets copied into every
+ * route chunk instead of being emitted once.
+ *
+ * `output.codeSplitting.groups` is Rolldown's replacement, and merges with the
+ * groups a framework plugin already registered.
+ *
+ * @see https://vite.dev/guide/migration.html#removed-object-form-build-rollupoptions-output-manualchunks-and-deprecate-function-form-one
+ * @see https://rolldown.rs/in-depth/manual-code-splitting
+ */
+function createCssChunkBuildOptions(
+  meta: ConfigHookMeta | undefined,
+  userConfig?: UserConfig,
+): UserConfig['build'] {
+  if (!meta?.rolldownVersion) {
+    const userManualChunks = getUserManualChunks(userConfig)
+    return {
+      rollupOptions: {
+        output: {
+          manualChunks(id, ...rest) {
+            return getDevupCssChunkName(id) ?? userManualChunks?.(id, ...rest)
+          },
+        },
+      },
+    }
+  }
+  const output = {
+    codeSplitting: {
+      groups: [
+        {
+          name: (id: string) => getDevupCssChunkName(id) ?? null,
+          // Opt out of any framework-level `minSize` / `minShareCount`
+          // fallback, which would otherwise fold these small CSS chunks back
+          // into every route chunk that imports them.
+          minSize: 0,
+          minShareCount: 1,
+        },
+      ],
+    },
+  }
+  // Vite 8 renamed `build.rollupOptions` to `build.rolldownOptions`. Older
+  // Rolldown-powered builds (rolldown-vite on Vite 7) keep the old name, and
+  // supplying both would make Vite drop one of them.
+  return Number.parseInt(meta.viteVersion ?? '', 10) >= 8
+    ? { rolldownOptions: { output } }
+    : { rollupOptions: { output } }
+}
+
 export interface DevupUIPluginOptions {
   package: string
   cssDir: string
@@ -76,14 +172,14 @@ async function writeDataFiles(
     console.error(error)
     registerTheme({})
   }
-  await Promise.all([
-    !existsSync(options.cssDir)
-      ? mkdir(options.cssDir, { recursive: true })
-      : Promise.resolve(),
-    !options.singleCss
-      ? writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
-      : Promise.resolve(),
-  ])
+  // Sequential: writing into cssDir concurrently with its own mkdir loses the
+  // race on a cold start (no `df/`) and fails the build with ENOENT.
+  if (!existsSync(options.cssDir)) {
+    await mkdir(options.cssDir, { recursive: true })
+  }
+  if (!options.singleCss) {
+    await writeFile(join(options.cssDir, 'devup-ui.css'), getCss(null, false))
+  }
 }
 
 export function DevupUI({
@@ -105,9 +201,11 @@ export function DevupUI({
   }
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
+  let isServe = false
   return {
     name: 'devup-ui',
     async configResolved(config) {
+      isServe = config?.command === 'serve'
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
       await writeDataFiles({
@@ -175,7 +273,7 @@ export function DevupUI({
         }
       }
     },
-    config() {
+    config(this: { meta?: ConfigHookMeta } | void, userConfig: UserConfig) {
       const theme = getDefaultTheme()
       const define: Record<string, string> = {}
       if (theme) {
@@ -196,19 +294,7 @@ export function DevupUI({
         },
       }
       if (extractCss) {
-        ret.build = {
-          rollupOptions: {
-            output: {
-              manualChunks(id) {
-                // merge devup css files
-                const fileName = basename(id).split('?')[0]
-                if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
-                  return fileName
-                }
-              },
-            },
-          },
-        }
+        ret.build = createCssChunkBuildOptions(this?.meta, userConfig)
       }
       return ret
     },
@@ -258,10 +344,15 @@ export function DevupUI({
     resolveId(id, importer) {
       const fileName = basename(id).split('?')[0]
       if (
-        /devup-ui(-\d+)?\.css$/.test(fileName) &&
+        DEVUP_CSS_FILE_RE.test(fileName) &&
         resolve(importer ? join(dirname(importer), id) : id) ===
           resolve(join(cssDir, fileName))
       ) {
+        // Dev re-resolves through a changing id so a growing sheet invalidates
+        // the module. A build must not: a per-resolution id forks one file into
+        // several modules and makes output hashes differ between identical
+        // builds.
+        if (!isServe) return join(cssDir, fileName)
         return join(
           cssDir,
           `${fileName}?t=${
@@ -273,7 +364,7 @@ export function DevupUI({
     },
     load(id) {
       const fileName = basename(id).split('?')[0]
-      if (/devup-ui(-\d+)?\.css$/.test(fileName)) {
+      if (DEVUP_CSS_FILE_RE.test(fileName)) {
         const fileNum = getFileNumByFilename(fileName)
         const css = getCss(fileNum, false)
         cssMap.set(fileNum, css)
@@ -340,11 +431,18 @@ export function DevupUI({
     async generateBundle(_options, bundle) {
       if (!extractCss) return
 
-      const cssFile = Object.keys(bundle).find(
-        (file) => bundle[file].name === 'devup-ui.css',
-      )
-      if (cssFile && 'source' in bundle[cssFile]) {
-        bundle[cssFile].source = cssMap.get(null) ?? ''
+      // `load` can only snapshot the sheet as it stood when the module was
+      // pulled in, and module order varies per build, so the emitted asset was
+      // neither complete nor reproducible. Every transform has run by now, so
+      // re-read each file's finished sheet instead. Applies to `devup-ui-N.css`
+      // too, not just the base sheet.
+      for (const file of Object.keys(bundle)) {
+        const asset = bundle[file]
+        if (!asset.name) continue
+        const cssName = getDevupCssChunkName(asset.name)
+        if (!cssName) continue
+        if (!('source' in asset)) continue
+        asset.source = getCss(getFileNumByFilename(cssName), false)
       }
     },
   }
