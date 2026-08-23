@@ -440,7 +440,7 @@
     },
     "packages/components": {
       "name": "@devup-ui/components",
-      "version": "0.1.49",
+      "version": "0.1.50",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
@@ -558,7 +558,7 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.63",
+      "version": "1.0.64",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",

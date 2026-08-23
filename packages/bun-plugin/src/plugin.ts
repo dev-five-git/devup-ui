@@ -10,6 +10,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  getCss,
   getThemeInterface,
   hasDevupUI,
   registerShorthands,
@@ -22,6 +23,7 @@ const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
 const distDir = 'df'
 const cssDir = resolve(distDir, 'devup-ui')
+const baseCssFile = join(cssDir, 'devup-ui.css')
 const singleCss = true
 const importAliases = mergeImportAliases()
 
@@ -49,6 +51,17 @@ async function writeDataFiles() {
   if (!existsSync(cssDir)) {
     await mkdir(cssDir, { recursive: true })
   }
+  // `onResolve` points every devup-ui.css import at this file, so it has to
+  // exist before the first source file is loaded. Without it the very first
+  // import fails to resolve and the whole run dies before any style is
+  // collected.
+  if (!existsSync(baseCssFile)) {
+    await writeFile(baseCssFile, getCss(null, false), 'utf-8')
+  }
+}
+
+async function writeBaseCss() {
+  await writeFile(baseCssFile, getCss(null, false), 'utf-8')
 }
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
@@ -82,7 +95,7 @@ async function loadSourceFile(filePath: string) {
   const contents = await Bun.file(filePath).text()
 
   if (hasDevupUI(filePath, contents, libPackage)) {
-    const code = codeExtract(
+    const { code, updatedBaseStyle } = codeExtract(
       filePath,
       contents,
       libPackage,
@@ -92,7 +105,11 @@ async function loadSourceFile(filePath: string) {
       false,
       importAliases,
     )
-    return { contents: code.code, loader }
+    // The extracted styles only reach the browser if they are written out.
+    // Every other plugin does this; here they were collected and dropped, so
+    // the file the imports resolve to stayed whatever it was.
+    if (updatedBaseStyle) await writeBaseCss()
+    return { contents: code, loader }
   }
   return { contents, loader }
 }
