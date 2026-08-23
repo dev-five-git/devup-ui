@@ -5,7 +5,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
@@ -17,8 +17,10 @@ import {
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
+  type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import {
+  codeExtract,
   exportClassMap,
   exportFileMap,
   exportSheet,
@@ -42,6 +44,7 @@ import {
 import { type NextConfig } from 'next'
 
 import { startCoordinator } from './coordinator'
+import { collectProductionPrewarmFiles } from './prewarm'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -142,6 +145,7 @@ export function DevupUI(
     // coordinator shares this WASM instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+    const watch = process.env.NODE_ENV === 'development'
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
@@ -149,12 +153,14 @@ export function DevupUI(
     // deterministic base-css completion signal handed to the coordinator. Stays
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
+    let staticGraph: StaticImportGraph | undefined
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
       const graph = buildStaticImportGraph(srcDir, tsconfigPath)
+      staticGraph = graph
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -208,6 +214,44 @@ export function DevupUI(
       // merge) and atom hoisting stays off.
     }
 
+    // Turbopack can request a CSS module before it has scheduled every source
+    // loader. Waiting for a quiet window is not a compilation-complete signal:
+    // a CSS request can itself hold up the next extraction wave. In one-shot
+    // builds, extract every source candidate plus accepted external package
+    // entries synchronously first. The wider set covers template imports, MDX
+    // dependencies and package-level globalCss (notably reset-css) that the
+    // route graph cannot represent. Loader-time extraction uses the same
+    // keys/options and is idempotent.
+    const prewarmedFiles: string[] = []
+    if (!watch && staticGraph) {
+      const cwd = process.cwd()
+      const prewarmFiles = collectProductionPrewarmFiles({
+        cwd,
+        graph: staticGraph,
+        expectedBaseFiles,
+        libPackage,
+        include,
+      })
+      for (const filename of prewarmFiles) {
+        const resourcePath = resolve(cwd, filename)
+        const relCssDir = `./${relative(
+          dirname(resourcePath),
+          cssDir,
+        ).replaceAll('\\', '/')}`
+        codeExtract(
+          filename,
+          readFileSync(resourcePath, 'utf-8'),
+          libPackage,
+          relCssDir,
+          singleCss,
+          false,
+          true,
+          importAliases as unknown as Record<string, string | null>,
+        )
+        prewarmedFiles.push(filename)
+      }
+    }
+
     // create devup-ui.css file
     writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
 
@@ -231,6 +275,7 @@ export function DevupUI(
       coordinatorPortFile,
       canonicalMap,
       expectedBaseFiles,
+      prewarmedFiles,
     })
 
     // Cleanup on exit
@@ -255,7 +300,7 @@ export function DevupUI(
         {
           loader: '@devup-ui/next-plugin/css-loader',
           options: {
-            watch: process.env.NODE_ENV === 'development',
+            watch,
             coordinatorPortFile,
             sheetFile,
             classMapFile,
@@ -288,7 +333,7 @@ export function DevupUI(
               defaultSheet,
               defaultClassMap,
               defaultFileMap,
-              watch: process.env.NODE_ENV === 'development',
+              watch,
               singleCss,
               // for turbopack, load theme is required on loader
               theme,

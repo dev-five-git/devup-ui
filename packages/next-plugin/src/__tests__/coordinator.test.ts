@@ -1146,6 +1146,68 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
+  it('serves complete production CSS from the prewarmed sheet before late loaders run', async () => {
+    codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
+    getCssSpy.mockReturnValue('prewarmed-css')
+    const canonicalMap = { 'src/late.tsx': 'src/page.tsx' }
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        canonicalMap,
+        expectedBaseFiles: ['src/page.tsx', 'src/late.tsx'],
+        prewarmedFiles: ['src/page.tsx', 'src/late.tsx'],
+        quietMs: 5000,
+      }),
+    )
+
+    // The first loader POST establishes the file-number -> bucket mapping.
+    // The late member has not POSTed, but its atoms already exist because the
+    // plugin synchronously prewarmed it before starting the coordinator.
+    await extract(port, 'src/page.tsx')
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    const t0 = Date.now()
+    const [bucketCss, baseCss] = await Promise.all([
+      httpRequest(
+        port,
+        'GET',
+        '/css?fileNum=1&importMainCss=true&waitForIdle=true',
+      ),
+      httpRequest(port, 'GET', '/css?waitForIdle=true'),
+    ])
+    const elapsed = Date.now() - t0
+
+    expect(bucketCss.body).toBe('prewarmed-css')
+    expect(baseCss.body).toBe('prewarmed-css')
+    expect(elapsed).toBeLessThan(1000)
+    // If the prewarmed files did not seed completion, both requests would wait
+    // for src/late.tsx (or the five-second quiet fallback).
+    expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+
+    coordinator.close()
+  })
+
+  it('serves prewarmed singleCss before any source loader runs', async () => {
+    getCssSpy.mockReturnValue('prewarmed-single-css')
+    const { coordinator, port } = await startAndGetPort(
+      makeOptions({
+        singleCss: true,
+        expectedBaseFiles: ['src/page.tsx', 'src/late.tsx'],
+        prewarmedFiles: ['src/page.tsx', 'src/late.tsx'],
+        quietMs: 5000,
+      }),
+    )
+
+    const t0 = Date.now()
+    const res = await httpRequest(port, 'GET', '/css?waitForIdle=true')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toBe('prewarmed-single-css')
+    expect(Date.now() - t0).toBeLessThan(1000)
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+
+    coordinator.close()
+  })
+
   // T5: the deterministic wait blocks base css until a still-missing
   // expectedBaseFile arrives — even after the idle threshold elapses with
   // nothing in flight. This is exactly the gap-between-waves case the old idle
@@ -1183,11 +1245,9 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
-  // T7: a phantom bucket member (its import edges were erased by the bundler,
-  // e.g. a type imported without the `type` keyword, or an unused import) can
-  // never extract. Once the bundler goes fully quiet the wait must conclude
-  // the member is a phantom and serve — via console.info, NOT the scary
-  // partial-CSS warn — long before the wall-clock backstop.
+  // T7: legacy callers that do not prewarm still fail open after the quiet
+  // window when a graph member never reports, rather than hanging forever.
+  // Production plugin builds take the deterministic prewarmed path instead.
   it('serves a bucket via the quiet exit when a member is never compiled', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui-1.css'))
     getCssSpy.mockReturnValue('bucket-css')
@@ -1219,8 +1279,8 @@ describe('coordinator per-bucket completion', () => {
     coordinator.close()
   })
 
-  // T8: a phantom expectedBaseFile resolves the base-css wait via the same
-  // quiet exit instead of stalling until maxWaitMs.
+  // T8: the same legacy quiet fallback applies to an expected base file when
+  // the caller did not seed prewarmed completion state.
   it('serves base css via the quiet exit when an expectedBaseFile is never compiled', async () => {
     codeExtractSpy.mockReturnValue(extractResult('devup-ui.css'))
     getCssSpy.mockReturnValue('base-css')
