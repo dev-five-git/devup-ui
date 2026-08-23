@@ -1,10 +1,12 @@
+export const STATIC_EXPORT_DEPLOYMENT_ID = 'devup-ui-landing-static'
+
 /**
  * Adapt vinext's RSC requests to the `.rsc` artifacts emitted by
  * `output: 'export'`. Plain static hosts cannot vary a clean route URL by the
  * `RSC` request header, so the browser fetches the matching artifact directly
  * and restores the response metadata expected by vinext's navigation runtime.
  */
-export function installStaticExportRscTransport(deploymentId) {
+export function installStaticExportRscTransport(deploymentId: string): void {
   const nativeFetch = globalThis.fetch.bind(globalThis)
 
   // Vinext's static artifacts contain full route payloads. Automatically

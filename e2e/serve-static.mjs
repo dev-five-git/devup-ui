@@ -1,22 +1,14 @@
 /**
- * Custom static file server for Next.js static export.
+ * Custom static file server for the vinext client export.
  * Handles clean URLs by preferring .html files over directories.
  * Usage: node e2e/serve-static.mjs [port]
  */
 import { readFile, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import {
-  basename,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from 'node:path'
+import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const PORT = parseInt(process.argv[2] || '3099', 10)
-const ROOT = resolve(process.cwd(), 'apps', 'landing', 'out')
+const ROOT = resolve(process.cwd(), 'apps', 'landing', 'dist', 'client')
 const NOT_FOUND = join(ROOT, '404.html')
 
 const MIME_TYPES = {
@@ -35,6 +27,7 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
+  '.rsc': 'text/x-component',
   '.map': 'application/json',
 }
 
@@ -58,25 +51,6 @@ async function resolveFile(urlPath) {
 
   // 1. Try exact file path
   if ((await exists(exact)) === 'file') return { filePath: exact, status: 200 }
-
-  // Next's static router requests encoded RSC paths such as
-  // `__next.<group>.docs.overview.__PAGE__.txt`, while the export stores the
-  // same segments as nested directories. Real static hosts apply this rewrite;
-  // mirror it here so client navigation and prefetches exercise the export.
-  const nextDataMatch = basename(exact).match(
-    /^(__next\.[^.]+)\.(.+)\.(__[^.]+\.txt)$/,
-  )
-  if (nextDataMatch) {
-    const nextDataPath = join(
-      dirname(exact),
-      nextDataMatch[1],
-      ...nextDataMatch[2].split('.'),
-      nextDataMatch[3],
-    )
-    if ((await exists(nextDataPath)) === 'file') {
-      return { filePath: nextDataPath, status: 200 }
-    }
-  }
 
   // 2. Try with .html extension (clean URLs — PRIORITY over directory)
   const withHtml = `${exact}.html`

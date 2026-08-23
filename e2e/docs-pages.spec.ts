@@ -3,12 +3,8 @@ import { expect, test } from '@playwright/test'
 import { waitForFontsReady, waitForStyleSettle } from './helpers'
 
 /**
- * All tests use javaScriptEnabled: false because the Next.js static export
- * serves correct SSR HTML, but client-side hydration triggers a 404 under
- * the custom static server (no real Next.js router available).
- *
- * With JS disabled the raw SSR HTML renders perfectly — sidebar links,
- * doc content, and all static elements are present.
+ * These assertions disable JavaScript so they validate the exported SSR HTML
+ * independently from vinext's client router.
  */
 
 test.describe('Documentation Pages', () => {

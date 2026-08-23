@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "node ./script.js && vinext dev",
     "search": "node ./script.js",
-    "build": "node ./script.js && vinext build && node ./export-static.mjs",
-    "start": "npx serve ./out",
+    "build": "node ./script.js && vinext build",
+    "start": "npx serve ./dist/client",
     "lint": "eslint"
   },
   "dependencies": {

@@ -5,7 +5,8 @@ export const LANDING_OUTPUT_ROOT = resolve(
   process.cwd(),
   'apps',
   'landing',
-  'out',
+  'dist',
+  'client',
 )
 
 export const EXPECTED_EXPORTED_ROUTES = [
@@ -75,7 +76,6 @@ export const EXPECTED_EXPORTED_ROUTES = [
 
 export const EXPECTED_EXPORTED_HTML_FILES = [
   '404.html',
-  '_not-found.html',
   ...EXPECTED_EXPORTED_ROUTES.map((route) =>
     route === '/' ? 'index.html' : `${route.slice(1)}.html`,
   ),
@@ -101,7 +101,7 @@ export function getExportedHtmlFiles(): string[] {
 
 export function getExportedRoutes(): string[] {
   return getExportedHtmlFiles()
-    .filter((path) => path !== '404.html' && path !== '_not-found.html')
+    .filter((path) => path !== '404.html')
     .map((path) =>
       path === 'index.html' ? '/' : `/${path.replace(/\.html$/, '')}`,
     )
