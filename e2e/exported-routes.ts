@@ -42,6 +42,7 @@ export const EXPECTED_EXPORTED_ROUTES = [
   '/docs/api/button',
   '/docs/api/center',
   '/docs/api/css',
+  '/docs/api/custom-shorthands',
   '/docs/api/flex',
   '/docs/api/grid',
   '/docs/api/group-selector',
@@ -96,6 +97,7 @@ export function getExportedHtmlFiles(): string[] {
   return walkFiles(LANDING_OUTPUT_ROOT)
     .filter((path) => path.endsWith('.html'))
     .map(toOutputPath)
+    .filter((path) => !path.startsWith('storybook/'))
     .sort()
 }
 
