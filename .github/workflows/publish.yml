@@ -59,6 +59,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # changepacks diffs HEAD against the previous release commit. The
+          # default shallow fetch grafts away every parent, so that lookup dies
+          # with "Could not find a merge-base" and the release never publishes.
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
