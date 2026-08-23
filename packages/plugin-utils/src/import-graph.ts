@@ -93,6 +93,13 @@ export interface StaticImportGraph {
   staticImporters: Map<string, Set<string>>
   /** files loaded via dynamic `import()` somewhere under `srcDir`. */
   dynamicTargets: Set<string>
+  /**
+   * file -> files it loads via dynamic `import()` (within `srcDir`). The
+   * per-importer counterpart of `dynamicTargets`: reachability needs to know
+   * WHICH file lazy-loads what, otherwise a dynamic target whose only importer
+   * is itself unreachable would be treated as compiled.
+   */
+  dynamicImports: Map<string, Set<string>>
 }
 
 /**
@@ -116,11 +123,13 @@ export function buildStaticImportGraph(
   }
   const staticImporters = new Map<string, Set<string>>()
   const staticImports = new Map<string, Set<string>>()
+  const dynamicImports = new Map<string, Set<string>>()
   const dynamicTargets = new Set<string>()
 
   for (const file of files) {
     staticImporters.set(file, new Set())
     staticImports.set(file, new Set())
+    dynamicImports.set(file, new Set())
   }
 
   for (const file of files) {
@@ -130,6 +139,7 @@ export function buildStaticImportGraph(
       if (!target) continue
       if (importRef.kind === 'dynamic') {
         dynamicTargets.add(target)
+        dynamicImports.get(file)?.add(target)
         continue
       }
       staticImporters.get(target)?.add(file)
@@ -137,7 +147,14 @@ export function buildStaticImportGraph(
     }
   }
 
-  return { files, fileSet, staticImports, staticImporters, dynamicTargets }
+  return {
+    files,
+    fileSet,
+    staticImports,
+    staticImporters,
+    dynamicTargets,
+    dynamicImports,
+  }
 }
 
 export function buildCanonicalMap(
@@ -240,6 +257,64 @@ export function computeFileRoutes(
   })
 
   return fileRoutes
+}
+
+export interface ComputeCompiledFilesOptions {
+  srcDir: string
+  tsconfigPath?: string
+  cwd: string
+  /** pre-built graph from `buildStaticImportGraph` to skip the file scan. */
+  graph?: StaticImportGraph
+}
+
+/**
+ * Every source file the bundler will compile for the app's routes: the closure
+ * of all leaf routes (plus their ancestor route shells) over BOTH static and
+ * dynamic `import()` edges.
+ *
+ * This is deliberately WIDER than `computeFileRoutes`, whose closure stops at
+ * static edges because a lazily-loaded file belongs to its own chunk for
+ * hoisting purposes. Completion tracking needs the opposite guarantee: a file
+ * behind `dynamic(() => import(...))` is still compiled, still POSTs
+ * `/extract`, and still contributes atoms to the shared sheet — so a base-CSS
+ * wait built from the static-only set resolves BEFORE those atoms exist and
+ * serves a sheet missing every lazily-loaded component's styles.
+ *
+ * Keys are POSIX paths relative to `cwd`, matching the extraction filename the
+ * loader posts. Returns a sorted array (deterministic across runs). Empty when
+ * no leaf route is detected, which keeps callers on their idle fallback rather
+ * than blocking on a set that can never complete.
+ */
+export function computeCompiledFiles(
+  opts: ComputeCompiledFilesOptions,
+): string[] {
+  const cwd = resolve(opts.cwd)
+  const srcDir = resolve(opts.srcDir)
+  const { files, staticImports, dynamicImports } =
+    opts.graph ?? buildStaticImportGraph(srcDir, opts.tsconfigPath)
+
+  const allImports = new Map<string, Set<string>>()
+  for (const file of files) {
+    const edges = new Set(staticImports.get(file))
+    for (const target of dynamicImports.get(file) ?? []) edges.add(target)
+    allImports.set(file, edges)
+  }
+
+  const routeShellFilesByDir = getRouteShellFilesByDir(files, srcDir)
+  const compiled = new Set<string>()
+  for (const file of files) {
+    if (!leafRouteFileRegex.test(toPosixRelative(srcDir, file))) continue
+    for (const reached of getLeafRouteClosure(
+      file,
+      srcDir,
+      allImports,
+      routeShellFilesByDir,
+    )) {
+      compiled.add(reached)
+    }
+  }
+
+  return [...compiled].map((file) => toPosixRelative(cwd, file)).sort()
 }
 
 export interface ComputeFileReachOptions {

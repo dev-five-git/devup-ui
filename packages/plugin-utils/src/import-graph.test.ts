@@ -14,6 +14,7 @@ import {
   __setOxcParserForTest,
   buildCanonicalMap,
   buildStaticImportGraph,
+  computeCompiledFiles,
   computeFileReach,
   computeFileRoutes,
   planAtomHoist,
@@ -711,6 +712,115 @@ describe('computeFileRoutes', () => {
 
     expect(routes['src/orphan.tsx']).toBeUndefined()
     expect(routes['src/app/a/page.tsx']).toEqual([0])
+  })
+})
+
+describe('computeCompiledFiles', () => {
+  let tempRoot: string
+  let cwd: string
+  let srcDir: string
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'devup-ui-compiled-files-'))
+    cwd = join(tempRoot, 'project')
+    srcDir = join(cwd, 'src')
+    mkdirSync(srcDir, { recursive: true })
+  })
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true })
+  })
+
+  function writeFixture(path: string, code: string): void {
+    const filePath = join(cwd, path)
+    mkdirSync(dirname(filePath), { recursive: true })
+    writeFileSync(filePath, code)
+  }
+
+  it('includes dynamic-import targets and their static closure', () => {
+    // The bundler compiles `panel` (and everything it statically imports) even
+    // though only a dynamic import reaches it, so the base sheet must wait for
+    // them. `computeFileRoutes` deliberately stops at static edges, which is
+    // why the base-css wait needs its own, wider file set.
+    writeFixture('src/app/page.tsx', "import './shell'\n")
+    writeFixture(
+      'src/app/shell.tsx',
+      "export const load = () => import('../lazy/panel')\n",
+    )
+    writeFixture('src/lazy/panel.tsx', "import './panel-body'\n")
+    writeFixture('src/lazy/panel-body.tsx', 'export const B = 1\n')
+
+    const compiled = computeCompiledFiles({ cwd, srcDir })
+
+    expect(compiled).toContain('src/app/page.tsx')
+    expect(compiled).toContain('src/app/shell.tsx')
+    expect(compiled).toContain('src/lazy/panel.tsx')
+    expect(compiled).toContain('src/lazy/panel-body.tsx')
+    // the static-only route map stops at the dynamic boundary
+    expect(Object.keys(computeFileRoutes({ cwd, srcDir }))).not.toContain(
+      'src/lazy/panel.tsx',
+    )
+  })
+
+  it('follows dynamic imports nested behind another dynamic import', () => {
+    writeFixture(
+      'src/app/page.tsx',
+      "export const load = () => import('../first')\n",
+    )
+    writeFixture(
+      'src/first.tsx',
+      "export const load = () => import('./second')\n",
+    )
+    writeFixture('src/second.tsx', 'export const S = 1\n')
+
+    const compiled = computeCompiledFiles({ cwd, srcDir })
+
+    expect(compiled).toContain('src/first.tsx')
+    expect(compiled).toContain('src/second.tsx')
+  })
+
+  it('includes files reached only through an ancestor route shell', () => {
+    writeFixture(
+      'src/app/layout.tsx',
+      "export const l = () => import('../m')\n",
+    )
+    writeFixture('src/m.tsx', 'export const M = 1\n')
+    writeFixture('src/app/a/page.tsx', 'export const A = 1\n')
+
+    expect(computeCompiledFiles({ cwd, srcDir })).toContain('src/m.tsx')
+  })
+
+  it('omits files reachable from no leaf route', () => {
+    writeFixture('src/app/a/page.tsx', 'export const A = 1\n')
+    writeFixture('src/orphan.tsx', 'export const Orphan = 1\n')
+
+    const compiled = computeCompiledFiles({ cwd, srcDir })
+
+    expect(compiled).toContain('src/app/a/page.tsx')
+    expect(compiled).not.toContain('src/orphan.tsx')
+  })
+
+  it('returns an empty list when no leaf route exists', () => {
+    writeFixture('src/index.tsx', "import './a'\n")
+    writeFixture('src/a.tsx', 'export const A = 1\n')
+
+    // Empty keeps the coordinator on its idle fallback instead of blocking on
+    // a file set that never completes.
+    expect(computeCompiledFiles({ cwd, srcDir })).toEqual([])
+  })
+
+  it('reuses a prebuilt graph', () => {
+    writeFixture(
+      'src/app/page.tsx',
+      "export const l = () => import('../lazy')\n",
+    )
+    writeFixture('src/lazy.tsx', 'export const L = 1\n')
+
+    const graph = buildStaticImportGraph(srcDir)
+
+    expect(computeCompiledFiles({ cwd, srcDir, graph })).toEqual(
+      computeCompiledFiles({ cwd, srcDir }),
+    )
   })
 })
 

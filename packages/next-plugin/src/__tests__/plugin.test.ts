@@ -696,6 +696,36 @@ describe('DevupUINextPlugin', () => {
       processOnSpy.mockRestore()
     })
 
+    it('hands the coordinator the full compiled-file set, not the static-only route map', () => {
+      process.env.TURBOPACK = '1'
+      // The base sheet must wait for lazily-loaded modules too, so
+      // expectedBaseFiles comes from computeCompiledFiles (static + dynamic
+      // edges) rather than computeFileRoutes (static edges only). Using the
+      // route map here served the sheet before any dynamic() module extracted.
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx', 'src/lazy/panel.tsx'])
+      const routesSpy = spyOn(
+        importGraphModule,
+        'computeFileRoutes',
+      ).mockReturnValue({ 'src/app/page.tsx': [0] })
+      try {
+        DevupUI({})
+
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expectedBaseFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
+          }),
+        )
+        // the static-only route map is not consulted outside atom-hoist mode
+        expect(routesSpy).not.toHaveBeenCalled()
+      } finally {
+        compiledSpy.mockRestore()
+        routesSpy.mockRestore()
+      }
+    })
+
     it('does not enable atom hoisting when atomHoist option is unset', () => {
       process.env.TURBOPACK = '1'
       const setAtomHoistSpy = spyOn(wasm, 'setAtomHoist').mockReturnValue(

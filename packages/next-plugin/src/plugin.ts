@@ -9,6 +9,8 @@ import { join, relative, resolve } from 'node:path'
 
 import {
   buildCanonicalMap,
+  buildStaticImportGraph,
+  computeCompiledFiles,
   computeFileRoutes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
@@ -139,14 +141,16 @@ export function DevupUI(
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
-    // Route-reachable runtime files (cwd-relative POSIX) — the deterministic
-    // base-css completion signal handed to the coordinator. Stays `[]` (idle
-    // fallback) when no routes are detected or the pre-pass fails.
+    // Every runtime file the bundler will compile (cwd-relative POSIX) — the
+    // deterministic base-css completion signal handed to the coordinator. Stays
+    // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
       const cwd = process.cwd()
+      // One scan+parse of the source tree, shared by all three consumers below.
+      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -159,16 +163,30 @@ export function DevupUI(
         tsconfigPath,
         cwd,
         hoistV,
+        graph,
       })
       importCanonicalMap(canonicalMap)
       writeFileSync(canonicalMapFile, JSON.stringify(canonicalMap))
 
-      // Route reachability drives BOTH the deterministic base-css wait and (in
-      // atom mode) the hoist plan, so compute it once and share.
-      const fileRoutes = computeFileRoutes({ srcDir, tsconfigPath, cwd })
-      expectedBaseFiles = Object.keys(fileRoutes)
+      // The base sheet must wait for every file the bundler compiles, INCLUDING
+      // the ones only a dynamic `import()` reaches. `computeFileRoutes` stops at
+      // static edges (correct for hoisting, where a lazy chunk is its own unit),
+      // so using its keys here resolved the wait before any `dynamic()` module
+      // had extracted and shipped a sheet missing all of their atoms.
+      expectedBaseFiles = computeCompiledFiles({
+        srcDir,
+        tsconfigPath,
+        cwd,
+        graph,
+      })
 
       if (atomMode) {
+        const fileRoutes = computeFileRoutes({
+          srcDir,
+          tsconfigPath,
+          cwd,
+          graph,
+        })
         // Fold per-file route reach onto the canonical bucket so the keys match
         // the engine's property bucket keys (canonical(filename)).
         const plan = planAtomHoist(canonicalMap, fileRoutes, atomHoist)
