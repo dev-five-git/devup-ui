@@ -16,6 +16,8 @@ pub mod utils;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, RwLock};
 
 use crate::constant::{GLOBAL_ENUM_STYLE_PROPERTY, GLOBAL_STYLE_PROPERTY};
 use crate::debug::is_debug;
@@ -151,6 +153,8 @@ pub fn merge_selector(class_name: &str, selector: Option<&StyleSelector>) -> Str
 pub enum DisassembleProperty {
     /// Mapped arm: iterate the borrowed `&'static [&'static str]` slice.
     Mapped(std::slice::Iter<'static, &'static str>),
+    /// User-defined shorthand properties registered by a build plugin.
+    Custom(std::vec::IntoIter<String>),
     /// Fallback arm: yield a single owned kebab-cased property, then finish.
     Fallback(Option<String>),
 }
@@ -161,6 +165,7 @@ impl Iterator for DisassembleProperty {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             DisassembleProperty::Mapped(iter) => iter.next().map(|s| Cow::Borrowed(*s)),
+            DisassembleProperty::Custom(iter) => iter.next().map(Cow::Owned),
             DisassembleProperty::Fallback(slot) => slot.take().map(Cow::Owned),
         }
     }
@@ -168,6 +173,7 @@ impl Iterator for DisassembleProperty {
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
             DisassembleProperty::Mapped(iter) => iter.size_hint(),
+            DisassembleProperty::Custom(iter) => iter.size_hint(),
             DisassembleProperty::Fallback(slot) => {
                 let n = usize::from(slot.is_some());
                 (n, Some(n))
@@ -180,6 +186,19 @@ impl ExactSizeIterator for DisassembleProperty {}
 
 #[must_use]
 pub fn disassemble_property(property: &str) -> DisassembleProperty {
+    if let Some(properties) = HAS_CUSTOM_SHORTHANDS
+        .load(Ordering::Relaxed)
+        .then(|| {
+            CUSTOM_SHORTHANDS
+                .read()
+                .ok()
+                .and_then(|shorthands| shorthands.get(property).cloned())
+        })
+        .flatten()
+    {
+        return DisassembleProperty::Custom(properties.into_iter());
+    }
+
     GLOBAL_STYLE_PROPERTY.get(property).map_or_else(
         || {
             DisassembleProperty::Fallback(Some(
@@ -224,6 +243,41 @@ pub fn disassemble_property(property: &str) -> DisassembleProperty {
             ))
         },
         |v| DisassembleProperty::Mapped(v.iter()),
+    )
+}
+
+static CUSTOM_SHORTHANDS: LazyLock<RwLock<BTreeMap<String, Vec<String>>>> =
+    LazyLock::new(|| RwLock::new(BTreeMap::new()));
+static HAS_CUSTOM_SHORTHANDS: AtomicBool = AtomicBool::new(false);
+
+/// Replace the custom shorthand registry used by style extraction.
+pub fn set_custom_shorthands(shorthands: BTreeMap<String, Vec<String>>) {
+    if let Ok(mut registry) = CUSTOM_SHORTHANDS.write() {
+        let shorthands: BTreeMap<String, Vec<String>> = shorthands
+            .into_iter()
+            .map(|(name, properties)| {
+                let properties = properties
+                    .into_iter()
+                    .flat_map(|property| {
+                        GLOBAL_STYLE_PROPERTY.get(property.as_str()).map_or_else(
+                            || vec![to_kebab_case(&property).into_owned()],
+                            |mapped| mapped.iter().map(|value| (*value).to_string()).collect(),
+                        )
+                    })
+                    .collect();
+                (name, properties)
+            })
+            .collect();
+        HAS_CUSTOM_SHORTHANDS.store(!shorthands.is_empty(), Ordering::Relaxed);
+        *registry = shorthands;
+    }
+}
+
+#[must_use]
+pub fn get_custom_shorthand_names() -> Vec<String> {
+    CUSTOM_SHORTHANDS.read().map_or_else(
+        |_| Vec::new(),
+        |registry| registry.keys().cloned().collect(),
     )
 }
 
@@ -1257,5 +1311,29 @@ mod tests {
         assert_eq!(fallback.size_hint(), (1, Some(1)));
         assert_eq!(fallback.next().as_deref(), Some("some-unmapped-property"));
         assert_eq!(fallback.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    #[serial]
+    fn test_custom_shorthand() {
+        set_custom_shorthands(BTreeMap::from([(
+            "insetX".to_string(),
+            vec![
+                "left".to_string(),
+                "marginRight".to_string(),
+                "py".to_string(),
+            ],
+        )]));
+
+        assert_eq!(
+            disassemble_property("insetX").collect::<Vec<_>>(),
+            ["left", "margin-right", "padding-top", "padding-bottom"]
+        );
+
+        set_custom_shorthands(BTreeMap::new());
+        assert_eq!(
+            disassemble_property("insetX").collect::<Vec<_>>(),
+            ["inset-x"]
+        );
     }
 }

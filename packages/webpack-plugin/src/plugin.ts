@@ -8,6 +8,7 @@ import {
   computeFileReach,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
+  type CustomShorthands,
   type ImportAliases,
   listSourceFiles,
   loadDevupConfigSync,
@@ -25,6 +26,7 @@ import {
   importFileMap,
   importFileRoutes,
   importSheet,
+  registerShorthands,
   registerTheme,
   setAtomHoist,
   setDebug,
@@ -42,6 +44,7 @@ export interface DevupUIWebpackPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  shorthands?: CustomShorthands
   /**
    * Atom-level route-aware hoisting threshold.
    *
@@ -84,9 +87,11 @@ export class DevupUIWebpackPlugin {
     include = [],
     singleCss = false,
     prefix,
+    shorthands,
     atomHoist,
     importAliases: userImportAliases,
   }: Partial<DevupUIWebpackPluginOptions> = {}) {
+    registerShorthands(shorthands ?? {})
     this.importAliases = mergeImportAliases(userImportAliases)
 
     this.options = {

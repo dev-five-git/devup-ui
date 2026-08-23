@@ -23,6 +23,7 @@ export {
   getFileNumByFilename,
 } from './shared'
 export type {
+  CustomShorthands,
   DevupConfig,
   DevupTheme,
   ImportAliases,

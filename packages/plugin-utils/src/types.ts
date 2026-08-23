@@ -52,6 +52,9 @@ export interface DevupTheme {
   shadows?: ThemeShadows
 }
 
+/** Custom style prop aliases mapped to one or more CSS property names. */
+export type CustomShorthands = Record<string, readonly string[]>
+
 /**
  * Devup configuration file structure (devup.json)
  */

@@ -6,7 +6,7 @@ use extractor::extract_style::extract_style_value::ExtractStyleValue;
 use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::sync::{LazyLock, Mutex};
 use wasm_bindgen::prelude::*;
@@ -399,6 +399,19 @@ pub fn register_theme(theme_object: JsValue) -> Result<(), JsValue> {
     let theme: sheet::theme::Theme =
         serde_wasm_bindgen::from_value(theme_object).map_err(js_error)?;
     register_theme_internal(theme);
+    Ok(())
+}
+
+/// Internal function to register custom style-property shorthands.
+pub fn register_shorthands_internal(shorthands: BTreeMap<String, Vec<String>>) {
+    css::set_custom_shorthands(shorthands);
+}
+
+#[wasm_bindgen(js_name = "registerShorthands")]
+#[cfg(not(tarpaulin_include))]
+pub fn register_shorthands(shorthands: JsValue) -> Result<(), JsValue> {
+    let shorthands = serde_wasm_bindgen::from_value(shorthands).map_err(js_error)?;
+    register_shorthands_internal(shorthands);
     Ok(())
 }
 
@@ -1150,6 +1163,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_theme_interface() {
+        register_shorthands_internal(BTreeMap::new());
         let sheet = StyleSheet::default();
         assert_eq!(
             sheet.create_interface(
@@ -1168,6 +1182,10 @@ mod tests {
         color_theme.add_color("primary", "#000");
         theme.add_color_theme("dark", color_theme);
         GLOBAL_STYLE_SHEET.lock().unwrap().set_theme(theme);
+        register_shorthands_internal(BTreeMap::from([(
+            "insetX".to_string(),
+            vec!["left".to_string(), "right".to_string()],
+        )]));
         assert_eq!(
             get_theme_interface(
                 "package",
@@ -1177,10 +1195,11 @@ mod tests {
                 "ShadowsInterface",
                 "ThemeInterface"
             ),
-            "import \"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface LengthInterface{}interface ShadowsInterface{}interface ThemeInterface{dark:null}}"
+            "import \"package\";import type{DevupProps}from\"package\";declare module \"package\"{interface ColorInterface{$primary:null}interface TypographyInterface{}interface LengthInterface{}interface ShadowsInterface{}interface DevupCustomShorthands{insetX?:DevupProps[\"w\"]}interface ThemeInterface{dark:null}}"
         );
 
         // test wrong case
+        register_shorthands_internal(BTreeMap::new());
         let mut sheet = StyleSheet::default();
         let mut theme = Theme::default();
         let mut color_theme = ColorTheme::default();
@@ -1729,11 +1748,21 @@ mod tests {
         let mut color_theme = sheet::theme::ColorTheme::default();
         color_theme.add_color("primary", "#ff0000");
         theme.add_color_theme("default", color_theme);
+        let shorthands = BTreeMap::from([(
+            "insetX".to_string(),
+            vec!["left".to_string(), "right".to_string()],
+        )]);
 
         register_theme_internal(theme);
+        register_shorthands_internal(shorthands);
 
         // Verify the theme was registered
         let default_theme = GLOBAL_STYLE_SHEET.lock().unwrap().theme.get_default_theme();
         assert_eq!(default_theme, Some("default".to_string()));
+        assert_eq!(
+            css::disassemble_property("insetX").collect::<Vec<_>>(),
+            ["left", "right"]
+        );
+        register_shorthands_internal(BTreeMap::new());
     }
 }

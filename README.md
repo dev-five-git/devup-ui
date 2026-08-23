@@ -179,6 +179,40 @@ const textExample = <Text color="$primary" />
 const boxExample = <Box typography="$heading" />
 ```
 
+**Custom shorthands:**
+
+Define reusable prop aliases in the build plugin options. Property names may
+use camelCase or CSS kebab-case, and one shorthand can target multiple
+properties.
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+        scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+      },
+    }),
+  ],
+})
+```
+
+The plugin adds configured names to the generated declaration file, so they are
+available as type-safe component props and selector properties after the plugin
+has run. Restart the build after changing this option so `df/theme.d.ts` is
+regenerated. The same value is applied to every target property.
+
+If your `tsconfig.json` limits `include` to `src`, also include `df/*.d.ts` (or
+the matching custom `distDir`) so the generated augmentation is loaded.
+
+```tsx
+const pinned = <Box insetX={0} />
+const responsive = <Box insetX={[0, null, 'auto']} />
+const interactive = <Box _hover={{ insetX: 4 }} />
+```
+
 **Responsive + Pseudo selectors together:**
 
 ```tsx

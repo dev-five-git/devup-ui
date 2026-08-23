@@ -19,8 +19,9 @@
   "version": "1.0.37",
   "type": "module",
   "scripts": {
-    "lint": "eslint && tsc --noEmit",
-    "build": "tsc && vite build"
+    "lint": "eslint && tsc --noEmit && bun run test:types",
+    "build": "bun run test:types && tsc && vite build",
+    "test:types": "tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
   },
   "publishConfig": {
     "access": "public"
