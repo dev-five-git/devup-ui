@@ -1,1 +1,0 @@
-{"changes":{"packages/next-plugin/package.json":"Patch","packages/plugin-utils/package.json":"Patch"},"note":"Wait for dynamic() import targets before serving the base CSS so a cold Turbopack build no longer drops every lazily-loaded module's atoms","date":"2026-08-23T00:00:00.000000Z"}
