@@ -246,6 +246,9 @@ describe('devupUIVitePlugin', () => {
       'other.css',
       'devup-ui.js',
       'my-devup-ui-styles.css',
+      'my-devup-ui.css',
+      'vendor-devup-ui.css',
+      'vendor-devup-ui-3.css',
       join('/p', 'src', 'app.tsx'),
     ]
 
@@ -421,6 +424,7 @@ describe('devupUIVitePlugin', () => {
       const bundle = {
         'base.css': { source: 'stale', name: 'devup-ui.css' },
         'three.css': { source: 'stale', name: 'devup-ui-3.css' },
+        'nested.css': { source: 'stale', name: 'assets/devup-ui-4.css' },
         'other.css': { source: 'keep', name: 'other.css' },
         'chunk.js': { name: 'devup-ui-9.css' },
       } as unknown as Record<string, { source: string; name: string }>
@@ -429,8 +433,22 @@ describe('devupUIVitePlugin', () => {
 
       expect(bundle['base.css'].source).toEqual('sheet:null')
       expect(bundle['three.css'].source).toEqual('sheet:3')
+      expect(bundle['nested.css'].source).toEqual('sheet:4')
       expect(bundle['other.css'].source).toEqual('keep')
       expect(bundle['chunk.js']).not.toHaveProperty('source')
+    })
+
+    it('leaves an app asset whose name merely ends in devup-ui.css alone', async () => {
+      getCssSpy.mockImplementation(
+        (fileNum: number | null) => `sheet:${fileNum}`,
+      )
+      const bundle = {
+        'vendor.css': { source: 'app styles', name: 'vendor-devup-ui.css' },
+      } as unknown as Record<string, { source: string; name: string }>
+
+      await createPlugin({}).generateBundle({}, bundle)
+
+      expect(bundle['vendor.css'].source).toEqual('app styles')
     })
 
     it('ignores the load-time snapshot so output does not depend on module order', async () => {
