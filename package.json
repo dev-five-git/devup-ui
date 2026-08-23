@@ -13,6 +13,7 @@
     "test:e2e:update": "bunx playwright test --update-snapshots",
     "build": "bun run --filter @devup-ui/wasm --filter @devup-ui/plugin-utils build && bun run --filter @devup-ui/react --filter @devup-ui/webpack-plugin build && bun run --filter @devup-ui/eslint-plugin --filter @devup-ui/vite-plugin --filter @devup-ui/next-plugin --filter @devup-ui/rsbuild-plugin --filter @devup-ui/bun-plugin --filter @devup-ui/components --filter @devup-ui/reset-css build",
     "dev": "bun run --filter '*' dev",
+    "verify:dist": "bun verify-dist.ts",
     "benchmark": "bun benchmark.js",
     "prepare": "husky",
     "changepacks": "bunx @changepacks/cli",
