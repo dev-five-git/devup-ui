@@ -395,15 +395,18 @@ describe('devupUIVitePlugin', () => {
   describe('deterministic file numbering', () => {
     let listSourceFilesSpy: ReturnType<typeof spyOn>
     let importFileMapSpy: ReturnType<typeof spyOn>
+    let exportFileMapSpy: ReturnType<typeof spyOn>
 
     beforeEach(() => {
       listSourceFilesSpy = spyOn(pluginUtils, 'listSourceFiles')
       importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
+      exportFileMapSpy = spyOn(wasm, 'exportFileMap').mockReturnValue('{}')
     })
 
     afterEach(() => {
       listSourceFilesSpy.mockRestore()
       importFileMapSpy.mockRestore()
+      exportFileMapSpy.mockRestore()
     })
 
     function onlyDirs(...dirs: string[]) {
@@ -436,6 +439,22 @@ describe('devupUIVitePlugin', () => {
       await createPlugin({}).configResolved({ root: '/p' })
 
       expect(importFileMapSpy).toHaveBeenCalledWith({ 'C:/p/src/a.tsx': 0 })
+    })
+
+    // A framework plugin resolves the config once per environment. Re-seeding
+    // drops the numbers already given to files outside src/ and app/, and since
+    // the sheet does not reset with the map, the next such file reuses a live
+    // number and its atoms overwrite the previous owner's.
+    it('leaves an already-populated map alone on a second configResolved', async () => {
+      onlyDirs('src')
+      listSourceFilesSpy.mockReturnValue(['/p/src/a.tsx'])
+      exportFileMapSpy.mockReturnValue(
+        '{"/p/src/a.tsx":0,"/monorepo/packages/ui/X.tsx":1}',
+      )
+
+      await createPlugin({}).configResolved({ root: '/p' })
+
+      expect(importFileMapSpy).not.toHaveBeenCalled()
     })
 
     it('scans app/ for App Router projects and dedupes across roots', async () => {

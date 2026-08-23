@@ -16,6 +16,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  exportFileMap,
   getCss,
   getDefaultTheme,
   getThemeInterface,
@@ -59,13 +60,25 @@ function resolveSourceDirs(root: string): string[] {
  * transforms in parallel, so two identical builds produce different per-file
  * class prefixes and therefore different CSS *and* JS asset hashes. Seeding
  * from a sorted scan makes the numbering a pure function of the file paths.
- * Only the order changes — the count does not — so class prefixes stay exactly
- * as short as before.
+ * Every source file now holds a slot, where before only the ones that emitted
+ * styles consumed a number. Prefix length is a step function of the highest
+ * number handed out (1 char up to 26, 2 up to 1025, 3 beyond), so this is free
+ * until a project passes 1026 files under the scanned roots, at which point
+ * prefixes that used to be 2 chars become 3.
  *
  * Vite reports module ids as absolute POSIX-style paths even on Windows, so the
  * scanned paths are normalized to match the keys `codeExtract` will look up.
+ *
+ * `importFileMap` REPLACES the engine's map, and a framework plugin resolves the
+ * config once per environment, so seeding unconditionally would wipe the numbers
+ * already handed to files outside `sourceDirs`: a monorepo sibling, or anything
+ * reached through `include`. The style sheet does not reset with the map, so the
+ * next such file reuses a live number and its atoms overwrite the previous
+ * owner's. Seeding only into an empty map keeps numbering deterministic on the
+ * first pass and stable for every later one.
  */
 function seedFileMap(sourceDirs: string[]): void {
+  if (Object.keys(JSON.parse(exportFileMap())).length > 0) return
   const sorted = [
     ...new Set(
       sourceDirs
