@@ -1,22 +1,13 @@
-type DemoModule = {
-  default: React.ComponentType
-}
+import type { ComponentType } from 'react'
 
-const demoModules = import.meta.glob<DemoModule>('../app/**/demo/*.tsx', {
-  eager: true,
-})
+import { DEMOS } from './demos.generated'
 
 export async function getDemos(
   dir: string,
-): Promise<[React.ComponentType, string][]> {
-  const directoryMarker = `/${dir}/demo/`
+): Promise<[ComponentType, string][]> {
+  const prefix = `${dir}/demo/`
 
-  return Object.entries(demoModules)
-    .filter(([path]) => path.includes(directoryMarker))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([path, module]) => {
-      const filename = path.slice(path.lastIndexOf('/') + 1)
-
-      return [module.default, `${dir}/demo/${filename}`]
-    })
+  return DEMOS.filter(([label]) => label.startsWith(prefix)).map<
+    [ComponentType, string]
+  >(([label, component]) => [component, label])
 }

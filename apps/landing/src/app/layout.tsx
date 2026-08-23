@@ -14,6 +14,14 @@ import {
 
 const staticExportRscTransport = `(${installStaticExportRscTransport.toString()})(${JSON.stringify(STATIC_EXPORT_DEPLOYMENT_ID)})`
 
+// The transport only exists to feed vinext's navigation runtime from `.rsc`
+// artifacts on a plain static host. The CI-only Next build emits no such
+// artifacts, so installing it there would turn every RSC prefetch into a 404
+// that the acceptance suite (rightly) fails on.
+const needsStaticExportRscTransport =
+  process.env.NODE_ENV === 'production' &&
+  process.env.LANDING_BUILD_MODE !== 'next'
+
 export const metadata: Metadata = {
   title: 'Devup UI',
   description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
@@ -105,7 +113,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {process.env.NODE_ENV === 'production' && (
+        {needsStaticExportRscTransport && (
           <script
             dangerouslySetInnerHTML={{ __html: staticExportRscTransport }}
             data-vinext-static-rsc-transport=""

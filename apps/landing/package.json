@@ -7,6 +7,7 @@
     "dev": "node ./script.js && vinext dev",
     "search": "node ./script.js",
     "build": "node ./script.js && vinext build",
+    "build:next": "node ./script.js && LANDING_BUILD_MODE=next next build",
     "start": "npx serve ./dist/client",
     "lint": "eslint"
   },
@@ -14,10 +15,13 @@
     "@devup-ui/components": "workspace:^",
     "@devup-ui/react": "workspace:^",
     "@devup-ui/reset-css": "workspace:^",
+    "@mdx-js/loader": "^3.1",
     "@mdx-js/react": "^3.1",
+    "@next/mdx": "^16.3",
     "body-scroll-lock": "3.1",
     "clsx": "^2.1",
     "lenis": "1.3",
+    "next": "^16.3",
     "react": "^19.2",
     "react-dom": "^19.2",
     "react-markdown": "^10.1",
@@ -26,6 +30,7 @@
     "vinext": "^1.0.0-beta.8"
   },
   "devDependencies": {
+    "@devup-ui/next-plugin": "workspace:^",
     "@devup-ui/vite-plugin": "workspace:^",
     "@mdx-js/rollup": "^3.1",
     "@types/body-scroll-lock": "^3.1",
