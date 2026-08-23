@@ -1,4 +1,4 @@
-import type { ImportAliases } from './types'
+import type { CustomShorthands, ImportAliases } from './types'
 
 /**
  * Extract file number from a devup-ui CSS filename.
@@ -103,4 +103,6 @@ export interface DevupUIBasePluginOptions {
   singleCss: boolean
   prefix?: string
   importAliases?: ImportAliases
+  /** Build-time aliases that expand one style prop into multiple CSS properties. */
+  shorthands?: CustomShorthands
 }

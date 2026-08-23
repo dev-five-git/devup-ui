@@ -164,3 +164,30 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 // Same
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
+
+## Custom Shorthands
+
+```ts
+// rsbuild.config.ts
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+        scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+      },
+    }),
+  ],
+})
+```
+
+Custom shorthands are build-plugin options, not theme tokens. Every target
+receives the same value, with camelCase and kebab-case target names supported.
+The generated `df/theme.d.ts` provides type completion for component props,
+responsive values, and selectors. Restart Rsbuild after changing the option.
+If `tsconfig.json` only includes `src`, add `df/*.d.ts` (or your custom
+`distDir`) to `include`.
+
+```tsx
+<Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
+```

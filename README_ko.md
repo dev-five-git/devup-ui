@@ -179,6 +179,38 @@ const textExample = <Text color="$primary" />
 const boxExample = <Box typography="$heading" />
 ```
 
+**사용자 정의 shorthand:**
+
+Shorthand는 디자인 토큰이 아니므로 `devup.json`이 아니라 빌드 플러그인
+옵션에서 정의합니다. 각 shorthand는 하나의 prop 값을 여러 CSS 속성에
+동일하게 적용합니다.
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+        scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+      },
+    }),
+  ],
+})
+```
+
+플러그인이 실행되면 기본 경로인 `df/theme.d.ts`에 선언이 생성되어 일반
+prop, 반응형 배열, 가상 선택자, 사용자 정의 selector에서 이름과 값 타입이
+자동 완성됩니다. 설정을 바꾼 뒤에는 빌드 도구를 재시작해야 합니다.
+`tsconfig.json`의 `include`가 `src`로 제한되어 있다면 `df/*.d.ts`도
+포함하세요. `distDir`를 바꿨다면 해당 경로를 포함하면 됩니다.
+
+```tsx
+const pinned = <Box insetX={0} />
+const responsive = <Box insetX={[0, null, 'auto']} />
+const interactive = <Box _hover={{ insetX: 4 }} />
+```
+
 **반응형 + 가상 선택자 동시 사용:**
 
 ```tsx

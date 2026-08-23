@@ -1,6 +1,7 @@
 import type { Properties } from 'csstype-extra'
 
 import type { ResponsiveValue } from '../responsive-value'
+import type { DevupCustomShorthands } from '../shorthand'
 import type { Merge } from '../utils'
 import type { DevupUiBackgroundProps } from './background'
 import type { DevupUiBorderProps } from './border'
@@ -25,7 +26,8 @@ export interface DevupShortcutsProps
     DevupUiMotionPathProps,
     DevupUiPositionProps,
     DevupUiMaskProps,
-    DevupUiTextProps {}
+    DevupUiTextProps,
+    DevupCustomShorthands {}
 
 export type DevupCommonProps = Merge<
   {

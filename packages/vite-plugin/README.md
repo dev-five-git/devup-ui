@@ -164,3 +164,33 @@ const box = <Box _hover={{ bg: ['red', 'blue'] }} />
 // Same
 const box = <Box _hover={[{ bg: 'red' }, { bg: 'blue' }]} />
 ```
+
+## Custom Shorthands
+
+Custom shorthands are build-plugin options, not theme tokens. Every target
+property receives the same value. Target names may use camelCase or CSS
+kebab-case.
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  plugins: [
+    DevupUI({
+      shorthands: {
+        insetX: ['left', 'right'],
+        scrollMarginX: ['scrollMarginLeft', 'scrollMarginRight'],
+      },
+    }),
+  ],
+})
+```
+
+After Vite runs, `df/theme.d.ts` includes the configured prop names. They are
+then type-safe and autocompleted on components, responsive values, pseudo
+selectors, and custom selectors. Restart Vite after changing this option.
+If `tsconfig.json` only includes `src`, add `df/*.d.ts` (or your custom
+`distDir`) to `include`.
+
+```tsx
+<Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
+```

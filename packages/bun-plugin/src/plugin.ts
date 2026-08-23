@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 
 import {
   createThemeInterfaceArgs,
+  type CustomShorthands,
   loadDevupConfig,
   mergeImportAliases,
 } from '@devup-ui/plugin-utils'
@@ -11,6 +12,7 @@ import {
   codeExtract,
   getThemeInterface,
   hasDevupUI,
+  registerShorthands,
   registerTheme,
   setDebug,
 } from '@devup-ui/wasm'
@@ -22,6 +24,10 @@ const distDir = 'df'
 const cssDir = resolve(distDir, 'devup-ui')
 const singleCss = true
 const importAliases = mergeImportAliases()
+
+export interface DevupUIBunPluginOptions {
+  shorthands?: CustomShorthands
+}
 
 async function writeDataFiles() {
   let theme = {}
@@ -45,7 +51,8 @@ async function writeDataFiles() {
   }
 }
 
-async function initialize() {
+async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
+  registerShorthands(shorthands ?? {})
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
   await writeDataFiles()
@@ -97,12 +104,12 @@ async function loadSourceFile(filePath: string) {
 // await, preload-driven `bun test` users race the async setup and load sources
 // against the @devup-ui/react runtime stubs (throwing "Cannot run on the
 // runtime").
-function register() {
+function register(options: DevupUIBunPluginOptions = {}) {
   return plugin({
     name: 'devup-ui',
 
     async setup(build) {
-      await initialize()
+      await initialize(options)
       setDebug(true)
 
       // Resolve devup-ui CSS files

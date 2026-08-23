@@ -7,6 +7,7 @@ import {
   computeFileReach,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
+  type CustomShorthands,
   getFileNumByFilename,
   type ImportAliases,
   loadDevupConfig,
@@ -20,6 +21,7 @@ import {
   getThemeInterface,
   importCanonicalMap,
   importFileRoutes,
+  registerShorthands,
   registerTheme,
   setAtomHoist,
   setDebug,
@@ -37,6 +39,7 @@ export interface DevupUIRsbuildPluginOptions {
   include: string[]
   singleCss: boolean
   prefix?: string
+  shorthands?: CustomShorthands
   /**
    * Atom-level route-aware hoisting threshold (min routes sharing an atom for it
    * to hoist into the shared devup-ui.css; clamped to >= 2; omit to disable).
@@ -107,9 +110,11 @@ export const DevupUI = ({
   debug = false,
   singleCss = false,
   prefix,
+  shorthands,
   atomHoist,
   importAliases: userImportAliases,
 }: Partial<DevupUIRsbuildPluginOptions> = {}): RsbuildPlugin => {
+  registerShorthands(shorthands ?? {})
   const importAliases = mergeImportAliases(userImportAliases)
 
   return {

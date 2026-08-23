@@ -9,6 +9,10 @@ export const metadata = {
 
 The `devup.json` file is the configuration file for your Devup UI theme. Create it at the root of your project to define colors, typography, length, shadow, and other design tokens.
 
+Custom prop shorthands are extraction behavior rather than design tokens, so
+they do not belong in this file. Configure them in the build plugin instead;
+see [Custom Shorthands](/docs/api/custom-shorthands).
+
 ## Basic Structure
 
 ```json
