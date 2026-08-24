@@ -183,6 +183,26 @@ jobs:
       - run: bun run build
       - name: Verify built package entry points
         run: bun run verify:dist
+      - name: Verify publish tarballs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in bindings/*/package.json packages/*/package.json; do
+            package_dir="$(dirname "$manifest")"
+            pack_dir="$RUNNER_TEMP/publish-verify/${package_dir//\//-}"
+            mkdir -p "$pack_dir"
+            (cd "$package_dir" && bun pm pack --quiet --destination "$pack_dir")
+            tarballs=("$pack_dir"/*.tgz)
+            if [[ "${#tarballs[@]}" -ne 1 ]]; then
+              echo "Expected one tarball for $package_dir" >&2
+              exit 1
+            fi
+            packed_manifest="$(tar -xOf "${tarballs[0]}" package/package.json)"
+            if grep -q 'workspace:' <<< "$packed_manifest"; then
+              echo "Unresolved workspace dependency in $package_dir" >&2
+              exit 1
+            fi
+          done
       - run: |
           bun run lint
           # rust coverage issue
@@ -269,9 +289,10 @@ jobs:
       # file `publish.yml`. npm matches that filename exactly, so renaming or
       # moving this file breaks publishing until the entries are updated.
       #
-      # The publish command itself is selected in .changepacks/config.json:
-      # changepacks defaults to `bun publish` because this repo has a bun.lock,
-      # and bun cannot do OIDC (oven-sh/bun#22423).
+      # The publish command itself is selected in .changepacks/config.json.
+      # Bun packs each workspace so dependency ranges are materialized, then
+      # npm publishes that tarball with OIDC (Bun cannot do OIDC itself:
+      # oven-sh/bun#22423).
       - uses: changepacks/action@main
         id: changepacks
         with:
