@@ -7,7 +7,8 @@ on:
   pull_request:
     branches:
       - main
-permissions: write-all
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -127,6 +128,11 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pages: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -173,8 +179,6 @@ jobs:
         with:
           registry-url: "https://registry.npmjs.org"
           node-version: 24
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: bun install
       - run: bun run build
       - name: Verify built package entry points
@@ -256,9 +260,19 @@ jobs:
           fail_ci_if_error: true
           files: ./coverage/lcov.info
 
+      # Publishes through npm OIDC trusted publishing. The job's
+      # `id-token: write` permission lets npm exchange GitHub's short-lived OIDC
+      # token, and public packages receive provenance automatically.
+      #
+      # PREREQUISITE: every @devup-ui/* package must be registered as a Trusted
+      # Publisher on npmjs.com against repo dev-five-git/devup-ui and workflow
+      # file `publish.yml`. npm matches that filename exactly, so renaming or
+      # moving this file breaks publishing until the entries are updated.
+      #
+      # The publish command itself is selected in .changepacks/config.json:
+      # changepacks defaults to `bun publish` because this repo has a bun.lock,
+      # and bun cannot do OIDC (oven-sh/bun#22423).
       - uses: changepacks/action@main
         id: changepacks
         with:
           publish: true
-        env:
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
