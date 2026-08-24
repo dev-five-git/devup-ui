@@ -3,9 +3,9 @@
   "baseBranch": "main",
   "latestPackage": null,
   "publish": {
-    "node": "npm publish"
+    "node": "bun ../../publish-package.ts"
   },
   "publishDryRun": {
-    "node": "npm publish --dry-run"
+    "node": "bun ../../publish-package.ts --dry-run"
   }
 }
