@@ -1,0 +1,17 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/reset-css/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Publish all npm packages through npm trusted publishing with OIDC provenance",
+  "date": "2026-08-24T07:39:04.5537750Z"
+}
