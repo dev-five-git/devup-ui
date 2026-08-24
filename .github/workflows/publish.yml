@@ -184,7 +184,25 @@ jobs:
       - name: Verify built package entry points
         run: bun run verify:dist
       - name: Verify publish tarballs
-        run: bun run verify:publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in bindings/*/package.json packages/*/package.json; do
+            package_dir="$(dirname "$manifest")"
+            pack_dir="$RUNNER_TEMP/publish-verify/${package_dir//\//-}"
+            mkdir -p "$pack_dir"
+            (cd "$package_dir" && bun pm pack --quiet --destination "$pack_dir")
+            tarballs=("$pack_dir"/*.tgz)
+            if [[ "${#tarballs[@]}" -ne 1 ]]; then
+              echo "Expected one tarball for $package_dir" >&2
+              exit 1
+            fi
+            packed_manifest="$(tar -xOf "${tarballs[0]}" package/package.json)"
+            if grep -q 'workspace:' <<< "$packed_manifest"; then
+              echo "Unresolved workspace dependency in $package_dir" >&2
+              exit 1
+            fi
+          done
       - run: |
           bun run lint
           # rust coverage issue
@@ -198,8 +216,6 @@ jobs:
           echo 'use_small_heuristics = "Default"' >> .rustfmt.toml
           cargo fmt
       - run: bun run test
-      - name: Test trusted publish pipeline
-        run: bun run test:publish
       - name: Regression test (bun-plugin preload race)
         run: bun run --filter @devup-ui/bun-plugin test:regression
       - name: Format Rollback
@@ -274,9 +290,9 @@ jobs:
       # moving this file breaks publishing until the entries are updated.
       #
       # The publish command itself is selected in .changepacks/config.json.
-      # The wrapper uses Bun to materialize workspace dependency ranges into a
-      # tarball, verifies none remain, then gives that tarball to npm for OIDC
-      # trusted publishing (Bun itself cannot do OIDC: oven-sh/bun#22423).
+      # Bun packs each workspace so dependency ranges are materialized, then
+      # npm publishes that tarball with OIDC (Bun cannot do OIDC itself:
+      # oven-sh/bun#22423).
       - uses: changepacks/action@main
         id: changepacks
         with:
