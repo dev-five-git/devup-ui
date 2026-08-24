@@ -1,5 +1,11 @@
 {
   "ignore": ["*", "!packages/*/*", "!bindings/*/package.json"],
   "baseBranch": "main",
-  "latestPackage": null
+  "latestPackage": null,
+  "publish": {
+    "node": "npm publish"
+  },
+  "publishDryRun": {
+    "node": "npm publish --dry-run"
+  }
 }
