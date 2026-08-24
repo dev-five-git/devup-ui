@@ -37,6 +37,35 @@ describe('trusted publish package', () => {
       rootDir,
     )
     expect(result.exitCode).toBe(0)
+    expect(result.stdout.trim().split(/\r?\n/)).toEqual([
+      'verified bindings/devup-ui-wasm',
+      'verified packages/bun-plugin',
+      'verified packages/components',
+      'verified packages/eslint-plugin',
+      'verified packages/next-plugin',
+      'verified packages/plugin-utils',
+      'verified packages/react',
+      'verified packages/reset-css',
+      'verified packages/rsbuild-plugin',
+      'verified packages/vite-plugin',
+      'verified packages/webpack-plugin',
+    ])
+  })
+
+  test('pack-only works from the bindings package directory', async () => {
+    const destination = await mkdtemp(join(tmpdir(), 'devup-ui-bindings-pack-'))
+    try {
+      const result = await run(
+        ['bun', publishScript, '--pack-only', destination],
+        resolve(rootDir, 'bindings/devup-ui-wasm'),
+      )
+      expect(result.exitCode).toBe(0)
+      expect(
+        (await readdir(destination)).filter((file) => file.endsWith('.tgz')),
+      ).toHaveLength(1)
+    } finally {
+      await rm(destination, { recursive: true, force: true })
+    }
   })
 
   test('pack-only materializes workspace ranges from current package versions', async () => {

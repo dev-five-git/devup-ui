@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 
 const DEPENDENCY_FIELDS = [
   'dependencies',
@@ -116,6 +116,9 @@ async function verifyWorkspace(rootDir: string): Promise<void> {
   try {
     for (const packageDir of await getPublicPackageDirs(rootDir)) {
       await packPackage(packageDir, destination)
+      console.info(
+        `verified ${relative(rootDir, packageDir).replaceAll('\\', '/')}`,
+      )
     }
   } finally {
     await rm(destination, { recursive: true, force: true })
