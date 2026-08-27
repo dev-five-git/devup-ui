@@ -22,6 +22,14 @@ const needsStaticExportRscTransport =
   process.env.NODE_ENV === 'production' &&
   process.env.LANDING_BUILD_MODE !== 'next'
 
+const googleTagManagerScript = `(function(w,d,s,l,i){
+if(w.location.hostname!=='devup-ui.com')return;
+w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});
+var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
+j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
+f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-PSRKC4QZ')`
+
 export const metadata: Metadata = {
   title: 'Devup UI',
   description: 'Zero Config, Zero FOUC, Zero Runtime, CSS in JS Preprocessor',
@@ -119,15 +127,7 @@ export default function RootLayout({
             data-vinext-static-rsc-transport=""
           />
         )}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-PSRKC4QZ')`,
-          }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: googleTagManagerScript }} />
         <link
           as="font"
           crossOrigin="anonymous"
@@ -164,12 +164,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         })}
       >
         <noscript>
-          <iframe
-            height="0"
-            src="https://www.googletagmanager.com/ns.html?id=GTM-PSRKC4QZ"
-            style={{ display: 'none', visibility: 'hidden' }}
-            width="0"
-          />
+          <span data-javascript-disabled="" hidden />
         </noscript>
         <ReactLenis options={{ duration: 1.4, allowNestedScroll: true }} root>
           <AnchorScroll />
