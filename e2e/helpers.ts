@@ -21,7 +21,9 @@ export async function waitForFontsReady(page: Page): Promise<void> {
   // With scripting disabled, <noscript> contents are parsed into the DOM and
   // browser-context promises cannot advance. The completed load event is the
   // strongest available signal in those SSR-only contexts.
-  if ((await page.locator('noscript iframe').count()) > 0) return
+  if ((await page.locator('noscript [data-javascript-disabled]').count()) > 0) {
+    return
+  }
 
   await page.evaluate(async (fontSpecs) => {
     if (!document.fonts) return
@@ -86,7 +88,9 @@ export async function waitForFontsReady(page: Page): Promise<void> {
  */
 export async function waitForStyleSettle(page: Page): Promise<void> {
   await page.waitForLoadState('load')
-  if ((await page.locator('noscript iframe').count()) > 0) return
+  if ((await page.locator('noscript [data-javascript-disabled]').count()) > 0) {
+    return
+  }
 
   await page.evaluate(async () => {
     const finiteAnimations = document.getAnimations().filter((animation) => {

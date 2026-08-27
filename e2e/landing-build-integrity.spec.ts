@@ -105,4 +105,25 @@ test.describe('Landing Page - Build Integrity', () => {
   test('page title is set correctly', async ({ page }) => {
     await expect(page).toHaveTitle(/Devup UI/)
   })
+
+  test('Google Tag Manager is disabled outside the production hostname', async ({
+    page,
+  }) => {
+    const tagManagerRequests: string[] = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).hostname === 'www.googletagmanager.com') {
+        tagManagerRequests.push(request.url())
+      }
+    })
+
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+
+    expect(new URL(page.url()).hostname).toBe('localhost')
+    expect(tagManagerRequests).toHaveLength(0)
+    expect(await page.evaluate(() => 'dataLayer' in window)).toBe(false)
+    await expect(
+      page.locator('iframe[src*="googletagmanager.com"]'),
+    ).toHaveCount(0)
+  })
 })

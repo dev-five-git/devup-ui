@@ -188,7 +188,7 @@ test.describe('Landing Page - Zero Runtime Validation', () => {
         const nonVarProperties = properties.filter(
           (p) => !p.trim().startsWith('--'),
         )
-        // Allow some inline styles (GTM noscript iframe has display:none, etc.)
+        // Allow a small number of non-variable inline properties.
         if (nonVarProperties.length > 3) {
           suspiciousStyles.push(
             `<${el.tagName.toLowerCase()}>: ${style.substring(0, 100)}`,
