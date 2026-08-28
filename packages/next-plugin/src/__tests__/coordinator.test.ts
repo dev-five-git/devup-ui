@@ -234,7 +234,7 @@ describe('coordinator', () => {
       map: undefined,
       css: 'collected css',
       cssFile: 'devup-ui-1.css',
-      updatedBaseStyle: true,
+      updatedBaseStyle: false,
       free: mock(),
       [Symbol.dispose]: mock(),
     })
