@@ -507,6 +507,7 @@ describe('DevupUINextPlugin', () => {
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: expect.any(Array),
+        prewarmedOutputs: expect.any(Map),
       })
     })
     it('should create theme.d.ts file', async () => {
@@ -696,6 +697,7 @@ describe('DevupUINextPlugin', () => {
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: [],
+        prewarmedOutputs: expect.any(Map),
       })
       expect(codeExtractSpy).not.toHaveBeenCalled()
 
@@ -719,6 +721,8 @@ describe('DevupUINextPlugin', () => {
 
     it('hands the coordinator the full compiled-file set, not the static-only route map', () => {
       process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
       // The base sheet must wait for lazily-loaded modules too, so
       // expectedBaseFiles comes from computeCompiledFiles (static + dynamic
       // edges) rather than computeFileRoutes (static edges only). Using the
@@ -777,9 +781,36 @@ describe('DevupUINextPlugin', () => {
           'extract:src/lazy/panel.tsx',
           'startCoordinator',
         ])
+        const profiles: Record<string, unknown>[] = profileSpy.mock.calls
+          .map(([value]) => value)
+          .filter(
+            (value): value is string =>
+              typeof value === 'string' &&
+              value.startsWith('[devup-ui:profile] '),
+          )
+          .map((value) => JSON.parse(value.slice('[devup-ui:profile] '.length)))
+        const prewarmProfile = profiles.find(
+          ({ phase }) => phase === 'next.prewarm',
+        )
+        expect(prewarmProfile).toMatchObject({
+          collectMs: expect.any(Number),
+          extractMs: expect.any(Number),
+          files: 2,
+          phase: 'next.prewarm',
+          readMs: expect.any(Number),
+          sourceBytes: Buffer.byteLength('{}') * 2,
+        })
+        expect(profiles).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ phase: 'next.initialCss' }),
+            expect.objectContaining({ phase: 'next.stateSnapshot' }),
+            expect.objectContaining({ phase: 'next.setup' }),
+          ]),
+        )
         // the static-only route map is not consulted outside atom-hoist mode
         expect(routesSpy).not.toHaveBeenCalled()
       } finally {
+        profileSpy.mockRestore()
         compiledSpy.mockRestore()
         routesSpy.mockRestore()
       }

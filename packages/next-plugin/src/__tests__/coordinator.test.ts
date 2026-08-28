@@ -225,6 +225,84 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
+  it('profiles serialization work separately from writes', async () => {
+    const originalProfile = process.env.DEVUP_UI_PROFILE
+    process.env.DEVUP_UI_PROFILE = '1'
+    const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
+    codeExtractSpy.mockReturnValue({
+      code: 'transformed code',
+      map: undefined,
+      css: 'collected css',
+      cssFile: 'devup-ui-1.css',
+      updatedBaseStyle: true,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    })
+    getCssSpy.mockImplementation((fileNum: number | null) =>
+      fileNum === null ? 'base-css' : `file-css-${fileNum}`,
+    )
+    exportSheetSpy.mockReturnValue('sheet-json')
+    exportClassMapSpy.mockReturnValue('classmap-json')
+    exportFileMapSpy.mockReturnValue('filemap-json')
+
+    const coordinator = startCoordinator(makeOptions())
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const port = parseInt(
+        (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+      )
+
+      const res = await httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename: 'src/profile.tsx',
+          code: 'const profile = true',
+          resourcePath: join(process.cwd(), 'src', 'profile.tsx'),
+        }),
+      )
+
+      expect(res.status).toBe(200)
+      const message = infoSpy.mock.calls
+        .map(([value]) => value)
+        .find(
+          (value): value is string =>
+            typeof value === 'string' &&
+            value.startsWith(
+              '[devup-ui:profile] {"phase":"coordinator.extract"',
+            ),
+        )
+      if (message === undefined) throw new Error('missing extract profile')
+      const profile = JSON.parse(
+        message.slice('[devup-ui:profile] '.length),
+      ) as Record<string, unknown>
+
+      expect(profile).toMatchObject({
+        cacheHit: false,
+        classMapSnapshotBytes: Buffer.byteLength('classmap-json'),
+        cssSnapshotBytes: expect.any(Number),
+        fileMapSnapshotBytes: Buffer.byteLength('filemap-json'),
+        phase: 'coordinator.extract',
+        scheduledWrites: 5,
+        sheetSnapshotBytes: Buffer.byteLength('sheet-json'),
+        sourceBytes: Buffer.byteLength('const profile = true'),
+      })
+      expect(profile.classMapSnapshotMs).toBeTypeOf('number')
+      expect(profile.cssSnapshotMs).toBeTypeOf('number')
+      expect(profile.fileMapSnapshotMs).toBeTypeOf('number')
+      expect(profile.sheetSnapshotMs).toBeTypeOf('number')
+    } finally {
+      coordinator.close()
+      infoSpy.mockRestore()
+      if (originalProfile === undefined) {
+        delete process.env.DEVUP_UI_PROFILE
+      } else {
+        process.env.DEVUP_UI_PROFILE = originalProfile
+      }
+    }
+  })
+
   it('should rewrite per-file CSS imports when singleCss=false', async () => {
     codeExtractSpy.mockReturnValue({
       code: 'import "./../../df/devup-ui/devup-ui-79.css";\nimport "./../../df/devup-ui/devup-ui-3.css";\nconst x = 1;',

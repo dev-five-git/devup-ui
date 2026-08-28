@@ -238,8 +238,12 @@ export function DevupUI(
     const prewarmedOutputs = new Map<string, PrewarmedOutput>()
     if (!watch && staticGraph) {
       const prewarmStartedAt = profileStart()
+      let prewarmExtractMs = 0
+      let prewarmReadMs = 0
       let prewarmSourceBytes = 0
       const cwd = process.cwd()
+      const collectStartedAt =
+        prewarmStartedAt === undefined ? undefined : performance.now()
       const prewarmFiles = collectProductionPrewarmFiles({
         cwd,
         graph: staticGraph,
@@ -247,16 +251,22 @@ export function DevupUI(
         libPackage,
         include,
       })
+      const collectDurationMs = elapsedMs(collectStartedAt)
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
         const relCssDir = `./${relative(
           dirname(resourcePath),
           cssDir,
         ).replaceAll('\\', '/')}`
+        const readStartedAt =
+          prewarmStartedAt === undefined ? undefined : performance.now()
         const source = readFileSync(resourcePath, 'utf-8')
-        if (prewarmStartedAt !== undefined) {
+        if (readStartedAt !== undefined) {
+          prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
         }
+        const extractStartedAt =
+          prewarmStartedAt === undefined ? undefined : performance.now()
         const output = codeExtract(
           filename,
           source,
@@ -267,6 +277,9 @@ export function DevupUI(
           true,
           importAliases as unknown as Record<string, string | null>,
         )
+        if (extractStartedAt !== undefined) {
+          prewarmExtractMs += performance.now() - extractStartedAt
+        }
         if (singleCss) {
           prewarmedOutputs.set(filename, {
             code: output.code,
@@ -280,14 +293,39 @@ export function DevupUI(
         prewarmedFiles.push(filename)
       }
       reportProfile('next.prewarm', {
+        collectMs: collectDurationMs,
         durationMs: elapsedMs(prewarmStartedAt),
+        extractMs:
+          prewarmStartedAt === undefined
+            ? undefined
+            : Number(prewarmExtractMs.toFixed(2)),
         files: prewarmedFiles.length,
+        readMs:
+          prewarmStartedAt === undefined
+            ? undefined
+            : Number(prewarmReadMs.toFixed(2)),
         sourceBytes: prewarmSourceBytes,
       })
     }
 
     // create devup-ui.css file
-    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
+    const initialCssStartedAt = profileStart()
+    const initialCssSerializeStartedAt =
+      initialCssStartedAt === undefined ? undefined : performance.now()
+    const initialCss = getCss(null, false)
+    const initialCssSerializeMs = elapsedMs(initialCssSerializeStartedAt)
+    const initialCssWriteStartedAt =
+      initialCssStartedAt === undefined ? undefined : performance.now()
+    writeFileSync(join(cssDir, 'devup-ui.css'), initialCss)
+    reportProfile('next.initialCss', {
+      bytes:
+        initialCssStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(initialCss),
+      durationMs: elapsedMs(initialCssStartedAt),
+      serializeMs: initialCssSerializeMs,
+      writeMs: elapsedMs(initialCssWriteStartedAt),
+    })
 
     // Delete stale port file from previous session so loaders don't connect
     // to a dead coordinator port. The new coordinator writes a fresh port file
@@ -312,20 +350,59 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
     })
-    reportProfile('next.setup', {
-      durationMs: elapsedMs(pluginStartedAt),
-      singleCss,
-      prewarmedFiles: prewarmedFiles.length,
-      watch,
-    })
 
     // Cleanup on exit
     process.on('exit', () => {
       coordinator.close()
     })
-    const defaultSheet = JSON.parse(exportSheet())
-    const defaultClassMap = JSON.parse(exportClassMap())
-    const defaultFileMap = JSON.parse(exportFileMap())
+    const stateSnapshotStartedAt = profileStart()
+    const sheetSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultSheetJson = exportSheet()
+    const sheetSerializeMs = elapsedMs(sheetSerializeStartedAt)
+    const sheetParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultSheet = JSON.parse(defaultSheetJson)
+    const sheetParseMs = elapsedMs(sheetParseStartedAt)
+
+    const classMapSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultClassMapJson = exportClassMap()
+    const classMapSerializeMs = elapsedMs(classMapSerializeStartedAt)
+    const classMapParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultClassMap = JSON.parse(defaultClassMapJson)
+    const classMapParseMs = elapsedMs(classMapParseStartedAt)
+
+    const fileMapSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultFileMapJson = exportFileMap()
+    const fileMapSerializeMs = elapsedMs(fileMapSerializeStartedAt)
+    const fileMapParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultFileMap = JSON.parse(defaultFileMapJson)
+    const fileMapParseMs = elapsedMs(fileMapParseStartedAt)
+    reportProfile('next.stateSnapshot', {
+      classMapBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultClassMapJson),
+      classMapParseMs,
+      classMapSerializeMs,
+      durationMs: elapsedMs(stateSnapshotStartedAt),
+      fileMapBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultFileMapJson),
+      fileMapParseMs,
+      fileMapSerializeMs,
+      sheetBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultSheetJson),
+      sheetParseMs,
+      sheetSerializeMs,
+    })
     // for theme script
     const defaultTheme = getDefaultTheme()
     if (defaultTheme) {
@@ -390,6 +467,12 @@ export function DevupUI(
       },
     }
     Object.assign(config.turbopack.rules, rules)
+    reportProfile('next.setup', {
+      durationMs: elapsedMs(pluginStartedAt),
+      prewarmedFiles: prewarmedFiles.length,
+      singleCss,
+      watch,
+    })
     return config
   }
 

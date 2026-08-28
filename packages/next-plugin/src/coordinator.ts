@@ -456,15 +456,27 @@ export function startCoordinator(options: CoordinatorOptions): {
         }
 
         const snapshotStartedAt = profileStart()
+        let classMapSnapshotBytes: number | undefined
+        let classMapSnapshotMs: number | undefined
+        let cssSnapshotBytes: number | undefined
+        let cssSnapshotMs: number | undefined
+        let fileMapSnapshotBytes: number | undefined
+        let fileMapSnapshotMs: number | undefined
+        let sheetSnapshotBytes: number | undefined
+        let sheetSnapshotMs: number | undefined
         const promises: Promise<void>[] = []
 
         if (!cacheHit && result.updatedBaseStyle) {
-          promises.push(
-            safeWrite(
-              join(cssDir, 'devup-ui.css'),
-              `${getCss(null, false)}\n/* ${Date.now()} */`,
-            ),
-          )
+          const cssStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const css = `${getCss(null, false)}\n/* ${Date.now()} */`
+          const cssDurationMs =
+            cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+          if (cssDurationMs !== undefined) {
+            cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+            cssSnapshotBytes = (cssSnapshotBytes ?? 0) + Buffer.byteLength(css)
+          }
+          promises.push(safeWrite(join(cssDir, 'devup-ui.css'), css))
         }
 
         if (!cacheHit && result.cssFile) {
@@ -474,14 +486,51 @@ export function startCoordinator(options: CoordinatorOptions): {
             // wait for the bucket's members before serving it.
             fileNumToBucket.set(fileNum, canonicalMapRef[filename] ?? filename)
           }
+          const cssStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const css = getCss(fileNum, true)
+          const cssDurationMs =
+            cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+          if (cssDurationMs !== undefined) {
+            cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+            cssSnapshotBytes = (cssSnapshotBytes ?? 0) + Buffer.byteLength(css)
+          }
+
+          const sheetStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const sheet = exportSheet()
+          sheetSnapshotMs =
+            sheetStartedAt === undefined ? undefined : elapsedMs(sheetStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            sheetSnapshotBytes = Buffer.byteLength(sheet)
+          }
+
+          const classMapStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const classMap = exportClassMap()
+          classMapSnapshotMs =
+            classMapStartedAt === undefined
+              ? undefined
+              : elapsedMs(classMapStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            classMapSnapshotBytes = Buffer.byteLength(classMap)
+          }
+
+          const fileMapStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const fileMap = exportFileMap()
+          fileMapSnapshotMs =
+            fileMapStartedAt === undefined
+              ? undefined
+              : elapsedMs(fileMapStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            fileMapSnapshotBytes = Buffer.byteLength(fileMap)
+          }
           promises.push(
-            safeWrite(
-              join(cssDir, basename(result.cssFile)),
-              getCss(fileNum, true),
-            ),
-            safeWrite(sheetFile, exportSheet()),
-            safeWrite(classMapFile, exportClassMap()),
-            safeWrite(fileMapFile, exportFileMap()),
+            safeWrite(join(cssDir, basename(result.cssFile)), css),
+            safeWrite(sheetFile, sheet),
+            safeWrite(classMapFile, classMap),
+            safeWrite(fileMapFile, fileMap),
           )
 
           // In non-singleCss mode, imports are rewritten from devup-ui-N.css to
@@ -491,12 +540,17 @@ export function startCoordinator(options: CoordinatorOptions): {
           // new CSS rules are invisible to the browser.
           // When updatedBaseStyle is true, devup-ui.css is already written above.
           if (!singleCss && !result.updatedBaseStyle && result.css != null) {
-            promises.push(
-              safeWrite(
-                join(cssDir, 'devup-ui.css'),
-                `${getCss(null, false)}\n/* ${Date.now()} */`,
-              ),
-            )
+            const cssStartedAt =
+              snapshotStartedAt === undefined ? undefined : performance.now()
+            const baseCss = `${getCss(null, false)}\n/* ${Date.now()} */`
+            const cssDurationMs =
+              cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+            if (cssDurationMs !== undefined) {
+              cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+              cssSnapshotBytes =
+                (cssSnapshotBytes ?? 0) + Buffer.byteLength(baseCss)
+            }
+            promises.push(safeWrite(join(cssDir, 'devup-ui.css'), baseCss))
           }
         }
 
@@ -516,13 +570,22 @@ export function startCoordinator(options: CoordinatorOptions): {
         reportProfile('coordinator.extract', {
           bodyMs: bodyDurationMs,
           cacheHit,
+          classMapSnapshotBytes,
+          classMapSnapshotMs,
+          cssSnapshotBytes,
+          cssSnapshotMs,
           durationMs: elapsedMs(requestStartedAt),
           extractMs: extractDurationMs,
+          fileMapSnapshotBytes,
+          fileMapSnapshotMs,
           filename,
+          sheetSnapshotBytes,
+          sheetSnapshotMs,
           sourceBytes:
             requestStartedAt === undefined
               ? undefined
               : Buffer.byteLength(code),
+          scheduledWrites: promises.length,
           snapshotMs: snapshotDurationMs,
           writeMs: elapsedMs(writeStartedAt),
         })
