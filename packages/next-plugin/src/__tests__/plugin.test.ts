@@ -17,7 +17,7 @@ import {
 
 import * as coordinatorModule from '../coordinator'
 import { DevupUI, selectWasmVariant } from '../plugin'
-import { setWasmForTesting } from '../wasm'
+import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type NextWebpackConfig = Parameters<
@@ -126,6 +126,7 @@ beforeEach(() => {
     'startCoordinator',
   ).mockReturnValue({ close: mock() as () => void })
   setWasmForTesting(wasm)
+  setWebpackPluginForTesting(webpackPluginModule)
 
   originalEnv = { ...process.env }
   originalFetch = global.fetch
@@ -135,6 +136,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setWasmForTesting(undefined)
+  setWebpackPluginForTesting(undefined)
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort

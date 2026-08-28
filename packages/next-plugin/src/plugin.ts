@@ -19,10 +19,7 @@ import {
   planAtomHoist,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
-import {
-  DevupUIWebpackPlugin,
-  type DevupUIWebpackPluginOptions,
-} from '@devup-ui/webpack-plugin'
+import type { DevupUIWebpackPluginOptions } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
 import {
@@ -32,7 +29,7 @@ import {
 } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { loadWasm } from './wasm'
+import { loadWasm, loadWebpackPlugin } from './wasm'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -523,6 +520,7 @@ export function DevupUI(
 
   const { webpack } = config
   config.webpack = (config, _options) => {
+    const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       `devup-ui_${_options.buildId}`,
