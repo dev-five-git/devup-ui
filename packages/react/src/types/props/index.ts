@@ -50,6 +50,10 @@ export interface DevupComponentProps<
 export type DevupComponentBaseProps<T extends React.ElementType> =
   DevupElementTypeProps<T> & DevupComponentAdditionalProps<T>
 
+export type DevupIntrinsicElement = keyof React.JSX.IntrinsicElements
+export type DevupIntrinsicComponentBaseProps<T extends DevupIntrinsicElement> =
+  React.JSX.IntrinsicElements[T] & DevupComponentAdditionalProps<T>
+
 export type DevupElementTypeProps<T extends React.ElementType> =
   T extends string ? React.ComponentProps<T> : object
 

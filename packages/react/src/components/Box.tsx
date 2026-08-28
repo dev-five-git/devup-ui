@@ -1,11 +1,16 @@
 import type {
   DevupComponentBaseProps,
   DevupComponentProps,
+  DevupIntrinsicComponentBaseProps,
+  DevupIntrinsicElement,
 } from '../types/props'
 import type { Merge } from '../types/utils'
 
 export function Box(
   props: Merge<DevupComponentBaseProps<'div'>, DevupComponentProps<'div'>>,
+): React.ReactElement
+export function Box<T extends DevupIntrinsicElement>(
+  props: Merge<DevupIntrinsicComponentBaseProps<T>, DevupComponentProps<T>>,
 ): React.ReactElement
 export function Box<T extends React.ElementType = 'div'>(
   props: Merge<DevupComponentBaseProps<T>, DevupComponentProps<T>>,

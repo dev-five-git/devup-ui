@@ -32,7 +32,17 @@ const polymorphicBox = Box({
   as: 'a',
   bg: 'red',
   href: '/docs',
+  onClick: (event) => event.currentTarget.href,
   target: '_blank',
 })
 
-export { boxProps, customShorthandProps, polymorphicBox }
+function RequiredLink({ to }: { to: string }) {
+  return to
+}
+
+const customComponentBox = Box({
+  as: RequiredLink,
+  props: { to: '/docs' },
+})
+
+export { boxProps, customComponentBox, customShorthandProps, polymorphicBox }
