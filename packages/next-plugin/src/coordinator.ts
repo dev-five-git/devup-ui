@@ -73,8 +73,8 @@ export interface CoordinatorOptions {
 
 export interface PrewarmedOutput {
   code: string
-  css: string
-  cssFile: string
+  css?: string
+  cssFile?: string
   map?: string
   source: string
   updatedBaseStyle: boolean
