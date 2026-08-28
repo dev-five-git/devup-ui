@@ -45,6 +45,7 @@ import { type NextConfig } from 'next'
 
 import { startCoordinator } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
+import { elapsedMs, profileStart, reportProfile } from './profile'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
@@ -61,6 +62,7 @@ export function DevupUI(
   config: NextConfig,
   options: DevupUiNextPluginOptions = {},
 ): NextConfig {
+  const pluginStartedAt = profileStart()
   const isTurbo =
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   // turbopack is now stable, TURBOPACK is set to auto without any flags
@@ -154,6 +156,7 @@ export function DevupUI(
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
     let staticGraph: StaticImportGraph | undefined
+    const graphStartedAt = profileStart()
     try {
       const srcDir = resolve(process.cwd(), 'src')
       const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
@@ -209,9 +212,18 @@ export function DevupUI(
           )
         }
       }
+      reportProfile('next.graph', {
+        durationMs: elapsedMs(graphStartedAt),
+        files: staticGraph.files.length,
+        expectedBaseFiles: expectedBaseFiles.length,
+      })
     } catch {
       // Pre-pass is best-effort; on failure canonical() is the identity (no
       // merge) and atom hoisting stays off.
+      reportProfile('next.graph', {
+        durationMs: elapsedMs(graphStartedAt),
+        failed: true,
+      })
     }
 
     // Turbopack can request a CSS module before it has scheduled every source
@@ -224,6 +236,8 @@ export function DevupUI(
     // keys/options and is idempotent.
     const prewarmedFiles: string[] = []
     if (!watch && staticGraph) {
+      const prewarmStartedAt = profileStart()
+      let prewarmSourceBytes = 0
       const cwd = process.cwd()
       const prewarmFiles = collectProductionPrewarmFiles({
         cwd,
@@ -238,9 +252,13 @@ export function DevupUI(
           dirname(resourcePath),
           cssDir,
         ).replaceAll('\\', '/')}`
+        const source = readFileSync(resourcePath, 'utf-8')
+        if (prewarmStartedAt !== undefined) {
+          prewarmSourceBytes += Buffer.byteLength(source)
+        }
         codeExtract(
           filename,
-          readFileSync(resourcePath, 'utf-8'),
+          source,
           libPackage,
           relCssDir,
           singleCss,
@@ -250,6 +268,11 @@ export function DevupUI(
         )
         prewarmedFiles.push(filename)
       }
+      reportProfile('next.prewarm', {
+        durationMs: elapsedMs(prewarmStartedAt),
+        files: prewarmedFiles.length,
+        sourceBytes: prewarmSourceBytes,
+      })
     }
 
     // create devup-ui.css file
@@ -276,6 +299,12 @@ export function DevupUI(
       canonicalMap,
       expectedBaseFiles,
       prewarmedFiles,
+    })
+    reportProfile('next.setup', {
+      durationMs: elapsedMs(pluginStartedAt),
+      singleCss,
+      prewarmedFiles: prewarmedFiles.length,
+      watch,
     })
 
     // Cleanup on exit

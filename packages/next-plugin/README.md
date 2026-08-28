@@ -192,3 +192,23 @@ custom `distDir`) to `include`.
 ```tsx
 <Box insetX={[0, null, 'auto']} _hover={{ insetX: 4 }} />
 ```
+
+## Turbopack build profiling
+
+Set `DEVUP_UI_PROFILE=1` for an opt-in, structured timing log during a
+Turbopack build.
+
+```bash
+DEVUP_UI_PROFILE=1 bun run build
+```
+
+```powershell
+$env:DEVUP_UI_PROFILE = '1'; bun run build
+```
+
+Each `[devup-ui:profile]` JSON entry reports one phase. `next.graph` measures
+the static import-graph pre-pass, `next.prewarm` measures production extraction
+before Turbopack starts loaders, and `coordinator.extract` separates request,
+WASM extraction, CSS/state serialization, and write time for each loaded
+module. The setting is disabled by default and does not collect timings or
+write logs when it is absent.

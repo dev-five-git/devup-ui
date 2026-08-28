@@ -11,6 +11,8 @@ import {
   getCss,
 } from '@devup-ui/wasm'
 
+import { elapsedMs, profileStart, reportProfile } from './profile'
+
 export interface CoordinatorOptions {
   package: string
   cssDir: string
@@ -344,6 +346,7 @@ export function startCoordinator(options: CoordinatorOptions): {
     }
 
     if (req.method === 'GET' && url.pathname === '/css') {
+      const cssStartedAt = profileStart()
       const fileNumParam = url.searchParams.get('fileNum')
       const importMainCss = url.searchParams.get('importMainCss') === 'true'
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
@@ -364,10 +367,16 @@ export function startCoordinator(options: CoordinatorOptions): {
 
       res.writeHead(200, { 'Content-Type': 'text/css' })
       res.end(getCss(fileNum ?? null, importMainCss))
+      reportProfile('coordinator.css', {
+        durationMs: elapsedMs(cssStartedAt),
+        fileNum,
+        waitForIdle: shouldWait,
+      })
       return
     }
 
     if (req.method === 'POST' && url.pathname === '/extract') {
+      const requestStartedAt = profileStart()
       // Reserve a "start slot" before yielding on `await readBody`. Without
       // this counter, `waitForIdle` could observe activeExtractions=0 in the
       // window between the request hitting this handler and `activeExtractions++`
@@ -377,7 +386,9 @@ export function startCoordinator(options: CoordinatorOptions): {
       let promotedToActive = false
       let extractedFilename: string | undefined
       try {
+        const bodyStartedAt = profileStart()
         const body = JSON.parse(await readBody(req))
+        const bodyDurationMs = elapsedMs(bodyStartedAt)
         activeExtractions++
         pendingExtractStarts--
         promotedToActive = true
@@ -394,6 +405,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
 
+        const extractStartedAt = profileStart()
         const result = codeExtract(
           filename,
           code,
@@ -404,6 +416,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           true,
           importAliases,
         )
+        const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
         // Instead of importing "devup-ui-79.css" (which doesn't exist as a resolvable module),
@@ -417,6 +430,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           )
         }
 
+        const snapshotStartedAt = profileStart()
         const promises: Promise<void>[] = []
 
         if (result.updatedBaseStyle) {
@@ -461,6 +475,8 @@ export function startCoordinator(options: CoordinatorOptions): {
           }
         }
 
+        const snapshotDurationMs = elapsedMs(snapshotStartedAt)
+        const writeStartedAt = profileStart()
         await Promise.all(promises)
 
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -472,6 +488,18 @@ export function startCoordinator(options: CoordinatorOptions): {
             updatedBaseStyle: result.updatedBaseStyle,
           }),
         )
+        reportProfile('coordinator.extract', {
+          bodyMs: bodyDurationMs,
+          durationMs: elapsedMs(requestStartedAt),
+          extractMs: extractDurationMs,
+          filename,
+          sourceBytes:
+            requestStartedAt === undefined
+              ? undefined
+              : Buffer.byteLength(code),
+          snapshotMs: snapshotDurationMs,
+          writeMs: elapsedMs(writeStartedAt),
+        })
       } catch (error) {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(
