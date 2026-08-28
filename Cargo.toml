@@ -50,8 +50,8 @@ use_self = "allow"
 used_underscore_binding = "allow"
 
 [profile.release]
-# Optimize for small code size (critical for WASM binary)
-opt-level = "s"
+# Minimize the WASM that every build must read, compile, and retain in memory.
+opt-level = "z"
 # Link-time optimization: enables cross-crate inlining and dead code elimination
 lto = true
 # Single codegen unit: maximizes optimization at cost of compile time
