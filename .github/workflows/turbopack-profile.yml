@@ -79,7 +79,7 @@ jobs:
             if [[ "$duration" == *ms ]]; then
               echo "${duration%ms}"
             else
-              awk -v seconds="${duration%s}" 'BEGIN { printf "%.0f", seconds * 1000 }'
+              awk -v seconds="${duration%s}" 'BEGIN { printf "%.0f\n", seconds * 1000 }'
             fi
           }
 
