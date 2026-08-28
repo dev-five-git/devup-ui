@@ -67,6 +67,32 @@ jobs:
           result_dir="$RUNNER_TEMP/turbopack-profile"
           mkdir -p "$result_dir/logs"
 
+          extract_duration_ms() {
+            local pattern="$1"
+            local log_file="$2"
+            local duration
+
+            duration="$(grep -E "$pattern" "$log_file" \
+              | tail -1 \
+              | grep -oE '[0-9]+([.][0-9]+)?(ms|s)' \
+              | tail -1)"
+            if [[ "$duration" == *ms ]]; then
+              echo "${duration%ms}"
+            else
+              awk -v seconds="${duration%s}" 'BEGIN { printf "%.0f", seconds * 1000 }'
+            fi
+          }
+
+          record_phase() {
+            local name="$1"
+            local phase="$2"
+            local pattern="$3"
+            local log_file="$4"
+
+            extract_duration_ms "$pattern" "$log_file" \
+              >> "$result_dir/${name}-${phase}.txt"
+          }
+
           run_build() {
             local name="$1"
             local directory="$2"
@@ -75,13 +101,15 @@ jobs:
             local started_at
             local finished_at
             local elapsed_ms
+            local log_file
             local status
 
             rm -rf "$directory/.next" "$directory/df"
+            log_file="$result_dir/logs/${name}-${sample}.log"
             started_at="$(date +%s%N)"
             set +e
             (cd "$directory" && bunx next build) 2>&1 \
-              | tee "$result_dir/logs/${name}-${sample}.log"
+              | tee "$log_file"
             status="${PIPESTATUS[0]}"
             set -e
             finished_at="$(date +%s%N)"
@@ -93,6 +121,10 @@ jobs:
             fi
             if [[ "$record" == "true" ]]; then
               echo "$elapsed_ms" >> "$result_dir/${name}.txt"
+              record_phase "$name" config 'Running next[.]config' "$log_file"
+              record_phase "$name" compile 'Compiled successfully' "$log_file"
+              record_phase "$name" typescript 'Finished TypeScript' "$log_file"
+              record_phase "$name" static 'Generating static pages.* in ' "$log_file"
             fi
           }
 
@@ -121,6 +153,17 @@ jobs:
           devup_samples="$(awk 'BEGIN { ORS="" } { if (NR > 1) printf ", "; printf "%s", $0 }' "$result_dir/devup.txt")"
           tailwind_samples="$(awk 'BEGIN { ORS="" } { if (NR > 1) printf ", "; printf "%s", $0 }' "$result_dir/tailwind.txt")"
 
+          phase_row() {
+            local phase="$1"
+            local label="$2"
+            local devup_phase_median
+            local tailwind_phase_median
+
+            devup_phase_median="$(sort -n "$result_dir/devup-${phase}.txt" | sed -n '4p')"
+            tailwind_phase_median="$(sort -n "$result_dir/tailwind-${phase}.txt" | sed -n '4p')"
+            echo "| $label | ${devup_phase_median}ms | ${tailwind_phase_median}ms | $((tailwind_phase_median - devup_phase_median))ms |"
+          }
+
           {
             echo "### Turbopack cold-build comparison"
             echo
@@ -133,6 +176,15 @@ jobs:
             echo "| Tailwind Turbo | ${tailwind_median}ms | ${tailwind_samples} |"
             echo
             echo "Tailwind minus Devup UI: ${delta_ms}ms (${delta_percent}%)."
+            echo
+            echo "| Phase | Devup UI median | Tailwind median | Tailwind - Devup UI |"
+            echo "| --- | ---: | ---: | ---: |"
+            phase_row config "Next config"
+            phase_row compile "Turbopack compile"
+            phase_row typescript "TypeScript"
+            phase_row static "Static generation"
+            echo
+            echo "Positive phase deltas mean Devup UI is faster."
           } | tee "$result_dir/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload raw benchmark logs
