@@ -43,7 +43,7 @@ import {
 } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
-import { startCoordinator } from './coordinator'
+import { type PrewarmedOutput, startCoordinator } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 
@@ -235,6 +235,7 @@ export function DevupUI(
     // route graph cannot represent. Loader-time extraction uses the same
     // keys/options and is idempotent.
     const prewarmedFiles: string[] = []
+    const prewarmedOutputs = new Map<string, PrewarmedOutput>()
     if (!watch && staticGraph) {
       const prewarmStartedAt = profileStart()
       let prewarmSourceBytes = 0
@@ -256,7 +257,7 @@ export function DevupUI(
         if (prewarmStartedAt !== undefined) {
           prewarmSourceBytes += Buffer.byteLength(source)
         }
-        codeExtract(
+        const output = codeExtract(
           filename,
           source,
           libPackage,
@@ -266,6 +267,16 @@ export function DevupUI(
           true,
           importAliases as unknown as Record<string, string | null>,
         )
+        if (singleCss) {
+          prewarmedOutputs.set(filename, {
+            code: output.code,
+            css: output.css,
+            cssFile: output.cssFile,
+            map: output.map,
+            source,
+            updatedBaseStyle: output.updatedBaseStyle,
+          })
+        }
         prewarmedFiles.push(filename)
       }
       reportProfile('next.prewarm', {
@@ -299,6 +310,7 @@ export function DevupUI(
       canonicalMap,
       expectedBaseFiles,
       prewarmedFiles,
+      prewarmedOutputs,
     })
     reportProfile('next.setup', {
       durationMs: elapsedMs(pluginStartedAt),

@@ -45,6 +45,12 @@ export interface CoordinatorOptions {
    */
   prewarmedFiles?: string[]
   /**
+   * Production `singleCss` outputs extracted before Turbopack starts. A loader
+   * that receives byte-identical source can return this result without a
+   * second WASM extraction; the shared sheet is already populated.
+   */
+  prewarmedOutputs?: Map<string, PrewarmedOutput>
+  /**
    * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
    * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
    * signal available). Exposed for tests; the plugin omits it.
@@ -63,6 +69,15 @@ export interface CoordinatorOptions {
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+}
+
+export interface PrewarmedOutput {
+  code: string
+  css: string
+  cssFile: string
+  map?: string
+  source: string
+  updatedBaseStyle: boolean
 }
 
 // Latest-Wins Coalescing Serializer.
@@ -325,6 +340,7 @@ export function startCoordinator(options: CoordinatorOptions): {
     importAliases,
     coordinatorPortFile,
   } = options
+  const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
 
   idleThresholdMs = options.idleThresholdMs ?? 2500
   quietMs = options.quietMs ?? 10_000
@@ -405,17 +421,26 @@ export function startCoordinator(options: CoordinatorOptions): {
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
 
+        // The production prewarm exists to make the CSS snapshot complete
+        // before Turbopack requests it. In single-CSS mode the generated CSS
+        // is already in that snapshot, so re-running WASM here is pure work.
+        // Require exact source equality because Turbopack may hand a loader
+        // code modified by an earlier transform.
+        const prewarmed = singleCss ? prewarmedOutputs.get(filename) : undefined
+        const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
-        const result = codeExtract(
-          filename,
-          code,
-          libPackage,
-          relCssDir,
-          singleCss,
-          false,
-          true,
-          importAliases,
-        )
+        const result = cacheHit
+          ? prewarmed
+          : codeExtract(
+              filename,
+              code,
+              libPackage,
+              relCssDir,
+              singleCss,
+              false,
+              true,
+              importAliases,
+            )
         const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
@@ -433,7 +458,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         const snapshotStartedAt = profileStart()
         const promises: Promise<void>[] = []
 
-        if (result.updatedBaseStyle) {
+        if (!cacheHit && result.updatedBaseStyle) {
           promises.push(
             safeWrite(
               join(cssDir, 'devup-ui.css'),
@@ -442,7 +467,7 @@ export function startCoordinator(options: CoordinatorOptions): {
           )
         }
 
-        if (result.cssFile) {
+        if (!cacheHit && result.cssFile) {
           const fileNum = getFileNumByFilename(result.cssFile)
           if (fileNum != null) {
             // Record this bucket's fileNum -> canonical bucket path so /css can
@@ -490,6 +515,7 @@ export function startCoordinator(options: CoordinatorOptions): {
         )
         reportProfile('coordinator.extract', {
           bodyMs: bodyDurationMs,
+          cacheHit,
           durationMs: elapsedMs(requestStartedAt),
           extractMs: extractDurationMs,
           filename,

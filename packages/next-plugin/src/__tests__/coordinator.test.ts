@@ -177,6 +177,54 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
+  it('reuses byte-identical singleCss prewarm output', async () => {
+    const source = 'const x = <Box bg="red" />'
+    const options = makeOptions({
+      singleCss: true,
+      prewarmedOutputs: new Map([
+        [
+          'src/App.tsx',
+          {
+            code: 'transformed prewarm code',
+            css: 'prewarmed css',
+            cssFile: 'devup-ui.css',
+            map: '{"version":3}',
+            source,
+            updatedBaseStyle: true,
+          },
+        ],
+      ]),
+    })
+    const coordinator = startCoordinator(options)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+    const port = parseInt(portStr)
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: source,
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({
+      code: 'transformed prewarm code',
+      map: '{"version":3}',
+      cssFile: 'devup-ui.css',
+      updatedBaseStyle: true,
+    })
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+    expect(writeFileSpy).not.toHaveBeenCalled()
+
+    coordinator.close()
+  })
+
   it('should rewrite per-file CSS imports when singleCss=false', async () => {
     codeExtractSpy.mockReturnValue({
       code: 'import "./../../df/devup-ui/devup-ui-79.css";\nimport "./../../df/devup-ui/devup-ui-3.css";\nconst x = 1;',
