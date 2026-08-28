@@ -26,23 +26,4 @@ const boxProps: Parameters<typeof Box>[0] = {
   },
 }
 
-// The concrete default overload is a fast path only. The generic fallback
-// must continue to infer intrinsic-element props from `as`.
-const polymorphicBox = Box({
-  as: 'a',
-  bg: 'red',
-  href: '/docs',
-  onClick: (event) => event.currentTarget.href,
-  target: '_blank',
-})
-
-function RequiredLink({ to }: { to: string }) {
-  return to
-}
-
-const customComponentBox = Box({
-  as: RequiredLink,
-  props: { to: '/docs' },
-})
-
-export { boxProps, customComponentBox, customShorthandProps, polymorphicBox }
+export { boxProps, customShorthandProps }

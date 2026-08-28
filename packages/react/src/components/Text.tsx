@@ -1,20 +1,9 @@
 import type {
   DevupComponentBaseProps,
   DevupComponentProps,
-  DevupIntrinsicComponentBaseProps,
-  DevupIntrinsicElement,
 } from '../types/props'
 import type { Merge } from '../types/utils'
 
-export function Text(
-  props: Merge<DevupComponentBaseProps<'span'>, DevupComponentProps<'span'>>,
-): React.ReactElement
-export function Text<T extends DevupIntrinsicElement>(
-  props: Merge<DevupIntrinsicComponentBaseProps<T>, DevupComponentProps<T>>,
-): React.ReactElement
-export function Text<T extends React.ElementType = 'span'>(
-  props: Merge<DevupComponentBaseProps<T>, DevupComponentProps<T>>,
-): React.ReactElement
 export function Text<T extends React.ElementType = 'span'>(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   props: Merge<DevupComponentBaseProps<T>, DevupComponentProps<T>>,

@@ -50,8 +50,10 @@ use_self = "allow"
 used_underscore_binding = "allow"
 
 [profile.release]
-# Optimize for small code size (critical for WASM binary)
-opt-level = "s"
+# Optimize the build-time extractor for throughput. The WASM module runs in
+# Node during every Devup UI build, so extraction speed is more important than
+# download size.
+opt-level = 3
 # Link-time optimization: enables cross-crate inlining and dead code elimination
 lto = true
 # Single codegen unit: maximizes optimization at cost of compile time
