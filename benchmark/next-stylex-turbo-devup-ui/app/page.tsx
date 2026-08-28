@@ -1,6 +1,6 @@
 'use client'
 
-import { Box } from '@devup-ui/react'
+import { Box, globalCss } from '@devup-ui/react'
 import * as stylex from '@stylexjs/stylex'
 import { useState } from 'react'
 
@@ -34,6 +34,14 @@ const styles = stylex.create({
   },
   hello2: {
     fontSize: 12,
+  },
+})
+
+globalCss({
+  '*': {
+    boxSizing: 'border-box',
+    p: 0,
+    m: 0,
   },
 })
 
