@@ -54,7 +54,7 @@ workspace = true
 # only the features listed here, so it has to be allowed explicitly. It is part
 # of the WebAssembly 2.0 baseline (Chrome 74, Firefox 62, Safari 14.1, Node 12).
 wasm-opt = [
-    "-O3",
+    "-Oz",
     "--enable-bulk-memory",
     "--enable-nontrapping-float-to-int",
     "--enable-sign-ext",
