@@ -1,21 +1,24 @@
 {
-  "name": "next-stylex-turbo-benchmark",
+  "name": "next-stylex-turbo-devup-ui-benchmark",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
-    "predev": "rimraf .next",
-    "prebuild": "rimraf .next",
+    "predev": "rimraf .next df",
+    "prebuild": "rimraf .next df",
     "dev": "next dev",
     "build": "next build --experimental-debug-memory-usage",
     "start": "next start"
   },
   "dependencies": {
+    "@devup-ui/react": "workspace:^",
     "@stylexjs/stylex": "^0.19",
     "next": "16.3",
     "react": "19.2",
     "react-dom": "19.2"
   },
   "devDependencies": {
+    "@devup-ui/next-plugin": "workspace:^",
     "@stylexjs/babel-plugin": "0.19.0",
     "@stylexjs/postcss-plugin": "0.19.0",
     "@types/node": "^26.2",
