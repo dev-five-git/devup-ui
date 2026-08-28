@@ -13,7 +13,7 @@ import {
   spyOn,
 } from 'bun:test'
 
-import devupUICssLoader, { resetInit } from '../css-loader'
+import devupUICssLoader, { resetInit, setWasmForTesting } from '../css-loader'
 
 type CssLoaderThis = ThisParameterType<typeof devupUICssLoader>
 
@@ -45,6 +45,7 @@ beforeAll(() => {
   importFileMapSpy = spyOn(wasm, 'importFileMap').mockReturnValue(undefined)
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
+  setWasmForTesting(wasm)
 })
 
 afterEach(() => {

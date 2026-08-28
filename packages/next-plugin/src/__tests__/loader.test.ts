@@ -15,7 +15,7 @@ import {
 } from 'bun:test'
 
 import type { DevupUILoaderOptions } from '../loader'
-import devupUILoader, { resetInit } from '../loader'
+import devupUILoader, { resetInit, setWasmForTesting } from '../loader'
 
 type LoaderThis = ThisParameterType<typeof devupUILoader>
 
@@ -68,6 +68,7 @@ beforeEach(() => {
   importFileMapSpy = spyOn(wasm, 'importFileMap').mockImplementation(() => {})
   importSheetSpy = spyOn(wasm, 'importSheet').mockImplementation(() => {})
   registerThemeSpy = spyOn(wasm, 'registerTheme').mockImplementation(() => {})
+  setWasmForTesting(wasm)
   dateNowSpy = spyOn(Date, 'now').mockReturnValue(0)
 })
 

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import type { StaticImportGraph } from '@devup-ui/plugin-utils'
 import * as importGraphModule from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPluginModule from '@devup-ui/webpack-plugin'
@@ -15,7 +16,8 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
-import { DevupUI } from '../plugin'
+import { DevupUI, selectWasmVariant } from '../plugin'
+import { setWasmForTesting } from '../wasm'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type NextWebpackConfig = Parameters<
@@ -123,6 +125,7 @@ beforeEach(() => {
     coordinatorModule,
     'startCoordinator',
   ).mockReturnValue({ close: mock() as () => void })
+  setWasmForTesting(wasm)
 
   originalEnv = { ...process.env }
   originalFetch = global.fetch
@@ -131,6 +134,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setWasmForTesting(undefined)
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort
@@ -157,6 +161,24 @@ afterEach(() => {
 })
 
 describe('DevupUINextPlugin', () => {
+  it('selects the lite engine only when the graph has no vanilla-extract file', () => {
+    expect(selectWasmVariant(undefined)).toBe('full')
+    expect(
+      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph),
+    ).toBe('lite')
+    expect(
+      selectWasmVariant({ files: ['src/theme.css.ts'] } as StaticImportGraph),
+    ).toBe('full')
+    expect(
+      selectWasmVariant({ files: ['src/theme.css.js'] } as StaticImportGraph),
+    ).toBe('full')
+    expect(
+      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph, [
+        'node_modules/design-system/theme.css.ts',
+      ]),
+    ).toBe('full')
+  })
+
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -500,6 +522,7 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        wasm,
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -701,6 +724,7 @@ describe('DevupUINextPlugin', () => {
 
       // Verify coordinator was started with correct options
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        wasm,
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,

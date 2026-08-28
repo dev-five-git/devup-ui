@@ -35,6 +35,7 @@ function makeOptions(
   overrides: Partial<CoordinatorOptions> = {},
 ): CoordinatorOptions {
   return {
+    wasm,
     package: '@devup-ui/react',
     cssDir: join(tmpDir, 'css'),
     singleCss: false,

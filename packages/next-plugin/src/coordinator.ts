@@ -3,18 +3,12 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  codeExtractWithoutSourceMap,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-} from '@devup-ui/wasm'
 
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import type { DevupWasm } from './wasm'
 
 export interface CoordinatorOptions {
+  wasm: DevupWasm
   package: string
   cssDir: string
   singleCss: boolean
@@ -88,7 +82,7 @@ interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
 
 /** Copy every WASM-backed getter once, then release its Rust allocation. */
 export function takeExtractOutput(
-  output: ReturnType<typeof codeExtract>,
+  output: ReturnType<DevupWasm['codeExtract']>,
 ): ExtractOutputSnapshot {
   try {
     return {
@@ -361,6 +355,7 @@ export function startCoordinator(options: CoordinatorOptions): {
     server = null
   }
   const {
+    wasm,
     package: libPackage,
     cssDir,
     singleCss,
@@ -370,6 +365,14 @@ export function startCoordinator(options: CoordinatorOptions): {
     importAliases,
     coordinatorPortFile,
   } = options
+  const {
+    codeExtract,
+    codeExtractWithoutSourceMap,
+    exportClassMap,
+    exportFileMap,
+    exportSheet,
+    getCss,
+  } = wasm
   const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
   const extract =
     options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract

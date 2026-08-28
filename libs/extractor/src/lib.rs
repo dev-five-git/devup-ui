@@ -11,6 +11,7 @@ mod stylex;
 mod tailwind;
 mod util_type;
 mod utils;
+#[cfg(feature = "vanilla-extract")]
 mod vanilla_extract;
 mod visit;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
@@ -22,7 +23,9 @@ use oxc_ast_visit::VisitMut;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::{Parser, ParserReturn};
 use oxc_span::SourceType;
-use rustc_hash::{FxHashMap, FxHashSet};
+#[cfg(feature = "vanilla-extract")]
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::path::PathBuf;
@@ -260,8 +263,8 @@ fn extract_with_source_map(
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
-    let is_ve_file = vanilla_extract::is_vanilla_extract_file(filename);
-    let processed_code: Option<String> = if is_ve_file {
+    #[cfg(feature = "vanilla-extract")]
+    let processed_code: Option<String> = if vanilla_extract::is_vanilla_extract_file(filename) {
         // Use transformed code (with imports already pointing to @devup-ui/react)
         match vanilla_extract::execute_vanilla_extract(&transformed_code, &option.package, filename)
         {
@@ -304,6 +307,8 @@ fn extract_with_source_map(
     } else {
         None
     };
+    #[cfg(not(feature = "vanilla-extract"))]
+    let processed_code: Option<String> = None;
     // For vanilla-extract files, if no styles were collected, return early
     if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
@@ -398,6 +403,7 @@ fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, 
 
 /// Extract class names from generated code for specific style names
 /// Used for two-pass vanilla-extract processing to resolve selector references
+#[cfg(feature = "vanilla-extract")]
 fn extract_class_map_from_code(
     filename: &str,
     partial_code: &str,

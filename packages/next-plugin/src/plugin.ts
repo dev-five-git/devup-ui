@@ -20,25 +20,6 @@ import {
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
 import {
-  codeExtract,
-  codeExtractWithoutSourceMap,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  importCanonicalMap,
-  importClassMap,
-  importFileMap,
-  importFileRoutes,
-  importSheet,
-  registerShorthands,
-  registerTheme,
-  setAtomHoist,
-  setPrefix,
-} from '@devup-ui/wasm'
-import {
   DevupUIWebpackPlugin,
   type DevupUIWebpackPluginOptions,
 } from '@devup-ui/webpack-plugin'
@@ -51,11 +32,22 @@ import {
 } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import { loadWasm } from './wasm'
 
 type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
   'watch'
 >
+
+export function selectWasmVariant(
+  graph: StaticImportGraph | undefined,
+  candidateFiles: string[] = graph?.files ?? [],
+): 'lite' | 'full' {
+  return graph &&
+    !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename))
+    ? 'lite'
+    : 'full'
+}
 
 /**
  * Devup UI Next Plugin
@@ -88,14 +80,7 @@ export function DevupUI(
       importAliases: userImportAliases,
     } = options
 
-    registerShorthands(shorthands ?? {})
-
-    if (prefix) {
-      setPrefix(prefix)
-    }
-
     const importAliases = mergeImportAliases(userImportAliases)
-
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
     const fileMapFile = join(distDir, 'fileMap.json')
@@ -110,6 +95,62 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+
+    // Boa is only needed to execute vanilla-extract-style `.css.ts`/`.css.js`
+    // modules. Build the graph before touching WASM so ordinary applications
+    // instantiate the much smaller engine, while vanilla-extract users retain
+    // the full evaluator automatically. If graph discovery fails, fail safe to
+    // the full engine.
+    const graphStartedAt = profileStart()
+    const srcDir = resolve(process.cwd(), 'src')
+    const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+    let staticGraph: StaticImportGraph | undefined
+    try {
+      staticGraph = buildStaticImportGraph(srcDir, tsconfigPath)
+    } catch {
+      // The mapping pass below reports the graph failure and keeps its legacy
+      // best-effort behavior.
+    }
+    const candidateCollectStartedAt =
+      graphStartedAt === undefined ? undefined : performance.now()
+    const wasmCandidateFiles = staticGraph
+      ? collectProductionPrewarmFiles({
+          cwd: process.cwd(),
+          graph: staticGraph,
+          expectedBaseFiles: [],
+          libPackage,
+          include,
+        })
+      : []
+    const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
+    const wasmVariant = selectWasmVariant(staticGraph, wasmCandidateFiles)
+    const wasm = loadWasm(wasmVariant === 'lite')
+    const {
+      codeExtract,
+      codeExtractWithoutSourceMap,
+      exportClassMap,
+      exportFileMap,
+      exportSheet,
+      getCss,
+      getDefaultTheme,
+      getThemeInterface,
+      importCanonicalMap,
+      importClassMap,
+      importFileMap,
+      importFileRoutes,
+      importSheet,
+      registerShorthands,
+      registerTheme,
+      setAtomHoist,
+      setPrefix,
+    } = wasm
+
+    registerShorthands(shorthands ?? {})
+
+    if (prefix) {
+      setPrefix(prefix)
+    }
+
     // Import previous session state to handle Turbopack persistent cache.
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
@@ -162,15 +203,11 @@ export function DevupUI(
     // deterministic base-css completion signal handed to the coordinator. Stays
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
-    let staticGraph: StaticImportGraph | undefined
-    const graphStartedAt = profileStart()
     try {
-      const srcDir = resolve(process.cwd(), 'src')
-      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+      if (!staticGraph) throw new Error('Static import graph unavailable')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
-      staticGraph = graph
+      const graph = staticGraph
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -223,6 +260,7 @@ export function DevupUI(
         durationMs: elapsedMs(graphStartedAt),
         files: staticGraph.files.length,
         expectedBaseFiles: expectedBaseFiles.length,
+        wasmVariant,
       })
     } catch {
       // Pre-pass is best-effort; on failure canonical() is the identity (no
@@ -249,16 +287,12 @@ export function DevupUI(
       let prewarmReadMs = 0
       let prewarmSourceBytes = 0
       const cwd = process.cwd()
-      const collectStartedAt =
-        prewarmStartedAt === undefined ? undefined : performance.now()
-      const prewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph: staticGraph,
-        expectedBaseFiles,
-        libPackage,
-        include,
-      })
-      const collectDurationMs = elapsedMs(collectStartedAt)
+      // The same complete candidate set selected the WASM variant above. Reuse
+      // it here instead of resolving source/package entries a second time,
+      // while retaining any compiled-file fallback supplied by the graph pass.
+      const prewarmFiles = [
+        ...new Set([...wasmCandidateFiles, ...expectedBaseFiles]),
+      ].sort()
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
         const relCssDir = `./${relative(
@@ -301,7 +335,7 @@ export function DevupUI(
         prewarmedFiles.push(filename)
       }
       reportProfile('next.prewarm', {
-        collectMs: collectDurationMs,
+        collectMs: candidateCollectMs,
         durationMs: elapsedMs(prewarmStartedAt),
         extractMs:
           prewarmStartedAt === undefined
@@ -345,6 +379,7 @@ export function DevupUI(
     }
 
     const coordinator = startCoordinator({
+      wasm,
       package: libPackage,
       cssDir,
       singleCss,
@@ -480,6 +515,7 @@ export function DevupUI(
       durationMs: elapsedMs(pluginStartedAt),
       prewarmedFiles: prewarmedFiles.length,
       singleCss,
+      wasmVariant,
       watch,
     })
     return config

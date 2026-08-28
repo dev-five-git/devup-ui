@@ -14,12 +14,13 @@ categories = ["development-tools", "wasm", "web-programming"]
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["vanilla-extract"]
+vanilla-extract = ["extractor/vanilla-extract", "sheet/vanilla-extract"]
 
 [dependencies]
 wasm-bindgen = "0.2.127"
-extractor = { path = "../../libs/extractor" }
-sheet = { path = "../../libs/sheet" }
+extractor = { path = "../../libs/extractor", default-features = false }
+sheet = { path = "../../libs/sheet", default-features = false }
 css = { path = "../../libs/css" }
 rustc-hash = "2"
 
