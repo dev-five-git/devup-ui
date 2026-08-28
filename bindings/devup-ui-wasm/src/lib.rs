@@ -3,7 +3,7 @@ use css::file_map::{
     canonical, is_global, set_canonical_map, set_file_map, with_canonical_map, with_file_map,
 };
 use extractor::extract_style::extract_style_value::ExtractStyleValue;
-use extractor::{ExtractOption, ImportAlias, extract, has_devup_ui};
+use extractor::{ExtractOption, ImportAlias, extract, extract_without_source_map, has_devup_ui};
 use rustc_hash::FxHashSet;
 use sheet::StyleSheet;
 use std::collections::{BTreeMap, HashMap};
@@ -13,6 +13,12 @@ use wasm_bindgen::prelude::*;
 
 static GLOBAL_STYLE_SHEET: LazyLock<Mutex<StyleSheet>> =
     LazyLock::new(|| Mutex::new(StyleSheet::default()));
+
+#[derive(Clone, Copy)]
+enum SourceMapMode {
+    Generate,
+    Skip,
+}
 
 fn with_style_sheet<F, R>(f: F) -> R
 where
@@ -321,17 +327,68 @@ pub fn code_extract_internal(
     import_main_css_in_css: bool,
     import_aliases: HashMap<String, ImportAlias>,
 ) -> Result<Output, String> {
-    match extract(
+    code_extract_internal_impl(
         filename,
         code,
-        ExtractOption {
-            package: package.to_string(),
-            css_dir,
-            single_css,
-            import_main_css: import_main_css_in_code,
-            import_aliases,
-        },
-    ) {
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+        import_aliases,
+        SourceMapMode::Generate,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn code_extract_without_source_map_internal(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+    import_aliases: HashMap<String, ImportAlias>,
+) -> Result<Output, String> {
+    code_extract_internal_impl(
+        filename,
+        code,
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+        import_aliases,
+        SourceMapMode::Skip,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn code_extract_internal_impl(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+    import_aliases: HashMap<String, ImportAlias>,
+    source_map: SourceMapMode,
+) -> Result<Output, String> {
+    let option = ExtractOption {
+        package: package.to_string(),
+        css_dir,
+        single_css,
+        import_main_css: import_main_css_in_code,
+        import_aliases,
+    };
+    let extracted = match source_map {
+        SourceMapMode::Generate => extract(filename, code, option),
+        SourceMapMode::Skip => extract_without_source_map(filename, code, option),
+    };
+
+    match extracted {
         Ok(output) => Ok(Output::new(
             output.code,
             output.styles,
@@ -343,6 +400,24 @@ pub fn code_extract_internal(
         )),
         Err(error) => Err(error.to_string()),
     }
+}
+
+#[cfg(not(tarpaulin_include))]
+fn import_aliases_from_js(
+    import_aliases: JsValue,
+) -> Result<HashMap<String, ImportAlias>, JsValue> {
+    let aliases: HashMap<String, Option<String>> =
+        serde_wasm_bindgen::from_value(import_aliases).map_err(js_error)?;
+    Ok(aliases
+        .into_iter()
+        .map(|(key, value)| {
+            let alias = match value {
+                Some(name) => ImportAlias::DefaultToNamed(name),
+                None => ImportAlias::NamedToNamed,
+            };
+            (key, alias)
+        })
+        .collect())
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -358,23 +433,6 @@ pub fn code_extract(
     import_main_css_in_css: bool,
     import_aliases: JsValue,
 ) -> Result<Output, JsValue> {
-    // Deserialize import_aliases from JsValue
-    // Format: { "package": "namedExport" } or { "package": null } for named exports
-    let aliases: HashMap<String, Option<String>> =
-        serde_wasm_bindgen::from_value(import_aliases).map_err(js_error)?;
-
-    // Convert to ImportAlias enum
-    let import_aliases: HashMap<String, ImportAlias> = aliases
-        .into_iter()
-        .map(|(k, v)| {
-            let alias = match v {
-                Some(name) => ImportAlias::DefaultToNamed(name),
-                None => ImportAlias::NamedToNamed,
-            };
-            (k, alias)
-        })
-        .collect();
-
     code_extract_internal(
         filename,
         code,
@@ -383,7 +441,33 @@ pub fn code_extract(
         single_css,
         import_main_css_in_code,
         import_main_css_in_css,
-        import_aliases,
+        import_aliases_from_js(import_aliases)?,
+    )
+    .map_err(js_error)
+}
+
+#[cfg(not(tarpaulin_include))]
+#[wasm_bindgen(js_name = "codeExtractWithoutSourceMap")]
+#[allow(clippy::too_many_arguments)]
+pub fn code_extract_without_source_map(
+    filename: &str,
+    code: &str,
+    package: &str,
+    css_dir: String,
+    single_css: bool,
+    import_main_css_in_code: bool,
+    import_main_css_in_css: bool,
+    import_aliases: JsValue,
+) -> Result<Output, JsValue> {
+    code_extract_without_source_map_internal(
+        filename,
+        code,
+        package,
+        css_dir,
+        single_css,
+        import_main_css_in_code,
+        import_main_css_in_css,
+        import_aliases_from_js(import_aliases)?,
     )
     .map_err(js_error)
 }
@@ -1710,6 +1794,31 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(!output.code().is_empty());
+        assert!(output.map().is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_code_extract_without_source_map_internal() {
+        *GLOBAL_STYLE_SHEET.lock().unwrap() = StyleSheet::default();
+        css::class_map::reset_class_map();
+
+        let result = code_extract_without_source_map_internal(
+            "test.tsx",
+            r#"import {Box} from '@devup-ui/react'
+<Box color="red" />"#,
+            "@devup-ui/react",
+            "@devup-ui/react".to_string(),
+            false,
+            false,
+            false,
+            HashMap::new(),
+        );
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.code().is_empty());
+        assert!(output.map().is_none());
     }
 
     #[test]

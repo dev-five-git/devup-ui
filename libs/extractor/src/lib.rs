@@ -216,6 +216,23 @@ pub fn extract(
     code: &str,
     option: ExtractOption,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
+    extract_with_source_map(filename, code, option, true)
+}
+
+pub fn extract_without_source_map(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+) -> Result<ExtractOutput, Box<dyn Error>> {
+    extract_with_source_map(filename, code, option, false)
+}
+
+fn extract_with_source_map(
+    filename: &str,
+    code: &str,
+    option: ExtractOption,
+    source_map: bool,
+) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
@@ -328,12 +345,15 @@ pub fn extract(
         if global { None } else { Some(bucket) },
     );
     visitor.visit_program(&mut program);
-    let result = Codegen::new()
-        .with_options(CodegenOptions {
+    let codegen_options = if source_map {
+        CodegenOptions {
             source_map_path: Some(PathBuf::from(filename)),
             ..Default::default()
-        })
-        .build(&program);
+        }
+    } else {
+        CodegenOptions::default()
+    };
+    let result = Codegen::new().with_options(codegen_options).build(&program);
 
     Ok(ExtractOutput {
         styles: visitor.styles,

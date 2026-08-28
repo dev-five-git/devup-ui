@@ -68,6 +68,7 @@ let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
 let codeExtractSpy: ReturnType<typeof spyOn>
+let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
 
@@ -108,6 +109,12 @@ beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
     (_path: string, contents: string) => createCodeExtractResult(contents),
   )
+  codeExtractWithoutSourceMapSpy = spyOn(
+    wasm,
+    'codeExtractWithoutSourceMap',
+  ).mockImplementation((_path: string, contents: string) =>
+    createCodeExtractResult(contents),
+  )
   devupUIWebpackPluginSpy = spyOn(
     webpackPluginModule,
     'DevupUIWebpackPlugin',
@@ -144,6 +151,7 @@ afterEach(() => {
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
   codeExtractSpy.mockRestore()
+  codeExtractWithoutSourceMapSpy.mockRestore()
   devupUIWebpackPluginSpy.mockRestore()
   startCoordinatorSpy.mockRestore()
 })
@@ -508,7 +516,18 @@ describe('DevupUINextPlugin', () => {
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: expect.any(Array),
         prewarmedOutputs: expect.any(Map),
+        sourceMap: false,
       })
+    })
+    it('keeps source maps when Next production browser source maps are enabled', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+
+      DevupUI({ productionBrowserSourceMaps: true })
+
+      expect(startCoordinatorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceMap: true }),
+      )
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
@@ -698,8 +717,10 @@ describe('DevupUINextPlugin', () => {
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: [],
         prewarmedOutputs: expect.any(Map),
+        sourceMap: true,
       })
       expect(codeExtractSpy).not.toHaveBeenCalled()
+      expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
       // Verify initial CSS file is written
       expect(writeFileSyncSpy).toHaveBeenCalledWith(
@@ -736,7 +757,7 @@ describe('DevupUINextPlugin', () => {
         'computeFileRoutes',
       ).mockReturnValue({ 'src/app/page.tsx': [0] })
       const events: string[] = []
-      codeExtractSpy.mockImplementation(
+      codeExtractWithoutSourceMapSpy.mockImplementation(
         (filename: string, contents: string) => {
           events.push(`extract:${filename}`)
           return createCodeExtractResult(contents)
@@ -755,8 +776,8 @@ describe('DevupUINextPlugin', () => {
             prewarmedFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
           }),
         )
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/app/page.tsx',
           '{}',
           '@devup-ui/react',
@@ -766,7 +787,7 @@ describe('DevupUINextPlugin', () => {
           true,
           expect.anything(),
         )
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/lazy/panel.tsx',
           '{}',
           '@devup-ui/react',
@@ -860,7 +881,7 @@ describe('DevupUINextPlugin', () => {
             ],
           }),
         )
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
       } finally {
         graphSpy.mockRestore()
         compiledSpy.mockRestore()
@@ -876,8 +897,8 @@ describe('DevupUINextPlugin', () => {
       try {
         DevupUI({}, { singleCss: true })
 
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/app/card.tsx',
           '{}',
           '@devup-ui/react',

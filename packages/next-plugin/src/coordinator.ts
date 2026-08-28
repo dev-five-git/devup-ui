@@ -5,6 +5,7 @@ import { basename, dirname, join, relative } from 'node:path'
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  codeExtractWithoutSourceMap,
   exportClassMap,
   exportFileMap,
   exportSheet,
@@ -50,6 +51,8 @@ export interface CoordinatorOptions {
    * second WASM extraction; the shared sheet is already populated.
    */
   prewarmedOutputs?: Map<string, PrewarmedOutput>
+  /** Generate transform source maps. Defaults to true for existing callers. */
+  sourceMap?: boolean
   /**
    * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
    * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
@@ -73,11 +76,31 @@ export interface CoordinatorOptions {
 
 export interface PrewarmedOutput {
   code: string
-  css?: string
   cssFile?: string
   map?: string
   source: string
   updatedBaseStyle: boolean
+}
+
+interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
+  css?: string
+}
+
+/** Copy every WASM-backed getter once, then release its Rust allocation. */
+export function takeExtractOutput(
+  output: ReturnType<typeof codeExtract>,
+): ExtractOutputSnapshot {
+  try {
+    return {
+      code: output.code,
+      css: output.css,
+      cssFile: output.cssFile,
+      map: output.map,
+      updatedBaseStyle: output.updatedBaseStyle,
+    }
+  } finally {
+    output.free()
+  }
 }
 
 // Latest-Wins Coalescing Serializer.
@@ -330,6 +353,13 @@ function waitForBucket(bucket: string): Promise<void> {
 export function startCoordinator(options: CoordinatorOptions): {
   close: () => void
 } {
+  // Next may evaluate its config more than once in the same process. Close the
+  // previous listener before replacing it so its HTTP server and request
+  // closure do not remain live for the rest of the build.
+  if (server) {
+    server.close()
+    server = null
+  }
   const {
     package: libPackage,
     cssDir,
@@ -341,6 +371,8 @@ export function startCoordinator(options: CoordinatorOptions): {
     coordinatorPortFile,
   } = options
   const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
+  const extract =
+    options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
   idleThresholdMs = options.idleThresholdMs ?? 2500
   quietMs = options.quietMs ?? 10_000
@@ -352,7 +384,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   fileNumToBucket.clear()
 
-  server = createServer(async (req, res) => {
+  const coordinatorServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
     if (req.method === 'GET' && url.pathname === '/health') {
@@ -431,15 +463,17 @@ export function startCoordinator(options: CoordinatorOptions): {
         const extractStartedAt = profileStart()
         const result = cacheHit
           ? prewarmed
-          : codeExtract(
-              filename,
-              code,
-              libPackage,
-              relCssDir,
-              singleCss,
-              false,
-              true,
-              importAliases,
+          : takeExtractOutput(
+              extract(
+                filename,
+                code,
+                libPackage,
+                relCssDir,
+                singleCss,
+                false,
+                true,
+                importAliases,
+              ),
             )
         const extractDurationMs = elapsedMs(extractStartedAt)
 
@@ -617,8 +651,9 @@ export function startCoordinator(options: CoordinatorOptions): {
     res.end('Not Found')
   })
 
-  server.listen(0, '127.0.0.1', () => {
-    const addr = server!.address()
+  server = coordinatorServer
+  coordinatorServer.listen(0, '127.0.0.1', () => {
+    const addr = coordinatorServer.address()
     if (addr && typeof addr !== 'string') {
       writeFileSync(coordinatorPortFile, String(addr.port), 'utf-8')
     }
@@ -631,8 +666,8 @@ export function startCoordinator(options: CoordinatorOptions): {
       // `close` itself returns synchronously (it is invoked from
       // `process.on('exit', ...)` where awaiting is not possible).
       void flushPendingWrites()
-      if (server) {
-        server.close()
+      coordinatorServer.close()
+      if (server === coordinatorServer) {
         server = null
         try {
           unlinkSync(coordinatorPortFile)

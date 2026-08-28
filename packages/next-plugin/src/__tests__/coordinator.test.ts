@@ -21,6 +21,7 @@ import {
 } from '../coordinator'
 
 let codeExtractSpy: ReturnType<typeof spyOn>
+let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
 let getCssSpy: ReturnType<typeof spyOn>
 let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
@@ -81,6 +82,7 @@ function httpRequest(
 
 beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract')
+  codeExtractWithoutSourceMapSpy = spyOn(wasm, 'codeExtractWithoutSourceMap')
   getCssSpy = spyOn(wasm, 'getCss')
   exportSheetSpy = spyOn(wasm, 'exportSheet')
   exportClassMapSpy = spyOn(wasm, 'exportClassMap')
@@ -97,6 +99,7 @@ beforeEach(() => {
 afterEach(() => {
   resetCoordinator()
   codeExtractSpy.mockRestore()
+  codeExtractWithoutSourceMapSpy.mockRestore()
   getCssSpy.mockRestore()
   exportSheetSpy.mockRestore()
   exportClassMapSpy.mockRestore()
@@ -124,14 +127,15 @@ describe('coordinator', () => {
   })
 
   it('should handle /extract endpoint', async () => {
-    codeExtractSpy.mockReturnValue({
+    const extractOutput = {
       code: 'transformed code',
       map: '{"version":3}',
       cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
       free: mock(),
       [Symbol.dispose]: mock(),
-    })
+    }
+    codeExtractSpy.mockReturnValue(extractOutput)
     getCssSpy.mockImplementation(
       (fileNum: number | null, _importMainCss: boolean) => {
         if (fileNum === null) return 'base-css'
@@ -170,10 +174,43 @@ describe('coordinator', () => {
 
     // Verify WASM was called
     expect(codeExtractSpy).toHaveBeenCalledTimes(1)
+    expect(extractOutput.free).toHaveBeenCalledTimes(1)
 
     // Verify files were written (base CSS + per-file CSS + sheet + classmap + filemap)
     expect(writeFileSpy).toHaveBeenCalledTimes(5)
 
+    coordinator.close()
+  })
+
+  it('skips source-map generation when requested', async () => {
+    const extractOutput = {
+      code: 'transformed code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }
+    codeExtractWithoutSourceMapSpy.mockReturnValue(extractOutput)
+    const coordinator = startCoordinator(makeOptions({ sourceMap: false }))
+    await new Promise((r) => setTimeout(r, 100))
+    const portStr = (writeFileSyncSpy.mock.calls[0] as [string, string])[1]
+
+    const res = await httpRequest(
+      parseInt(portStr),
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: 'const x = <Box bg="red" />',
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+    expect(extractOutput.free).toHaveBeenCalledTimes(1)
     coordinator.close()
   })
 
@@ -186,7 +223,6 @@ describe('coordinator', () => {
           'src/App.tsx',
           {
             code: 'transformed prewarm code',
-            css: 'prewarmed css',
             cssFile: 'devup-ui.css',
             map: '{"version":3}',
             source,
@@ -724,6 +760,36 @@ describe('coordinator', () => {
 
     // Server should be closed - double close should be safe
     coordinator.close()
+  })
+
+  it('replaces an existing coordinator without retaining its server', async () => {
+    const options = makeOptions()
+    const first = startCoordinator(options)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const firstPort = parseInt(
+      (writeFileSyncSpy.mock.calls.at(-1) as [string, string])[1],
+    )
+
+    const second = startCoordinator(options)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const secondPort = parseInt(
+      (writeFileSyncSpy.mock.calls.at(-1) as [string, string])[1],
+    )
+
+    let firstClosed = false
+    try {
+      await httpRequest(firstPort, 'GET', '/health')
+    } catch {
+      firstClosed = true
+    }
+    expect(firstClosed).toBe(true)
+
+    // Closing the superseded handle must not close the replacement server.
+    first.close()
+    const res = await httpRequest(secondPort, 'GET', '/health')
+    expect(res).toEqual({ status: 200, body: 'ok' })
+
+    second.close()
   })
 
   it('should touch devup-ui.css to invalidate Turbopack cache when singleCss=false and new CSS collected', async () => {

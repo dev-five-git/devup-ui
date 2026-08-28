@@ -21,6 +21,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  codeExtractWithoutSourceMap,
   exportClassMap,
   exportFileMap,
   exportSheet,
@@ -43,7 +44,11 @@ import {
 } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
-import { type PrewarmedOutput, startCoordinator } from './coordinator'
+import {
+  type PrewarmedOutput,
+  startCoordinator,
+  takeExtractOutput,
+} from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
 
@@ -148,6 +153,8 @@ export function DevupUI(
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
     const watch = process.env.NODE_ENV === 'development'
+    const sourceMap = watch || config.productionBrowserSourceMaps === true
+    const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
@@ -267,15 +274,17 @@ export function DevupUI(
         }
         const extractStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const output = codeExtract(
-          filename,
-          source,
-          libPackage,
-          relCssDir,
-          singleCss,
-          false,
-          true,
-          importAliases as unknown as Record<string, string | null>,
+        const output = takeExtractOutput(
+          extract(
+            filename,
+            source,
+            libPackage,
+            relCssDir,
+            singleCss,
+            false,
+            true,
+            importAliases as unknown as Record<string, string | null>,
+          ),
         )
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
@@ -283,7 +292,6 @@ export function DevupUI(
         if (singleCss) {
           prewarmedOutputs.set(filename, {
             code: output.code,
-            css: output.css,
             cssFile: output.cssFile,
             map: output.map,
             source,
@@ -349,6 +357,7 @@ export function DevupUI(
       expectedBaseFiles,
       prewarmedFiles,
       prewarmedOutputs,
+      sourceMap,
     })
 
     // Cleanup on exit
