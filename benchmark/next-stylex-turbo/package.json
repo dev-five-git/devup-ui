@@ -6,7 +6,7 @@
     "predev": "rimraf .next",
     "prebuild": "rimraf .next",
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage",
+    "build": "next build",
     "start": "next start"
   },
   "dependencies": {
