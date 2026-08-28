@@ -1,0 +1,30 @@
+{
+  "name": "next-stylex-turbo-benchmark",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "predev": "rimraf .next",
+    "prebuild": "rimraf .next",
+    "dev": "next dev",
+    "build": "next build --experimental-debug-memory-usage",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@stylexjs/stylex": "^0.19",
+    "next": "16.3",
+    "react": "19.2",
+    "react-dom": "19.2"
+  },
+  "devDependencies": {
+    "@stylexswc/nextjs-plugin": "^0.18.4",
+    "@stylexswc/postcss-plugin": "^0.18.4",
+    "@stylexswc/turbopack-plugin": "^0.18.4",
+    "@types/node": "^26.2",
+    "@types/react": "^19.2",
+    "@types/react-dom": "^19.2",
+    "postcss": "^8.5",
+    "rimraf": "^6.1",
+    "typescript": "^7.0"
+  }
+}

@@ -76,6 +76,7 @@ let result = []
 
 result.push(benchmark('tailwind'))
 result.push(benchmark('stylex'))
+result.push(benchmark('stylex-turbo'))
 result.push(benchmark('vanilla-extract'))
 result.push(benchmark('kuma-ui'))
 result.push(benchmark('panda-css'))
