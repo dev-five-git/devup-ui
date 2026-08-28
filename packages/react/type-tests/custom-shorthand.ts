@@ -26,4 +26,13 @@ const boxProps: Parameters<typeof Box>[0] = {
   },
 }
 
-export { boxProps, customShorthandProps }
+// The concrete default overload is a fast path only. The generic fallback
+// must continue to infer intrinsic-element props from `as`.
+const polymorphicBox = Box({
+  as: 'a',
+  bg: 'red',
+  href: '/docs',
+  target: '_blank',
+})
+
+export { boxProps, customShorthandProps, polymorphicBox }
