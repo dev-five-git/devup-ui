@@ -26,4 +26,33 @@ const boxProps: Parameters<typeof Box>[0] = {
   },
 }
 
+// Polymorphic inference must come from `as` while preserving the exact native
+// element props and their contextual event types.
+Box({
+  as: 'a',
+  href: '/docs',
+  onClick(event) {
+    return event.currentTarget.href
+  },
+})
+
+Box({
+  as: 'button',
+  onClick(event) {
+    return event.currentTarget.disabled
+  },
+})
+
+// @ts-expect-error href is not a button prop
+Box({ as: 'button', href: '/docs' })
+
+function CustomLink(_props: { to: string }) {
+  return null
+}
+
+Box({ as: CustomLink, props: { to: '/docs' } })
+
+// @ts-expect-error required custom-component props stay required
+Box({ as: CustomLink })
+
 export { boxProps, customShorthandProps }
