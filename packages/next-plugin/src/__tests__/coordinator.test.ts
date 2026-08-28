@@ -225,7 +225,7 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
-  it('profiles serialization work separately from writes', async () => {
+  it('profiles both base CSS serialization paths separately from writes', async () => {
     const originalProfile = process.env.DEVUP_UI_PROFILE
     process.env.DEVUP_UI_PROFILE = '1'
     const infoSpy = spyOn(console, 'info').mockImplementation(() => {})
@@ -292,6 +292,50 @@ describe('coordinator', () => {
       expect(profile.cssSnapshotMs).toBeTypeOf('number')
       expect(profile.fileMapSnapshotMs).toBeTypeOf('number')
       expect(profile.sheetSnapshotMs).toBeTypeOf('number')
+
+      codeExtractSpy.mockReturnValue({
+        code: 'transformed base code',
+        map: undefined,
+        css: 'collected base css',
+        cssFile: 'devup-ui-2.css',
+        updatedBaseStyle: true,
+        free: mock(),
+        [Symbol.dispose]: mock(),
+      })
+      const baseRes = await httpRequest(
+        port,
+        'POST',
+        '/extract',
+        JSON.stringify({
+          filename: 'src/profile-base.tsx',
+          code: 'const profileBase = true',
+          resourcePath: join(process.cwd(), 'src', 'profile-base.tsx'),
+        }),
+      )
+
+      expect(baseRes.status).toBe(200)
+      const baseMessage = infoSpy.mock.calls
+        .map(([value]) => value)
+        .find(
+          (value): value is string =>
+            typeof value === 'string' &&
+            value.includes('"filename":"src/profile-base.tsx"'),
+        )
+      if (baseMessage === undefined) {
+        throw new Error('missing base CSS extract profile')
+      }
+      const baseProfile = JSON.parse(
+        baseMessage.slice('[devup-ui:profile] '.length),
+      ) as Record<string, unknown>
+
+      expect(baseProfile).toMatchObject({
+        cacheHit: false,
+        cssSnapshotBytes: expect.any(Number),
+        filename: 'src/profile-base.tsx',
+        phase: 'coordinator.extract',
+        scheduledWrites: 5,
+      })
+      expect(baseProfile.cssSnapshotMs).toBeTypeOf('number')
     } finally {
       coordinator.close()
       infoSpy.mockRestore()
