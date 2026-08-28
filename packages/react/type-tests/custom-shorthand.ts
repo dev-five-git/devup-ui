@@ -1,4 +1,9 @@
 import { Box, type DevupProps } from '../src'
+import type {
+  DevupComponentAdditionalProps,
+  DevupComponentBaseProps,
+  DevupElementTypeProps,
+} from '../src/types/props'
 
 // Mirrors the module augmentation emitted to <distDir>/theme.d.ts.
 declare module '../src' {
@@ -54,5 +59,20 @@ Box({ as: CustomLink, props: { to: '/docs' } })
 
 // @ts-expect-error required custom-component props stay required
 Box({ as: CustomLink })
+
+type Assert<T extends true> = T
+type LegacyBaseProps<T extends React.ElementType> = DevupElementTypeProps<T> &
+  DevupComponentAdditionalProps<T>
+type IsEquivalent<T extends React.ElementType> =
+  DevupComponentBaseProps<T> extends LegacyBaseProps<T>
+    ? LegacyBaseProps<T> extends DevupComponentBaseProps<T>
+      ? true
+      : false
+    : false
+
+type _DivPropsStayEquivalent = Assert<IsEquivalent<'div'>>
+type _AnchorPropsStayEquivalent = Assert<IsEquivalent<'a'>>
+type _ButtonPropsStayEquivalent = Assert<IsEquivalent<'button'>>
+type _CustomPropsStayEquivalent = Assert<IsEquivalent<typeof CustomLink>>
 
 export { boxProps, customShorthandProps }

@@ -48,7 +48,11 @@ export interface DevupComponentProps<
   styleVars?: Record<string, string | undefined>
 }
 export type DevupComponentBaseProps<T extends React.ElementType> =
-  DevupElementTypeProps<NoInfer<T>> & DevupComponentAdditionalProps<NoInfer<T>>
+  NoInfer<T> extends string
+    ? React.ComponentProps<NoInfer<T>> & {
+        props?: FilterChildren<React.ComponentProps<NoInfer<T>>>
+      }
+    : DevupComponentAdditionalProps<NoInfer<T>>
 
 export type DevupElementTypeProps<T extends React.ElementType> =
   T extends string ? React.ComponentProps<T> : object
