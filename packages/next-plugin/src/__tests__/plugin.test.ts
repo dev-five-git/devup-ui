@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import type { StaticImportGraph } from '@devup-ui/plugin-utils'
 import * as importGraphModule from '@devup-ui/plugin-utils'
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPluginModule from '@devup-ui/webpack-plugin'
@@ -15,7 +16,13 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
-import { DevupUI } from '../plugin'
+import {
+  DevupUI,
+  reloadTurboSetupModuleForTesting,
+  resetTurboSetupCacheForTesting,
+  selectWasmVariant,
+} from '../plugin'
+import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
 type NextWebpackConfig = Parameters<
@@ -51,6 +58,18 @@ function createCodeExtractResult(contents: string): CodeExtractResult {
   } as unknown as CodeExtractResult
 }
 
+function createSingleFileGraph(filename: string): StaticImportGraph {
+  return {
+    files: [filename],
+    fileSet: new Set([filename]),
+    staticImports: new Map([[filename, new Set<string>()]]),
+    staticImporters: new Map([[filename, new Set<string>()]]),
+    dynamicTargets: new Set(),
+    dynamicImports: new Map([[filename, new Set<string>()]]),
+    externalImports: new Map([[filename, new Set<string>()]]),
+  }
+}
+
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -68,6 +87,7 @@ let exportSheetSpy: ReturnType<typeof spyOn>
 let exportClassMapSpy: ReturnType<typeof spyOn>
 let exportFileMapSpy: ReturnType<typeof spyOn>
 let codeExtractSpy: ReturnType<typeof spyOn>
+let codeExtractWithoutSourceMapSpy: ReturnType<typeof spyOn>
 let devupUIWebpackPluginSpy: ReturnType<typeof spyOn>
 let startCoordinatorSpy: ReturnType<typeof spyOn>
 
@@ -76,6 +96,7 @@ let originalFetch: typeof global.fetch
 let originalDebugPort: number
 
 beforeEach(() => {
+  resetTurboSetupCacheForTesting()
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
@@ -108,6 +129,12 @@ beforeEach(() => {
   codeExtractSpy = spyOn(wasm, 'codeExtract').mockImplementation(
     (_path: string, contents: string) => createCodeExtractResult(contents),
   )
+  codeExtractWithoutSourceMapSpy = spyOn(
+    wasm,
+    'codeExtractWithoutSourceMap',
+  ).mockImplementation((_path: string, contents: string) =>
+    createCodeExtractResult(contents),
+  )
   devupUIWebpackPluginSpy = spyOn(
     webpackPluginModule,
     'DevupUIWebpackPlugin',
@@ -116,6 +143,8 @@ beforeEach(() => {
     coordinatorModule,
     'startCoordinator',
   ).mockReturnValue({ close: mock() as () => void })
+  setWasmForTesting(wasm)
+  setWebpackPluginForTesting(webpackPluginModule)
 
   originalEnv = { ...process.env }
   originalFetch = global.fetch
@@ -124,6 +153,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetTurboSetupCacheForTesting()
+  setWasmForTesting(undefined)
+  setWebpackPluginForTesting(undefined)
   process.env = originalEnv
   global.fetch = originalFetch
   process.debugPort = originalDebugPort
@@ -144,11 +176,37 @@ afterEach(() => {
   exportClassMapSpy.mockRestore()
   exportFileMapSpy.mockRestore()
   codeExtractSpy.mockRestore()
+  codeExtractWithoutSourceMapSpy.mockRestore()
   devupUIWebpackPluginSpy.mockRestore()
   startCoordinatorSpy.mockRestore()
 })
 
 describe('DevupUINextPlugin', () => {
+  it('selects the lite engine only when the graph has no vanilla-extract file', () => {
+    expect(selectWasmVariant(undefined)).toBe('full')
+    expect(
+      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph),
+    ).toBe('lite')
+    expect(
+      selectWasmVariant({ files: ['src/theme.css.ts'] } as StaticImportGraph),
+    ).toBe('full')
+    expect(
+      selectWasmVariant({ files: ['src/theme.css.js'] } as StaticImportGraph),
+    ).toBe('full')
+    expect(
+      selectWasmVariant(
+        { files: ['src/theme.css.ts'] } as StaticImportGraph,
+        ['src/theme.css.ts'],
+        true,
+      ),
+    ).toBe('lite')
+    expect(
+      selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph, [
+        'node_modules/design-system/theme.css.ts',
+      ]),
+    ).toBe('full')
+  })
+
   describe('webpack', () => {
     it('should apply webpack plugin', async () => {
       const ret = DevupUI({})
@@ -208,6 +266,109 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
+    it('reuses production setup across Next config module reloads', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      getDefaultThemeSpy.mockReturnValue('dark')
+      const filename = resolve('src/app/page.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const handoffFile = join('df', 'setup.bin')
+      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+      writeFileSyncSpy.mockImplementation((path, data) => {
+        if (String(path) === handoffFile) handoff = data
+      })
+      readFileSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile && handoff !== undefined) {
+          return handoff as never
+        }
+        return '{}' as never
+      })
+      unlinkSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile) throw new Error('cleanup failed')
+      })
+
+      try {
+        const first = DevupUI({}, { singleCss: true })
+        reloadTurboSetupModuleForTesting()
+        const second = DevupUI(
+          { env: { EXISTING: 'value' } },
+          { singleCss: true },
+        )
+
+        expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
+        expect(second.env).toEqual({
+          DEVUP_UI_DEFAULT_THEME: 'dark',
+          EXISTING: 'value',
+        })
+        expect(graphSpy).toHaveBeenCalledTimes(1)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
+        expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+        expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
+        expect(profileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('"cacheHit":true'),
+        )
+      } finally {
+        profileSpy.mockRestore()
+        compiledSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
+
+    it('falls back when a production setup handoff is not reusable', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/app/page.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const handoffFile = join('df', 'setup.bin')
+      let failHandoffWrite = false
+      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+      writeFileSyncSpy.mockImplementation((path, data) => {
+        if (String(path) !== handoffFile) return
+        if (failHandoffWrite) throw new Error('write failed')
+        handoff = data
+      })
+      readFileSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile && handoff !== undefined) {
+          return handoff as never
+        }
+        return '{}' as never
+      })
+
+      try {
+        DevupUI({})
+        // The same module instance must not consume its own handoff.
+        DevupUI({})
+        reloadTurboSetupModuleForTesting()
+        handoff = Buffer.from('invalid handoff')
+        failHandoffWrite = true
+
+        // A corrupt read and a failed replacement write both fall back to the
+        // complete setup without leaking a token into another config load.
+        expect(() => DevupUI({})).not.toThrow()
+        expect(graphSpy).toHaveBeenCalledTimes(3)
+        expect(process.env.DEVUP_UI_TURBO_SETUP_TOKEN).toBeUndefined()
+      } finally {
+        compiledSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
+
     it('should apply turbo config', async () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy
@@ -492,6 +653,7 @@ describe('DevupUINextPlugin', () => {
         },
       })
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        wasm,
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -507,7 +669,100 @@ describe('DevupUINextPlugin', () => {
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: expect.any(Array),
+        prewarmedOutputs: expect.any(Map),
+        sourceMap: false,
+        staticVanillaExtract: false,
       })
+    })
+    it('uses the lite extractor for a provably static vanilla style module', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/styles.css.ts')
+      const source = `import { style } from '@vanilla-extract/css'
+export const box = style({ color: 'red' })`
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/styles.css.ts'])
+      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
+        String(path).endsWith('styles.css.ts') ? source : '{}',
+      )
+
+      try {
+        DevupUI({})
+
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+          'src/styles.css.ts',
+          `import { css } from '@devup-ui/react'
+export const box = css({ color: 'red' })`,
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ staticVanillaExtract: true }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
+    })
+    it('keeps the full extractor for dynamic vanilla style modules', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/styles.css.ts')
+      const source = `import { style } from '@vanilla-extract/css'
+const color = getColor()
+export const box = style({ color })`
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/styles.css.ts'])
+      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
+        String(path).endsWith('styles.css.ts') ? source : '{}',
+      )
+
+      try {
+        DevupUI({})
+
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+          'src/styles.css.ts',
+          source,
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ staticVanillaExtract: false }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
+    })
+    it('keeps source maps when Next production browser source maps are enabled', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+
+      DevupUI({ productionBrowserSourceMaps: true })
+
+      expect(startCoordinatorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ sourceMap: true }),
+      )
     })
     it('should create theme.d.ts file', async () => {
       process.env.TURBOPACK = '1'
@@ -681,6 +936,7 @@ describe('DevupUINextPlugin', () => {
 
       // Verify coordinator was started with correct options
       expect(startCoordinatorSpy).toHaveBeenCalledWith({
+        wasm,
         package: '@devup-ui/react',
         cssDir: resolve('df', 'devup-ui'),
         singleCss: false,
@@ -696,8 +952,12 @@ describe('DevupUINextPlugin', () => {
         canonicalMap: expect.any(Object),
         expectedBaseFiles: expect.any(Array),
         prewarmedFiles: [],
+        prewarmedOutputs: expect.any(Map),
+        sourceMap: true,
+        staticVanillaExtract: false,
       })
       expect(codeExtractSpy).not.toHaveBeenCalled()
+      expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()
 
       // Verify initial CSS file is written
       expect(writeFileSyncSpy).toHaveBeenCalledWith(
@@ -719,6 +979,8 @@ describe('DevupUINextPlugin', () => {
 
     it('hands the coordinator the full compiled-file set, not the static-only route map', () => {
       process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
       // The base sheet must wait for lazily-loaded modules too, so
       // expectedBaseFiles comes from computeCompiledFiles (static + dynamic
       // edges) rather than computeFileRoutes (static edges only). Using the
@@ -732,7 +994,7 @@ describe('DevupUINextPlugin', () => {
         'computeFileRoutes',
       ).mockReturnValue({ 'src/app/page.tsx': [0] })
       const events: string[] = []
-      codeExtractSpy.mockImplementation(
+      codeExtractWithoutSourceMapSpy.mockImplementation(
         (filename: string, contents: string) => {
           events.push(`extract:${filename}`)
           return createCodeExtractResult(contents)
@@ -751,8 +1013,8 @@ describe('DevupUINextPlugin', () => {
             prewarmedFiles: ['src/app/page.tsx', 'src/lazy/panel.tsx'],
           }),
         )
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/app/page.tsx',
           '{}',
           '@devup-ui/react',
@@ -762,7 +1024,7 @@ describe('DevupUINextPlugin', () => {
           true,
           expect.anything(),
         )
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/lazy/panel.tsx',
           '{}',
           '@devup-ui/react',
@@ -777,9 +1039,49 @@ describe('DevupUINextPlugin', () => {
           'extract:src/lazy/panel.tsx',
           'startCoordinator',
         ])
+        const coordinatorOptions = startCoordinatorSpy.mock.calls[0]?.[0]
+        expect(coordinatorOptions?.prewarmedOutputs).toEqual(
+          new Map([
+            [
+              'src/app/page.tsx',
+              expect.objectContaining({ code: '{}', source: '{}' }),
+            ],
+            [
+              'src/lazy/panel.tsx',
+              expect.objectContaining({ code: '{}', source: '{}' }),
+            ],
+          ]),
+        )
+        const profiles: Record<string, unknown>[] = profileSpy.mock.calls
+          .map(([value]) => value)
+          .filter(
+            (value): value is string =>
+              typeof value === 'string' &&
+              value.startsWith('[devup-ui:profile] '),
+          )
+          .map((value) => JSON.parse(value.slice('[devup-ui:profile] '.length)))
+        const prewarmProfile = profiles.find(
+          ({ phase }) => phase === 'next.prewarm',
+        )
+        expect(prewarmProfile).toMatchObject({
+          collectMs: expect.any(Number),
+          extractMs: expect.any(Number),
+          files: 2,
+          phase: 'next.prewarm',
+          readMs: expect.any(Number),
+          sourceBytes: Buffer.byteLength('{}') * 2,
+        })
+        expect(profiles).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ phase: 'next.initialCss' }),
+            expect.objectContaining({ phase: 'next.stateSnapshot' }),
+            expect.objectContaining({ phase: 'next.setup' }),
+          ]),
+        )
         // the static-only route map is not consulted outside atom-hoist mode
         expect(routesSpy).not.toHaveBeenCalled()
       } finally {
+        profileSpy.mockRestore()
         compiledSpy.mockRestore()
         routesSpy.mockRestore()
       }
@@ -829,7 +1131,7 @@ describe('DevupUINextPlugin', () => {
             ],
           }),
         )
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
       } finally {
         graphSpy.mockRestore()
         compiledSpy.mockRestore()
@@ -845,8 +1147,8 @@ describe('DevupUINextPlugin', () => {
       try {
         DevupUI({}, { singleCss: true })
 
-        expect(codeExtractSpy).toHaveBeenCalledTimes(2)
-        expect(codeExtractSpy).toHaveBeenCalledWith(
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(2)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
           'src/app/card.tsx',
           '{}',
           '@devup-ui/react',

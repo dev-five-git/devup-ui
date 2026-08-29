@@ -2,6 +2,7 @@
 import { DevupUI } from '@devup-ui/next-plugin'
 
 const nextConfig = {
+  experimental: { useTypeScriptCli: true },
   trailingSlash: true,
   /* config options here */
 }

@@ -19,4 +19,15 @@ describe('ThemeScript', () => {
     const { container } = render(<ThemeScript auto={false} />)
     expect(container).toMatchSnapshot()
   })
+
+  it('should escape a closing script tag in the theme', () => {
+    const { container } = render(
+      <ThemeScript theme={'</script><script>' as keyof DevupTheme} />,
+    )
+
+    expect(container.querySelector('script')?.textContent).toContain(
+      '\\u003c/script>',
+    )
+    expect(container.querySelectorAll('script')).toHaveLength(1)
+  })
 })

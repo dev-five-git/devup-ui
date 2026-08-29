@@ -2,14 +2,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { Agent, request } from 'node:http'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
-import {
-  getCss,
-  importClassMap,
-  importFileMap,
-  importSheet,
-  registerTheme,
-} from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
+
+import { loadWasm } from './wasm'
 
 export interface DevupUICssLoaderOptions {
   // turbo
@@ -124,6 +119,13 @@ const devupUICssLoader: RawLoaderDefinitionFunction<DevupUICssLoaderOptions> =
       return
     }
 
+    const {
+      getCss,
+      importClassMap,
+      importFileMap,
+      importSheet,
+      registerTheme,
+    } = loadWasm(false)
     if (!init) {
       init = true
       if (watch) {
@@ -161,3 +163,5 @@ export const resetInit = () => {
   init = false
   cachedPort = null
 }
+
+export { setWasmForTesting } from './wasm'

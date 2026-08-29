@@ -7,51 +7,51 @@ import { OtherCard } from './OtherCard'
 const OTHER_CARDS = [
   {
     title: 'Chakra UI',
-    version: '3.27.0',
-    buildTime: '29.99s',
-    buildSize: '200.39MB',
+    version: '3.37.0',
+    buildTime: '19.98s',
+    buildSize: '197.02MB',
     url: 'https://chakra-ui.com',
   },
   {
     title: 'Mui',
-    version: '7.3.2',
-    buildTime: '22.21s',
-    buildSize: '89.87MB',
+    version: '9.4.0',
+    buildTime: '13.78s',
+    buildSize: '95.94MB',
     url: 'https://mui.com',
   },
   {
     title: 'Kuma UI',
-    version: '1.5.9',
-    buildTime: '21.61s',
-    buildSize: '64.30MB',
+    version: '1.6.4',
+    buildTime: '13.07s',
+    buildSize: '71.28MB',
     url: 'https://kuma-ui.com',
   },
   {
     title: 'Tailwindcss',
-    version: '4.1.13',
-    buildTime: '20.22s',
-    buildSize: '54.76MB',
+    version: '4.3.3',
+    buildTime: '12.81s',
+    buildSize: '63.37MB',
     url: 'https://tailwindcss.com',
   },
   {
     title: 'panda CSS',
-    version: '1.3.1',
-    buildTime: '22.01s',
-    buildSize: '59.53MB',
+    version: '1.12.0',
+    buildTime: '13.20s',
+    buildSize: '67.68MB',
     url: 'https://panda-css.com',
   },
   {
     title: 'styleX',
-    version: '0.15.4',
-    buildTime: '38.97s',
-    buildSize: '72.72MB',
+    version: '0.19.0',
+    buildTime: '27.61s',
+    buildSize: '91.00MB',
     url: 'https://stylexjs.com',
   },
   {
     title: 'vanilla extract',
-    version: '1.17.4',
-    buildTime: '20.09s',
-    buildSize: '56.61MB',
+    version: '1.21.2',
+    buildTime: '11.96s',
+    buildSize: '64.55MB',
     url: 'https://vanilla-extract.style',
   },
 ]
@@ -77,10 +77,10 @@ export function Bench() {
           wordBreak="keep-all"
         >
           <Text as="h2" color="$title" m="0" typography="h4">
-            Comparison Bechmarks
+            Comparison Benchmarks
           </Text>
           <Text color="$text" typography="textL">
-            Next.js Build Time and Build Size (github action - ubuntu-latest)
+            Next.js 16.3.3 cold build (GitHub Actions, run 33254030962)
           </Text>
         </VStack>
 

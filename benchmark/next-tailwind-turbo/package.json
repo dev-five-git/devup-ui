@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -21,7 +21,7 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^7",
+    "typescript": "^7.0.2",
     "tailwindcss": "^4.3"
   }
 }

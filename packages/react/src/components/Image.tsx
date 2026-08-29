@@ -1,12 +1,20 @@
 import type {
-  DevupComponentBaseProps,
-  DevupComponentProps,
+  DevupDefaultComponentMergedProps,
+  DevupPolymorphicComponentMergedProps,
 } from '../types/props'
-import type { Merge } from '../types/utils'
 
-export function Image<T extends React.ElementType = 'img'>(
+export function Image(
+  props: DevupDefaultComponentMergedProps<'img'>,
+): React.ReactElement
+export function Image<T extends React.ElementType>(
+  props: DevupPolymorphicComponentMergedProps<T>,
+): React.ReactElement
+export function Image(
+  props: DevupDefaultComponentMergedProps<'img'>,
+): React.ReactElement
+export function Image(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  props: Merge<DevupComponentBaseProps<T>, DevupComponentProps<T>>,
+  props: unknown,
 ): React.ReactElement {
   throw new Error('Cannot run on the runtime')
 }

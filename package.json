@@ -5,8 +5,8 @@
   "description": "devup-ui",
   "type": "module",
   "scripts": {
-    "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && eslint",
-    "lint:fix": "eslint --fix && cargo fmt",
+    "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js",
+    "lint:fix": "node --require ./eslint-typescript6.cjs ./node_modules/eslint/bin/eslint.js --fix && cargo fmt",
     "test": "cargo tarpaulin --out xml --out stdout --all-targets --engine llvm $(node -p \"process.env.CI ? '--fail-under 100' : ''\") && bun test",
     "test:e2e": "bunx playwright test",
     "test:e2e:next": "LANDING_BUILD_MODE=next bunx playwright test",
@@ -23,17 +23,19 @@
   "devDependencies": {
     "@devup-ui/eslint-plugin": "workspace:^",
     "@playwright/test": "^1.62.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@typescript/typescript6": "^6.0.2",
     "@types/bun": "latest",
-    "@types/node": "^26.2",
+    "@types/node": "^26.4",
     "bun-test-env-dom": "^1.0.3",
-    "eslint": "^10.8",
+    "eslint": "^10.9",
     "eslint-plugin-devup": "^2.1",
     "eslint-plugin-eslint-plugin": "^7.6",
     "eslint-plugin-jsonc": "^3.4",
     "eslint-plugin-mdx": "^3.8",
     "globals": "^17.11",
     "husky": "^9.1",
-    "typescript": "^6.0"
+    "typescript": "^7.0.2"
   },
   "author": "devfive",
   "workspaces": [

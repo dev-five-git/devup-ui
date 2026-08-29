@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "start": "npx serve ./dist",
-    "lint": "tsc && eslint"
+    "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
     "react": "^19.2",
@@ -19,7 +19,7 @@
     "@devup-ui/vite-plugin": "workspace:^",
     "vite": "^8.2",
     "@vitejs/plugin-react": "^6.1",
-    "typescript": "^7",
+    "typescript": "^7.0.2",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19"

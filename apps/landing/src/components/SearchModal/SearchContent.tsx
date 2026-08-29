@@ -1,43 +1,79 @@
 'use client'
 import { Box, Center, css, Flex, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
 import { useQueryParam } from '@/utils/use-query-param'
 
+interface SearchResult {
+  title: string
+  text: string
+  url: string
+}
+
+function getHighlightedParts(text: string, query: string) {
+  const parts: { highlighted: boolean; start: number; text: string }[] = []
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const matches = text.matchAll(new RegExp(escapedQuery, 'giu'))
+  let start = 0
+
+  for (const match of matches) {
+    const matchStart = match.index
+    if (matchStart > start) {
+      parts.push({
+        highlighted: false,
+        start,
+        text: text.slice(start, matchStart),
+      })
+    }
+
+    const matchEnd = matchStart + match[0].length
+    parts.push({
+      highlighted: true,
+      start: matchStart,
+      text: text.slice(matchStart, matchEnd),
+    })
+    start = matchEnd
+  }
+
+  if (start < text.length || parts.length === 0) {
+    parts.push({ highlighted: false, start, text: text.slice(start) })
+  }
+
+  return parts
+}
+
 export function SearchContent() {
   const query = useQueryParam('query')
-  const [data, setData] = useState<
-    {
-      title: string
-      text: string
-      url: string
-    }[]
-  >()
+  const [data, setData] = useState<SearchResult[]>()
   useEffect(() => {
-    if (query) {
-      fetch('/search.json')
-        .then((response) => response.json())
-        .then(
-          (
-            data: {
-              title: string
-              text: string
-              url: string
-            }[],
-          ) => {
-            setData(
-              data.filter(
-                (item) =>
-                  item.title.toLowerCase().includes(query.toLowerCase()) ||
-                  item.text.toLowerCase().includes(query.toLowerCase()),
-              ),
-            )
-          },
+    if (!query) return
+
+    const controller = new AbortController()
+    const normalizedQuery = query.toLowerCase()
+
+    void fetch('/search.json', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Search index request failed with ${response.status}`)
+        }
+        return response.json() as Promise<SearchResult[]>
+      })
+      .then((results) => {
+        setData(
+          results.filter(
+            (item) =>
+              item.title.toLowerCase().includes(normalizedQuery) ||
+              item.text.toLowerCase().includes(normalizedQuery),
+          ),
         )
-    }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setData([])
+      })
+
+    return () => controller.abort()
   }, [query])
-  const reg = useMemo(() => new RegExp(`(${query})`, 'gi'), [query])
   if (!query) return
   const inner = data ? (
     <>
@@ -59,20 +95,22 @@ export function SearchContent() {
               >
                 <Text typography="textSbold">{item.title}</Text>
                 <Text color="$caption" typography="caption">
-                  {item.text
-                    .substring(0, 100)
-                    .split(reg)
-                    .map((part, idx) =>
-                      part.toLowerCase() === query.toLowerCase() ? (
-                        <Text key={idx} color="$search" fontWeight="bold">
-                          {part}
+                  {getHighlightedParts(item.text.substring(0, 100), query).map(
+                    (part) =>
+                      part.highlighted ? (
+                        <Text
+                          key={part.start}
+                          color="$search"
+                          fontWeight="bold"
+                        >
+                          {part.text}
                         </Text>
                       ) : (
-                        <Text key={idx} as="span">
-                          {part}
+                        <Text key={part.start} as="span">
+                          {part.text}
                         </Text>
                       ),
-                    )}
+                  )}
                   ...
                 </Text>
               </VStack>

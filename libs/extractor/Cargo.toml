@@ -11,22 +11,26 @@ categories = ["development-tools", "wasm", "web-programming"]
 [lints]
 workspace = true
 
+[features]
+default = ["vanilla-extract"]
+vanilla-extract = ["dep:boa_engine"]
+
 [dependencies]
-oxc_parser = "0.146.0"
-oxc_syntax = "0.146.0"
-oxc_span = "0.146.0"
-oxc_allocator = "0.146.0"
-oxc_ast = "0.146.0"
-oxc_ast_visit = "0.146.0"
-oxc_codegen = "0.146.0"
-oxc_transformer = "0.146.0"
-oxc_semantic = "0.146.0"
+oxc_parser = "0.147.0"
+oxc_syntax = "0.147.0"
+oxc_span = "0.147.0"
+oxc_allocator = "0.147.0"
+oxc_ast = "0.147.0"
+oxc_ast_visit = "0.147.0"
+oxc_codegen = "0.147.0"
+oxc_transformer = "0.147.0"
+oxc_semantic = "0.147.0"
 css = { path = "../css" }
 phf = "0.14"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 serde_json = "1.0"
-boa_engine = "0.21"
+boa_engine = { version = "0.22", optional = true }
 rustc-hash = "2"
 smallvec = "1"
 

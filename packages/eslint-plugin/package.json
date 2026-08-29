@@ -21,7 +21,7 @@
   "main": "dist/index.cjs",
   "type": "module",
   "scripts": {
-    "build": "tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
+    "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external"
   },
   "publishConfig": {
     "access": "public"
@@ -38,15 +38,16 @@
     "dist"
   ],
   "dependencies": {
-    "typescript-eslint": "^8.67",
-    "@typescript-eslint/utils": "^8.67"
+    "typescript-eslint": "^8.68",
+    "@typescript-eslint/utils": "^8.68"
   },
   "peerDependencies": {
     "typescript-eslint": "*",
     "@typescript-eslint/utils": "*"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.67",
-    "typescript": "^6.0"
+    "@typescript-eslint/rule-tester": "^8.68",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }

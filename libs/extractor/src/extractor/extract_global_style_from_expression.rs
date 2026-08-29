@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
 use crate::{
     ExtractStyleProp,
@@ -103,10 +102,10 @@ pub fn extract_global_style_from_expression<'a>(
                                 for p in &arr.elements {
                                     if let ArrayExpressionElement::ObjectExpression(o) = p {
                                         styles.push(ExtractStyleProp::Static(ExtractStyleValue::FontFace(ExtractFontFace {
-                                            properties: BTreeMap::from_iter(
-                                                o.properties
-                                                    .iter()
-                                                    .filter_map(|p| {
+                                            properties: o
+                                                .properties
+                                                .iter()
+                                                .filter_map(|p| {
                                                         if let ObjectPropertyKind::ObjectProperty(o) = p
                                                             && let Some(property_name) = get_str_by_property_key(&o.key)
                                                             && let Some(s) = get_string_by_literal_expression(&o.value)
@@ -119,9 +118,9 @@ pub fn extract_global_style_from_expression<'a>(
                                                         } else {
                                                             None
                                                         }
-                                                    })
-                                                    .flatten(),
-                                            ),
+                                                })
+                                                .flatten()
+                                                .collect(),
                                             file: file.to_string(),
                                         })));
                                     } else if let ArrayExpressionElement::TemplateLiteral(t) = p {
@@ -137,8 +136,9 @@ pub fn extract_global_style_from_expression<'a>(
                                             .collect::<Vec<_>>();
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::FontFace(ExtractFontFace {
-                                                properties: BTreeMap::from_iter(
-                                                    css_styles.iter().filter_map(|p| {
+                                                properties: css_styles
+                                                    .iter()
+                                                    .filter_map(|p| {
                                                         if let ExtractStyleValue::Static(st) = p {
                                                             Some((
                                                                 st.property().to_string(),
@@ -147,8 +147,8 @@ pub fn extract_global_style_from_expression<'a>(
                                                         } else {
                                                             None
                                                         }
-                                                    }),
-                                                ),
+                                                    })
+                                                    .collect(),
                                                 file: file.to_string(),
                                             }),
                                         ));

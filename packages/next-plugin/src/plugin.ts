@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import { deserialize, serialize } from 'node:v8'
 
 import {
   buildCanonicalMap,
@@ -14,42 +15,116 @@ import {
   computeFileRoutes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
+  type DevupUIBasePluginOptions,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-  getDefaultTheme,
-  getThemeInterface,
-  importCanonicalMap,
-  importClassMap,
-  importFileMap,
-  importFileRoutes,
-  importSheet,
-  registerShorthands,
-  registerTheme,
-  setAtomHoist,
-  setPrefix,
-} from '@devup-ui/wasm'
-import {
-  DevupUIWebpackPlugin,
-  type DevupUIWebpackPluginOptions,
-} from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
-import { startCoordinator } from './coordinator'
+import {
+  type PrewarmedOutput,
+  startCoordinator,
+  takeExtractOutput,
+} from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
+import { elapsedMs, profileStart, reportProfile } from './profile'
+import { transformStaticVanillaExtract } from './static-vanilla'
+import { loadWasm, loadWebpackPlugin } from './wasm'
 
-type DevupUiNextPluginOptions = Omit<
-  Partial<DevupUIWebpackPluginOptions>,
-  'watch'
->
+/** Options accepted by the Next.js integration. */
+export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
+  /** Share atoms reached by at least this many routes. */
+  atomHoist?: number
+}
+
+type TurboRules = NonNullable<NonNullable<NextConfig['turbopack']>['rules']>
+
+interface ProductionTurboSetupCache {
+  defaultTheme?: string
+  key: string
+  owner: string
+  prewarmedFiles: number
+  rules: TurboRules
+  token: string
+  wasmVariant: 'lite' | 'full'
+}
+
+const productionTurboSetupTokenEnv = 'DEVUP_UI_TURBO_SETUP_TOKEN'
+let productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+
+function consumeProductionTurboSetup(
+  key: string,
+  filename: string,
+): ProductionTurboSetupCache | undefined {
+  const token = process.env[productionTurboSetupTokenEnv]
+  if (!token) return undefined
+  try {
+    const cached = deserialize(readFileSync(filename)) as
+      ProductionTurboSetupCache | undefined
+    if (
+      !cached ||
+      cached.key !== key ||
+      cached.owner === productionTurboSetupOwner ||
+      cached.token !== token
+    ) {
+      return undefined
+    }
+    delete process.env[productionTurboSetupTokenEnv]
+    try {
+      unlinkSync(filename)
+    } catch {
+      // The handoff is single-use even if cleanup fails.
+    }
+    return cached
+  } catch {
+    return undefined
+  }
+}
+
+function storeProductionTurboSetup(
+  filename: string,
+  cache: Omit<ProductionTurboSetupCache, 'owner' | 'token'>,
+): void {
+  const token = `${process.pid}-${performance.now()}-${Math.random()}`
+  try {
+    writeFileSync(
+      filename,
+      serialize({
+        ...cache,
+        owner: productionTurboSetupOwner,
+        token,
+      } satisfies ProductionTurboSetupCache),
+    )
+    process.env[productionTurboSetupTokenEnv] = token
+  } catch {
+    delete process.env[productionTurboSetupTokenEnv]
+  }
+}
+
+/** @internal Reproduce Next's isolated config-module reload in unit tests. */
+export function reloadTurboSetupModuleForTesting(): void {
+  productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+}
+
+/** @internal Keep the process-global one-build handoff isolated between tests. */
+export function resetTurboSetupCacheForTesting(): void {
+  delete process.env[productionTurboSetupTokenEnv]
+  productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+}
+
+export function selectWasmVariant(
+  graph: StaticImportGraph | undefined,
+  candidateFiles: string[] = graph?.files ?? [],
+  staticVanillaExtract = false,
+): 'lite' | 'full' {
+  return graph &&
+    (staticVanillaExtract ||
+      !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename)))
+    ? 'lite'
+    : 'full'
+}
 
 /**
  * Devup UI Next Plugin
@@ -59,8 +134,9 @@ type DevupUiNextPluginOptions = Omit<
  */
 export function DevupUI(
   config: NextConfig,
-  options: DevupUiNextPluginOptions = {},
+  options: DevupUINextPluginOptions = {},
 ): NextConfig {
+  const pluginStartedAt = profileStart()
   const isTurbo =
     process.env.TURBOPACK === '1' || process.env.TURBOPACK === 'auto'
   // turbopack is now stable, TURBOPACK is set to auto without any flags
@@ -81,19 +157,59 @@ export function DevupUI(
       importAliases: userImportAliases,
     } = options
 
-    registerShorthands(shorthands ?? {})
-
-    if (prefix) {
-      setPrefix(prefix)
-    }
-
     const importAliases = mergeImportAliases(userImportAliases)
-
+    const watch = process.env.NODE_ENV === 'development'
+    const sourceMap = watch || config.productionBrowserSourceMaps === true
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
     const fileMapFile = join(distDir, 'fileMap.json')
     const canonicalMapFile = join(distDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
+    const setupHandoffFile = join(distDir, 'setup.bin')
+    // Next loads next.config twice for a production Turbopack build in isolated
+    // module contexts, but both evaluations share the same process. Hand the
+    // completed first setup to exactly one different module instance so the
+    // second load does not rescan/reparse sources, re-extract them, or restart
+    // the coordinator. Calls from the same module instance never reuse it,
+    // which avoids turning this into a general cross-build cache.
+    const productionSetupKey = JSON.stringify({
+      atomHoist,
+      cwd: process.cwd(),
+      cssDir,
+      devupFile,
+      distDir,
+      hoistV: process.env.DEVUP_HOIST_V,
+      importAliases,
+      include,
+      libPackage,
+      prefix,
+      shorthands,
+      singleCss,
+      sourceMap,
+    })
+    const cachedSetup = watch
+      ? undefined
+      : consumeProductionTurboSetup(productionSetupKey, setupHandoffFile)
+    if (cachedSetup) {
+      if (cachedSetup.defaultTheme) {
+        process.env.DEVUP_UI_DEFAULT_THEME = cachedSetup.defaultTheme
+        config.env ??= {}
+        Object.assign(config.env, {
+          DEVUP_UI_DEFAULT_THEME: cachedSetup.defaultTheme,
+        })
+      }
+      Object.assign(config.turbopack.rules, cachedSetup.rules)
+      reportProfile('next.setup', {
+        cacheHit: true,
+        durationMs: elapsedMs(pluginStartedAt),
+        pid: process.pid,
+        prewarmedFiles: cachedSetup.prewarmedFiles,
+        singleCss,
+        wasmVariant: cachedSetup.wasmVariant,
+        watch,
+      })
+      return config
+    }
     if (!existsSync(distDir))
       mkdirSync(distDir, {
         recursive: true,
@@ -103,6 +219,86 @@ export function DevupUI(
         recursive: true,
       })
     if (!existsSync(gitignoreFile)) writeFileSync(gitignoreFile, '*')
+
+    // Boa is only needed to execute vanilla-extract-style `.css.ts`/`.css.js`
+    // modules. Build the graph before touching WASM so ordinary applications
+    // instantiate the much smaller engine, while vanilla-extract users retain
+    // the full evaluator automatically. If graph discovery fails, fail safe to
+    // the full engine.
+    const graphStartedAt = profileStart()
+    const srcDir = resolve(process.cwd(), 'src')
+    const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+    let staticGraph: StaticImportGraph | undefined
+    try {
+      staticGraph = buildStaticImportGraph(srcDir, tsconfigPath)
+    } catch {
+      // The mapping pass below reports the graph failure and keeps its legacy
+      // best-effort behavior.
+    }
+    const candidateCollectStartedAt =
+      graphStartedAt === undefined ? undefined : performance.now()
+    const wasmCandidateFiles = staticGraph
+      ? collectProductionPrewarmFiles({
+          cwd: process.cwd(),
+          graph: staticGraph,
+          expectedBaseFiles: [],
+          libPackage,
+          include,
+        })
+      : []
+    const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
+    const staticVanillaSources = new Map<
+      string,
+      { code: string; source: string }
+    >()
+    const vanillaCandidates = wasmCandidateFiles.filter((filename) =>
+      /\.css\.(?:ts|js)$/.test(filename),
+    )
+    let staticVanillaExtract =
+      !watch && !sourceMap && vanillaCandidates.length > 0
+    for (const filename of vanillaCandidates) {
+      if (!staticVanillaExtract) break
+      const source = readFileSync(resolve(process.cwd(), filename), 'utf-8')
+      const code = transformStaticVanillaExtract(filename, source, libPackage)
+      if (code === undefined) {
+        staticVanillaExtract = false
+        staticVanillaSources.clear()
+        break
+      }
+      staticVanillaSources.set(filename, { code, source })
+    }
+    const wasmVariant = selectWasmVariant(
+      staticGraph,
+      wasmCandidateFiles,
+      staticVanillaExtract,
+    )
+    const wasm = loadWasm(wasmVariant === 'lite')
+    const {
+      codeExtract,
+      codeExtractWithoutSourceMap,
+      exportClassMap,
+      exportFileMap,
+      exportSheet,
+      getCss,
+      getDefaultTheme,
+      getThemeInterface,
+      importCanonicalMap,
+      importClassMap,
+      importFileMap,
+      importFileRoutes,
+      importSheet,
+      registerShorthands,
+      registerTheme,
+      setAtomHoist,
+      setPrefix,
+    } = wasm
+
+    registerShorthands(shorthands ?? {})
+
+    if (prefix) {
+      setPrefix(prefix)
+    }
+
     // Import previous session state to handle Turbopack persistent cache.
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM
@@ -145,7 +341,7 @@ export function DevupUI(
     // coordinator shares this WASM instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-    const watch = process.env.NODE_ENV === 'development'
+    const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
     let canonicalMap: Record<string, string> = {}
@@ -153,14 +349,11 @@ export function DevupUI(
     // deterministic base-css completion signal handed to the coordinator. Stays
     // `[]` (idle fallback) when no routes are detected or the pre-pass fails.
     let expectedBaseFiles: string[] = []
-    let staticGraph: StaticImportGraph | undefined
     try {
-      const srcDir = resolve(process.cwd(), 'src')
-      const tsconfigPath = resolve(process.cwd(), 'tsconfig.json')
+      if (!staticGraph) throw new Error('Static import graph unavailable')
       const cwd = process.cwd()
       // One scan+parse of the source tree, shared by all three consumers below.
-      const graph = buildStaticImportGraph(srcDir, tsconfigPath)
-      staticGraph = graph
+      const graph = staticGraph
       // Atom hoisting owns the shared-chunk decision, so collapse runs WITHOUT
       // the file-level @global hoist (DEVUP_HOIST_V) in atom mode.
       const hoistV = atomMode
@@ -209,9 +402,19 @@ export function DevupUI(
           )
         }
       }
+      reportProfile('next.graph', {
+        durationMs: elapsedMs(graphStartedAt),
+        files: staticGraph.files.length,
+        expectedBaseFiles: expectedBaseFiles.length,
+        wasmVariant,
+      })
     } catch {
       // Pre-pass is best-effort; on failure canonical() is the identity (no
       // merge) and atom hoisting stays off.
+      reportProfile('next.graph', {
+        durationMs: elapsedMs(graphStartedAt),
+        failed: true,
+      })
     }
 
     // Turbopack can request a CSS module before it has scheduled every source
@@ -223,37 +426,94 @@ export function DevupUI(
     // route graph cannot represent. Loader-time extraction uses the same
     // keys/options and is idempotent.
     const prewarmedFiles: string[] = []
+    const prewarmedOutputs = new Map<string, PrewarmedOutput>()
     if (!watch && staticGraph) {
+      const prewarmStartedAt = profileStart()
+      let prewarmExtractMs = 0
+      let prewarmReadMs = 0
+      let prewarmSourceBytes = 0
       const cwd = process.cwd()
-      const prewarmFiles = collectProductionPrewarmFiles({
-        cwd,
-        graph: staticGraph,
-        expectedBaseFiles,
-        libPackage,
-        include,
-      })
+      // The same complete candidate set selected the WASM variant above. Reuse
+      // it here instead of resolving source/package entries a second time,
+      // while retaining any compiled-file fallback supplied by the graph pass.
+      const prewarmFiles = [
+        ...new Set([...wasmCandidateFiles, ...expectedBaseFiles]),
+      ].sort()
       for (const filename of prewarmFiles) {
         const resourcePath = resolve(cwd, filename)
         const relCssDir = `./${relative(
           dirname(resourcePath),
           cssDir,
         ).replaceAll('\\', '/')}`
-        codeExtract(
-          filename,
-          readFileSync(resourcePath, 'utf-8'),
-          libPackage,
-          relCssDir,
-          singleCss,
-          false,
-          true,
-          importAliases as unknown as Record<string, string | null>,
+        const readStartedAt =
+          prewarmStartedAt === undefined ? undefined : performance.now()
+        const preparedVanilla = staticVanillaSources.get(filename)
+        const source =
+          preparedVanilla?.source ?? readFileSync(resourcePath, 'utf-8')
+        if (readStartedAt !== undefined) {
+          prewarmReadMs += performance.now() - readStartedAt
+          prewarmSourceBytes += Buffer.byteLength(source)
+        }
+        const extractStartedAt =
+          prewarmStartedAt === undefined ? undefined : performance.now()
+        const output = takeExtractOutput(
+          extract(
+            filename,
+            preparedVanilla?.code ?? source,
+            libPackage,
+            relCssDir,
+            singleCss,
+            false,
+            true,
+            importAliases as unknown as Record<string, string | null>,
+          ),
         )
+        if (extractStartedAt !== undefined) {
+          prewarmExtractMs += performance.now() - extractStartedAt
+        }
+        prewarmedOutputs.set(filename, {
+          code: output.code,
+          cssFile: output.cssFile,
+          map: output.map,
+          source,
+          updatedBaseStyle: output.updatedBaseStyle,
+        })
         prewarmedFiles.push(filename)
       }
+      reportProfile('next.prewarm', {
+        collectMs: candidateCollectMs,
+        durationMs: elapsedMs(prewarmStartedAt),
+        extractMs:
+          prewarmStartedAt === undefined
+            ? undefined
+            : Number(prewarmExtractMs.toFixed(2)),
+        files: prewarmedFiles.length,
+        readMs:
+          prewarmStartedAt === undefined
+            ? undefined
+            : Number(prewarmReadMs.toFixed(2)),
+        sourceBytes: prewarmSourceBytes,
+      })
     }
 
     // create devup-ui.css file
-    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false))
+    const initialCssStartedAt = profileStart()
+    const initialCssSerializeStartedAt =
+      initialCssStartedAt === undefined ? undefined : performance.now()
+    const initialCss = getCss(null, false)
+    const initialCssSerializeMs = elapsedMs(initialCssSerializeStartedAt)
+    const initialCssWriteStartedAt =
+      initialCssStartedAt === undefined ? undefined : performance.now()
+    writeFileSync(join(cssDir, 'devup-ui.css'), initialCss)
+    reportProfile('next.initialCss', {
+      bytes:
+        initialCssStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(initialCss),
+      durationMs: elapsedMs(initialCssStartedAt),
+      serializeMs: initialCssSerializeMs,
+      writeMs: elapsedMs(initialCssWriteStartedAt),
+    })
 
     // Delete stale port file from previous session so loaders don't connect
     // to a dead coordinator port. The new coordinator writes a fresh port file
@@ -265,6 +525,7 @@ export function DevupUI(
     }
 
     const coordinator = startCoordinator({
+      wasm,
       package: libPackage,
       cssDir,
       singleCss,
@@ -276,15 +537,63 @@ export function DevupUI(
       canonicalMap,
       expectedBaseFiles,
       prewarmedFiles,
+      prewarmedOutputs,
+      sourceMap,
+      staticVanillaExtract,
     })
 
     // Cleanup on exit
     process.on('exit', () => {
       coordinator.close()
     })
-    const defaultSheet = JSON.parse(exportSheet())
-    const defaultClassMap = JSON.parse(exportClassMap())
-    const defaultFileMap = JSON.parse(exportFileMap())
+    const stateSnapshotStartedAt = profileStart()
+    const sheetSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultSheetJson = exportSheet()
+    const sheetSerializeMs = elapsedMs(sheetSerializeStartedAt)
+    const sheetParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultSheet = JSON.parse(defaultSheetJson)
+    const sheetParseMs = elapsedMs(sheetParseStartedAt)
+
+    const classMapSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultClassMapJson = exportClassMap()
+    const classMapSerializeMs = elapsedMs(classMapSerializeStartedAt)
+    const classMapParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultClassMap = JSON.parse(defaultClassMapJson)
+    const classMapParseMs = elapsedMs(classMapParseStartedAt)
+
+    const fileMapSerializeStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultFileMapJson = exportFileMap()
+    const fileMapSerializeMs = elapsedMs(fileMapSerializeStartedAt)
+    const fileMapParseStartedAt =
+      stateSnapshotStartedAt === undefined ? undefined : performance.now()
+    const defaultFileMap = JSON.parse(defaultFileMapJson)
+    const fileMapParseMs = elapsedMs(fileMapParseStartedAt)
+    reportProfile('next.stateSnapshot', {
+      classMapBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultClassMapJson),
+      classMapParseMs,
+      classMapSerializeMs,
+      durationMs: elapsedMs(stateSnapshotStartedAt),
+      fileMapBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultFileMapJson),
+      fileMapParseMs,
+      fileMapSerializeMs,
+      sheetBytes:
+        stateSnapshotStartedAt === undefined
+          ? undefined
+          : Buffer.byteLength(defaultSheetJson),
+      sheetParseMs,
+      sheetSerializeMs,
+    })
     // for theme script
     const defaultTheme = getDefaultTheme()
     if (defaultTheme) {
@@ -349,11 +658,30 @@ export function DevupUI(
       },
     }
     Object.assign(config.turbopack.rules, rules)
+    if (!watch) {
+      storeProductionTurboSetup(setupHandoffFile, {
+        defaultTheme,
+        key: productionSetupKey,
+        prewarmedFiles: prewarmedFiles.length,
+        rules,
+        wasmVariant,
+      })
+    }
+    reportProfile('next.setup', {
+      cacheHit: false,
+      durationMs: elapsedMs(pluginStartedAt),
+      pid: process.pid,
+      prewarmedFiles: prewarmedFiles.length,
+      singleCss,
+      wasmVariant,
+      watch,
+    })
     return config
   }
 
   const { webpack } = config
   config.webpack = (config, _options) => {
+    const { DevupUIWebpackPlugin } = loadWebpackPlugin()
     options.cssDir ??= resolve(
       _options.dev ? (options.distDir ?? 'df') : '.next/cache',
       `devup-ui_${_options.buildId}`,

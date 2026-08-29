@@ -8,7 +8,7 @@
     "dev": "rsbuild dev --open",
     "preview": "rsbuild preview",
     "start": "npx serve ./dist",
-    "lint": "tsc && eslint"
+    "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
     "react": "^19.2",
@@ -16,7 +16,7 @@
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
-    "@rsbuild/core": "^2.1",
+    "@rsbuild/core": "^2.2",
     "@rsbuild/plugin-react": "^2.1",
     "@devup-ui/rsbuild-plugin": "workspace:^"
   }

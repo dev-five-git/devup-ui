@@ -11,12 +11,16 @@ categories = ["development-tools", "wasm", "web-programming"]
 [lints]
 workspace = true
 
+[features]
+default = ["vanilla-extract"]
+vanilla-extract = ["extractor/vanilla-extract"]
+
 [dependencies]
 css = { path = "../css" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 regex-lite = "0.1"
-extractor = { path = "../extractor" }
+extractor = { path = "../extractor", default-features = false }
 rustc-hash = "2"
 
 [dev-dependencies]

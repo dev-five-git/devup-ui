@@ -178,6 +178,8 @@ test.describe('Documentation Pages', () => {
 
       await expect(page).toHaveScreenshot('docs-features-section-mobile.png', {
         fullPage: false,
+        // Linux per-file and single-CSS builds differ only at text edges.
+        maxDiffPixelRatio: 0.02,
       })
 
       await context.close()

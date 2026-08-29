@@ -3,18 +3,9 @@ import { writeFile } from 'node:fs/promises'
 import { Agent, request } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
-import {
-  codeExtract,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-  importClassMap,
-  importFileMap,
-  importSheet,
-  registerTheme,
-} from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
+
+import { loadWasm } from './wasm'
 
 export interface DevupUILoaderOptions {
   package: string
@@ -185,6 +176,17 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
     }
 
     // Non-coordinator mode: local WASM extraction
+    const {
+      codeExtract,
+      exportClassMap,
+      exportFileMap,
+      exportSheet,
+      getCss,
+      importClassMap,
+      importFileMap,
+      importSheet,
+      registerTheme,
+    } = loadWasm(false)
     const promises: Promise<void>[] = []
     if (!init) {
       init = true
@@ -268,3 +270,5 @@ export const resetInit = () => {
   init = false
   cachedPorts.clear()
 }
+
+export { setWasmForTesting } from './wasm'

@@ -3,15 +3,13 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { basename, dirname, join, relative } from 'node:path'
 
 import { getFileNumByFilename } from '@devup-ui/plugin-utils'
-import {
-  codeExtract,
-  exportClassMap,
-  exportFileMap,
-  exportSheet,
-  getCss,
-} from '@devup-ui/wasm'
+
+import { elapsedMs, profileStart, reportProfile } from './profile'
+import { transformStaticVanillaExtract } from './static-vanilla'
+import type { DevupWasm } from './wasm'
 
 export interface CoordinatorOptions {
+  wasm: DevupWasm
   package: string
   cssDir: string
   singleCss: boolean
@@ -43,6 +41,16 @@ export interface CoordinatorOptions {
    */
   prewarmedFiles?: string[]
   /**
+   * Production outputs extracted before Turbopack starts. A loader that
+   * receives byte-identical source can return this result without a second
+   * WASM extraction; the shared sheet is already populated.
+   */
+  prewarmedOutputs?: Map<string, PrewarmedOutput>
+  /** Generate transform source maps. Defaults to true for existing callers. */
+  sourceMap?: boolean
+  /** Production-only static `.css.ts` fast path selected with the lite WASM. */
+  staticVanillaExtract?: boolean
+  /**
    * Idle threshold (ms) for the base-css `/css` wait. Defaults to 2500.
    * FALLBACK ONLY — used when `expectedBaseFiles` is empty (no deterministic
    * signal available). Exposed for tests; the plugin omits it.
@@ -61,6 +69,35 @@ export interface CoordinatorOptions {
    * open. Defaults to 60000. Exposed for tests; the plugin omits it.
    */
   maxWaitMs?: number
+}
+
+export interface PrewarmedOutput {
+  code: string
+  cssFile?: string
+  map?: string
+  source: string
+  updatedBaseStyle: boolean
+}
+
+interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
+  css?: string
+}
+
+/** Copy every WASM-backed getter once, then release its Rust allocation. */
+export function takeExtractOutput(
+  output: ReturnType<DevupWasm['codeExtract']>,
+): ExtractOutputSnapshot {
+  try {
+    return {
+      code: output.code,
+      css: output.css,
+      cssFile: output.cssFile,
+      map: output.map,
+      updatedBaseStyle: output.updatedBaseStyle,
+    }
+  } finally {
+    output.free()
+  }
 }
 
 // Latest-Wins Coalescing Serializer.
@@ -313,7 +350,15 @@ function waitForBucket(bucket: string): Promise<void> {
 export function startCoordinator(options: CoordinatorOptions): {
   close: () => void
 } {
+  // Next may evaluate its config more than once in the same process. Close the
+  // previous listener before replacing it so its HTTP server and request
+  // closure do not remain live for the rest of the build.
+  if (server) {
+    server.close()
+    server = null
+  }
   const {
+    wasm,
     package: libPackage,
     cssDir,
     singleCss,
@@ -323,6 +368,18 @@ export function startCoordinator(options: CoordinatorOptions): {
     importAliases,
     coordinatorPortFile,
   } = options
+  const {
+    codeExtract,
+    codeExtractWithoutSourceMap,
+    exportClassMap,
+    exportFileMap,
+    exportSheet,
+    getCss,
+  } = wasm
+  const prewarmedOutputs = options.prewarmedOutputs ?? new Map()
+  const staticVanillaExtract = options.staticVanillaExtract ?? false
+  const extract =
+    options.sourceMap === false ? codeExtractWithoutSourceMap : codeExtract
 
   idleThresholdMs = options.idleThresholdMs ?? 2500
   quietMs = options.quietMs ?? 10_000
@@ -334,7 +391,7 @@ export function startCoordinator(options: CoordinatorOptions): {
   for (const file of options.prewarmedFiles ?? []) extractedFiles.add(file)
   fileNumToBucket.clear()
 
-  server = createServer(async (req, res) => {
+  const coordinatorServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
     if (req.method === 'GET' && url.pathname === '/health') {
@@ -344,6 +401,7 @@ export function startCoordinator(options: CoordinatorOptions): {
     }
 
     if (req.method === 'GET' && url.pathname === '/css') {
+      const cssStartedAt = profileStart()
       const fileNumParam = url.searchParams.get('fileNum')
       const importMainCss = url.searchParams.get('importMainCss') === 'true'
       const shouldWait = url.searchParams.get('waitForIdle') === 'true'
@@ -364,10 +422,16 @@ export function startCoordinator(options: CoordinatorOptions): {
 
       res.writeHead(200, { 'Content-Type': 'text/css' })
       res.end(getCss(fileNum ?? null, importMainCss))
+      reportProfile('coordinator.css', {
+        durationMs: elapsedMs(cssStartedAt),
+        fileNum,
+        waitForIdle: shouldWait,
+      })
       return
     }
 
     if (req.method === 'POST' && url.pathname === '/extract') {
+      const requestStartedAt = profileStart()
       // Reserve a "start slot" before yielding on `await readBody`. Without
       // this counter, `waitForIdle` could observe activeExtractions=0 in the
       // window between the request hitting this handler and `activeExtractions++`
@@ -377,7 +441,9 @@ export function startCoordinator(options: CoordinatorOptions): {
       let promotedToActive = false
       let extractedFilename: string | undefined
       try {
+        const bodyStartedAt = profileStart()
         const body = JSON.parse(await readBody(req))
+        const bodyDurationMs = elapsedMs(bodyStartedAt)
         activeExtractions++
         pendingExtractStarts--
         promotedToActive = true
@@ -394,16 +460,31 @@ export function startCoordinator(options: CoordinatorOptions): {
         )
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
 
-        const result = codeExtract(
-          filename,
-          code,
-          libPackage,
-          relCssDir,
-          singleCss,
-          false,
-          true,
-          importAliases,
-        )
+        // The production prewarm exists to make the CSS snapshot complete
+        // before Turbopack requests it. The generated CSS is already in that
+        // snapshot, so re-running WASM here is pure work in either CSS mode.
+        // Require exact source equality because Turbopack may hand a loader
+        // code modified by an earlier transform.
+        const prewarmed = prewarmedOutputs.get(filename)
+        const cacheHit = prewarmed?.source === code
+        const extractStartedAt = profileStart()
+        const result = cacheHit
+          ? prewarmed
+          : takeExtractOutput(
+              extract(
+                filename,
+                (staticVanillaExtract
+                  ? transformStaticVanillaExtract(filename, code, libPackage)
+                  : undefined) ?? code,
+                libPackage,
+                relCssDir,
+                singleCss,
+                false,
+                true,
+                importAliases,
+              ),
+            )
+        const extractDurationMs = elapsedMs(extractStartedAt)
 
         // When singleCss=false, rewrite per-file CSS imports so Turbopack can resolve them.
         // Instead of importing "devup-ui-79.css" (which doesn't exist as a resolvable module),
@@ -417,15 +498,28 @@ export function startCoordinator(options: CoordinatorOptions): {
           )
         }
 
+        const snapshotStartedAt = profileStart()
+        let classMapSnapshotBytes: number | undefined
+        let classMapSnapshotMs: number | undefined
+        let cssSnapshotBytes: number | undefined
+        let cssSnapshotMs: number | undefined
+        let fileMapSnapshotBytes: number | undefined
+        let fileMapSnapshotMs: number | undefined
+        let sheetSnapshotBytes: number | undefined
+        let sheetSnapshotMs: number | undefined
         const promises: Promise<void>[] = []
 
-        if (result.updatedBaseStyle) {
-          promises.push(
-            safeWrite(
-              join(cssDir, 'devup-ui.css'),
-              `${getCss(null, false)}\n/* ${Date.now()} */`,
-            ),
-          )
+        if (!cacheHit && result.updatedBaseStyle) {
+          const cssStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const css = `${getCss(null, false)}\n/* ${Date.now()} */`
+          const cssDurationMs =
+            cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+          if (cssDurationMs !== undefined) {
+            cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+            cssSnapshotBytes = (cssSnapshotBytes ?? 0) + Buffer.byteLength(css)
+          }
+          promises.push(safeWrite(join(cssDir, 'devup-ui.css'), css))
         }
 
         if (result.cssFile) {
@@ -435,14 +529,55 @@ export function startCoordinator(options: CoordinatorOptions): {
             // wait for the bucket's members before serving it.
             fileNumToBucket.set(fileNum, canonicalMapRef[filename] ?? filename)
           }
+        }
+
+        if (!cacheHit && result.cssFile) {
+          const fileNum = getFileNumByFilename(result.cssFile)
+          const cssStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const css = getCss(fileNum, true)
+          const cssDurationMs =
+            cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+          if (cssDurationMs !== undefined) {
+            cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+            cssSnapshotBytes = (cssSnapshotBytes ?? 0) + Buffer.byteLength(css)
+          }
+
+          const sheetStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const sheet = exportSheet()
+          sheetSnapshotMs =
+            sheetStartedAt === undefined ? undefined : elapsedMs(sheetStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            sheetSnapshotBytes = Buffer.byteLength(sheet)
+          }
+
+          const classMapStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const classMap = exportClassMap()
+          classMapSnapshotMs =
+            classMapStartedAt === undefined
+              ? undefined
+              : elapsedMs(classMapStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            classMapSnapshotBytes = Buffer.byteLength(classMap)
+          }
+
+          const fileMapStartedAt =
+            snapshotStartedAt === undefined ? undefined : performance.now()
+          const fileMap = exportFileMap()
+          fileMapSnapshotMs =
+            fileMapStartedAt === undefined
+              ? undefined
+              : elapsedMs(fileMapStartedAt)
+          if (snapshotStartedAt !== undefined) {
+            fileMapSnapshotBytes = Buffer.byteLength(fileMap)
+          }
           promises.push(
-            safeWrite(
-              join(cssDir, basename(result.cssFile)),
-              getCss(fileNum, true),
-            ),
-            safeWrite(sheetFile, exportSheet()),
-            safeWrite(classMapFile, exportClassMap()),
-            safeWrite(fileMapFile, exportFileMap()),
+            safeWrite(join(cssDir, basename(result.cssFile)), css),
+            safeWrite(sheetFile, sheet),
+            safeWrite(classMapFile, classMap),
+            safeWrite(fileMapFile, fileMap),
           )
 
           // In non-singleCss mode, imports are rewritten from devup-ui-N.css to
@@ -452,15 +587,22 @@ export function startCoordinator(options: CoordinatorOptions): {
           // new CSS rules are invisible to the browser.
           // When updatedBaseStyle is true, devup-ui.css is already written above.
           if (!singleCss && !result.updatedBaseStyle && result.css != null) {
-            promises.push(
-              safeWrite(
-                join(cssDir, 'devup-ui.css'),
-                `${getCss(null, false)}\n/* ${Date.now()} */`,
-              ),
-            )
+            const cssStartedAt =
+              snapshotStartedAt === undefined ? undefined : performance.now()
+            const baseCss = `${getCss(null, false)}\n/* ${Date.now()} */`
+            const cssDurationMs =
+              cssStartedAt === undefined ? undefined : elapsedMs(cssStartedAt)
+            if (cssDurationMs !== undefined) {
+              cssSnapshotMs = (cssSnapshotMs ?? 0) + cssDurationMs
+              cssSnapshotBytes =
+                (cssSnapshotBytes ?? 0) + Buffer.byteLength(baseCss)
+            }
+            promises.push(safeWrite(join(cssDir, 'devup-ui.css'), baseCss))
           }
         }
 
+        const snapshotDurationMs = elapsedMs(snapshotStartedAt)
+        const writeStartedAt = profileStart()
         await Promise.all(promises)
 
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -472,6 +614,28 @@ export function startCoordinator(options: CoordinatorOptions): {
             updatedBaseStyle: result.updatedBaseStyle,
           }),
         )
+        reportProfile('coordinator.extract', {
+          bodyMs: bodyDurationMs,
+          cacheHit,
+          classMapSnapshotBytes,
+          classMapSnapshotMs,
+          cssSnapshotBytes,
+          cssSnapshotMs,
+          durationMs: elapsedMs(requestStartedAt),
+          extractMs: extractDurationMs,
+          fileMapSnapshotBytes,
+          fileMapSnapshotMs,
+          filename,
+          sheetSnapshotBytes,
+          sheetSnapshotMs,
+          sourceBytes:
+            requestStartedAt === undefined
+              ? undefined
+              : Buffer.byteLength(code),
+          scheduledWrites: promises.length,
+          snapshotMs: snapshotDurationMs,
+          writeMs: elapsedMs(writeStartedAt),
+        })
       } catch (error) {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(
@@ -500,8 +664,9 @@ export function startCoordinator(options: CoordinatorOptions): {
     res.end('Not Found')
   })
 
-  server.listen(0, '127.0.0.1', () => {
-    const addr = server!.address()
+  server = coordinatorServer
+  coordinatorServer.listen(0, '127.0.0.1', () => {
+    const addr = coordinatorServer.address()
     if (addr && typeof addr !== 'string') {
       writeFileSync(coordinatorPortFile, String(addr.port), 'utf-8')
     }
@@ -514,8 +679,8 @@ export function startCoordinator(options: CoordinatorOptions): {
       // `close` itself returns synchronously (it is invoked from
       // `process.on('exit', ...)` where awaiting is not possible).
       void flushPendingWrites()
-      if (server) {
-        server.close()
+      coordinatorServer.close()
+      if (server === coordinatorServer) {
         server = null
         try {
           unlinkSync(coordinatorPortFile)

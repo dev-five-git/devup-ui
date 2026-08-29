@@ -1,1 +1,1 @@
-export { DevupUI } from './plugin'
+export { DevupUI, type DevupUINextPluginOptions } from './plugin'

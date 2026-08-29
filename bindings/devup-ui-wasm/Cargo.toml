@@ -14,12 +14,13 @@ categories = ["development-tools", "wasm", "web-programming"]
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["vanilla-extract"]
+vanilla-extract = ["extractor/vanilla-extract", "sheet/vanilla-extract"]
 
 [dependencies]
 wasm-bindgen = "0.2.127"
-extractor = { path = "../../libs/extractor" }
-sheet = { path = "../../libs/sheet" }
+extractor = { path = "../../libs/extractor", default-features = false }
+sheet = { path = "../../libs/sheet", default-features = false }
 css = { path = "../../libs/css" }
 rustc-hash = "2"
 
@@ -33,11 +34,11 @@ js-sys = "0.3.104"
 serde_json = "1.0.151"
 serde-wasm-bindgen = "0.6.5"
 # Not used directly. Declared only to enable the `wasm_js` feature on the
-# `getrandom` version that boa_engine pulls in (boa_engine -> rand 0.9 ->
-# rand_core 0.9 -> getrandom 0.3), which `.cargo/config.toml`'s
+# `getrandom` version that boa_engine pulls in (boa_engine -> rand 0.10 ->
+# rand_core 0.10 -> getrandom 0.4), which `.cargo/config.toml`'s
 # `getrandom_backend="wasm_js"` cfg requires on wasm32 targets.
 # Keep this major version in sync with boa_engine's transitive getrandom.
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.77"

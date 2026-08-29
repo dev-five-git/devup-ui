@@ -1,3 +1,6 @@
 import { DevupUI } from '@devup-ui/next-plugin'
 
-export default DevupUI({}, { singleCss: true })
+export default DevupUI(
+  { experimental: { useTypeScriptCli: true } },
+  { singleCss: true },
+)

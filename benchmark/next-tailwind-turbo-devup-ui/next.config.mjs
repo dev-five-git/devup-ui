@@ -1,3 +1,3 @@
 import { DevupUI } from '@devup-ui/next-plugin'
 
-export default DevupUI({})
+export default DevupUI({ experimental: { useTypeScriptCli: true } })

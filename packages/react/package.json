@@ -19,9 +19,10 @@
   "version": "1.0.40",
   "type": "module",
   "scripts": {
-    "lint": "eslint && tsc --noEmit && bun run test:types",
-    "build": "bun run test:types && tsc && vite build",
-    "test:types": "tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
+    "generate:css-types": "bun scripts/generate-css-properties.ts",
+    "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
+    "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build",
+    "test:types": "bun scripts/generate-css-properties.ts --check && bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -48,10 +49,10 @@
     "rollup-plugin-preserve-directives": "^0.4",
     "vite": "^8.2",
     "vite-plugin-dts": "^5.0",
-    "typescript": "^7.0",
+    "typescript": "^7.0.2",
     "@typescript/typescript6": "^6.0",
     "@types/react": "^19.2",
-    "@types/node": "^26.2"
+    "@types/node": "^26.4"
   },
   "peerDependencies": {
     "react": "*",

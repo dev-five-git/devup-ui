@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:^",
-    "typescript": "^7",
+    "typescript": "^7.0.2",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19"

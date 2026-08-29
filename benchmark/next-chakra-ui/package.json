@@ -5,12 +5,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
-    "@chakra-ui/react": "^3.36",
+    "@chakra-ui/react": "^3.37",
     "@emotion/react": "^11.14",
     "next": "^16.3",
     "next-themes": "^0.4",
@@ -22,6 +22,6 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^7"
+    "typescript": "^7.0.2"
   }
 }

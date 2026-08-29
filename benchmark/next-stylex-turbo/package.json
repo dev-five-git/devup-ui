@@ -6,7 +6,7 @@
     "predev": "rimraf .next",
     "prebuild": "rimraf .next",
     "dev": "next dev",
-    "build": "next build --experimental-debug-memory-usage",
+    "build": "next build",
     "start": "next start"
   },
   "dependencies": {
@@ -18,11 +18,11 @@
   "devDependencies": {
     "@stylexjs/babel-plugin": "0.19.0",
     "@stylexjs/postcss-plugin": "0.19.0",
-    "@types/node": "^26.2",
+    "@types/node": "^26.4",
     "@types/react": "^19.2",
     "@types/react-dom": "^19.2",
     "postcss": "^8.5",
     "rimraf": "^6.1",
-    "typescript": "^7.0"
+    "typescript": "^7.0.2"
   }
 }

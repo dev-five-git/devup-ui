@@ -30,13 +30,13 @@ export function DevupUICard() {
           Devup UI
         </Text>
         <Text color="$text" typography="textL">
-          1.0.18
+          1.0.40
         </Text>
       </VStack>
       <VStack alignItems="flex-end" gap="20px">
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Next.js Build Time
+            Next.js Build Time (single CSS)
           </Text>
           <Flex gap="10px">
             <Box
@@ -53,13 +53,13 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              18.23s
+              10.81s
             </Text>
           </Flex>
         </VStack>
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Bulid Size
+            Build Size
           </Text>
           <Flex gap="10px">
             <Box
@@ -76,7 +76,7 @@ export function DevupUICard() {
               color="transparent"
               typography="h4"
             >
-              54.75MB
+              63.45MB
             </Text>
           </Flex>
         </VStack>
