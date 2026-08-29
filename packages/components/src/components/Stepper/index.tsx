@@ -2,7 +2,7 @@
 
 import { css, Flex } from '@devup-ui/react'
 import clsx from 'clsx'
-import { ComponentProps, createContext, useContext, useState } from 'react'
+import { ComponentProps, createContext, use, useState } from 'react'
 
 import { Button } from '../Button'
 import { Input } from '../Input'
@@ -20,7 +20,7 @@ type StepperContextType = {
 const StepperContext = createContext<StepperContextType | null>(null)
 
 export const useStepper = () => {
-  const context = useContext(StepperContext)
+  const context = use(StepperContext)
   if (!context) {
     throw new Error('useStepper must be used within a StepperProvider')
   }
@@ -58,7 +58,7 @@ function Stepper({
   }
 
   return (
-    <StepperContext.Provider
+    <StepperContext
       value={{
         value: valueProp ?? value,
         setValue: handleChange,
@@ -68,7 +68,7 @@ function Stepper({
       }}
     >
       {children}
-    </StepperContext.Provider>
+    </StepperContext>
   )
 }
 
@@ -144,10 +144,7 @@ function StepperInput({ className, ...props }: StepperInputProps) {
   })
   const isInput = type === 'input'
   const Comp = isInput ? Input : 'div'
-  if (isInput) {
-    // div tag doesn't support allowClear prop
-    Object.assign(props, { allowClear: false })
-  }
+  const componentProps = isInput ? { ...props, allowClear: false } : props
 
   return (
     <Comp
@@ -167,9 +164,6 @@ function StepperInput({ className, ...props }: StepperInputProps) {
         !isInput && notEditableClass,
         className,
       )}
-      dangerouslySetInnerHTML={
-        isInput ? undefined : { __html: Number(value).toString() }
-      }
       data-value={value}
       onChange={(e) => {
         setValue(Number(e.target.value))
@@ -178,8 +172,10 @@ function StepperInput({ className, ...props }: StepperInputProps) {
       type="number"
       // Fix prefix 0 issue
       value={value.toString()}
-      {...props}
-    />
+      {...componentProps}
+    >
+      {isInput ? undefined : Number(value).toString()}
+    </Comp>
   )
 }
 

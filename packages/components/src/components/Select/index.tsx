@@ -9,11 +9,8 @@ import {
 } from '@devup-ui/react'
 import clsx from 'clsx'
 import {
-  Children,
   ComponentProps,
-  JSX,
-  JSXElementConstructor,
-  ReactElement,
+  isValidElement,
   useEffect,
   useRef,
   useState,
@@ -113,7 +110,7 @@ export function Select({
   }
 
   return (
-    <SelectContext.Provider
+    <SelectContext
       value={{
         open: openProp ?? open,
         setOpen: handleOpenChange,
@@ -166,7 +163,7 @@ export function Select({
           children
         )}
       </Box>
-    </SelectContext.Provider>
+    </SelectContext>
   )
 }
 
@@ -185,18 +182,18 @@ export function SelectTrigger({
   }
 
   if (asChild) {
-    const element = Children.only(children) as ReactElement<
-      ComponentProps<keyof JSX.IntrinsicElements | JSXElementConstructor<any>>
-    >
-    const Comp = element.type
-    return (
-      <Comp
-        aria-expanded={open}
-        aria-label="Select toggle"
-        onClick={handleClick}
-        {...element.props}
-      />
-    )
+    if (!isValidElement<Record<string, unknown>>(children)) {
+      throw new Error('SelectTrigger with asChild requires a single element')
+    }
+
+    const Comp = children.type
+    const childProps = {
+      'aria-expanded': open,
+      'aria-label': 'Select toggle',
+      onClick: children.props.onClick ?? handleClick,
+      ...children.props,
+    }
+    return <Comp {...childProps} />
   }
 
   return (

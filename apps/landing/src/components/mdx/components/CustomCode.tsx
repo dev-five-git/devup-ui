@@ -1,12 +1,14 @@
 import { Box, Text } from '@devup-ui/react'
 
+import { splitCodeLines } from './split-code-lines'
+
 export function CustomCode({ children }: { children: string }) {
   return (
     <Box as="code" color="$primary" whiteSpace="pre-wrap">
-      {children.split('<br>').map((line, index) => (
-        <Text key={index} whiteSpace="pre">
-          {index > 0 && <br />}
-          {line}
+      {splitCodeLines(children).map((line) => (
+        <Text key={line.key} whiteSpace="pre">
+          {line.startsNewLine && <br />}
+          {line.text}
         </Text>
       ))}
     </Box>

@@ -74,8 +74,7 @@ export function RightIndex() {
       )
     }
 
-    updateMenus()
-
+    const animationFrameId = requestAnimationFrame(updateMenus)
     const timeoutId = setTimeout(updateMenus, 100)
     const observer = new MutationObserver(updateMenus)
 
@@ -88,6 +87,7 @@ export function RightIndex() {
     }
 
     return () => {
+      cancelAnimationFrame(animationFrameId)
       clearTimeout(timeoutId)
       observer.disconnect()
     }

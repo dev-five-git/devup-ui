@@ -12,7 +12,13 @@ import {
   STATIC_EXPORT_DEPLOYMENT_ID,
 } from '../utils/static-export-rsc-transport'
 
-const staticExportRscTransport = `(${installStaticExportRscTransport.toString()})(${JSON.stringify(STATIC_EXPORT_DEPLOYMENT_ID)})`
+function escapeScriptClosingTag(script: string) {
+  return script.replace(/<\/script/giu, '\\u003c/script')
+}
+
+const staticExportRscTransport = escapeScriptClosingTag(
+  `(${installStaticExportRscTransport.toString()})(${JSON.stringify(STATIC_EXPORT_DEPLOYMENT_ID)})`,
+)
 
 // The transport only exists to feed vinext's navigation runtime from `.rsc`
 // artifacts on a plain static host. The CI-only Next build emits no such
@@ -22,13 +28,13 @@ const needsStaticExportRscTransport =
   process.env.NODE_ENV === 'production' &&
   process.env.LANDING_BUILD_MODE !== 'next'
 
-const googleTagManagerScript = `(function(w,d,s,l,i){
+const googleTagManagerScript = escapeScriptClosingTag(`(function(w,d,s,l,i){
 if(w.location.hostname!=='devup-ui.com')return;
 w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});
 var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
 j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
 f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-PSRKC4QZ')`
+})(window,document,'script','dataLayer','GTM-PSRKC4QZ')`)
 
 export const metadata: Metadata = {
   title: 'Devup UI',
@@ -122,12 +128,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         {needsStaticExportRscTransport && (
-          <script
-            dangerouslySetInnerHTML={{ __html: staticExportRscTransport }}
-            data-vinext-static-rsc-transport=""
-          />
+          <script data-vinext-static-rsc-transport="">
+            {staticExportRscTransport}
+          </script>
         )}
-        <script dangerouslySetInnerHTML={{ __html: googleTagManagerScript }} />
+        <script>{googleTagManagerScript}</script>
         <link
           as="font"
           crossOrigin="anonymous"

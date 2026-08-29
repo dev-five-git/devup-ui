@@ -1,5 +1,6 @@
 import { Box, Flex, Image, Text, VStack } from '@devup-ui/react'
 import Link from 'next/link'
+import { cache } from 'react'
 
 import { Github } from '../../../components/Header/Github'
 import { Insta } from '../../../components/Header/Insta'
@@ -10,12 +11,23 @@ interface TeamCardProps {
   instaId?: string
 }
 
+interface GithubUser {
+  avatar_url: string
+  name: string | null
+}
+
+const getGithubUser = cache(async (userId: string) => {
+  const response = await fetch(`https://api.github.com/users/${userId}`)
+  if (!response.ok) {
+    throw new Error(`GitHub user request failed with ${response.status}`)
+  }
+  return response.json() as Promise<GithubUser>
+})
+
 export async function TeamCard({ userId, role, instaId }: TeamCardProps) {
-  const data = await fetch(`https://api.github.com/users/${userId}`).then(
-    (res) => res.json(),
-  )
+  const data = await getGithubUser(userId)
   const avatarUrl = data.avatar_url
-  const name = data.name
+  const name = data.name ?? userId
   return (
     <VStack
       alignItems="flex-end"
@@ -38,6 +50,7 @@ export async function TeamCard({ userId, role, instaId }: TeamCardProps) {
       >
         <VStack gap="12px">
           <Image
+            alt={`${name}'s GitHub avatar`}
             bg="#eccafa"
             borderRadius="100%"
             boxSize="80px"

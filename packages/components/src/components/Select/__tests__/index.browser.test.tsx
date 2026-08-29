@@ -59,6 +59,16 @@ describe('Select', () => {
     }).toThrow()
   })
 
+  it('should require one element when SelectTrigger uses asChild', () => {
+    expect(() => {
+      render(
+        <Select>
+          <SelectTrigger asChild>Text</SelectTrigger>
+        </Select>,
+      )
+    }).toThrow('SelectTrigger with asChild requires a single element')
+  })
+
   it('should close select when clicking outside', () => {
     const { container } = render(
       <div data-testid="container">

@@ -38,7 +38,7 @@ const styles = stylex.create({
 })
 
 export default function HomePage() {
-  const [_, setColor] = useState('yellow')
+  const [color, setColor] = useState('yellow')
   const [enabled, setEnabled] = useState(false)
 
   return (
@@ -50,7 +50,7 @@ export default function HomePage() {
       >
         Track & field champions:
       </p>
-      <section {...stylex.props(styles.base)}>
+      <section {...stylex.props(styles.base)} style={{ color }}>
         <div>hello</div>
         <div>hello</div>
       </section>
