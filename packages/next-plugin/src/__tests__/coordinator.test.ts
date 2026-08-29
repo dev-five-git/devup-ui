@@ -262,6 +262,63 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
+  it('reuses and rewrites byte-identical per-file prewarm output', async () => {
+    const source = 'const x = <Box bg="red" />'
+    getCssSpy.mockReturnValue('prewarmed bucket css')
+    const coordinator = startCoordinator(
+      makeOptions({
+        prewarmedFiles: ['src/App.tsx'],
+        prewarmedOutputs: new Map([
+          [
+            'src/App.tsx',
+            {
+              code: 'import "./df/devup-ui-79.css";\nconst x = 1',
+              cssFile: 'devup-ui-79.css',
+              map: '{"version":3}',
+              source,
+              updatedBaseStyle: false,
+            },
+          ],
+        ]),
+      }),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/App.tsx',
+        code: source,
+        resourcePath: join(process.cwd(), 'src', 'App.tsx'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({
+      code: 'import "./df/devup-ui.css?fileNum=79";\nconst x = 1',
+      cssFile: 'devup-ui-79.css',
+      map: '{"version":3}',
+      updatedBaseStyle: false,
+    })
+    expect(codeExtractSpy).not.toHaveBeenCalled()
+    expect(writeFileSpy).not.toHaveBeenCalled()
+
+    const css = await httpRequest(
+      port,
+      'GET',
+      '/css?fileNum=79&importMainCss=true&waitForIdle=true',
+    )
+    expect(css).toEqual({ status: 200, body: 'prewarmed bucket css' })
+    expect(getCssSpy).toHaveBeenCalledWith(79, true)
+
+    coordinator.close()
+  })
+
   it('profiles both base CSS serialization paths separately from writes', async () => {
     const originalProfile = process.env.DEVUP_UI_PROFILE
     process.env.DEVUP_UI_PROFILE = '1'

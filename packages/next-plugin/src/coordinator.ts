@@ -40,9 +40,9 @@ export interface CoordinatorOptions {
    */
   prewarmedFiles?: string[]
   /**
-   * Production `singleCss` outputs extracted before Turbopack starts. A loader
-   * that receives byte-identical source can return this result without a
-   * second WASM extraction; the shared sheet is already populated.
+   * Production outputs extracted before Turbopack starts. A loader that
+   * receives byte-identical source can return this result without a second
+   * WASM extraction; the shared sheet is already populated.
    */
   prewarmedOutputs?: Map<string, PrewarmedOutput>
   /** Generate transform source maps. Defaults to true for existing callers. */
@@ -457,11 +457,11 @@ export function startCoordinator(options: CoordinatorOptions): {
         if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
 
         // The production prewarm exists to make the CSS snapshot complete
-        // before Turbopack requests it. In single-CSS mode the generated CSS
-        // is already in that snapshot, so re-running WASM here is pure work.
+        // before Turbopack requests it. The generated CSS is already in that
+        // snapshot, so re-running WASM here is pure work in either CSS mode.
         // Require exact source equality because Turbopack may hand a loader
         // code modified by an earlier transform.
-        const prewarmed = singleCss ? prewarmedOutputs.get(filename) : undefined
+        const prewarmed = prewarmedOutputs.get(filename)
         const cacheHit = prewarmed?.source === code
         const extractStartedAt = profileStart()
         const result = cacheHit
@@ -516,13 +516,17 @@ export function startCoordinator(options: CoordinatorOptions): {
           promises.push(safeWrite(join(cssDir, 'devup-ui.css'), css))
         }
 
-        if (!cacheHit && result.cssFile) {
+        if (result.cssFile) {
           const fileNum = getFileNumByFilename(result.cssFile)
           if (fileNum != null) {
             // Record this bucket's fileNum -> canonical bucket path so /css can
             // wait for the bucket's members before serving it.
             fileNumToBucket.set(fileNum, canonicalMapRef[filename] ?? filename)
           }
+        }
+
+        if (!cacheHit && result.cssFile) {
+          const fileNum = getFileNumByFilename(result.cssFile)
           const cssStartedAt =
             snapshotStartedAt === undefined ? undefined : performance.now()
           const css = getCss(fileNum, true)

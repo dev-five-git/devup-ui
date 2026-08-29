@@ -828,6 +828,19 @@ describe('DevupUINextPlugin', () => {
           'extract:src/lazy/panel.tsx',
           'startCoordinator',
         ])
+        const coordinatorOptions = startCoordinatorSpy.mock.calls[0]?.[0]
+        expect(coordinatorOptions?.prewarmedOutputs).toEqual(
+          new Map([
+            [
+              'src/app/page.tsx',
+              expect.objectContaining({ code: '{}', source: '{}' }),
+            ],
+            [
+              'src/lazy/panel.tsx',
+              expect.objectContaining({ code: '{}', source: '{}' }),
+            ],
+          ]),
+        )
         const profiles: Record<string, unknown>[] = profileSpy.mock.calls
           .map(([value]) => value)
           .filter(

@@ -320,15 +320,13 @@ export function DevupUI(
         if (extractStartedAt !== undefined) {
           prewarmExtractMs += performance.now() - extractStartedAt
         }
-        if (singleCss) {
-          prewarmedOutputs.set(filename, {
-            code: output.code,
-            cssFile: output.cssFile,
-            map: output.map,
-            source,
-            updatedBaseStyle: output.updatedBaseStyle,
-          })
-        }
+        prewarmedOutputs.set(filename, {
+          code: output.code,
+          cssFile: output.cssFile,
+          map: output.map,
+          source,
+          updatedBaseStyle: output.updatedBaseStyle,
+        })
         prewarmedFiles.push(filename)
       }
       reportProfile('next.prewarm', {
