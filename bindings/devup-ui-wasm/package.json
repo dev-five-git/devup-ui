@@ -17,7 +17,7 @@
     "react",
     "wasm"
   ],
-  "version": "1.0.78",
+  "version": "1.0.79",
   "scripts": {
     "build": "wasm-pack build --target nodejs --out-dir ./pkg --out-name index && wasm-pack build --target nodejs --out-dir ./pkg/lite --out-name index --no-default-features && node script.js",
     "test": "wasm-pack test --node"
