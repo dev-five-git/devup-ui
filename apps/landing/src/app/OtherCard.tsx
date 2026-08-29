@@ -48,7 +48,7 @@ export function OtherCard({
       <VStack alignItems="flex-end" gap="20px">
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$captionBold" typography="textSbold">
-            Bulid Time
+            Build Time
           </Text>
           <Text color="$caption" typography="h5">
             {buildTime}
@@ -56,7 +56,7 @@ export function OtherCard({
         </VStack>
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$captionBold" typography="textSbold">
-            Bulid Size
+            Build Size
           </Text>
           <Text color="$caption" typography="h5">
             {buildSize}

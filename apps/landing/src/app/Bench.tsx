@@ -77,7 +77,7 @@ export function Bench() {
           wordBreak="keep-all"
         >
           <Text as="h2" color="$title" m="0" typography="h4">
-            Comparison Bechmarks
+            Comparison Benchmarks
           </Text>
           <Text color="$text" typography="textL">
             Next.js cold build (GitHub Actions, run 33239265133)

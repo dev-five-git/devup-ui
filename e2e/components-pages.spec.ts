@@ -114,7 +114,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      await expect(page.getByText('Comparison Bechmarks').first()).toBeVisible()
+      await expect(page.getByText('Comparison Benchmarks').first()).toBeVisible()
       await context.close()
     })
 
@@ -127,7 +127,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      const benchSection = page.getByText('Comparison Bechmarks').first()
+      const benchSection = page.getByText('Comparison Benchmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
 
       // The Devup UI card is inside a client-side animation wrapper that keeps
@@ -148,7 +148,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      const benchSection = page.getByText('Comparison Bechmarks').first()
+      const benchSection = page.getByText('Comparison Benchmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
       await waitForStyleSettle(page)
 
@@ -167,7 +167,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      const benchSection = page.getByText('Comparison Bechmarks').first()
+      const benchSection = page.getByText('Comparison Benchmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
       await waitForStyleSettle(page)
 
@@ -187,7 +187,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      const benchSection = page.getByText('Comparison Bechmarks').first()
+      const benchSection = page.getByText('Comparison Benchmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
       await waitForStyleSettle(page)
 
@@ -208,7 +208,7 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      const benchSection = page.getByText('Comparison Bechmarks').first()
+      const benchSection = page.getByText('Comparison Benchmarks').first()
       await benchSection.scrollIntoViewIfNeeded()
       await waitForStyleSettle(page)
 

@@ -97,7 +97,7 @@ test.describe('Landing Page - Dark Mode Visual Regression', () => {
     })
 
     test('Bench section (dark)', async ({ page }) => {
-      const benchHeading = page.getByText('Comparison Bechmarks').first()
+      const benchHeading = page.getByText('Comparison Benchmarks').first()
       await benchHeading.scrollIntoViewIfNeeded()
       await waitForStyleSettle(page)
 
