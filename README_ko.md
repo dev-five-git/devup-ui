@@ -79,21 +79,31 @@ npm install @devup-ui/webpack-plugin
 
 ## 비교 벤치마크
 
-Next.js Build Time and Build Size (github action - ubuntu-latest)
+[최신 CI 벤치마크](https://github.com/dev-five-git/devup-ui/actions/runs/33239265133)는 `ubuntu-latest`에서 실행했습니다. 모든 Next.js 빌드는 네이티브 TypeScript 7 CLI로 타입 검사를 수행합니다.
 
-| 라이브러리                         | 버전   | 빌드 시간  | 빌드 사이즈          |
-| ---------------------------------- | ------ | ---------- | -------------------- |
-| tailwindcss                        | 4.1.13 | 19.31s     | 59,521,539 bytes     |
-| styleX                             | 0.15.4 | 41.78s     | 86,869,452 bytes     |
-| vanilla-extract                    | 1.17.4 | 19.50s     | 61,494,033 bytes     |
-| kuma-ui                            | 1.5.9  | 20.93s     | 69,924,179 bytes     |
-| panda-css                          | 1.3.1  | 20.64s     | 64,573,260 bytes     |
-| chakra-ui                          | 3.27.0 | 28.81s     | 222,435,802 bytes    |
-| mui                                | 7.3.2  | 20.86s     | 97,964,458 bytes     |
-| **devup-ui(per-file css)**         | 1.0.18 | **16.90s** | 59,540,459 bytes     |
-| **devup-ui(single css)**           | 1.0.18 | **17.05s** | **59,520,196 bytes** |
-| tailwindcss(turbopack)             | 4.1.13 | 6.72s      | 5,355,082 bytes      |
-| **devup-ui(single css+turbopack)** | 1.0.18 | 10.34s     | **4,772,050 bytes**  |
+Webpack 값은 cold build 1회 결과입니다.
+
+| 라이브러리                  | 버전   | 빌드 시간  | 빌드 사이즈          |
+| --------------------------- | ------ | ---------- | -------------------- |
+| tailwindcss                 | 4.3.3  | 15.55s     | 66,479,450 bytes     |
+| styleX                      | 0.19.0 | 34.27s     | 95,417,163 bytes     |
+| vanilla-extract             | 1.21.2 | 14.91s     | 67,711,539 bytes     |
+| kuma-ui                     | 1.6.4  | 16.43s     | 74,774,187 bytes     |
+| panda-css                   | 1.12.0 | 16.82s     | 70,983,831 bytes     |
+| chakra-ui                   | 3.37.0 | 24.79s     | 206,598,161 bytes    |
+| mui                         | 9.4.0  | 17.12s     | 100,621,370 bytes    |
+| **devup-ui (per-file CSS)** | 1.0.40 | **13.43s** | 66,577,087 bytes     |
+| **devup-ui (single CSS)**   | 1.0.40 | **13.37s** | **66,564,796 bytes** |
+
+Turbopack 값은 실행 순서를 번갈아 측정한 cold build 6회의 중앙값입니다.
+
+| 라이브러리                             | 버전   | 빌드 시간 중앙값 | 빌드 사이즈          |
+| -------------------------------------- | ------ | ---------------- | -------------------- |
+| tailwindcss                            | 4.3.3  | 6.55s            | 38,386,955 bytes     |
+| **devup-ui (direct APIs, single CSS)** | 1.0.40 | **6.54s**        | **36,519,234 bytes** |
+| **devup-ui (static `.css.ts`)**        | 1.0.40 | **6.47s**        | 36,550,197 bytes     |
+
+Turbopack 측정 범위는 서로 겹치므로 direct API 결과는 이 fixture에서 Tailwind와 사실상 동률입니다. static `.css.ts` 행은 `lite` WASM 빠른 경로를 사용하며, full Boa evaluator가 필요한 dynamic `.css.ts`는 해당 중앙값에 포함되지 않습니다.
 
 ## 작동 원리
 
