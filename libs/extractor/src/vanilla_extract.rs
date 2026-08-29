@@ -1032,9 +1032,9 @@ fn register_vanilla_extract_apis(
                 );
 
                 // Return [themeId, varsObject] as an array
-                let result_array = boa_engine::object::builtins::JsArray::new(ctx);
-                let _ = result_array.push(JsValue::from(js_string!(id.clone())), ctx);
-                let _ = result_array.push(vars_obj, ctx);
+                let result_array = boa_engine::object::builtins::JsArray::new(ctx)?;
+                result_array.push(JsValue::from(js_string!(id.clone())), ctx)?;
+                result_array.push(vars_obj, ctx)?;
 
                 Ok(JsValue::from(result_array))
             } else {
@@ -2058,7 +2058,8 @@ export const lightTheme = createTheme(vars, {
     fn test_transform_contract_to_vars_array() {
         // Test transform_contract_to_vars with array (covers line 170)
         let mut context = boa_engine::Context::default();
-        let array = boa_engine::object::builtins::JsArray::new(&mut context);
+        let array = boa_engine::object::builtins::JsArray::new(&mut context)
+            .expect("creating an empty array should succeed");
         let _ = array.push(boa_engine::JsValue::from(1), &mut context);
         let value = boa_engine::JsValue::from(array);
         let result = super::transform_contract_to_vars(&value, &mut context, &mut Vec::new());
@@ -2070,7 +2071,8 @@ export const lightTheme = createTheme(vars, {
     fn test_transform_theme_to_vars_array() {
         // Test transform_theme_to_vars with array (covers line 250)
         let mut context = boa_engine::Context::default();
-        let array = boa_engine::object::builtins::JsArray::new(&mut context);
+        let array = boa_engine::object::builtins::JsArray::new(&mut context)
+            .expect("creating an empty array should succeed");
         let _ = array.push(boa_engine::JsValue::from(1), &mut context);
         let value = boa_engine::JsValue::from(array);
         let mut css_vars: SmallVec<[(String, String); 8]> = SmallVec::new();

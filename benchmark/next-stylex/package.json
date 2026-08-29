@@ -25,7 +25,7 @@
     "@babel/plugin-syntax-typescript": "^8.0",
     "@stylexjs/babel-plugin": "^0.19",
     "@stylexjs/nextjs-plugin": "^0.11",
-    "@types/node": "26.2",
+    "@types/node": "26.4",
     "@types/react": "19.2",
     "@types/react-dom": "19.2",
     "@types/react-test-renderer": "^19.1",

@@ -19,9 +19,9 @@
   "version": "1.0.40",
   "type": "module",
   "scripts": {
-    "lint": "eslint && tsc --noEmit && bun run test:types",
-    "build": "bun run test:types && tsc && vite build",
-    "test:types": "tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
+    "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
+    "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build",
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -51,7 +51,7 @@
     "typescript": "^7.0",
     "@typescript/typescript6": "^6.0",
     "@types/react": "^19.2",
-    "@types/node": "^26.2"
+    "@types/node": "^26.4"
   },
   "peerDependencies": {
     "react": "*",

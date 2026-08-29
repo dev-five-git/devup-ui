@@ -20,7 +20,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint",
-    "build": "tsc && vite build",
+    "build": "bun ../../node_modules/@typescript/native/bin/tsc && vite build",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "package": "bun pm pack --pack-destination \"../../dist\""

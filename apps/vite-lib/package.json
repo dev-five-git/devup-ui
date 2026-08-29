@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "lint": "tsc && eslint"
+    "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
     "react": "^19.2",
@@ -18,7 +18,7 @@
   "devDependencies": {
     "vite-plugin-dts": "^5.0",
     "@devup-ui/vite-plugin": "workspace:^",
-    "@vitejs/plugin-react": "^6.1.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.2",
     "typescript": "^7",
     "@types/node": "^26",

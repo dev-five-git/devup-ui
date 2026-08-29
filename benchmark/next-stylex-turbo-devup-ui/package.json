@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@devup-ui/next-plugin": "workspace:^",
-    "@types/node": "^26.2",
+    "@types/node": "^26.4",
     "@types/react": "^19.2",
     "@types/react-dom": "^19.2",
     "rimraf": "^6.1",

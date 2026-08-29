@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "start": "npx serve ./dist",
-    "lint": "tsc && eslint"
+    "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
     "react": "^19.2",
