@@ -18,7 +18,7 @@
     "bun"
   ],
   "type": "module",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "scripts": {
     "lint": "eslint",
     "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.cjs.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/register.ts --production --env=disable --outfile dist/register.cjs --format cjs --packages external && bun build --target node src/register.ts --production --env=disable --outfile dist/register.mjs --format esm --packages external",
