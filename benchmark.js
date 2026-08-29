@@ -5,7 +5,7 @@ import { execSync } from 'child_process'
 
 function clearBuildFile(dir) {
   const base = join('./benchmark', dir)
-  for (const output of ['.next', 'dist', 'df']) {
+  for (const output of ['.next', 'dist', 'df', 'tsconfig.tsbuildinfo']) {
     const target = join(base, output)
     if (existsSync(target)) rmSync(target, { recursive: true, force: true })
   }
@@ -75,12 +75,11 @@ let result = []
 const turboSamples = new Map([
   ['tailwind-turbo', []],
   ['devup-ui-single-turbo', []],
+  ['vanilla-extract-devup-ui', []],
 ])
 
 function record(target) {
   const sample = benchmark(target)
-  const samples = turboSamples.get(target)
-  if (samples) samples.push(sample.duration)
   result.push(sample.result)
 }
 
@@ -104,12 +103,21 @@ record('vinext-devup-ui')
 // Multi-component app exercising single-importer collapse (atom dedup).
 record('devup-ui-collapse')
 
-// A single fixed-order result on a shared CI runner is too noisy for the two
-// Turbopack builds we compare directly. Run six cold samples in alternating
-// order so each target runs first three times, then report their medians.
-const turboTargets = ['tailwind-turbo', 'devup-ui-single-turbo']
-for (let sample = 1; sample < 6; sample++) {
-  const order = sample % 2 === 0 ? turboTargets : turboTargets.toReversed()
+// A single fixed-order result on a shared CI runner is too noisy for direct
+// comparisons. Run six cold samples in a repeated Latin-square order so each
+// target occupies each position twice, then report their medians. The full
+// Devup target contains `.css.ts`; the single target exercises the lite WASM.
+const turboTargets = [
+  'tailwind-turbo',
+  'devup-ui-single-turbo',
+  'vanilla-extract-devup-ui',
+]
+for (let sample = 0; sample < 6; sample++) {
+  const offset = sample % turboTargets.length
+  const order = [
+    ...turboTargets.slice(offset),
+    ...turboTargets.slice(0, offset),
+  ]
   for (const target of order) {
     turboSamples.get(target).push(benchmark(target).duration)
   }
