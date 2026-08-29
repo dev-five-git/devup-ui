@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import { deserialize, serialize } from 'node:v8'
 
 import {
   buildCanonicalMap,
@@ -36,6 +37,81 @@ type DevupUiNextPluginOptions = Omit<
   Partial<DevupUIWebpackPluginOptions>,
   'watch'
 >
+
+type TurboRules = NonNullable<NonNullable<NextConfig['turbopack']>['rules']>
+
+interface ProductionTurboSetupCache {
+  defaultTheme?: string
+  key: string
+  owner: string
+  prewarmedFiles: number
+  rules: TurboRules
+  token: string
+  wasmVariant: 'lite' | 'full'
+}
+
+const productionTurboSetupTokenEnv = 'DEVUP_UI_TURBO_SETUP_TOKEN'
+let productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+
+function consumeProductionTurboSetup(
+  key: string,
+  filename: string,
+): ProductionTurboSetupCache | undefined {
+  const token = process.env[productionTurboSetupTokenEnv]
+  if (!token) return undefined
+  try {
+    const cached = deserialize(readFileSync(filename)) as
+      ProductionTurboSetupCache | undefined
+    if (
+      !cached ||
+      cached.key !== key ||
+      cached.owner === productionTurboSetupOwner ||
+      cached.token !== token
+    ) {
+      return undefined
+    }
+    delete process.env[productionTurboSetupTokenEnv]
+    try {
+      unlinkSync(filename)
+    } catch {
+      // The handoff is single-use even if cleanup fails.
+    }
+    return cached
+  } catch {
+    return undefined
+  }
+}
+
+function storeProductionTurboSetup(
+  filename: string,
+  cache: Omit<ProductionTurboSetupCache, 'owner' | 'token'>,
+): void {
+  const token = `${process.pid}-${performance.now()}-${Math.random()}`
+  try {
+    writeFileSync(
+      filename,
+      serialize({
+        ...cache,
+        owner: productionTurboSetupOwner,
+        token,
+      } satisfies ProductionTurboSetupCache),
+    )
+    process.env[productionTurboSetupTokenEnv] = token
+  } catch {
+    delete process.env[productionTurboSetupTokenEnv]
+  }
+}
+
+/** @internal Reproduce Next's isolated config-module reload in unit tests. */
+export function reloadTurboSetupModuleForTesting(): void {
+  productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+}
+
+/** @internal Keep the process-global one-build handoff isolated between tests. */
+export function resetTurboSetupCacheForTesting(): void {
+  delete process.env[productionTurboSetupTokenEnv]
+  productionTurboSetupOwner = `${performance.timeOrigin}-${Math.random()}`
+}
 
 export function selectWasmVariant(
   graph: StaticImportGraph | undefined,
@@ -88,6 +164,51 @@ export function DevupUI(
     const fileMapFile = join(distDir, 'fileMap.json')
     const canonicalMapFile = join(distDir, 'canonicalMap.json')
     const gitignoreFile = join(distDir, '.gitignore')
+    const setupHandoffFile = join(distDir, 'setup.bin')
+    // Next loads next.config twice for a production Turbopack build in isolated
+    // module contexts, but both evaluations share the same process. Hand the
+    // completed first setup to exactly one different module instance so the
+    // second load does not rescan/reparse sources, re-extract them, or restart
+    // the coordinator. Calls from the same module instance never reuse it,
+    // which avoids turning this into a general cross-build cache.
+    const productionSetupKey = JSON.stringify({
+      atomHoist,
+      cwd: process.cwd(),
+      cssDir,
+      devupFile,
+      distDir,
+      hoistV: process.env.DEVUP_HOIST_V,
+      importAliases,
+      include,
+      libPackage,
+      prefix,
+      shorthands,
+      singleCss,
+      sourceMap,
+    })
+    const cachedSetup = watch
+      ? undefined
+      : consumeProductionTurboSetup(productionSetupKey, setupHandoffFile)
+    if (cachedSetup) {
+      if (cachedSetup.defaultTheme) {
+        process.env.DEVUP_UI_DEFAULT_THEME = cachedSetup.defaultTheme
+        config.env ??= {}
+        Object.assign(config.env, {
+          DEVUP_UI_DEFAULT_THEME: cachedSetup.defaultTheme,
+        })
+      }
+      Object.assign(config.turbopack.rules, cachedSetup.rules)
+      reportProfile('next.setup', {
+        cacheHit: true,
+        durationMs: elapsedMs(pluginStartedAt),
+        pid: process.pid,
+        prewarmedFiles: cachedSetup.prewarmedFiles,
+        singleCss,
+        wasmVariant: cachedSetup.wasmVariant,
+        watch,
+      })
+      return config
+    }
     if (!existsSync(distDir))
       mkdirSync(distDir, {
         recursive: true,
@@ -536,8 +657,19 @@ export function DevupUI(
       },
     }
     Object.assign(config.turbopack.rules, rules)
+    if (!watch) {
+      storeProductionTurboSetup(setupHandoffFile, {
+        defaultTheme,
+        key: productionSetupKey,
+        prewarmedFiles: prewarmedFiles.length,
+        rules,
+        wasmVariant,
+      })
+    }
     reportProfile('next.setup', {
+      cacheHit: false,
       durationMs: elapsedMs(pluginStartedAt),
+      pid: process.pid,
       prewarmedFiles: prewarmedFiles.length,
       singleCss,
       wasmVariant,

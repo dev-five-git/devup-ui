@@ -16,7 +16,12 @@ import {
 } from 'bun:test'
 
 import * as coordinatorModule from '../coordinator'
-import { DevupUI, selectWasmVariant } from '../plugin'
+import {
+  DevupUI,
+  reloadTurboSetupModuleForTesting,
+  resetTurboSetupCacheForTesting,
+  selectWasmVariant,
+} from '../plugin'
 import { setWasmForTesting, setWebpackPluginForTesting } from '../wasm'
 
 type CodeExtractResult = ReturnType<typeof wasm.codeExtract>
@@ -91,6 +96,7 @@ let originalFetch: typeof global.fetch
 let originalDebugPort: number
 
 beforeEach(() => {
+  resetTurboSetupCacheForTesting()
   existsSyncSpy = spyOn(fs, 'existsSync').mockReturnValue(false)
   mkdirSyncSpy = spyOn(fs, 'mkdirSync').mockReturnValue(undefined)
   readFileSyncSpy = spyOn(fs, 'readFileSync').mockReturnValue('{}')
@@ -147,6 +153,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetTurboSetupCacheForTesting()
   setWasmForTesting(undefined)
   setWebpackPluginForTesting(undefined)
   process.env = originalEnv
@@ -259,6 +266,109 @@ describe('DevupUINextPlugin', () => {
     })
   })
   describe('turbo', () => {
+    it('reuses production setup across Next config module reloads', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      process.env.DEVUP_UI_PROFILE = '1'
+      getDefaultThemeSpy.mockReturnValue('dark')
+      const filename = resolve('src/app/page.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const profileSpy = spyOn(console, 'info').mockImplementation(() => {})
+      const handoffFile = join('df', 'setup.bin')
+      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+      writeFileSyncSpy.mockImplementation((path, data) => {
+        if (String(path) === handoffFile) handoff = data
+      })
+      readFileSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile && handoff !== undefined) {
+          return handoff as never
+        }
+        return '{}' as never
+      })
+      unlinkSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile) throw new Error('cleanup failed')
+      })
+
+      try {
+        const first = DevupUI({}, { singleCss: true })
+        reloadTurboSetupModuleForTesting()
+        const second = DevupUI(
+          { env: { EXISTING: 'value' } },
+          { singleCss: true },
+        )
+
+        expect(second.turbopack?.rules).toEqual(first.turbopack?.rules)
+        expect(second.env).toEqual({
+          DEVUP_UI_DEFAULT_THEME: 'dark',
+          EXISTING: 'value',
+        })
+        expect(graphSpy).toHaveBeenCalledTimes(1)
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledTimes(1)
+        expect(startCoordinatorSpy).toHaveBeenCalledTimes(1)
+        expect(unlinkSyncSpy).toHaveBeenCalledWith(handoffFile)
+        expect(profileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('"cacheHit":true'),
+        )
+      } finally {
+        profileSpy.mockRestore()
+        compiledSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
+
+    it('falls back when a production setup handoff is not reusable', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/app/page.tsx')
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/app/page.tsx'])
+      const handoffFile = join('df', 'setup.bin')
+      let failHandoffWrite = false
+      let handoff: Parameters<typeof fs.writeFileSync>[1] | undefined
+      writeFileSyncSpy.mockImplementation((path, data) => {
+        if (String(path) !== handoffFile) return
+        if (failHandoffWrite) throw new Error('write failed')
+        handoff = data
+      })
+      readFileSyncSpy.mockImplementation((path) => {
+        if (String(path) === handoffFile && handoff !== undefined) {
+          return handoff as never
+        }
+        return '{}' as never
+      })
+
+      try {
+        DevupUI({})
+        // The same module instance must not consume its own handoff.
+        DevupUI({})
+        reloadTurboSetupModuleForTesting()
+        handoff = Buffer.from('invalid handoff')
+        failHandoffWrite = true
+
+        // A corrupt read and a failed replacement write both fall back to the
+        // complete setup without leaking a token into another config load.
+        expect(() => DevupUI({})).not.toThrow()
+        expect(graphSpy).toHaveBeenCalledTimes(3)
+        expect(process.env.DEVUP_UI_TURBO_SETUP_TOKEN).toBeUndefined()
+      } finally {
+        compiledSpy.mockRestore()
+        graphSpy.mockRestore()
+      }
+    })
+
     it('should apply turbo config', async () => {
       process.env.TURBOPACK = '1'
       existsSyncSpy

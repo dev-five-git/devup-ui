@@ -54,6 +54,14 @@ jobs:
       - run: bun run build
       - name: Benchmark
         run: bun run benchmark
+      - name: Profile Devup UI Turbopack
+        env:
+          DEVUP_UI_PROFILE: "1"
+        run: |
+          rm -rf benchmark/next-devup-ui-single-turbo/.next \
+            benchmark/next-devup-ui-single-turbo/df \
+            benchmark/next-devup-ui-single-turbo/tsconfig.tsbuildinfo
+          bun run --filter next-devup-ui-single-turbo-benchmark build
 
   # The landing app is the only real-scale acceptance target in this repo, and
   # `publish` runs it against the deployed vinext/@devup-ui/vite-plugin build.
