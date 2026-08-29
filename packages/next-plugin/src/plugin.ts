@@ -15,12 +15,12 @@ import {
   computeFileRoutes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
+  type DevupUIBasePluginOptions,
   loadDevupConfigSync,
   mergeImportAliases,
   planAtomHoist,
   type StaticImportGraph,
 } from '@devup-ui/plugin-utils'
-import type { DevupUIWebpackPluginOptions } from '@devup-ui/webpack-plugin'
 import { type NextConfig } from 'next'
 
 import {
@@ -33,10 +33,11 @@ import { elapsedMs, profileStart, reportProfile } from './profile'
 import { transformStaticVanillaExtract } from './static-vanilla'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
-type DevupUiNextPluginOptions = Omit<
-  Partial<DevupUIWebpackPluginOptions>,
-  'watch'
->
+/** Options accepted by the Next.js integration. */
+export type DevupUINextPluginOptions = Partial<DevupUIBasePluginOptions> & {
+  /** Share atoms reached by at least this many routes. */
+  atomHoist?: number
+}
 
 type TurboRules = NonNullable<NonNullable<NextConfig['turbopack']>['rules']>
 
@@ -133,7 +134,7 @@ export function selectWasmVariant(
  */
 export function DevupUI(
   config: NextConfig,
-  options: DevupUiNextPluginOptions = {},
+  options: DevupUINextPluginOptions = {},
 ): NextConfig {
   const pluginStartedAt = profileStart()
   const isTurbo =
