@@ -1,6 +1,3 @@
-import type { Properties } from 'csstype-extra'
-
-import type { ResponsiveValue } from '../responsive-value'
 import type { DevupCustomShorthands } from '../shorthand'
 import type { Merge } from '../utils'
 import type { DevupUiBackgroundProps } from './background'
@@ -8,6 +5,7 @@ import type { DevupUiBorderProps } from './border'
 import type { DevupUiBoxModelProps } from './box-model'
 import type { DevupUiBoxSizingProps } from './box-sizing'
 import type { DevupUiFlexProps } from './flex'
+import type { DevupCssProperties } from './generated-css-properties'
 import type { DevupUiImageProps } from './image'
 import type { DevupUiMaskProps } from './mask'
 import type { DevupUiMotionPathProps } from './motion-path'
@@ -29,12 +27,7 @@ export interface DevupShortcutsProps
     DevupUiTextProps,
     DevupCustomShorthands {}
 
-export type DevupCommonProps = Merge<
-  {
-    [K in keyof Properties]?: ResponsiveValue<Properties[K]>
-  },
-  DevupShortcutsProps
->
+export type DevupCommonProps = Merge<DevupCssProperties, DevupShortcutsProps>
 
 export interface DevupProps extends DevupCommonProps, DevupSelectorProps {}
 
@@ -47,6 +40,26 @@ export interface DevupComponentProps<
   as?: T
   styleVars?: Record<string, string | undefined>
 }
+
+export type DevupComponentMergedProps<T extends React.ElementType> = Merge<
+  DevupComponentBaseProps<T>,
+  DevupComponentProps<T>
+>
+
+type DevupDefaultIntrinsicPropConflicts =
+  | 'color'
+  | 'content'
+  | 'height'
+  | 'translate'
+  | 'width'
+  | keyof DevupCustomShorthands
+
+export type DevupDefaultComponentMergedProps<
+  T extends keyof React.JSX.IntrinsicElements,
+> = Omit<React.ComponentProps<T>, DevupDefaultIntrinsicPropConflicts> & {
+  props?: FilterChildren<React.ComponentProps<T>>
+} & DevupComponentProps<T>
+
 export type DevupComponentBaseProps<T extends React.ElementType> =
   NoInfer<T> extends string
     ? React.ComponentProps<NoInfer<T>> & {

@@ -1,12 +1,17 @@
 import type {
-  DevupComponentBaseProps,
-  DevupComponentProps,
+  DevupComponentMergedProps,
+  DevupDefaultComponentMergedProps,
 } from '../types/props'
-import type { Merge } from '../types/utils'
 
-export function Center<T extends React.ElementType = 'div'>(
+export function Center(
+  props: DevupDefaultComponentMergedProps<'div'>,
+): React.ReactElement
+export function Center<T extends React.ElementType>(
+  props: DevupComponentMergedProps<T>,
+): React.ReactElement
+export function Center(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  props: Merge<DevupComponentBaseProps<T>, DevupComponentProps<T>>,
+  props: unknown,
 ): React.ReactElement {
   throw new Error('Cannot run on the runtime')
 }

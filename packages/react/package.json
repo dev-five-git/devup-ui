@@ -19,9 +19,10 @@
   "version": "1.0.40",
   "type": "module",
   "scripts": {
+    "generate:css-types": "bun scripts/generate-css-properties.ts",
     "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
     "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build",
-    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
+    "test:types": "bun scripts/generate-css-properties.ts --check && bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
   },
   "publishConfig": {
     "access": "public"
