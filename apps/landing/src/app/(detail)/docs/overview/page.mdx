@@ -129,7 +129,7 @@ const Card = styled('div', {
 
 ### Proven Performance
 
-Latest Next.js cold-build results from [GitHub Actions run 33239265133](https://github.com/dev-five-git/devup-ui/actions/runs/33239265133) on `ubuntu-latest`.
+Latest Next.js cold-build results from [GitHub Actions run 33249090099](https://github.com/dev-five-git/devup-ui/actions/runs/33249090099) on `ubuntu-latest`.
 Devup rows use `@devup-ui/react` 1.0.40 and `@devup-ui/next-plugin` 1.0.83.
 All Next.js builds use the native TypeScript 7 CLI for type checking.
 
@@ -148,56 +148,56 @@ Webpack values are one cold build:
     <TableRow>
       <TableCell>tailwindcss</TableCell>
       <TableCell>4.3.3</TableCell>
-      <TableCell>15.55s</TableCell>
-      <TableCell>66,479,450 bytes</TableCell>
+      <TableCell>17.74s</TableCell>
+      <TableCell>66,470,098 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>styleX</TableCell>
       <TableCell>0.19.0</TableCell>
-      <TableCell>34.27s</TableCell>
-      <TableCell>95,417,163 bytes</TableCell>
+      <TableCell>37.68s</TableCell>
+      <TableCell>95,419,582 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>vanilla-extract</TableCell>
       <TableCell>1.21.2</TableCell>
-      <TableCell>14.91s</TableCell>
-      <TableCell>67,711,539 bytes</TableCell>
+      <TableCell>16.90s</TableCell>
+      <TableCell>67,713,423 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>kuma-ui</TableCell>
       <TableCell>1.6.4</TableCell>
-      <TableCell>16.43s</TableCell>
-      <TableCell>74,774,187 bytes</TableCell>
+      <TableCell>18.58s</TableCell>
+      <TableCell>74,761,594 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>panda-css</TableCell>
       <TableCell>1.12.0</TableCell>
-      <TableCell>16.82s</TableCell>
-      <TableCell>70,983,831 bytes</TableCell>
+      <TableCell>18.17s</TableCell>
+      <TableCell>70,984,390 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>chakra-ui</TableCell>
       <TableCell>3.37.0</TableCell>
-      <TableCell>24.79s</TableCell>
-      <TableCell>206,598,161 bytes</TableCell>
+      <TableCell>26.92s</TableCell>
+      <TableCell>206,604,139 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>mui</TableCell>
       <TableCell>9.4.0</TableCell>
-      <TableCell>17.12s</TableCell>
-      <TableCell>100,621,370 bytes</TableCell>
+      <TableCell>19.06s</TableCell>
+      <TableCell>100,610,289 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>**devup-ui (per-file CSS)**</TableCell>
       <TableCell>**1.0.40**</TableCell>
-      <TableCell>**13.43s**</TableCell>
-      <TableCell>66,577,087 bytes</TableCell>
+      <TableCell>**14.99s**</TableCell>
+      <TableCell>66,555,060 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>**devup-ui (single CSS)**</TableCell>
       <TableCell>**1.0.40**</TableCell>
-      <TableCell>**13.37s**</TableCell>
-      <TableCell>**66,564,796 bytes**</TableCell>
+      <TableCell>**15.00s**</TableCell>
+      <TableCell>**66,544,838 bytes**</TableCell>
     </TableRow>
   </TableBody>
 </Table>
@@ -217,25 +217,25 @@ Turbopack values are medians of six cold builds in alternating order. Build size
     <TableRow>
       <TableCell>tailwindcss</TableCell>
       <TableCell>4.3.3</TableCell>
-      <TableCell>6.55s</TableCell>
-      <TableCell>38,386,955 bytes</TableCell>
+      <TableCell>6.75s</TableCell>
+      <TableCell>38,398,068 bytes</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>**devup-ui (direct APIs, single CSS)**</TableCell>
       <TableCell>**1.0.40**</TableCell>
-      <TableCell>**6.54s**</TableCell>
-      <TableCell>**36,519,234 bytes**</TableCell>
+      <TableCell>**6.72s**</TableCell>
+      <TableCell>**36,493,151 bytes**</TableCell>
     </TableRow>
     <TableRow>
       <TableCell>**devup-ui (static `.css.ts`)**</TableCell>
       <TableCell>**1.0.40**</TableCell>
-      <TableCell>**6.47s**</TableCell>
-      <TableCell>36,550,197 bytes</TableCell>
+      <TableCell>**6.72s**</TableCell>
+      <TableCell>36,561,200 bytes</TableCell>
     </TableRow>
   </TableBody>
 </Table>
 
-The Turbopack ranges overlap, so these results indicate parity on this fixture rather than a universal performance advantage. The static `.css.ts` row uses the `lite` WASM fast path; dynamic `.css.ts` modules use the full Boa evaluator and are not represented by that median.
+The Turbopack ranges overlap, so the direct-API median is 0.03s ahead but still effectively parity with Tailwind on this fixture. The fixtures have comparable app shapes, not pixel-identical styling: Tailwind styles the leading paragraph and button more heavily, while Devup UI exercises typed component/style props. Treat these as build-pipeline results rather than a per-rule microbenchmark. The static `.css.ts` row uses the `lite` WASM fast path; dynamic `.css.ts` modules use the full Boa evaluator and are not represented by that median.
 
 ### Get Started
 

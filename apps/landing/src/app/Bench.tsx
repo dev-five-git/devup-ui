@@ -8,50 +8,50 @@ const OTHER_CARDS = [
   {
     title: 'Chakra UI',
     version: '3.37.0',
-    buildTime: '24.79s',
+    buildTime: '26.92s',
     buildSize: '197.03MB',
     url: 'https://chakra-ui.com',
   },
   {
     title: 'Mui',
     version: '9.4.0',
-    buildTime: '17.12s',
-    buildSize: '95.96MB',
+    buildTime: '19.06s',
+    buildSize: '95.95MB',
     url: 'https://mui.com',
   },
   {
     title: 'Kuma UI',
     version: '1.6.4',
-    buildTime: '16.43s',
-    buildSize: '71.31MB',
+    buildTime: '18.58s',
+    buildSize: '71.30MB',
     url: 'https://kuma-ui.com',
   },
   {
     title: 'Tailwindcss',
     version: '4.3.3',
-    buildTime: '15.55s',
-    buildSize: '63.40MB',
+    buildTime: '17.74s',
+    buildSize: '63.39MB',
     url: 'https://tailwindcss.com',
   },
   {
     title: 'panda CSS',
     version: '1.12.0',
-    buildTime: '16.82s',
+    buildTime: '18.17s',
     buildSize: '67.70MB',
     url: 'https://panda-css.com',
   },
   {
     title: 'styleX',
     version: '0.19.0',
-    buildTime: '34.27s',
+    buildTime: '37.68s',
     buildSize: '91.00MB',
     url: 'https://stylexjs.com',
   },
   {
     title: 'vanilla extract',
     version: '1.21.2',
-    buildTime: '14.91s',
-    buildSize: '64.57MB',
+    buildTime: '16.90s',
+    buildSize: '64.58MB',
     url: 'https://vanilla-extract.style',
   },
 ]
@@ -80,7 +80,7 @@ export function Bench() {
             Comparison Benchmarks
           </Text>
           <Text color="$text" typography="textL">
-            Next.js cold build (GitHub Actions, run 33239265133)
+            Next.js cold build (GitHub Actions, run 33249090099)
           </Text>
         </VStack>
 
