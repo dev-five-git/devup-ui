@@ -29,6 +29,7 @@ import {
 } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
+import { transformStaticVanillaExtract } from './static-vanilla'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 type DevupUiNextPluginOptions = Omit<
@@ -39,9 +40,11 @@ type DevupUiNextPluginOptions = Omit<
 export function selectWasmVariant(
   graph: StaticImportGraph | undefined,
   candidateFiles: string[] = graph?.files ?? [],
+  staticVanillaExtract = false,
 ): 'lite' | 'full' {
   return graph &&
-    !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename))
+    (staticVanillaExtract ||
+      !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename)))
     ? 'lite'
     : 'full'
 }
@@ -78,6 +81,8 @@ export function DevupUI(
     } = options
 
     const importAliases = mergeImportAliases(userImportAliases)
+    const watch = process.env.NODE_ENV === 'development'
+    const sourceMap = watch || config.productionBrowserSourceMaps === true
     const sheetFile = join(distDir, 'sheet.json')
     const classMapFile = join(distDir, 'classMap.json')
     const fileMapFile = join(distDir, 'fileMap.json')
@@ -120,7 +125,31 @@ export function DevupUI(
         })
       : []
     const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
-    const wasmVariant = selectWasmVariant(staticGraph, wasmCandidateFiles)
+    const staticVanillaSources = new Map<
+      string,
+      { code: string; source: string }
+    >()
+    const vanillaCandidates = wasmCandidateFiles.filter((filename) =>
+      /\.css\.(?:ts|js)$/.test(filename),
+    )
+    let staticVanillaExtract =
+      !watch && !sourceMap && vanillaCandidates.length > 0
+    for (const filename of vanillaCandidates) {
+      if (!staticVanillaExtract) break
+      const source = readFileSync(resolve(process.cwd(), filename), 'utf-8')
+      const code = transformStaticVanillaExtract(filename, source, libPackage)
+      if (code === undefined) {
+        staticVanillaExtract = false
+        staticVanillaSources.clear()
+        break
+      }
+      staticVanillaSources.set(filename, { code, source })
+    }
+    const wasmVariant = selectWasmVariant(
+      staticGraph,
+      wasmCandidateFiles,
+      staticVanillaExtract,
+    )
     const wasm = loadWasm(wasmVariant === 'lite')
     const {
       codeExtract,
@@ -190,8 +219,6 @@ export function DevupUI(
     // coordinator shares this WASM instance, so it applies to every /extract.
     const atomMode =
       atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
-    const watch = process.env.NODE_ENV === 'development'
-    const sourceMap = watch || config.productionBrowserSourceMaps === true
     const extract = sourceMap ? codeExtract : codeExtractWithoutSourceMap
     // Hoisted out of the try so the coordinator can receive it for per-bucket
     // completion. Stays `{}` if the best-effort pre-pass fails.
@@ -298,7 +325,9 @@ export function DevupUI(
         ).replaceAll('\\', '/')}`
         const readStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const source = readFileSync(resourcePath, 'utf-8')
+        const preparedVanilla = staticVanillaSources.get(filename)
+        const source =
+          preparedVanilla?.source ?? readFileSync(resourcePath, 'utf-8')
         if (readStartedAt !== undefined) {
           prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
@@ -308,7 +337,7 @@ export function DevupUI(
         const output = takeExtractOutput(
           extract(
             filename,
-            source,
+            preparedVanilla?.code ?? source,
             libPackage,
             relCssDir,
             singleCss,
@@ -388,6 +417,7 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
+      staticVanillaExtract,
     })
 
     // Cleanup on exit

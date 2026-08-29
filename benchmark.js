@@ -105,8 +105,8 @@ record('devup-ui-collapse')
 
 // A single fixed-order result on a shared CI runner is too noisy for direct
 // comparisons. Run six cold samples in a repeated Latin-square order so each
-// target occupies each position twice, then report their medians. The full
-// Devup target contains `.css.ts`; the single target exercises the lite WASM.
+// target occupies each position twice, then report their medians. The vanilla
+// target contains a static `.css.ts` module; the single target uses Devup APIs.
 const turboTargets = [
   'tailwind-turbo',
   'devup-ui-single-turbo',

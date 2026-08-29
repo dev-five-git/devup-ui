@@ -53,6 +53,18 @@ function createCodeExtractResult(contents: string): CodeExtractResult {
   } as unknown as CodeExtractResult
 }
 
+function createSingleFileGraph(filename: string): StaticImportGraph {
+  return {
+    files: [filename],
+    fileSet: new Set([filename]),
+    staticImports: new Map([[filename, new Set<string>()]]),
+    staticImporters: new Map([[filename, new Set<string>()]]),
+    dynamicTargets: new Set(),
+    dynamicImports: new Map([[filename, new Set<string>()]]),
+    externalImports: new Map([[filename, new Set<string>()]]),
+  }
+}
+
 let existsSyncSpy: ReturnType<typeof spyOn>
 let mkdirSyncSpy: ReturnType<typeof spyOn>
 let readFileSyncSpy: ReturnType<typeof spyOn>
@@ -174,6 +186,13 @@ describe('DevupUINextPlugin', () => {
     expect(
       selectWasmVariant({ files: ['src/theme.css.js'] } as StaticImportGraph),
     ).toBe('full')
+    expect(
+      selectWasmVariant(
+        { files: ['src/theme.css.ts'] } as StaticImportGraph,
+        ['src/theme.css.ts'],
+        true,
+      ),
+    ).toBe('lite')
     expect(
       selectWasmVariant({ files: ['src/page.tsx'] } as StaticImportGraph, [
         'node_modules/design-system/theme.css.ts',
@@ -542,7 +561,88 @@ describe('DevupUINextPlugin', () => {
         prewarmedFiles: expect.any(Array),
         prewarmedOutputs: expect.any(Map),
         sourceMap: false,
+        staticVanillaExtract: false,
       })
+    })
+    it('uses the lite extractor for a provably static vanilla style module', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/styles.css.ts')
+      const source = `import { style } from '@vanilla-extract/css'
+export const box = style({ color: 'red' })`
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/styles.css.ts'])
+      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
+        String(path).endsWith('styles.css.ts') ? source : '{}',
+      )
+
+      try {
+        DevupUI({})
+
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+          'src/styles.css.ts',
+          `import { css } from '@devup-ui/react'
+export const box = css({ color: 'red' })`,
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ staticVanillaExtract: true }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
+    })
+    it('keeps the full extractor for dynamic vanilla style modules', () => {
+      setNodeEnv('production')
+      process.env.TURBOPACK = '1'
+      const filename = resolve('src/styles.css.ts')
+      const source = `import { style } from '@vanilla-extract/css'
+const color = getColor()
+export const box = style({ color })`
+      const graphSpy = spyOn(
+        importGraphModule,
+        'buildStaticImportGraph',
+      ).mockReturnValue(createSingleFileGraph(filename))
+      const compiledSpy = spyOn(
+        importGraphModule,
+        'computeCompiledFiles',
+      ).mockReturnValue(['src/styles.css.ts'])
+      readFileSyncSpy.mockImplementation((path: fs.PathOrFileDescriptor) =>
+        String(path).endsWith('styles.css.ts') ? source : '{}',
+      )
+
+      try {
+        DevupUI({})
+
+        expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+          'src/styles.css.ts',
+          source,
+          '@devup-ui/react',
+          expect.any(String),
+          false,
+          false,
+          true,
+          expect.anything(),
+        )
+        expect(startCoordinatorSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ staticVanillaExtract: false }),
+        )
+      } finally {
+        graphSpy.mockRestore()
+        compiledSpy.mockRestore()
+      }
     })
     it('keeps source maps when Next production browser source maps are enabled', () => {
       setNodeEnv('production')
@@ -744,6 +844,7 @@ describe('DevupUINextPlugin', () => {
         prewarmedFiles: [],
         prewarmedOutputs: expect.any(Map),
         sourceMap: true,
+        staticVanillaExtract: false,
       })
       expect(codeExtractSpy).not.toHaveBeenCalled()
       expect(codeExtractWithoutSourceMapSpy).not.toHaveBeenCalled()

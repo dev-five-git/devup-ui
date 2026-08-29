@@ -215,6 +215,53 @@ describe('coordinator', () => {
     coordinator.close()
   })
 
+  it('uses the static vanilla transform on a production cache miss', async () => {
+    const source = `import { style } from '@vanilla-extract/css'
+export const box = style({ color: 'red' })`
+    const extractOutput = {
+      code: 'transformed code',
+      map: undefined,
+      cssFile: undefined,
+      updatedBaseStyle: false,
+      free: mock(),
+      [Symbol.dispose]: mock(),
+    }
+    codeExtractWithoutSourceMapSpy.mockReturnValue(extractOutput)
+    const coordinator = startCoordinator(
+      makeOptions({ sourceMap: false, staticVanillaExtract: true }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const port = parseInt(
+      (writeFileSyncSpy.mock.calls[0] as [string, string])[1],
+    )
+
+    const res = await httpRequest(
+      port,
+      'POST',
+      '/extract',
+      JSON.stringify({
+        filename: 'src/styles.css.ts',
+        code: source,
+        resourcePath: join(process.cwd(), 'src', 'styles.css.ts'),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(codeExtractWithoutSourceMapSpy).toHaveBeenCalledWith(
+      'src/styles.css.ts',
+      `import { css } from '@devup-ui/react'
+export const box = css({ color: 'red' })`,
+      '@devup-ui/react',
+      './../.tmp-coordinator-test/css',
+      false,
+      false,
+      true,
+      {},
+    )
+    expect(extractOutput.free).toHaveBeenCalledTimes(1)
+    coordinator.close()
+  })
+
   it('reuses byte-identical singleCss prewarm output', async () => {
     const source = 'const x = <Box bg="red" />'
     const options = makeOptions({
