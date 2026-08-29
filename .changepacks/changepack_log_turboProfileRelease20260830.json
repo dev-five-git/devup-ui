@@ -1,0 +1,17 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/bun-plugin/package.json": "Patch",
+    "packages/components/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch",
+    "packages/next-plugin/package.json": "Patch",
+    "packages/plugin-utils/package.json": "Patch",
+    "packages/react/package.json": "Patch",
+    "packages/reset-css/package.json": "Patch",
+    "packages/rsbuild-plugin/package.json": "Patch",
+    "packages/vite-plugin/package.json": "Patch",
+    "packages/webpack-plugin/package.json": "Patch"
+  },
+  "note": "Improve Turbopack build performance with lite WASM prewarming, align React 19 behavior, and update package toolchains",
+  "date": "2026-08-29T16:26:58.980Z"
+}
