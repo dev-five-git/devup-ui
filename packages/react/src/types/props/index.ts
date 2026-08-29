@@ -46,6 +46,9 @@ export type DevupComponentMergedProps<T extends React.ElementType> = Merge<
   DevupComponentProps<T>
 >
 
+export type DevupPolymorphicComponentMergedProps<T extends React.ElementType> =
+  DevupComponentMergedProps<T> & { as: T }
+
 type DevupDefaultIntrinsicPropConflicts =
   | 'color'
   | 'content'
@@ -54,6 +57,8 @@ type DevupDefaultIntrinsicPropConflicts =
   | 'width'
   | keyof DevupCustomShorthands
 
+// Component declarations put this overload first for fast resolution and last
+// so Parameters<typeof Component> keeps describing the default element.
 export type DevupDefaultComponentMergedProps<
   T extends keyof React.JSX.IntrinsicElements,
 > = Omit<React.ComponentProps<T>, DevupDefaultIntrinsicPropConflicts> & {

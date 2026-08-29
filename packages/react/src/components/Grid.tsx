@@ -1,13 +1,16 @@
 import type {
-  DevupComponentMergedProps,
   DevupDefaultComponentMergedProps,
+  DevupPolymorphicComponentMergedProps,
 } from '../types/props'
 
 export function Grid(
   props: DevupDefaultComponentMergedProps<'div'>,
 ): React.ReactElement
 export function Grid<T extends React.ElementType>(
-  props: DevupComponentMergedProps<T>,
+  props: DevupPolymorphicComponentMergedProps<T>,
+): React.ReactElement
+export function Grid(
+  props: DevupDefaultComponentMergedProps<'div'>,
 ): React.ReactElement
 export function Grid(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

@@ -55,9 +55,20 @@ Box({
 })
 
 Box({ props: { id: 'box' } })
+Box({
+  onClick(event) {
+    return event.currentTarget.dataset
+  },
+  ref(element) {
+    if (element) void element.dataset
+  },
+})
 
 // @ts-expect-error polymorphic element props require the matching `as`
 Box({ href: '/docs' })
+
+// @ts-expect-error a type argument alone cannot change the rendered element
+Box<'a'>({ href: '/docs' })
 
 // @ts-expect-error href is not a button prop
 Box({ as: 'button', href: '/docs' })

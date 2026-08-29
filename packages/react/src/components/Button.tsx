@@ -1,13 +1,16 @@
 import type {
-  DevupComponentMergedProps,
   DevupDefaultComponentMergedProps,
+  DevupPolymorphicComponentMergedProps,
 } from '../types/props'
 
 export function Button(
   props: DevupDefaultComponentMergedProps<'button'>,
 ): React.ReactElement
 export function Button<T extends React.ElementType>(
-  props: DevupComponentMergedProps<T>,
+  props: DevupPolymorphicComponentMergedProps<T>,
+): React.ReactElement
+export function Button(
+  props: DevupDefaultComponentMergedProps<'button'>,
 ): React.ReactElement
 export function Button(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

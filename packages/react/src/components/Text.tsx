@@ -1,13 +1,16 @@
 import type {
-  DevupComponentMergedProps,
   DevupDefaultComponentMergedProps,
+  DevupPolymorphicComponentMergedProps,
 } from '../types/props'
 
 export function Text(
   props: DevupDefaultComponentMergedProps<'span'>,
 ): React.ReactElement
 export function Text<T extends React.ElementType>(
-  props: DevupComponentMergedProps<T>,
+  props: DevupPolymorphicComponentMergedProps<T>,
+): React.ReactElement
+export function Text(
+  props: DevupDefaultComponentMergedProps<'span'>,
 ): React.ReactElement
 export function Text(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
