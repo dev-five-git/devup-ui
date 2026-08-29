@@ -114,7 +114,9 @@ test.describe('Components Pages', () => {
       await page.goto('/')
       await waitForFontsReady(page)
 
-      await expect(page.getByText('Comparison Benchmarks').first()).toBeVisible()
+      await expect(
+        page.getByText('Comparison Benchmarks').first(),
+      ).toBeVisible()
       await context.close()
     })
 
