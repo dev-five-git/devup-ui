@@ -77,15 +77,10 @@ export function Bench() {
           wordBreak="keep-all"
         >
           <Text as="h2" color="$title" m="0" typography="h4">
-            Comparison Benchmarks
+            Comparison Bechmarks
           </Text>
           <Text color="$text" typography="textL">
-            Next.js cold build on GitHub Actions (ubuntu-latest, run
-            33239265133). Devup React 1.0.40 / Next plugin 1.0.83.
-          </Text>
-          <Text color="$caption" typography="textS">
-            Cards show one Webpack build. Turbopack six-run median: Devup static
-            .css.ts 6.47s, Devup direct APIs 6.54s, and Tailwind 6.55s.
+            Next.js cold build (GitHub Actions, run 33239265133)
           </Text>
         </VStack>
 

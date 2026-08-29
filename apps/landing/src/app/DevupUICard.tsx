@@ -36,7 +36,7 @@ export function DevupUICard() {
       <VStack alignItems="flex-end" gap="20px">
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Next.js Build Time (single CSS)
+            Next.js Build Time
           </Text>
           <Flex gap="10px">
             <Box
@@ -59,7 +59,7 @@ export function DevupUICard() {
         </VStack>
         <VStack alignItems="flex-end" gap="6px" justifyContent="center">
           <Text color="$text" typography="textSbold">
-            Build Size
+            Bulid Size
           </Text>
           <Flex gap="10px">
             <Box
