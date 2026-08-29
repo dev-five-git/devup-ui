@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_css_properties() {
-        let css: HashSet<String> = HashSet::from_iter(
+        let css: HashSet<String> = HashSet::from(
             [
                 "accent-color",
                 "align-content",
