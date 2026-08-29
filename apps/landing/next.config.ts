@@ -5,6 +5,7 @@ import type { NextConfig } from 'next'
 import { STATIC_EXPORT_DEPLOYMENT_ID } from './src/utils/static-export-rsc-transport'
 
 const baseConfig: NextConfig = {
+  experimental: { useTypeScriptCli: true },
   output: 'export',
   pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
   reactCompiler: true,

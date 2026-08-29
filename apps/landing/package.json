@@ -42,7 +42,7 @@
     "@vitejs/plugin-react": "^6.1",
     "@vitejs/plugin-rsc": "^0.5.34",
     "babel-plugin-react-compiler": "^1.0",
-    "typescript": "^7",
+    "typescript": "^7.0.2",
     "vite": "^8.2"
   }
 }

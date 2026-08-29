@@ -44,7 +44,7 @@
     "@devup-ui/wasm": "workspace:^"
   },
   "devDependencies": {
-    "typescript": "^7.0"
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*",

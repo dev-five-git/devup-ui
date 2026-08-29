@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^7.0"
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "@devup-ui/wasm": "*"

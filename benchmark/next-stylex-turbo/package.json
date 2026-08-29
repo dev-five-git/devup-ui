@@ -23,6 +23,6 @@
     "@types/react-dom": "^19.2",
     "postcss": "^8.5",
     "rimraf": "^6.1",
-    "typescript": "^7.0"
+    "typescript": "^7.0.2"
   }
 }

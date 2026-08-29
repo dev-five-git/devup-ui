@@ -33,6 +33,6 @@
     "react-test-renderer": "^19.2",
     "rimraf": "^6.1",
     "ts_dependency_graph": "^2.1",
-    "typescript": "7.0"
+    "typescript": "^7.0.2"
   }
 }

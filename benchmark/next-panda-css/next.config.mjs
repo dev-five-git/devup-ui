@@ -1,3 +1,3 @@
-const nextConfig = {/* config options here */}
+const nextConfig = { experimental: { useTypeScriptCli: true } }
 
 export default nextConfig
