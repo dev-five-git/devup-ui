@@ -7,6 +7,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
 import * as wasm from '@devup-ui/wasm'
 import * as webpackPlugin from '@devup-ui/webpack-plugin'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
@@ -70,7 +71,10 @@ describe('WASM selection', () => {
       join(wasmDir, 'package.json'),
       JSON.stringify({ name: '@devup-ui/wasm', main: 'index.cjs' }),
     )
-    writeFileSync(join(wasmDir, 'index.cjs'), 'module.exports = { isolated: true }')
+    writeFileSync(
+      join(wasmDir, 'index.cjs'),
+      'module.exports = { isolated: true }',
+    )
     symlinkSync(
       pluginDir,
       join(rootScope, 'next-plugin'),
