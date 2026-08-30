@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/vite-plugin/package.json": "Patch"
-  },
-  "note": "Avoid re-emitting identical Devup CSS chunks across Vite environment builds",
-  "date": "2026-08-30T10:18:56.558349Z"
-}
