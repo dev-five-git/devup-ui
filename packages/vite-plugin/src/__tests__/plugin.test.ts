@@ -43,6 +43,7 @@ interface ViteConfig {
 
 interface ViteTestPlugin {
   name: string
+  sharedDuringBuild: true
   enforce: 'pre'
   apply: () => boolean
   config: (
@@ -66,10 +67,38 @@ interface ViteTestPlugin {
     timestamp: number
   }) => Promise<unknown[] | undefined>
   load: (id: string) => string | undefined
-  transform: (code: string, id: string) => Promise<{ code: string } | undefined>
+  transform: (
+    this: {
+      environment?: {
+        name: string
+        config: {
+          consumer: 'client' | 'server'
+          build?: { write?: boolean }
+        }
+      }
+    },
+    code: string,
+    id: string,
+  ) => Promise<{ code: string } | undefined>
   generateBundle: (
+    this: {
+      environment?: {
+        name: string
+        config: {
+          consumer: 'client' | 'server'
+          build?: { write?: boolean }
+        }
+      }
+    },
     options: object,
-    bundle: Record<string, { source: string; name: string }>,
+    bundle: Record<
+      string,
+      {
+        source?: string
+        name: string
+        viteMetadata?: { importedCss?: Set<string> }
+      }
+    >,
   ) => Promise<void>
   resolveId: (source: string, importer?: string) => string | undefined
 }
@@ -174,6 +203,7 @@ describe('devupUIVitePlugin', () => {
     const plugin = createPlugin({})
     expect(plugin).toEqual({
       name: 'devup-ui',
+      sharedDuringBuild: true,
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
@@ -570,6 +600,117 @@ describe('devupUIVitePlugin', () => {
       await plugin.generateBundle({}, bundle)
 
       expect(bundle['base.css'].source).toEqual('final complete sheet')
+    })
+
+    it('does not forward server css that the client already emits', async () => {
+      const plugin = createPlugin({})
+      getCssSpy.mockImplementation((fileNum: number | null) =>
+        fileNum === null ? 'base sheet' : 'file sheet',
+      )
+      const serverBundle = {
+        'base.css': { source: 'stale', name: 'devup-ui.css' },
+        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
+        'entry.js': {
+          name: 'entry',
+          viteMetadata: {
+            importedCss: new Set(['base.css', 'file.css', 'server-only.css']),
+          },
+        },
+      }
+      const clientBundle = {
+        'base.css': { source: 'stale', name: 'devup-ui.css' },
+        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
+      }
+
+      await plugin.generateBundle.call(
+        { environment: { name: 'rsc', config: { consumer: 'server' } } },
+        {},
+        serverBundle,
+      )
+      await plugin.generateBundle.call(
+        { environment: { name: 'client', config: { consumer: 'client' } } },
+        {},
+        clientBundle,
+      )
+
+      expect(serverBundle['base.css'].source).toEqual('base sheet')
+      expect(serverBundle['file.css'].source).toEqual('file sheet')
+      expect(clientBundle['base.css'].source).toEqual('base sheet')
+      expect(clientBundle['file.css'].source).toEqual('file sheet')
+      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
+        new Set(['server-only.css']),
+      )
+    })
+
+    it('ignores no-write analysis bundles when tracking server css', async () => {
+      const plugin = createPlugin({})
+      const serverBundle = {
+        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
+        'entry.js': {
+          name: 'entry',
+          viteMetadata: { importedCss: new Set(['file.css']) },
+        },
+      }
+      await plugin.generateBundle.call(
+        {
+          environment: {
+            name: 'rsc',
+            config: { consumer: 'server', build: { write: false } },
+          },
+        },
+        {},
+        serverBundle,
+      )
+      const clientBundle = {
+        'file.css': { source: 'stale', name: 'devup-ui-3.css' },
+      }
+
+      await plugin.generateBundle.call(
+        { environment: { name: 'client', config: { consumer: 'client' } } },
+        {},
+        clientBundle,
+      )
+
+      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
+        new Set(['file.css']),
+      )
+    })
+
+    it('keeps server forwarding for a different output file name', async () => {
+      const plugin = createPlugin({})
+      const serverBundle = {
+        'devup-ui-3.server.css': {
+          source: 'stale',
+          name: 'devup-ui-3.css',
+        },
+        'entry.js': {
+          name: 'entry',
+          viteMetadata: {
+            importedCss: new Set(['devup-ui-3.server.css']),
+          },
+        },
+      }
+      await plugin.generateBundle.call(
+        { environment: { name: 'rsc', config: { consumer: 'server' } } },
+        {},
+        serverBundle,
+      )
+      const clientBundle = {
+        'devup-ui-3.client.css': {
+          source: 'stale',
+          name: 'devup-ui-3.css',
+        },
+      }
+
+      await plugin.generateBundle.call(
+        { environment: { name: 'client', config: { consumer: 'client' } } },
+        {},
+        clientBundle,
+      )
+
+      expect(serverBundle['entry.js'].viteMetadata.importedCss).toEqual(
+        new Set(['devup-ui-3.server.css']),
+      )
     })
 
     it('resolves a stable id during build', async () => {

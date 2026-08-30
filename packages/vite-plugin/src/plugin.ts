@@ -113,6 +113,12 @@ interface ConfigHookMeta {
   rolldownVersion?: string
 }
 
+interface ViteOutputWithMetadata {
+  viteMetadata?: {
+    importedCss?: Set<string>
+  }
+}
+
 /**
  * Vite merges a plugin's `config()` result over the user's, replacing function
  * values outright, so returning a bare `manualChunks` silently drops one the
@@ -262,9 +268,14 @@ export function DevupUI({
   }
   const importAliases = mergeImportAliases(userImportAliases)
   const cssMap = new Map()
+  let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
   let isServe = false
   return {
     name: 'devup-ui',
+    // The WASM sheet and transform state are intentionally shared. Vite
+    // otherwise recreates this plugin for every environment build, which makes
+    // each environment independently emit the same CSS asset.
+    sharedDuringBuild: true,
     async configResolved(config) {
       isServe = config?.command === 'serve'
       const projectRoot = config?.root ?? process.cwd()
@@ -455,7 +466,7 @@ export function DevupUI({
       if (!rel.startsWith('./')) rel = `./${rel}`
 
       const {
-        code: retCode,
+        code: extractedCode,
         css = '',
         map,
         cssFile,
@@ -494,12 +505,14 @@ export function DevupUI({
       }
       await Promise.all(promises)
       return {
-        code: retCode,
+        code: extractedCode,
         map,
       }
     },
     async generateBundle(_options, bundle) {
       if (!extractCss) return
+      const writesOutput = this.environment?.config.build?.write !== false
+      const cssFiles = new Set<string>()
 
       // `load` can only snapshot the sheet as it stood when the module was
       // pulled in, and module order varies per build, so the emitted asset was
@@ -512,7 +525,29 @@ export function DevupUI({
         const cssName = getDevupCssChunkName(asset.name)
         if (!cssName) continue
         if (!('source' in asset)) continue
-        asset.source = getCss(getFileNumByFilename(cssName), false)
+        const source = getCss(getFileNumByFilename(cssName), false)
+        asset.source = source
+        cssFiles.add(file)
+      }
+
+      const environment = this.environment
+      if (!environment || !writesOutput) return
+      if (environment.config.consumer === 'client' && serverBundleToForward) {
+        // @vitejs/plugin-rsc forwards every CSS file referenced by the RSC
+        // bundle into the client bundle. Files the client already emitted are
+        // registered twice and trigger FILE_NAME_CONFLICT. Keep both bundles'
+        // imports and client metadata intact, but remove overlaps from the RSC
+        // forwarding set before its later generateBundle hook reads it.
+        for (const output of Object.values(serverBundleToForward)) {
+          for (const file of cssFiles) {
+            output.viteMetadata?.importedCss?.delete(file)
+          }
+        }
+      } else if (environment.config.consumer === 'server') {
+        serverBundleToForward = bundle as unknown as Record<
+          string,
+          ViteOutputWithMetadata
+        >
       }
     },
   }
