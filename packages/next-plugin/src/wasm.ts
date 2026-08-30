@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
@@ -11,7 +11,8 @@ let fullWasm: DevupWasm | undefined
 let liteWasm: DevupWasm | undefined
 let webpackPlugin: DevupWebpackPlugin | undefined
 
-function requireFromPlugin<T>(specifier: string): T {
+/** @internal Resolve dependencies from the plugin's physical install location. */
+export function requireFromPlugin<T>(specifier: string): T {
   const installedPackage = join(
     process.cwd(),
     'node_modules/@devup-ui/next-plugin/package.json',
@@ -25,7 +26,7 @@ function requireFromPlugin<T>(specifier: string): T {
     : existsSync(workspacePackage)
       ? workspacePackage
       : join(process.cwd(), 'package.json')
-  return createRequire(requireBase)(specifier) as T
+  return createRequire(realpathSync(requireBase))(specifier) as T
 }
 
 type WasmLoader = (specifier: string) => DevupWasm

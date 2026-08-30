@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/next-plugin/package.json": "Patch"
+  },
+  "note": "Resolve WASM from the plugin's physical install location in Bun isolated installs",
+  "date": "2026-08-30T03:43:34.977Z"
+}
