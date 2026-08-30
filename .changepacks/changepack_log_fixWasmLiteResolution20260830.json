@@ -3,5 +3,5 @@
     "packages/next-plugin/package.json": "Patch"
   },
   "note": "Fall back to the full WASM engine when an installed @devup-ui/wasm package does not expose the lite entry point",
-  "date": "2026-08-30T00:00:00.000Z"
+  "date": "2026-08-29T18:49:53.133Z"
 }
