@@ -68,6 +68,36 @@ test.describe('Landing Page - Header & Navigation', () => {
       const logoLink = page.locator('a[href="/"]').first()
       await expect(logoLink).toHaveAttribute('href', '/')
     })
+
+    test('logo uses the approved wordmark in both themes', async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto('/')
+      await page.waitForLoadState('networkidle')
+
+      const logoLink = page.locator('a[href="/"]').first()
+      const wordmark = logoLink.locator('svg[viewBox="0 0 121 28"]')
+      await expect(wordmark).toBeVisible()
+      await expect(wordmark.locator('path')).toHaveCount(7)
+
+      const logoBox = await logoLink.boundingBox()
+      const wordmarkBox = await wordmark.boundingBox()
+      expect(logoBox && [logoBox.width, logoBox.height]).toEqual([175, 42])
+      expect(wordmarkBox && [wordmarkBox.width, wordmarkBox.height]).toEqual([
+        121, 28,
+      ])
+
+      const lightColor = await wordmark.evaluate((element) => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        return getComputedStyle(element).color
+      })
+      expect(lightColor).toBe('rgb(47, 47, 47)')
+
+      await page.evaluate(() =>
+        document.documentElement.setAttribute('data-theme', 'dark'),
+      )
+      await waitForStyleSettle(page)
+      await expect(wordmark).toHaveCSS('color', 'rgb(237, 237, 237)')
+    })
   })
 
   test.describe('External links', () => {
