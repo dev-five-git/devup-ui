@@ -246,23 +246,28 @@ export const DevupUI = ({
         async ({ code, resourcePath }) => {
           if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
-          // Atom mode mirrors vite: the entry CODE imports the shared base
-          // (import_main_css_in_code=true) so rspack emits devup-ui.css once and
-          // links it from every entry (hoisted atoms shared, not inlined). A
-          // relative cssDir is required for that code import to resolve, and the
-          // extraction filename is POSIX-normalized to match the absolute-keyed
-          // canonical map / FILE_ROUTES. Non-atom keeps the prior behavior.
-          let extractCssDir = cssDir
-          let extractName = resourcePath
-          if (atomMode) {
-            let relCssDir = relative(dirname(resourcePath), cssDir).replaceAll(
-              '\\',
-              '/',
-            )
-            if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
-            extractCssDir = relCssDir
-            extractName = resourcePath.replaceAll('\\', '/')
-          }
+          // The stylesheet import is emitted relative to the importing file, as
+          // in the next/webpack/vite loaders. An absolute cssDir would bake this
+          // checkout's path into the emitted module, so byte-identical sources
+          // in two checkouts (git worktrees, a CI matrix, sibling clones) would
+          // produce different output and any content-addressed or relocated
+          // build cache would serve the wrong checkout's stylesheet.
+          //
+          // Atom mode additionally mirrors vite: the entry CODE imports the
+          // shared base (import_main_css_in_code=true) so rspack emits
+          // devup-ui.css once and links it from every entry (hoisted atoms
+          // shared, not inlined), and the extraction filename is
+          // POSIX-normalized to match the absolute-keyed canonical map /
+          // FILE_ROUTES.
+          let extractCssDir = relative(
+            dirname(resourcePath),
+            cssDir,
+          ).replaceAll('\\', '/')
+          if (!extractCssDir.startsWith('./'))
+            extractCssDir = `./${extractCssDir}`
+          const extractName = atomMode
+            ? resourcePath.replaceAll('\\', '/')
+            : resourcePath
           const {
             code: retCode,
             css = '',
