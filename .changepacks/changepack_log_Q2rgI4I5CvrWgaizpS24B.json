@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/rsbuild-plugin/package.json": "Patch"
-  },
-  "note": "Emit the extracted stylesheet import relative to the importing file instead of an absolute path",
-  "date": "2026-09-09T02:33:46.141063900Z"
-}
