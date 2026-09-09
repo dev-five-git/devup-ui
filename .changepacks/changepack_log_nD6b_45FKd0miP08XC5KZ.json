@@ -1,7 +1,0 @@
-{
-  "changes": {
-    "packages/bun-plugin/package.json": "Patch"
-  },
-  "note": "Resolve the extracted stylesheet to a virtual id so parallel checkouts stop importing each other's CSS",
-  "date": "2026-09-09T02:33:25.632377900Z"
-}
