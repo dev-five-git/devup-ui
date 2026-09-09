@@ -469,11 +469,11 @@
     },
     "bindings/devup-ui-wasm": {
       "name": "@devup-ui/wasm",
-      "version": "1.0.78",
+      "version": "1.0.79",
     },
     "packages/bun-plugin": {
       "name": "@devup-ui/bun-plugin",
-      "version": "1.0.15",
+      "version": "1.0.16",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -488,7 +488,7 @@
     },
     "packages/components": {
       "name": "@devup-ui/components",
-      "version": "0.1.53",
+      "version": "0.1.55",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
         "clsx": "^2.1",
@@ -515,7 +515,7 @@
     },
     "packages/eslint-plugin": {
       "name": "@devup-ui/eslint-plugin",
-      "version": "1.0.18",
+      "version": "1.0.19",
       "dependencies": {
         "@typescript-eslint/utils": "^8.68",
         "typescript-eslint": "^8.68",
@@ -532,7 +532,7 @@
     },
     "packages/next-plugin": {
       "name": "@devup-ui/next-plugin",
-      "version": "1.0.83",
+      "version": "1.0.86",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -550,14 +550,14 @@
     },
     "packages/plugin-utils": {
       "name": "@devup-ui/plugin-utils",
-      "version": "1.0.13",
+      "version": "1.0.14",
       "devDependencies": {
         "typescript": "^7.0.2",
       },
     },
     "packages/react": {
       "name": "@devup-ui/react",
-      "version": "1.0.40",
+      "version": "1.0.41",
       "dependencies": {
         "csstype-extra": "latest",
         "react": "^19.2",
@@ -578,7 +578,7 @@
     },
     "packages/reset-css": {
       "name": "@devup-ui/reset-css",
-      "version": "1.0.27",
+      "version": "1.0.28",
       "dependencies": {
         "@devup-ui/react": "workspace:^",
       },
@@ -591,7 +591,7 @@
     },
     "packages/rsbuild-plugin": {
       "name": "@devup-ui/rsbuild-plugin",
-      "version": "1.0.61",
+      "version": "1.0.62",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -607,7 +607,7 @@
     },
     "packages/vite-plugin": {
       "name": "@devup-ui/vite-plugin",
-      "version": "1.0.67",
+      "version": "1.0.69",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",
@@ -622,7 +622,7 @@
     },
     "packages/webpack-plugin": {
       "name": "@devup-ui/webpack-plugin",
-      "version": "1.0.66",
+      "version": "1.0.67",
       "dependencies": {
         "@devup-ui/plugin-utils": "workspace:^",
         "@devup-ui/wasm": "workspace:^",

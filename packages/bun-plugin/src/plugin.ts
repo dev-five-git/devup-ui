@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 
 import {
   createThemeInterfaceArgs,
@@ -18,10 +18,12 @@ import {
 } from '@devup-ui/wasm'
 import { plugin } from 'bun'
 
+import { cssDirName, cssNamespace, resolveCssId } from './css-id'
+
 const libPackage = '@devup-ui/react'
 const devupFile = 'devup.json'
 const distDir = 'df'
-const cssDir = resolve(distDir, 'devup-ui')
+const cssDir = resolve(distDir, cssDirName)
 const singleCss = true
 const importAliases = mergeImportAliases()
 
@@ -58,17 +60,12 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   await writeDataFiles()
 }
 
-function resolveCssPath(path: string, importer?: string) {
-  const fileName = basename(path).split('?')[0]
-  const resolvedPath = importer
-    ? resolve(dirname(importer), path)
-    : resolve(path)
-  const expectedPath = resolve(join(cssDir, fileName))
-
-  if (!relative(resolvedPath, expectedPath) || path.startsWith(cssDir)) {
-    return { path: join(cssDir, fileName) }
-  }
-  return undefined
+// Devup UI is a preprocessor: the stylesheet is a build artifact consumed by a
+// bundler, and Bun's runtime has no CSS loader (`onLoad` only accepts the
+// script/data loaders). The injected import exists so bundlers pick the
+// stylesheet up, so under the Bun runtime it resolves to an empty module.
+function loadCssModule() {
+  return { contents: '', loader: 'js' as const }
 }
 
 async function loadSourceFile(filePath: string) {
@@ -112,10 +109,17 @@ function register(options: DevupUIBunPluginOptions = {}) {
       await initialize(options)
       setDebug(true)
 
-      // Resolve devup-ui CSS files
+      // Resolve devup-ui CSS files onto a path-free virtual id, so nothing
+      // derived from this checkout's cwd can be baked into Bun's shared,
+      // content-keyed transpiler cache. See ./css-id.
       build.onResolve(
         { filter: /devup-ui(-\d+)?\.css$/ },
-        ({ path, importer }) => resolveCssPath(path, importer),
+        ({ path, importer }) => resolveCssId(path, importer, distDir),
+      )
+
+      // Serve the virtual stylesheet resolved above
+      build.onLoad({ filter: /.*/, namespace: cssNamespace }, () =>
+        loadCssModule(),
       )
 
       // Load source files from packages directory (file namespace)
