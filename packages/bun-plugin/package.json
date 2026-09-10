@@ -22,7 +22,7 @@
   "scripts": {
     "lint": "eslint",
     "build": "bun ../../node_modules/@typescript/native/bin/tsc && bun build --target node src/index.cjs.ts --production --env=disable --outfile dist/index.cjs --format cjs --packages external && bun build --target node src/index.ts --production --env=disable --outfile dist/index.mjs --format esm --packages external && bun build --target node src/register.ts --production --env=disable --outfile dist/register.cjs --format cjs --packages external && bun build --target node src/register.ts --production --env=disable --outfile dist/register.mjs --format esm --packages external",
-    "test:regression": "cd __regression__ && bun test ./preload-race.bun.ts ./worktree-isolation.bun.ts"
+    "test:regression": "cd __regression__ && bun test ./preload-race.bun.ts ./worktree-isolation.bun.ts ./css-emit.bun.ts"
   },
   "publishConfig": {
     "access": "public"
