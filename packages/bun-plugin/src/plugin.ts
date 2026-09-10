@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
@@ -10,6 +10,7 @@ import {
 } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
+  getCss,
   getThemeInterface,
   hasDevupUI,
   registerShorthands,
@@ -51,6 +52,7 @@ async function writeDataFiles() {
   if (!existsSync(cssDir)) {
     await mkdir(cssDir, { recursive: true })
   }
+  await writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
 }
 
 async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
@@ -89,6 +91,10 @@ async function loadSourceFile(filePath: string) {
       false,
       importAliases,
     )
+    // singleCss stores every extracted style in the base sheet. Finish the
+    // write before returning the injected import; synchronous writes also keep
+    // concurrent source loads from overwriting a newer sheet with an older one.
+    writeFileSync(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8')
     return { contents: code.code, loader }
   }
   return { contents, loader }
