@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/bun-plugin/package.json": "Patch"
+  },
+  "note": "Emit the initial theme and extracted CSS stylesheet when running Bun in a clean checkout",
+  "date": "2026-09-10T08:00:00.000Z"
+}
