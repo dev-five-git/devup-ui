@@ -8,7 +8,7 @@ import type {
   DevupDefaultComponentMergedProps,
   DevupElementTypeProps,
 } from '../src/types/props'
-import type { DevupCssProperties } from '../src/types/props/generated-css-properties'
+import type { DevupCssProperties } from '../src/types/props/css-properties'
 import type { ResponsiveValue } from '../src/types/responsive-value'
 
 // Mirrors the module augmentation emitted to <distDir>/theme.d.ts.
@@ -55,6 +55,14 @@ Box({
 })
 
 Box({ props: { id: 'box' } })
+
+// Multiline declarations in csstype-extra must remain available as CSS props.
+Box({ timelineTriggerActivationRange: 'normal' })
+Box({ timelineTriggerActivationRangeEnd: ['normal', null, 'auto'] })
+Box({ timelineTriggerActivationRangeStart: 'normal' })
+Box({ timelineTriggerActiveRangeEnd: 'auto' })
+Box({ timelineTriggerActiveRangeStart: 'normal' })
+
 Box({
   onClick(event) {
     return event.currentTarget.dataset
@@ -100,7 +108,7 @@ type _CustomPropsStayEquivalent = Assert<IsEquivalent<typeof CustomLink>>
 type OriginalCssProperties = {
   [K in keyof Properties]?: ResponsiveValue<Properties[K]>
 }
-type _GeneratedCssPropsStayEquivalent = Assert<
+type _CssPropsStayEquivalent = Assert<
   DevupCssProperties extends OriginalCssProperties
     ? OriginalCssProperties extends DevupCssProperties
       ? true

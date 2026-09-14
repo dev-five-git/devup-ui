@@ -19,10 +19,9 @@
   "version": "1.0.41",
   "type": "module",
   "scripts": {
-    "generate:css-types": "bun scripts/generate-css-properties.ts",
     "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
     "build": "bun run test:types && bun ../../node_modules/@typescript/native/bin/tsc && vite build",
-    "test:types": "bun scripts/generate-css-properties.ts --check && bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
+    "test:types": "bun ../../node_modules/@typescript/native/bin/tsc --ignoreConfig --noEmit --strict --jsx react-jsx --moduleResolution bundler --module esnext --target esnext --types bun --skipLibCheck type-tests/custom-shorthand.ts"
   },
   "publishConfig": {
     "access": "public"
@@ -43,7 +42,7 @@
   "types": "./dist/index.d.ts",
   "dependencies": {
     "react": "^19.2",
-    "csstype-extra": "latest"
+    "csstype-extra": "^0.1.36"
   },
   "devDependencies": {
     "rollup-plugin-preserve-directives": "^0.4",

@@ -559,7 +559,7 @@
       "name": "@devup-ui/react",
       "version": "1.0.41",
       "dependencies": {
-        "csstype-extra": "latest",
+        "csstype-extra": "^0.1.36",
         "react": "^19.2",
       },
       "devDependencies": {
@@ -2083,7 +2083,7 @@
 
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
 
-    "csstype-extra": ["csstype-extra@0.1.35", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-pEJ+ZP1nE0TT5E5XXRuNBiU44O2CCwgm1zd0ogXOX/We8GxX++T7KhThrQaSO2V2Yvdmh2OsqBWLH0+OQTUXKA=="],
+    "csstype-extra": ["csstype-extra@0.1.36", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-hQUmhSCQYZ7mgOvVdGOSd3e03uP5L5mRS5QGBIJIXM+x8PsrMWMHWbds6T8YM04L4NobLKwe84b6Jw9DRYrQPQ=="],
 
     "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" }, "peerDependencies": { "supports-color": "*" }, "optionalPeers": ["supports-color"] }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
