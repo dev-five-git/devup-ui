@@ -1,0 +1,8 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { styled } from '@devup-ui/react';\nconst S = styled['div']`color: red;`;\"))"
+---
+ToBTreeSet {
+    styles: {},
+    code: "const S = styled[\"div\"]`color: red;`;\n",
+}

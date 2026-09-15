@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::utils::{get_string_by_literal_expression, wrap_direct_call};
+use crate::utils::{get_str_by_property_key, get_string_by_literal_expression, wrap_direct_call};
 use css::{
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     rm_css_comment::rm_css_comment,
@@ -12,6 +12,7 @@ use oxc_allocator::Allocator;
 use oxc_span::SPAN;
 
 use crate::utils::expression_to_code;
+use oxc_ast::ast::BindingPattern;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast::TemplateLiteral;
 use oxc_ast::builder::AstBuilder;
@@ -38,6 +39,66 @@ impl From<CssToStyleResult> for ExtractStyleValue {
 
 pub fn rm_last_semi_colon(code: &str) -> &str {
     code.trim_end_matches(';')
+}
+
+/// Resolve a styled-components theme accessor to the CSS variable it reads.
+///
+/// `p => p.theme.colors.brand` and `({ theme }) => theme.colors.brand` both mean
+/// "whatever `ThemeProvider` declared for `colors.brand`", which `ThemeProvider`
+/// publishes as `--colors-brand`. Reading it as a build-time `var()` keeps the
+/// style static; left alone the arrow would be called with the element's props,
+/// which carry no `theme`, and silently evaluate to `undefined`.
+pub(crate) fn theme_var_reference(expr: &Expression<'_>) -> Option<String> {
+    let Expression::ArrowFunctionExpression(arrow) = expr else {
+        return None;
+    };
+    let [param] = arrow.params.items.as_slice() else {
+        return None;
+    };
+    let root = match &param.pattern {
+        BindingPattern::BindingIdentifier(ident) => ThemeRoot::Props(ident.name.as_str()),
+        BindingPattern::ObjectPattern(pattern) => pattern
+            .properties
+            .iter()
+            .any(|p| get_str_by_property_key(&p.key).is_some_and(|key| key == "theme"))
+            .then_some(ThemeRoot::Theme)?,
+        _ => return None,
+    };
+
+    let mut path = Vec::new();
+    let mut cursor = arrow.body.as_expression()?;
+    loop {
+        match cursor {
+            Expression::StaticMemberExpression(member) => {
+                path.push(member.property.name.as_str());
+                cursor = &member.object;
+            }
+            Expression::Identifier(ident) => {
+                let matches_root = match root {
+                    ThemeRoot::Props(name) => ident.name.as_str() == name,
+                    ThemeRoot::Theme => ident.name.as_str() == "theme",
+                };
+                if !matches_root {
+                    return None;
+                }
+                break;
+            }
+            _ => return None,
+        }
+    }
+    if matches!(root, ThemeRoot::Props(_)) && path.pop()? != "theme" {
+        return None;
+    }
+    if path.is_empty() {
+        return None;
+    }
+    path.reverse();
+    Some(format!("var(--{})", path.join("-")))
+}
+
+enum ThemeRoot<'a> {
+    Props(&'a str),
+    Theme,
 }
 
 /// Convert a dynamic template-literal expression into identifier code,
@@ -201,6 +262,10 @@ pub fn css_to_style_literal(
                         get_string_by_literal_expression(&css.expressions[*idx])
                 {
                     literal_values.push((*idx, literal_value));
+                } else if *idx < css.expressions.len()
+                    && let Some(theme_reference) = theme_var_reference(&css.expressions[*idx])
+                {
+                    literal_values.push((*idx, Cow::Owned(theme_reference)));
                 } else {
                     all_literals = false;
                 }

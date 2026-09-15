@@ -1,0 +1,39 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst ternary = <Box className={on ? 'p-4' : 'p-8'} />;\nconst logical = <Box className={on && 'text-red-500'} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "#EF4444",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "1rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "2rem",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst ternary = <div className={(on ? \"a\" : \"b\") || \"\"} />;\nconst logical = <div className={on && \"c\" || \"\"} />;\n",
+}

@@ -1,0 +1,19 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { styled } from '@devup-ui/react';\nconst Themed = styled('div')({ color: (p) => p.theme.brand });\nconst Plain = styled('span')({ color: (p) => p.color });\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--brand)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Themed = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nconst Plain = ({ style, className, ...rest }) => <span {...rest} className={className} style={style} />;\n",
+}

@@ -1,0 +1,19 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box transform='translate(-0px,-0%)' />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "transform",
+                value: "translate(0,0)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className=\"a\" />;\n",
+}

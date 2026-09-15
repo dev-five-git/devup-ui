@@ -1,0 +1,79 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { styled } from '@devup-ui/react';\nconst A = styled('div')({ bg: 'red' } as any);\nconst B = styled('span')({ color: 'blue' } satisfies object);\nconst C = (styled('p') as any)`margin-top: 1px;`;\nconst D = (styled.div satisfies object)({ pb: '3px' });\nconst E = styled.span!({ pl: '4px' });\nconst F = (styled.p<object>)`padding-right: 5px;`;\nconst G = (styled<object>)('div', { pr: '6px' });\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-bottom",
+                value: "3px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-left",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-right",
+                value: "5px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-right",
+                value: "6px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst A = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nconst B = ({ style, className, ...rest }) => <span {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nconst C = ({ style, className, ...rest }) => <p {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />;\nconst D = ({ style, className, ...rest }) => <div {...rest} className={[\"d\", className].filter(Boolean).join(\" \")} style={style} />;\nconst E = ({ style, className, ...rest }) => <span {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={style} />;\nconst F = ({ style, className, ...rest }) => <p {...rest} className={[\"f\", className].filter(Boolean).join(\" \")} style={style} />;\nconst G = ({ style, className, ...rest }) => <div {...rest} className={[\"g\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+}

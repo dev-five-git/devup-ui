@@ -1,0 +1,51 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box selectors={{ 'div p': { color: 'red' }, 'a > b, i': { color: 'blue' } }} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:a > b",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:i",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: Some(
+                    Selector(
+                        "&:div p",
+                    ),
+                ),
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className=\"a b c\" />;\n",
+}

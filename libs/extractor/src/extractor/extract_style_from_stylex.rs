@@ -33,6 +33,45 @@ fn raw_static_style<'a>(
     }))
 }
 
+/// Flatten an object literal of literal-valued properties into kebab-cased CSS
+/// declarations, the shape `positionTry` and `viewTransitionClass` bodies take.
+pub fn extract_stylex_declarations(value: &Expression<'_>) -> Vec<(String, String)> {
+    let Expression::ObjectExpression(obj) = value else {
+        return vec![];
+    };
+    obj.properties
+        .iter()
+        .filter_map(|prop| {
+            let ObjectPropertyKind::ObjectProperty(prop) = prop else {
+                return None;
+            };
+            let name = get_str_by_property_key(&prop.key)?;
+            let value = get_string_by_literal_expression(&prop.value)?;
+            Some((
+                normalize_stylex_property(name.as_ref()),
+                optimize_value(&value).into_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// Resolve a `vars.key` member access against the contracts `stylex.defineVars()`
+/// produced, yielding the `var(--x)` reference the value compiles to.
+fn var_reference<'v>(
+    value: &Expression<'_>,
+    var_refs: &'v FxHashMap<String, String>,
+) -> Option<&'v str> {
+    let Expression::StaticMemberExpression(member) = value else {
+        return None;
+    };
+    let Expression::Identifier(object) = &member.object else {
+        return None;
+    };
+    var_refs
+        .get(&format!("{}.{}", object.name, member.property.name))
+        .map(String::as_str)
+}
+
 /// Shorthand CSS properties that trigger a `StyleX` specificity warning.
 /// Promoted from an 18-element `&[&str]` linear `.contains` scan to a
 /// module-level `phf::Set` for an O(1) membership probe per `create()` property.
@@ -67,6 +106,7 @@ static SHORTHAND_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
 pub fn extract_stylex_namespace_styles<'a>(
     expression: &mut Expression<'a>,
     keyframe_names: &FxHashMap<String, String>,
+    var_refs: &FxHashMap<String, String>,
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
@@ -127,11 +167,10 @@ pub fn extract_stylex_namespace_styles<'a>(
                 if let ObjectPropertyKind::SpreadProperty(spread) = style_prop
                     && let Expression::CallExpression(call) = &spread.argument
                     && is_include_call_static(&call.callee)
-                    && !call.arguments.is_empty()
                 {
                     // Parse include(base.member)
-                    if let Expression::StaticMemberExpression(member) =
-                        call.arguments[0].to_expression()
+                    if let Some(Expression::StaticMemberExpression(member)) =
+                        call.arguments.first().and_then(|arg| arg.as_expression())
                         && let Expression::Identifier(ident) = &member.object
                     {
                         include_refs.push(StylexIncludeRef {
@@ -204,6 +243,12 @@ pub fn extract_stylex_namespace_styles<'a>(
                 continue;
             }
 
+            // Resolve `defineVars` members (e.g., color: colors.primary)
+            if let Some(reference) = var_reference(&style_prop.value, var_refs) {
+                styles.push(raw_static_style(css_property, reference, None));
+                continue;
+            }
+
             // Phase 1: static string/number values
             let css_value = if let Some(s) = get_string_by_literal_expression(&style_prop.value) {
                 s
@@ -226,18 +271,18 @@ pub fn extract_stylex_namespace_styles<'a>(
                 // firstThatWorks('a', 'b', 'c'): last arg is least preferred, first is most preferred.
                 // CSS fallback: output in reverse order (least preferred first, most preferred last).
                 for arg in call.arguments.iter().rev() {
-                    let arg_expr = arg.to_expression();
-                    if let Some(s) = get_string_by_literal_expression(arg_expr) {
+                    if let Some(arg_expr) = arg.as_expression()
+                        && let Some(s) = get_string_by_literal_expression(arg_expr)
+                    {
                         styles.push(raw_static_style(css_property.clone(), &s, None));
                     }
                 }
                 continue;
             } else if let Expression::CallExpression(call) = &style_prop.value
                 && is_types_call(&call.callee)
-                && !call.arguments.is_empty()
-            {
                 // stylex.types.length('100px') → extract inner value '100px'
-                let inner = call.arguments[0].to_expression();
+                && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
+            {
                 let css_value = if let Some(s) = get_string_by_literal_expression(inner) {
                     s
                 } else {

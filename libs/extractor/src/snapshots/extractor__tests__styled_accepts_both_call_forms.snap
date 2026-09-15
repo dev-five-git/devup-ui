@@ -1,0 +1,49 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { styled, Box } from '@devup-ui/react';\nconst twoArg = styled('div', { bg: 'red' });\nconst twoArgComponent = styled(Box, { mt: '1px' });\nconst curried = styled('span')({ color: 'blue' });\nconst member = styled.p({ pt: '2px' });\nconst malformed = styled('div', 'span')`color: red;`;\nconst creatorOnly = styled('div');\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-top",
+                value: "2px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst twoArg = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nconst twoArgComponent = ({ style, className, ...rest }) => <div {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nconst curried = ({ style, className, ...rest }) => <span {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />;\nconst member = ({ style, className, ...rest }) => <p {...rest} className={[\"d\", className].filter(Boolean).join(\" \")} style={style} />;\nconst malformed = styled(\"div\", \"span\")`color: red;`;\nconst creatorOnly = styled(\"div\");\n",
+}

@@ -39,6 +39,28 @@ export function LeftMenu() {
       <MenuItem
         subMenu={[
           {
+            to: '/docs/migration/overview',
+            children: 'Overview',
+          },
+          {
+            to: '/docs/migration/styled-components',
+            children: 'styled-components & Emotion',
+          },
+          {
+            to: '/docs/migration/vanilla-extract',
+            children: 'vanilla-extract',
+          },
+          {
+            to: '/docs/migration/stylex',
+            children: 'StyleX',
+          },
+        ]}
+      >
+        Migration
+      </MenuItem>
+      <MenuItem
+        subMenu={[
+          {
             to: '/docs/figma-and-theme-integration/devup-figma-plugin',
             children: 'Devup Figma Plugin',
           },

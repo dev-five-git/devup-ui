@@ -13,6 +13,7 @@ use crate::{
     },
     utils::{
         get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
+        unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -31,6 +32,7 @@ pub fn extract_global_style_from_expression<'a>(
     file: &str,
 ) -> GlobalExtractResult<'a> {
     let mut styles = vec![];
+    let expression = unwrap_syntax_only_mut(expression);
 
     if let Expression::ObjectExpression(obj) = expression {
         for p in &mut obj.properties {
@@ -40,7 +42,11 @@ pub fn extract_global_style_from_expression<'a>(
                         if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
-                                    if let Expression::ObjectExpression(obj) = p.to_expression() {
+                                    // `...spread` elements carry no statically readable url.
+                                    let Some(element) = p.as_expression() else {
+                                        continue;
+                                    };
+                                    if let Expression::ObjectExpression(obj) = element {
                                         let mut url = None;
                                         let mut query = None;
                                         for p in &obj.properties {
@@ -82,11 +88,8 @@ pub fn extract_global_style_from_expression<'a>(
                                                 }),
                                             ));
                                         }
-                                    } else if !matches!(
-                                        p.to_expression(),
-                                        Expression::NumericLiteral(_)
-                                    ) && let Some(url) =
-                                        get_string_by_literal_expression(p.to_expression())
+                                    } else if !matches!(element, Expression::NumericLiteral(_))
+                                        && let Some(url) = get_string_by_literal_expression(element)
                                     {
                                         styles.push(ExtractStyleProp::Static(
                                             ExtractStyleValue::Import(ExtractImport {

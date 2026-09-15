@@ -1,0 +1,51 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { css, globalCss, keyframes } from '@devup-ui/react';\nconst a = css({ bg: 'red' } as any);\nconst b = css({ color: 'blue' } satisfies object);\nglobalCss({ body: { bg: 'green' } } as any);\nconst k = keyframes({ from: { opacity: 0 } } as any);\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "green",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Keyframes(
+            ExtractKeyframes {
+                keyframes: {},
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst a = \"a\";\nconst b = \"b\";\n;\nconst k = \"c\";\n",
+}

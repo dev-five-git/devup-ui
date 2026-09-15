@@ -1,0 +1,42 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import styled, { createGlobalStyle } from 'styled-components';\nconst GlobalStyle = createGlobalStyle`body { margin: 0; }`;\nconst FromObject = createGlobalStyle({ html: { pt: '1px' } });\nconst S = styled.div`color: red;`;\nexport const App = () => <><GlobalStyle /><FromObject /><S /></>;\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"styled-components\".to_string(),\n    ImportAlias::DefaultToNamed(\"styled\".to_string()))])\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-top",
+                value: "1px",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "html",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "body{margin:0}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst GlobalStyle = () => null;\nconst FromObject = () => null;\nconst S = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const App = () => <><GlobalStyle /><FromObject /><S /></>;\n",
+}

@@ -49,6 +49,7 @@ export default defineConfig({
       formats: ['es', 'cjs'],
       entry: {
         index: 'src/index.ts',
+        'compat/index': 'src/compat/index.ts',
       },
     },
     outDir: 'dist',

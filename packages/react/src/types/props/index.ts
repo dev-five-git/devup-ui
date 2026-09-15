@@ -34,6 +34,12 @@ export interface DevupProps extends DevupCommonProps, DevupSelectorProps {}
 export interface DevupPropsWithTheme
   extends DevupProps, DevupThemeSelectorProps {}
 
+export type StyledThemeValue = string | number
+
+export interface StyledTheme {
+  [key: string]: StyledThemeValue | StyledTheme
+}
+
 export interface DevupComponentProps<
   T extends React.ElementType,
 > extends DevupPropsWithTheme {

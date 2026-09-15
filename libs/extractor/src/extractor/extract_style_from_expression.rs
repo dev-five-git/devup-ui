@@ -1,6 +1,6 @@
 use crate::{
     ExtractStyleProp,
-    css_utils::{css_to_style, css_to_style_literal},
+    css_utils::{css_to_style, css_to_style_literal, theme_var_reference},
     extract_style::{
         extract_dynamic_style::ExtractDynamicStyle,
         extract_static_style::{ExtractStaticStyle, ThemeTokenResolution},
@@ -12,6 +12,7 @@ use crate::{
     utils::{
         expression_to_code, get_number_by_literal_expression, get_str_by_property_key,
         get_string_by_literal_expression, get_string_by_property_key, is_same_expression,
+        unwrap_syntax_only_mut,
     },
 };
 use css::{
@@ -103,6 +104,7 @@ pub fn extract_style_from_expression<'a>(
     literal_handling: LiteralHandling,
 ) -> ExtractResult<'a> {
     let mut typo = false;
+    let expression = unwrap_syntax_only_mut(expression);
 
     if name.is_none() && selector.is_none() {
         let mut style_order = None;
@@ -207,14 +209,6 @@ pub fn extract_style_from_expression<'a>(
                 style_order,
                 style_vars,
             },
-            Expression::ParenthesizedExpression(parenthesized) => extract_style_from_expression(
-                ast_builder,
-                None,
-                &mut parenthesized.expression,
-                level,
-                &None,
-                literal_handling,
-            ),
             Expression::TemplateLiteral(tmp) => ExtractResult {
                 styles: css_to_style_literal(tmp, level, selector)
                     .into_iter()
@@ -474,8 +468,25 @@ pub fn extract_style_from_expression<'a>(
             // if/else branch region — `name == None` happens only under
             // `_xxx={...}` pseudo-selector recursion, where no dynamic_style
             // can be emitted because the selector has no CSS property slot.
+            // `styled.div({ color: (p) => p.theme.brand })` — the object spelling of
+            // the template interpolation, resolved to the same build-time `var()`.
+            Expression::ArrowFunctionExpression(_) => match (name, theme_var_reference(expression))
+            {
+                (Some(name), Some(reference)) => ExtractResult {
+                    styles: create_static_styles(
+                        name,
+                        &reference,
+                        &[level],
+                        selector,
+                        ThemeTokenResolution::default(),
+                    ),
+                    ..ExtractResult::default()
+                },
+                _ => ExtractResult::default(),
+            },
             Expression::BinaryExpression(_)
             | Expression::StaticMemberExpression(_)
+            | Expression::ChainExpression(_)
             | Expression::CallExpression(_) => name
                 .map(|name| ExtractResult {
                     styles: vec![dynamic_style(
@@ -488,14 +499,6 @@ pub fn extract_style_from_expression<'a>(
                     ..ExtractResult::default()
                 })
                 .unwrap_or_default(),
-            Expression::TSAsExpression(exp) => extract_style_from_expression(
-                ast_builder,
-                name,
-                &mut exp.expression,
-                level,
-                selector,
-                literal_handling,
-            ),
             Expression::ComputedMemberExpression(mem) => {
                 extract_style_from_member_expression(ast_builder, name, mem, level, selector)
             }
@@ -695,14 +698,6 @@ pub fn extract_style_from_expression<'a>(
                     },
                 }
             }
-            Expression::ParenthesizedExpression(parenthesized) => extract_style_from_expression(
-                ast_builder,
-                name,
-                &mut parenthesized.expression,
-                level,
-                selector,
-                literal_handling,
-            ),
             Expression::ArrayExpression(array) => {
                 let mut props = vec![];
 

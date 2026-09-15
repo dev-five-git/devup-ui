@@ -1,0 +1,36 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import styled from '@emotion/styled';\nimport { css, keyframes, Global, ThemeProvider, useTheme, ClassNames } from '@emotion/react';\nconst S = styled.div`color: ${p => p.theme.brand};`;\nexport const App = () => <><Global styles={{ body: { margin: '0px' } }} /><S /></>;\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"@emotion/react\".to_string(), ImportAlias::NamedToNamed),\n    (\"@emotion/styled\".to_string(),\n    ImportAlias::DefaultToNamed(\"styled\".to_string()))])\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--brand)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "0",
+                level: 0,
+                selector: Some(
+                    Global(
+                        "body",
+                        "test.tsx",
+                    ),
+                ),
+                style_order: Some(
+                    0,
+                ),
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { ThemeProvider, useTheme } from \"@devup-ui/react/compat\";\nimport { ClassNames } from \"@emotion/react\";\nconst S = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const App = () => <><Global /><S /></>;\n",
+}

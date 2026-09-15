@@ -1,0 +1,103 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract(\"test.tsx\",\nr\"import styled from 'styled-components';\nconst Flat = styled.div`color: ${p => p.theme.brand};`;\nconst Nested = styled.span`color: ${p => p.theme.colors.brand};`;\nconst Destructured = styled.p`color: ${({ theme }) => theme.colors.accent};`;\nconst Surrounded = styled.b`border: 1px solid ${p => p.theme.line};`;\nconst NotTheme = styled.i`color: ${p => p.color};`;\nconst BareTheme = styled.u`color: ${p => p.theme};`;\nconst OtherRoot = styled.s`color: ${p => q.theme.brand};`;\nconst ArrayParam = styled.q`color: ${([p]) => p.theme.brand};`;\nconst NoParam = styled.em`color: ${() => 'red'};`;\nconst CallBody = styled.strong`color: ${p => p.theme.brand()};`;\",\nExtractOption\n{\n    package: \"@devup-ui/react\".to_string(), css_dir:\n    \"@devup-ui/react\".to_string(), single_css: true, import_main_css: false,\n    import_aliases:\n    HashMap::from([(\"styled-components\".to_string(),\n    ImportAlias::DefaultToNamed(\"styled\".to_string()))])\n},).unwrap())"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "border",
+                value: "1px solid var(--line)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--brand)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--colors-accent)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--colors-brand)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(()=>`red`)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(([p])=>p.theme.brand)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(p=>p.color)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(p=>p.theme)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(p=>p.theme.brand())(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "(p=>q.theme.brand)(rest)",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst Flat = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nconst Nested = ({ style, className, ...rest }) => <span {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nconst Destructured = ({ style, className, ...rest }) => <p {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />;\nconst Surrounded = ({ style, className, ...rest }) => <b {...rest} className={[\"d\", className].filter(Boolean).join(\" \")} style={style} />;\nconst NotTheme = ({ style, className, ...rest }) => <i {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (p=>p.color)(rest) },\n\t...style\n}} />;\nconst BareTheme = ({ style, className, ...rest }) => <u {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (p=>p.theme)(rest) },\n\t...style\n}} />;\nconst OtherRoot = ({ style, className, ...rest }) => <s {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (p=>q.theme.brand)(rest) },\n\t...style\n}} />;\nconst ArrayParam = ({ style, className, ...rest }) => <q {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (([p])=>p.theme.brand)(rest) },\n\t...style\n}} />;\nconst NoParam = ({ style, className, ...rest }) => <em {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (()=>`red`)(rest) },\n\t...style\n}} />;\nconst CallBody = ({ style, className, ...rest }) => <strong {...rest} className={[\"e\", className].filter(Boolean).join(\" \")} style={{\n\t...{ \"--f\": (p=>p.theme.brand())(rest) },\n\t...style\n}} />;\n",
+}

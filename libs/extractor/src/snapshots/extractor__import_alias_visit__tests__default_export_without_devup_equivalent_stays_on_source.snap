@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r\"import sheet from 'some-lib'\", \"test.tsx\",\n\"@devup-ui/react\", &aliases)"
+---
+import sheet from 'some-lib';

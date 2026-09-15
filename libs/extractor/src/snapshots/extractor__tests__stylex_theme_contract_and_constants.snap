@@ -1,0 +1,35 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nimport { defineConsts } from '@stylexjs/stylex';\nconst vars = stylex.createThemeContract({ primary: null });\nconst consts = defineConsts({ gap: '8px' });\nconst dark = stylex.createTheme(vars, { primary: 'navy' });\nconst styles = stylex.create({ box: { color: vars.primary, marginTop: consts.gap } });\nconst el = <div {...stylex.props(dark, styles.box)} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--a)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ".b{--a:navy;}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nimport { defineConsts } from \"@stylexjs/stylex\";\nconst vars = { \"primary\": \"var(--a)\" };\nconst consts = { \"gap\": \"8px\" };\nconst dark = \"b\";\nconst styles = { \"box\": \"c d\" };\nconst el = <div {...{ className: \"b c d\" }} />;\n",
+}

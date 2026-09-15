@@ -1,0 +1,27 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst dotted = <Box bg={map?.k} />;\nconst computed = <Box color={map?.[k]} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "map?.k",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "map?.[k]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst dotted = <div className=\"a\" style={{ \"--b\": map?.k }} />;\nconst computed = <div className=\"c\" style={{ \"--d\": map?.[k] }} />;\n",
+}

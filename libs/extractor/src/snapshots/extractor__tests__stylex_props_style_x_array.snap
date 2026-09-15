@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst s = stylex.create({ a: { color: 'red' }, b: { marginTop: '1px' } });\nconst flat = <div {...stylex.props([s.a, s.b])} />;\nconst nested = <div {...stylex.props([s.a, [s.b]])} />;\nconst conditional = <div {...stylex.props([s.a, on && s.b])} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst s = {\n\t\"a\": \"a\",\n\t\"b\": \"b\"\n};\nconst flat = <div {...{ className: \"a b\" }} />;\nconst nested = <div {...{ className: \"a b\" }} />;\nconst conditional = <div {...{ className: `a ${on ? \"b\" : \"\"}` }} />;\n",
+}

@@ -1,0 +1,96 @@
+export const metadata = {
+  title: 'Migration',
+  alternates: {
+    canonical: '/docs/migration/styled-components',
+  },
+}
+
+# styled-components & Emotion
+
+Both libraries are covered by the same default aliases, and every spelling of `styled` compiles to a static component.
+
+## Supported call shapes
+
+```tsx
+import styled from 'styled-components'
+
+const A = styled.div`
+  color: red;
+`
+const B = styled('div')`
+  color: red;
+`
+const C = styled.div({ bg: 'red' })
+const D = styled('div')({ bg: 'red' })
+const E = styled(Component)({ bg: 'red' })
+const F = styled('div', { bg: 'red' })
+```
+
+Namespace imports work too. `@emotion/styled` and `styled-components` export a single callable, so the namespace binding _is_ that value and it is bound straight to the Devup UI export:
+
+```tsx
+import * as Emotion from '@emotion/styled'
+// → import { styled as Emotion } from '@devup-ui/react'
+
+const Card = Emotion.div`color: red;`
+```
+
+## Theme interpolation
+
+`ThemeProvider` redefines CSS variables on a `display: contents` wrapper, so it scopes the theme to its subtree without touching layout. Interpolations that read the theme are resolved at build time — no runtime lookup:
+
+```tsx
+const Card = styled.div`
+  color: ${(p) => p.theme.brand};
+  border: 1px solid ${({ theme }) => theme.colors.line};
+`
+```
+
+```css
+.a {
+  color: var(--brand);
+}
+.b {
+  border: 1px solid var(--colors-line);
+}
+```
+
+Nested themes flatten with a hyphen, so `theme.colors.line` and `--colors-line` always agree. The object form resolves identically:
+
+```tsx
+const Card = styled('div')({ color: (p) => p.theme.brand })
+```
+
+Reading the theme in JS gives the same references back:
+
+```tsx
+import { useTheme } from 'styled-components'
+
+function Divider() {
+  const theme = useTheme()
+  // `${theme.colors.line}` === 'var(--colors-line)'
+  return <hr style={{ borderColor: `${theme.colors.line}` }} />
+}
+```
+
+## Global styles
+
+`createGlobalStyle` keeps its render site — the rules are lifted into the stylesheet and the call collapses to a component that renders nothing:
+
+```tsx
+const GlobalStyle = createGlobalStyle`body { margin: 0; }`
+// → const GlobalStyle = () => null
+```
+
+Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is extracted and the element stops rendering markup.
+
+## The rest of the surface
+
+| API                                      | Result                                                                           |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| `css`, `keyframes`                       | Devup UI equivalents                                                             |
+| `ThemeProvider`, `useTheme`, `withTheme` | `@devup-ui/react/compat`, CSS-variable backed                                    |
+| `createGlobalStyle`, `Global`            | extracted, render nothing                                                        |
+| `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
+| `isStyledComponent`                      | always `false`                                                                   |
+| `ClassNames`, `CacheProvider`            | no equivalent; stays on its own package with a build warning                     |

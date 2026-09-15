@@ -1,0 +1,21 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`ThemeProvider should declare css variables without affecting layout 1`] = `
+"<div>
+  <div style="display: contents; --brand: red; --colors-accent: blue;">
+    <span>
+      child
+    </span>
+  </div>
+</div>"
+`;
+
+exports[`ThemeProvider should render without a theme 1`] = `
+"<div>
+  <div style="display: contents;">
+    <span>
+      child
+    </span>
+  </div>
+</div>"
+`;

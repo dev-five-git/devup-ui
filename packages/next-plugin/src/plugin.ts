@@ -13,6 +13,7 @@ import {
   buildStaticImportGraph,
   computeCompiledFiles,
   computeFileRoutes,
+  createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type DevupUIBasePluginOptions,
@@ -299,6 +300,10 @@ export function DevupUI(
       setPrefix(prefix)
     }
 
+    writeFileSync(
+      join(distDir, 'compat.d.ts'),
+      createCompatTypes(importAliases),
+    )
     // Import previous session state to handle Turbopack persistent cache.
     // When the dev server restarts, Turbopack may skip re-running loaders for
     // unchanged files. Without importing previous state, the coordinator's WASM

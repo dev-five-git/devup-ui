@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r\"import veDefault from '@vanilla-extract/css'\",\n\"styles.css.ts\", \"@devup-ui/react\", &vanilla_extract_alias())"
+---
+import { default as veDefault } from '@devup-ui/react';

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import {
+  createCompatTypes,
   createThemeInterfaceArgs,
   type CustomShorthands,
   loadDevupConfig,
@@ -59,6 +60,11 @@ async function initialize({ shorthands }: DevupUIBunPluginOptions = {}) {
   registerShorthands(shorthands ?? {})
   if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
   await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+  await writeFile(
+    join(distDir, 'compat.d.ts'),
+    createCompatTypes(importAliases),
+    'utf-8',
+  )
   await writeDataFiles()
 }
 

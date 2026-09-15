@@ -423,6 +423,7 @@ describe('DevupUINextPlugin', () => {
                     defaultClassMap: {},
                     defaultFileMap: {},
                     importAliases: {
+                      '@emotion/react': null,
                       '@emotion/styled': 'styled',
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
@@ -513,6 +514,7 @@ describe('DevupUINextPlugin', () => {
                     classMapFile: join('df', 'classMap.json'),
                     fileMapFile: join('df', 'fileMap.json'),
                     importAliases: {
+                      '@emotion/react': null,
                       '@emotion/styled': 'styled',
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
@@ -610,6 +612,7 @@ describe('DevupUINextPlugin', () => {
                     defaultClassMap: {},
                     defaultFileMap: {},
                     importAliases: {
+                      '@emotion/react': null,
                       '@emotion/styled': 'styled',
                       '@vanilla-extract/css': null,
                       'styled-components': 'styled',
@@ -661,6 +664,7 @@ describe('DevupUINextPlugin', () => {
         classMapFile: join('df', 'classMap.json'),
         fileMapFile: join('df', 'fileMap.json'),
         importAliases: {
+          '@emotion/react': null,
           '@emotion/styled': 'styled',
           '@vanilla-extract/css': null,
           'styled-components': 'styled',
@@ -944,6 +948,7 @@ export const box = style({ color })`
         classMapFile: join('df', 'classMap.json'),
         fileMapFile: join('df', 'fileMap.json'),
         importAliases: {
+          '@emotion/react': null,
           '@emotion/styled': 'styled',
           '@vanilla-extract/css': null,
           'styled-components': 'styled',

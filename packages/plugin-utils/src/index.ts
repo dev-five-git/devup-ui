@@ -32,4 +32,8 @@ export type {
   Typography,
   WasmImportAliases,
 } from './types'
-export { DEFAULT_IMPORT_ALIASES, mergeImportAliases } from './types'
+export {
+  createCompatTypes,
+  DEFAULT_IMPORT_ALIASES,
+  mergeImportAliases,
+} from './types'

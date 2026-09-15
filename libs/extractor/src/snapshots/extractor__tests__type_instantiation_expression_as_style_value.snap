@@ -1,0 +1,18 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box bg={pick<string>} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "pick",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className=\"a\" style={{ \"--b\": pick }} />;\n",
+}

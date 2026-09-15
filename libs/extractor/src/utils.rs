@@ -16,6 +16,44 @@ use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
 use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 
+/// Check if a filename is a vanilla-extract style file.
+///
+/// This lives here rather than in `vanilla_extract` because that module is behind
+/// the `vanilla-extract` feature (it pulls in the Boa evaluator), while import
+/// rewriting needs the check in every build — including the lite WASM variant.
+pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
+    filename.ends_with(".css.ts") || filename.ends_with(".css.js")
+}
+
+/// Strip the wrappers that exist only in the source text: TypeScript's `as` /
+/// `satisfies` / `!` / explicit type arguments, plus redundant parentheses. Every
+/// one is erased before the code runs, so extraction must see through them —
+/// otherwise a plain `as const` silently turns styling off.
+pub(super) fn unwrap_syntax_only<'a, 'b>(expression: &'b Expression<'a>) -> &'b Expression<'a> {
+    match expression {
+        Expression::TSAsExpression(e) => unwrap_syntax_only(&e.expression),
+        Expression::TSSatisfiesExpression(e) => unwrap_syntax_only(&e.expression),
+        Expression::TSNonNullExpression(e) => unwrap_syntax_only(&e.expression),
+        Expression::TSInstantiationExpression(e) => unwrap_syntax_only(&e.expression),
+        Expression::ParenthesizedExpression(e) => unwrap_syntax_only(&e.expression),
+        _ => expression,
+    }
+}
+
+/// Mutable counterpart of [`unwrap_syntax_only`].
+pub(super) fn unwrap_syntax_only_mut<'a, 'b>(
+    expression: &'b mut Expression<'a>,
+) -> &'b mut Expression<'a> {
+    match expression {
+        Expression::TSAsExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
+        Expression::TSSatisfiesExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
+        Expression::TSNonNullExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
+        Expression::TSInstantiationExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
+        Expression::ParenthesizedExpression(e) => unwrap_syntax_only_mut(&mut e.expression),
+        _ => expression,
+    }
+}
+
 /// Convert a value to a pixel value.
 ///
 /// Returns `Cow::Borrowed(value)` for the overwhelmingly common non-numeric
@@ -436,6 +474,16 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn test_is_vanilla_extract_file() {
+        assert!(is_vanilla_extract_file("styles.css.ts"));
+        assert!(is_vanilla_extract_file("theme.css.js"));
+        assert!(is_vanilla_extract_file("path/to/styles.css.ts"));
+        assert!(!is_vanilla_extract_file("styles.ts"));
+        assert!(!is_vanilla_extract_file("styles.css"));
+        assert!(!is_vanilla_extract_file("component.tsx"));
+    }
 
     #[test]
     fn test_convert_value() {

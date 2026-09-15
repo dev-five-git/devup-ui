@@ -1,0 +1,27 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst e = <Box bg={({ a: first, b: second })[key]} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "first",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "background",
+                level: 0,
+                identifier: "second",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst e = <div className={{\n\t\"a\": \"a\",\n\t\"b\": \"a\"\n}[key] || \"\"} style={{ \"--b\": {\n\ta: first,\n\tb: second\n}[key] }} />;\n",
+}

@@ -34,6 +34,31 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./compat": {
+      "types": "./dist/compat/index.d.ts",
+      "import": "./dist/compat/index.js",
+      "require": "./dist/compat/index.cjs"
+    },
+    "./compat/types": {
+      "types": "./dist/compat/types.d.ts"
+    },
+    "./compat/styled-components": {
+      "types": "./dist/compat/styled-components.d.ts"
+    },
+    "./compat/emotion": {
+      "types": "./dist/compat/emotion.d.ts"
+    },
+    "./compat/stylex": {
+      "types": "./dist/compat/stylex.d.ts"
+    },
+    "./compat/vanilla-extract": {
+      "types": "./dist/compat/vanilla-extract.d.ts"
+    },
+    "./stylex": {
+      "types": "./dist/utils/stylex.d.ts",
+      "import": "./dist/utils/stylex.js",
+      "require": "./dist/utils/stylex.cjs"
     }
   },
   "files": [
