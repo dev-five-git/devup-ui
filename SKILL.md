@@ -407,6 +407,17 @@ import DevupUI from "@devup-ui/vite-plugin";
 export default defineConfig({ plugins: [react(), DevupUI()] });
 ```
 
+> **The Vite plugin does not mean the project is a Vite SPA.** `vinext` runs
+> Next.js App Router *on* Vite, so an App Router project has a `vite.config.ts`,
+> no `next.config.ts`, and uses this plugin. Decide from `package.json`: a
+> `vinext` or `next` dependency means file routing under `src/app/`, and there
+> is no `main.tsx` or `index.html` to create.
+
+```ts
+// vinext project - both plugins belong here
+plugins: [DevupUI(), vinext({ nextConfig: { output: "export" } })];
+```
+
 ### Next.js
 
 ```ts
@@ -451,6 +462,77 @@ DevupUI({
 })
 ```
 
+## Never Author a CSS File
+
+Devup UI extracts styling at build time. A hand-written stylesheet is invisible
+to it: it cannot be checked, themed, or ordered in the cascade, and it competes
+silently with the classes the plugin generated.
+
+| Need | Use |
+|------|-----|
+| Reset / normalize | `resetCss()` from `@devup-ui/reset-css` |
+| Document-level rules (`body`, `*`, `@font-face`) | `globalCss({ ... })` |
+| Component styling | Style props, or `css({ ... })` |
+| A genuinely runtime value | A style prop - the plugin emits a CSS variable |
+
+The only acceptable CSS import is a stylesheet **shipped by an installed
+package you do not author**, such as an offline webfont package.
+
+### `@devup-ui/reset-css`
+
+It is a package, so the plugin has to be told to process it or its classes are
+never emitted. With Vite the two resolver settings are needed as well:
+
+```ts
+plugins: [DevupUI({ include: ["@devup-ui/reset-css"] })],
+optimizeDeps: { exclude: ["@devup-ui/reset-css"] },
+ssr: { noExternal: ["@devup-ui/reset-css"] },
+```
+
+## What Decides Static Extraction
+
+One rule explains `Dynamic Values = CSS Variables`, `$token Scope` and
+`Inline Variant Pattern` below:
+
+> Devup UI extracts at build time only what it can prove is constant **at the
+> JSX prop site**. A value reached through a variable is treated as possibly
+> mutated at runtime - TypeScript's types are not a runtime guarantee - so it
+> falls back to a CSS variable.
+
+| Form | Result |
+|------|--------|
+| `<Box color="red" />` | Static class |
+| `<Box color={{ 1: "red", 2: "blue" }[v]} />` | Static class per value - **preferred** |
+| `<Box color={colors[v]} />` where `colors` is declared elsewhere | CSS variable |
+| `<Box color={props.color} />` | CSS variable (genuinely dynamic - correct) |
+| `const s = { a: css({ ... }) }` then `className={s[v]}` | Neither - see below |
+
+**How to tell which one you got:** inspect the rendered element. Inline CSS
+variables mean the values were not extracted.
+
+```html
+<!-- extracted -->      <div class="m n o p">
+<!-- not extracted -->  <div class="m n o p" style="--q:red;--s:12px">
+```
+
+### The `css()` exception
+
+An external object holding **`css()` results** is not the same thing and is
+fine. `css()` runs at build time and returns a className string, so extraction
+already happened at the `css()` call; the object carries strings and no style
+prop is involved.
+
+```tsx
+// FINE - extraction happened inside css(); this object holds classNames
+const variantStyles = {
+  primary: css({ bg: "$primary", color: "#FFF" }),
+  secondary: css({ bg: "$gray100", color: "$text" }),
+};
+<Box className={variantStyles[variant]} styleOrder={1} />;
+```
+
+The rule is about **style prop values**, not about objects.
+
 ## $token Scope
 
 `$token` values (colors, length, shadow) only work in **JSX props**. Use `var(--token)` in external objects.
@@ -485,7 +567,15 @@ Use inline object indexing instead of external config objects:
 // AVOID - external config object (becomes dynamic, uses CSS variables)
 const sizeStyles = { lg: { h: '48px' }, md: { h: '40px' } }
 <Box h={sizeStyles[size].h} />
+
+// AVOID - the flat form is the same trap. The compiler cannot prove `colors`
+// was not mutated before this runs, so every value becomes a CSS variable.
+const colors = { red: '#f00', blue: '#00f' }
+<Box color={colors[tone]} />
 ```
+
+Why, and how to detect it: see [What Decides Static Extraction](#what-decides-static-extraction).
+An external object of `css()` results is a different thing and is fine.
 
 ## Anti-Patterns (NEVER do)
 
@@ -503,3 +593,6 @@ const sizeStyles = { lg: { h: '48px' }, md: { h: '40px' } }
 | `width="100%"` | `w="100%"` | Always use shorthands |
 | `styled("div", {...})` | `<Box bg="red" />` | Use Box component with props, not styled() |
 | `stylex.create({...})` | `<Box bg="red" />` | Use Box component with props, not stylex |
+| Authoring `styles.css` / `styles.scss` | `globalCss({...})` or style props | A hand-written stylesheet is invisible to extraction |
+| `import "./styles.css"` | `resetCss()` / `globalCss()` | Only a stylesheet shipped by an installed package is acceptable |
+| `<Box bg={colors[tone]} />` (external object) | `<Box bg={{ red: '#f00' }[tone]} />` | Reached through a variable, so it becomes a CSS variable |
