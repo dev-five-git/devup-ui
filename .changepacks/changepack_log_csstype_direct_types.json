@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Use csstype-extra properties directly to restore missing timeline trigger props and remove stale CSS type generation checks",
+  "date": "2026-09-14T00:00:00.000Z"
+}
