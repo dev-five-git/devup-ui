@@ -480,14 +480,31 @@ package you do not author**, such as an offline webfont package.
 
 ### `@devup-ui/reset-css`
 
-It is a package, so the plugin has to be told to process it or its classes are
-never emitted. With Vite the two resolver settings are needed as well:
+Install it and import it. **It needs no plugin configuration**, on any bundler:
+
+```tsx
+// app/layout.tsx
+import { resetCss } from "@devup-ui/reset-css";
+
+resetCss();
+```
 
 ```ts
-plugins: [DevupUI({ include: ["@devup-ui/reset-css"] })],
-optimizeDeps: { exclude: ["@devup-ui/reset-css"] },
-ssr: { noExternal: ["@devup-ui/reset-css"] },
+// vite.config.ts - nothing extra
+plugins: [DevupUI()];
 ```
+
+The reset is a `globalCss()` call at the top level of the package's own module,
+and `resetCss()` is an empty function that exists only so the import is not
+tree-shaken away. So the one thing that has to happen is that the plugin
+transforms the package inside `node_modules` — and every plugin already allows
+`@devup-ui` and `@devup-editor` through that exclusion unconditionally, with
+`include` only *adding* to that list. `ssr.noExternal` is set from a `/@devup-ui/`
+pattern for the same reason.
+
+Do not add `include`, `optimizeDeps.exclude` or `ssr.noExternal` entries for it.
+They are redundant, and writing them suggests to the next reader that a devup-ui
+package needs wiring when none does.
 
 ## What Decides Static Extraction
 
