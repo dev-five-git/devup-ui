@@ -16,7 +16,7 @@
     "css-in-js-framework",
     "react"
   ],
-  "version": "1.0.42",
+  "version": "1.0.43",
   "type": "module",
   "scripts": {
     "lint": "eslint && bun ../../node_modules/@typescript/native/bin/tsc --noEmit && bun run test:types",
