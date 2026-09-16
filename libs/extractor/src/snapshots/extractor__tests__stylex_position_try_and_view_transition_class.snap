@@ -1,0 +1,21 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' });\nconst transition = stylex.viewTransitionClass({ animationDuration: '300ms' });\nconst empty = stylex.positionTry(notAnObject);\"))"
+---
+ToBTreeSet {
+    styles: {
+        Css(
+            ExtractCss {
+                css: ".b{animation-duration:300ms;}",
+                file: "test.tsx",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: "@position-try --a{top:0;inset-block-end:auto;}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst fallback = \"--a\";\nconst transition = \"b\";\nconst empty = \"--a\";\n",
+}

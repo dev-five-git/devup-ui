@@ -1,0 +1,91 @@
+export const metadata = {
+  title: 'Migration',
+  alternates: {
+    canonical: '/docs/migration/overview',
+  },
+}
+
+# Migrating from another CSS-in-JS library
+
+Devup UI reads styled-components, Emotion, vanilla-extract and StyleX source directly. You do not rewrite call sites, and you do not keep the original library installed — the build rewrites the imports and compiles every call into static CSS.
+
+## What happens to your code
+
+```tsx
+// what you wrote
+import styled from 'styled-components'
+
+const Card = styled.div`
+  color: red;
+`
+```
+
+```tsx
+// what ships — no styled-components, no runtime
+const Card = ({ style, className, ...rest }) => (
+  <div
+    {...rest}
+    className={['a', className].filter(Boolean).join(' ')}
+    style={style}
+  />
+)
+```
+
+```css
+.a {
+  color: red;
+}
+```
+
+The import is not merely re-pointed at `@devup-ui/react`: the extractor consumes the call and removes the specifier, so the import statement disappears from the output entirely.
+
+## Two passes
+
+1. **Import rewrite** — `import { style } from '@vanilla-extract/css'` becomes `import { css as style } from '@devup-ui/react'`. Only names with a real Devup UI counterpart move; the rest stay put so their own types keep working.
+2. **Extraction** — `style({ ... })` is compiled to a class name, the specifier is dropped, and the now-empty import is deleted.
+
+Because of the second pass, the intermediate `css as style` alias never reaches your bundle.
+
+## Enabling it
+
+Every plugin turns the default aliases on automatically:
+
+```ts
+// vite.config.ts
+import { DevupUI } from '@devup-ui/vite-plugin'
+
+export default DevupUI({})
+```
+
+The defaults cover `styled-components`, `@emotion/styled`, `@emotion/react` and `@vanilla-extract/css`. StyleX needs no alias — `@stylexjs/stylex` is recognised directly.
+
+Opt a package out when you want to keep using the real thing:
+
+```ts
+DevupUI({
+  importAliases: {
+    'styled-components': false,
+  },
+})
+```
+
+## Uninstalling the original package
+
+Once the imports are rewritten you can drop the dependency. TypeScript still has to resolve the specifier you wrote, so the plugins generate `<distDir>/compat.d.ts` with ambient declarations for the aliases you have enabled:
+
+```ts
+/// <reference types="@devup-ui/react/compat/styled-components" />
+/// <reference types="@devup-ui/react/compat/emotion" />
+/// <reference types="@devup-ui/react/compat/stylex" />
+/// <reference types="@devup-ui/react/compat/vanilla-extract" />
+```
+
+That file lands next to `theme.d.ts` inside your project, so `tsconfig.json` picks it up with no extra configuration. Disabled aliases are left out on purpose — an ambient declaration wins over an installed package, and a library you opted out of must keep its own types.
+
+## Where the absorbed APIs live
+
+Anything that exists only to absorb another library — `ThemeProvider`, `createGlobalStyle`, `ServerStyleSheet`, and friends — is exported from `@devup-ui/react/compat`, never from `@devup-ui/react`. Using Devup UI directly means never seeing them, and it lets the compat entry keep the original spelling: its `useTheme` cannot collide with Devup UI's own `useTheme`.
+
+```tsx
+// rewritten for you
+```

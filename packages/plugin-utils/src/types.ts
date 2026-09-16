@@ -96,6 +96,7 @@ export type ImportAliases = Record<string, string | true | false>
  * Default import aliases for common CSS-in-JS libraries
  */
 export const DEFAULT_IMPORT_ALIASES: ImportAliases = {
+  '@emotion/react': true,
   '@emotion/styled': 'styled',
   'styled-components': 'styled',
   '@vanilla-extract/css': true,
@@ -129,4 +130,37 @@ export function mergeImportAliases(
       .filter((entry): entry is [string, string | true] => entry[1] !== false)
       .map(([pkg, value]) => [pkg, value === true ? null : value]),
   ) as WasmImportAliases
+}
+
+/**
+ * Which `@devup-ui/react/compat` entry supplies the types for an aliased package.
+ * Several specifiers can share one entry (both Emotion packages, for instance).
+ */
+const COMPAT_TYPE_ENTRIES: Record<string, string> = {
+  '@emotion/react': 'emotion',
+  '@emotion/styled': 'emotion',
+  '@vanilla-extract/css': 'vanilla-extract',
+  'styled-components': 'styled-components',
+}
+
+/**
+ * Build the declaration file that makes aliased packages type-check without
+ * being installed.
+ *
+ * Only enabled aliases are referenced: an ambient declaration wins over a real
+ * installation, so a package the user opted out of must keep its own types.
+ * StyleX is always included — the extractor recognises `@stylexjs/stylex`
+ * directly rather than through the alias table.
+ */
+export function createCompatTypes(aliases: WasmImportAliases): string {
+  const entries = new Set(['stylex'])
+  for (const pkg of Object.keys(aliases)) {
+    const entry = COMPAT_TYPE_ENTRIES[pkg]
+    if (entry) entries.add(entry)
+  }
+  return [...entries]
+    .sort()
+    .map((entry) => `/// <reference types="@devup-ui/react/compat/${entry}" />`)
+    .join('\n')
+    .concat('\n')
 }

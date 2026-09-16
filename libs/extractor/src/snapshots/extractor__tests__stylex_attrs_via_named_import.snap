@@ -1,0 +1,19 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { create, attrs } from '@stylexjs/stylex';\nconst s = create({ a: { color: 'red' } });\nconst e = <div {...attrs(s.a)} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { create, attrs } from \"@stylexjs/stylex\";\nconst s = { \"a\": \"a\" };\nconst e = <div {...{ class: \"a\" }} />;\n",
+}

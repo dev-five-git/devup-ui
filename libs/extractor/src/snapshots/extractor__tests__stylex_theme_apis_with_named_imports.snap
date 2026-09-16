@@ -1,0 +1,31 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { defineVars, createTheme, create, props } from '@stylexjs/stylex';\nconst colors = defineVars({ primary: 'blue' });\nconst dark = createTheme(colors, { primary: 'navy' });\nconst styles = create({ box: { color: colors.primary } });\nconst el = <div {...props(dark, styles.box)} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "var(--a)",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ".b{--a:navy;}",
+                file: "test.tsx",
+            },
+        ),
+        Css(
+            ExtractCss {
+                css: ":root{--a:blue;}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport { defineVars, createTheme, create, props } from \"@stylexjs/stylex\";\nconst colors = { \"primary\": \"var(--a)\" };\nconst dark = \"b\";\nconst styles = { \"box\": \"c\" };\nconst el = <div {...{ className: \"b c\" }} />;\n",
+}

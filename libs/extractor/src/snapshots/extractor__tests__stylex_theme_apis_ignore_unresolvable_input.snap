@@ -1,0 +1,15 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst empty = stylex.defineVars({ dynamic: someValue });\nconst unknownContract = stylex.createTheme(notAContract, { primary: 'navy' });\nconst noOverlap = stylex.createTheme(empty, { missing: 'navy' });\nconst notAnObject = stylex.defineVars(someVariable);\nconst deepRef = stylex.create({ box: { color: theme.colors.primary } });\nconst spreadVars = stylex.defineVars({ ...other, kept: 'red' });\nconst spreadTheme = stylex.createTheme(empty, { ...other });\"))"
+---
+ToBTreeSet {
+    styles: {
+        Css(
+            ExtractCss {
+                css: ":root{--b:red;}",
+                file: "test.tsx",
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst empty = {};\nconst unknownContract = stylex.createTheme(notAContract, { primary: \"navy\" });\nconst noOverlap = \"a\";\nconst notAnObject = stylex.defineVars(someVariable);\nconst deepRef = { \"box\": \"\" };\nconst spreadVars = { \"kept\": \"var(--b)\" };\nconst spreadTheme = \"a\";\n",
+}

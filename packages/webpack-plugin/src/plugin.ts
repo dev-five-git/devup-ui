@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import {
   buildCanonicalMap,
   computeFileReach,
+  createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -186,6 +187,11 @@ export class DevupUIWebpackPlugin {
     if (!existsSync(this.options.distDir))
       mkdirSync(this.options.distDir, { recursive: true })
     writeFileSync(join(this.options.distDir, '.gitignore'), '*', 'utf-8')
+    writeFileSync(
+      join(this.options.distDir, 'compat.d.ts'),
+      createCompatTypes(this.importAliases),
+      'utf-8',
+    )
 
     if (this.options.watch) {
       try {

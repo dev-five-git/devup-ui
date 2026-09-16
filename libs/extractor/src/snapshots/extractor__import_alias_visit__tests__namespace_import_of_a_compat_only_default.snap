@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r\"import * as Sheet from 'some-lib'\", \"test.tsx\",\n\"@devup-ui/react\", &aliases)"
+---
+import { ThemeProvider as Sheet } from '@devup-ui/react/compat';

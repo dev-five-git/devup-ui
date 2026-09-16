@@ -318,9 +318,11 @@ pub fn get_class_name_expression<'a>(
     // Determine the className expression to use:
     // - If we extracted Tailwind styles, use generated class names (replace original)
     // - Otherwise, preserve the original className
-    let class_name_to_use = if tailwind_class_expr.is_some() {
-        // Tailwind className → replaced with generated class names
-        tailwind_class_expr
+    let class_name_to_use = if let Some(tailwind_class_expr) = tailwind_class_expr {
+        // Tailwind className → replaced with generated class names. A rebuilt
+        // `cond && "a"` still evaluates to `false`, which React would render as
+        // `class="false"`, so it needs the same falsy guard as a passthrough.
+        Some(convert_class_name(ast_builder, &tailwind_class_expr))
     } else {
         // Non-Tailwind className → keep original
         class_name_prop
@@ -410,9 +412,11 @@ fn extract_tailwind_from_class_name<'a>(
         }
     }
 
-    // Extract from template literals (e.g., `${cond ? 'text-red' : 'text-blue'} p-4`)
-    if let Some(Expression::TemplateLiteral(template)) = class_name_prop {
-        let all_classes = extract_all_classes_from_template_literal(template);
+    // Extract from any expression that can still carry static class strings:
+    // `` `${cond ? 'text-red' : 'text-blue'} p-4` ``, `cond ? 'p-4' : 'p-8'`, `cond && 'p-4'`.
+    if let Some(expression) = class_name_prop {
+        let mut all_classes = String::new();
+        extract_classes_from_expression(expression, &mut all_classes);
         if has_tailwind_classes(&all_classes) {
             // Single pass over every class: parse ONCE, then build both the
             // `Tailwind class → generated class name` mapping and the styles vec for
@@ -443,11 +447,14 @@ fn extract_tailwind_from_class_name<'a>(
             }
 
             if !class_mapping.is_empty() {
-                // Build new template literal with replaced class names
-                let new_template =
-                    rebuild_template_literal_with_mapping(ast_builder, template, &class_mapping);
+                // Build the same expression back with replaced class names
+                let new_expression = rebuild_expression_with_mapping_unsorted(
+                    ast_builder,
+                    expression,
+                    &class_mapping,
+                );
 
-                return (tailwind_styles, Some(new_template));
+                return (tailwind_styles, Some(new_expression));
             }
         }
     }
@@ -456,9 +463,9 @@ fn extract_tailwind_from_class_name<'a>(
 }
 
 /// Rebuild a template literal, replacing Tailwind classes with generated class names
-fn rebuild_template_literal_with_mapping<'a>(
+fn rebuild_expression_with_mapping_unsorted<'a>(
     ast_builder: &AstBuilder<'a>,
-    template: &oxc_ast::ast::TemplateLiteral<'a>,
+    expression: &Expression<'a>,
     class_mapping: &FxHashMap<String, String>,
 ) -> Expression<'a> {
     // Sort the mapping ONCE by key length descending (avoids partial replacements,
@@ -466,7 +473,7 @@ fn rebuild_template_literal_with_mapping<'a>(
     // and nested expression instead of re-sorting per call.
     let mut sorted_classes: Vec<(&String, &String)> = class_mapping.iter().collect();
     sorted_classes.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
-    rebuild_template_literal_with_sorted(ast_builder, template, &sorted_classes)
+    rebuild_expression_with_mapping(ast_builder, expression, &sorted_classes)
 }
 
 /// Rebuild a template literal using a pre-sorted class mapping slice.

@@ -8,7 +8,48 @@ use crate::utils::{get_string_by_literal_expression, get_string_by_property_key}
 pub enum StylexFunction {
     Create,
     Props,
+    Attrs,
     Keyframes,
+    DefineVars,
+    CreateTheme,
+    CreateThemeContract,
+    DefineConsts,
+    PositionTry,
+    ViewTransitionClass,
+}
+
+impl StylexFunction {
+    #[must_use]
+    pub fn from_export_name(value: &str) -> Option<Self> {
+        match value {
+            "create" => Some(StylexFunction::Create),
+            "props" => Some(StylexFunction::Props),
+            "attrs" => Some(StylexFunction::Attrs),
+            "keyframes" => Some(StylexFunction::Keyframes),
+            "defineVars" => Some(StylexFunction::DefineVars),
+            "createTheme" => Some(StylexFunction::CreateTheme),
+            "createThemeContract" => Some(StylexFunction::CreateThemeContract),
+            "defineConsts" => Some(StylexFunction::DefineConsts),
+            "positionTry" => Some(StylexFunction::PositionTry),
+            "viewTransitionClass" => Some(StylexFunction::ViewTransitionClass),
+            _ => None,
+        }
+    }
+}
+
+#[must_use]
+pub fn css_variable_block(selector: &str, assignments: &[(String, String)]) -> String {
+    let mut css = String::new();
+    css.push_str(selector);
+    css.push('{');
+    for (name, value) in assignments {
+        css.push_str(name);
+        css.push(':');
+        css.push_str(value);
+        css.push(';');
+    }
+    css.push('}');
+    css
 }
 
 /// Check if a call expression is `stylex.firstThatWorks()` or named `firstThatWorks()`.
@@ -146,8 +187,9 @@ pub fn decompose_value_conditions(
     {
         let mut results = vec![];
         for arg in call.arguments.iter().rev() {
-            let arg_expr = arg.to_expression();
-            if let Some(s) = get_string_by_literal_expression(arg_expr) {
+            if let Some(arg_expr) = arg.as_expression()
+                && let Some(s) = get_string_by_literal_expression(arg_expr)
+            {
                 results.push(DecomposedStyle {
                     property: css_property.to_string(),
                     value: Some(s.into_owned()),
@@ -161,9 +203,8 @@ pub fn decompose_value_conditions(
     // CallExpression: types.*() → extract inner value, pass through selectors
     if let Expression::CallExpression(call) = value
         && is_types_call(&call.callee)
-        && !call.arguments.is_empty()
+        && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
     {
-        let inner = call.arguments[0].to_expression();
         if let Some(s) = get_string_by_literal_expression(inner) {
             return vec![DecomposedStyle {
                 property: css_property.to_string(),

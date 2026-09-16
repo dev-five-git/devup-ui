@@ -11,13 +11,13 @@ use crate::{
     },
     gen_class_name::gen_class_names,
     gen_style::gen_styles,
-    utils::{merge_object_expressions, wrap_array_filter},
+    utils::{merge_object_expressions, unwrap_syntax_only, wrap_array_filter},
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
     ast::{
-        Argument, BindingPattern, BindingProperty, BindingRestElement, Expression, FormalParameter,
-        FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
+        Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
+        FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
         JSXAttributeValue, JSXElementName, JSXOpeningElement, PropertyKey, Str,
     },
     builder::AstBuilder,
@@ -28,30 +28,67 @@ fn extract_base_tag_and_class_name(
     input: &Expression<'_>,
     imports: &FxHashMap<String, ExportVariableKind>,
 ) -> (Option<String>, Option<Vec<ExtractStyleValue>>) {
+    let input = unwrap_syntax_only(input);
     if let Expression::StaticMemberExpression(member) = input {
         (Some(member.property.name.to_string()), None)
     } else if let Expression::CallExpression(call) = input
         && call.arguments.len() == 1
+        && let Some((tag_name, default_class_name)) = tag_from_argument(&call.arguments[0], imports)
     {
         // styled("div") or styled(Component)
-        if let Argument::StringLiteral(lit) = &call.arguments[0] {
-            (Some(lit.value.to_string()), None)
-        } else if let Argument::Identifier(ident) = &call.arguments[0] {
-            if let Some(export_variable_kind) = imports.get(ident.name.as_str()) {
-                (
-                    Some(export_variable_kind.to_tag().to_string()),
-                    Some(export_variable_kind.extract()),
-                )
-            } else {
-                (Some(ident.name.to_string()), None)
-            }
-        } else {
-            // Component reference - we'll handle this later
-            (None, None)
-        }
+        (Some(tag_name), default_class_name)
     } else {
         (None, None)
     }
+}
+
+/// Read the base tag out of a `styled(...)` argument, resolving a devup-ui component
+/// reference to both its HTML tag and the styles that component contributes by default.
+fn tag_from_argument(
+    argument: &Argument<'_>,
+    imports: &FxHashMap<String, ExportVariableKind>,
+) -> Option<(String, Option<Vec<ExtractStyleValue>>)> {
+    match argument {
+        Argument::StringLiteral(lit) => Some((lit.value.to_string(), None)),
+        Argument::Identifier(ident) => Some(match imports.get(ident.name.as_str()) {
+            Some(export_variable_kind) => (
+                export_variable_kind.to_tag().to_string(),
+                Some(export_variable_kind.extract()),
+            ),
+            None => (ident.name.to_string(), None),
+        }),
+        _ => None,
+    }
+}
+
+/// Resolve a `styled(...)` call to its base tag, default styles, and the index of the
+/// argument holding the style object.
+///
+/// Two spellings build the same component: the curried `styled.div({...})` /
+/// `styled("div")({...})`, whose callee already carries the tag, and the two-argument
+/// `styled("div", {...})`, whose callee is the bare `styled` identifier.
+fn resolve_styled_call_target(
+    call: &CallExpression<'_>,
+    imports: &FxHashMap<String, ExportVariableKind>,
+) -> Option<(String, Option<Vec<ExtractStyleValue>>, usize)> {
+    if call.arguments.len() == 1
+        && let (Some(tag_name), default_class_name) =
+            extract_base_tag_and_class_name(&call.callee, imports)
+    {
+        return Some((tag_name, default_class_name, 0));
+    }
+    // The style object must be a literal: it is the only way to tell `styled(tag, styles)`
+    // apart from a malformed `styled("div", "span")`, which must be left untouched.
+    if call.arguments.len() == 2
+        && matches!(unwrap_syntax_only(&call.callee), Expression::Identifier(_))
+        && call.arguments[1].as_expression().is_some_and(|styles| {
+            matches!(unwrap_syntax_only(styles), Expression::ObjectExpression(_))
+        })
+        && let Some((tag_name, default_class_name)) = tag_from_argument(&call.arguments[0], imports)
+    {
+        return Some((tag_name, default_class_name, 1));
+    }
+    None
 }
 
 /// Extract styles from styled function calls
@@ -108,12 +145,11 @@ pub fn extract_style_from_styled<'a>(
 
         (Some(result), Some(styled_component))
     } else if let Expression::CallExpression(call) = expression
-        && let (Some(tag_name), default_class_name) =
-            extract_base_tag_and_class_name(&call.callee, imports)
-        && call.arguments.len() == 1
+        && let Some((tag_name, default_class_name, style_index)) =
+            resolve_styled_call_target(call, imports)
     {
-        // Case 2: styled.div({ bg: "red" }) or styled("div")({ bg: "red" })
-        // Check if this is a call to styled.div or styled("div")
+        // Case 2: styled.div({ bg: "red" }), styled("div")({ bg: "red" }),
+        // or styled("div", { bg: "red" })
 
         // Extract styles from object expression
         let ExtractResult {
@@ -125,10 +161,10 @@ pub fn extract_style_from_styled<'a>(
         } = extract_style_from_expression(
             ast_builder,
             None,
-            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+            if let Argument::SpreadElement(spread) = &mut call.arguments[style_index] {
                 &mut spread.argument
             } else {
-                call.arguments[0].to_expression_mut()
+                call.arguments[style_index].to_expression_mut()
             },
             0,
             &None,

@@ -1,0 +1,58 @@
+export const metadata = {
+  title: 'Migration',
+  alternates: {
+    canonical: '/docs/migration/vanilla-extract',
+  },
+}
+
+# vanilla-extract
+
+## Stylesheet files
+
+Inside `.css.ts` / `.css.js` — the only place vanilla-extract allows its APIs — Devup UI evaluates the module and replaces every call with its generated output. The whole surface works there: `style`, `globalStyle`, `keyframes`, `styleVariants`, `fontFace`, `createVar`, `fallbackVar`, `createTheme`, `createThemeContract`, `layer`, `createContainer`.
+
+```ts
+// theme.css.ts
+import { createTheme, createThemeContract, style } from '@vanilla-extract/css'
+
+const vars = createThemeContract({ colors: { bg: null } })
+export const light = createTheme(vars, { colors: { bg: 'white' } })
+export const box = style({ background: vars.colors.bg })
+```
+
+## Ordinary modules
+
+`style` and `globalStyle` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts:
+
+```tsx
+import { globalStyle, style } from '@vanilla-extract/css'
+
+export const a = style({ color: 'red' })
+globalStyle('body', { margin: 0 })
+```
+
+```tsx
+// output — no import left
+export const a = 'a'
+```
+
+`globalStyle(selector, rules)` keeps vanilla-extract's two-argument shape; the extractor folds the selector back into the object `globalCss` takes.
+
+The remaining APIs stay on `@vanilla-extract/css` outside a stylesheet file, because evaluating a module that also contains React components is not possible. A build warning names them:
+
+```
+[devup-ui] WARNING: '@vanilla-extract/css' keeps styleVariants, createVar because
+devup-ui has no equivalent export, so the package stays a runtime dependency.
+```
+
+Moving those calls into a `.css.ts` file — where vanilla-extract wants them anyway — removes the dependency.
+
+## Namespace imports
+
+A namespace stands for many named exports whose Devup UI counterparts are renamed (`style` → `css`), which a namespace access cannot express, so it is left alone:
+
+```ts
+// unchanged
+```
+
+Use named imports to get the rewrite.

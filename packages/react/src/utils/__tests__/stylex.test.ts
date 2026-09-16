@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+  attrs,
   create,
   createTheme,
+  createThemeContract,
+  defineConsts,
   defineVars,
   firstThatWorks,
   include,
   keyframes,
+  positionTry,
   props,
   types,
+  viewTransitionClass,
 } from '../stylex'
 
 describe('stylex', () => {
@@ -20,6 +25,25 @@ describe('stylex', () => {
 
   it('props should throw at runtime', () => {
     expect(() => props()).toThrowError('Cannot run on the runtime')
+  })
+
+  it('attrs should throw at runtime', () => {
+    expect(() => attrs()).toThrowError('Cannot run on the runtime')
+  })
+
+  it('theme and at-rule helpers should throw at runtime', () => {
+    expect(() => createThemeContract({ p: 'red' })).toThrowError(
+      'Cannot run on the runtime',
+    )
+    expect(() => defineConsts({ p: 'red' })).toThrowError(
+      'Cannot run on the runtime',
+    )
+    expect(() => positionTry({ top: '0' })).toThrowError(
+      'Cannot run on the runtime',
+    )
+    expect(() => viewTransitionClass({ opacity: '0' })).toThrowError(
+      'Cannot run on the runtime',
+    )
   })
 
   it('keyframes should throw at runtime', () => {

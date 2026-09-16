@@ -1095,6 +1095,7 @@ describe('devupUIVitePlugin', () => {
       true,
       false,
       {
+        '@emotion/react': null,
         '@emotion/styled': 'styled',
         '@vanilla-extract/css': null,
         'styled-components': 'styled',
@@ -1112,6 +1113,7 @@ describe('devupUIVitePlugin', () => {
       true,
       false,
       {
+        '@emotion/react': null,
         '@emotion/styled': 'styled',
         '@vanilla-extract/css': null,
         'styled-components': 'styled',

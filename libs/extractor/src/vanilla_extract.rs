@@ -96,11 +96,6 @@ pub struct CollectedStyles {
     pub constant_exports: FxHashMap<String, String>,
 }
 
-/// Check if a filename is a vanilla-extract style file
-pub fn is_vanilla_extract_file(filename: &str) -> bool {
-    filename.ends_with(".css.ts") || filename.ends_with(".css.js")
-}
-
 /// Internal state for collecting styles during JS execution
 #[derive(Default)]
 struct StyleCollectorInner {
@@ -1607,17 +1602,8 @@ fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant 
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::utils::is_vanilla_extract_file;
     use smallvec::smallvec;
-
-    #[test]
-    fn test_is_vanilla_extract_file() {
-        assert!(is_vanilla_extract_file("styles.css.ts"));
-        assert!(is_vanilla_extract_file("theme.css.js"));
-        assert!(is_vanilla_extract_file("path/to/styles.css.ts"));
-        assert!(!is_vanilla_extract_file("styles.ts"));
-        assert!(!is_vanilla_extract_file("styles.css"));
-        assert!(!is_vanilla_extract_file("component.tsx"));
-    }
 
     #[test]
     fn test_preprocess_typescript() {

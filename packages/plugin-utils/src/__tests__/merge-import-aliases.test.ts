@@ -11,6 +11,7 @@ describe('mergeImportAliases', () => {
     const result = mergeImportAliases()
 
     expect(result).toEqual({
+      '@emotion/react': null,
       '@emotion/styled': 'styled',
       'styled-components': 'styled',
       '@vanilla-extract/css': null,
@@ -23,6 +24,7 @@ describe('mergeImportAliases', () => {
     })
 
     expect(result).toEqual({
+      '@emotion/react': null,
       '@emotion/styled': 'styled',
       'styled-components': 'styled',
       '@vanilla-extract/css': null,
@@ -57,6 +59,7 @@ describe('mergeImportAliases', () => {
 
   it('should handle disabling all defaults', () => {
     const result = mergeImportAliases({
+      '@emotion/react': false,
       '@emotion/styled': false,
       'styled-components': false,
       '@vanilla-extract/css': false,
@@ -81,6 +84,7 @@ describe('mergeImportAliases', () => {
 describe('DEFAULT_IMPORT_ALIASES', () => {
   it('should have correct default values', () => {
     expect(DEFAULT_IMPORT_ALIASES).toEqual({
+      '@emotion/react': true,
       '@emotion/styled': 'styled',
       'styled-components': 'styled',
       '@vanilla-extract/css': true,

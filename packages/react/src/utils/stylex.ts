@@ -30,6 +30,12 @@ export function props(
   throw new Error('Cannot run on the runtime')
 }
 
+export function attrs(
+  ..._styles: ReadonlyArray<StyleProperties | false | null | undefined>
+): { class?: string; style?: Record<string, string> } {
+  throw new Error('Cannot run on the runtime')
+}
+
 export function keyframes(_frames: Record<string, StyleProperties>): string {
   throw new Error('Cannot run on the runtime')
 }
@@ -53,6 +59,26 @@ export function createTheme<V extends Record<string, string>>(
 
   _overrides: { readonly [K in keyof V]: StyleValue },
 ): Record<string, StyleValue> {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function createThemeContract<V extends Record<string, StyleValue>>(
+  _vars: V,
+): { readonly [K in keyof V]: string } {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function defineConsts<V extends Record<string, StyleValue>>(
+  _consts: V,
+): { readonly [K in keyof V]: V[K] } {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function positionTry(_fallback: StyleProperties): string {
+  throw new Error('Cannot run on the runtime')
+}
+
+export function viewTransitionClass(_styles: StyleProperties): string {
   throw new Error('Cannot run on the runtime')
 }
 

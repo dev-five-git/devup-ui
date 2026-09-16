@@ -1,0 +1,29 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import stylex from '@stylexjs/stylex';\nconst s = stylex.create({ a: { color: 'red' }, b: { marginTop: '1px' } });\nconst cast = <div {...stylex.props(s.a as any)} />;\nconst satisfied = <div {...stylex.props(s.b satisfies object)} />;\nconst nonNull = <div {...stylex.props(s.a!)} />;\nconst parens = <div {...stylex.props((s.b))} />;\nconst chained = <div {...stylex.props(s?.a)} />;\nconst computedChain = <div {...stylex.props(s?.[k])} />;\nconst chainedCall = <div {...stylex.props(s?.a())} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin-top",
+                value: "1px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport stylex from \"@stylexjs/stylex\";\nconst s = {\n\t\"a\": \"a\",\n\t\"b\": \"b\"\n};\nconst cast = <div {...{ className: \"a\" }} />;\nconst satisfied = <div {...{ className: \"b\" }} />;\nconst nonNull = <div {...{ className: \"a\" }} />;\nconst parens = <div {...{ className: \"b\" }} />;\nconst chained = <div {...{ className: \"a\" }} />;\nconst computedChain = <div {...{ className: s?.[k] || \"\" }} />;\nconst chainedCall = <div {...{ className: \"\" }} />;\n",
+}

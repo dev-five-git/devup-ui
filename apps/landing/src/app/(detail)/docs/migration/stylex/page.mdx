@@ -1,0 +1,98 @@
+export const metadata = {
+  title: 'Migration',
+  alternates: {
+    canonical: '/docs/migration/stylex',
+  },
+}
+
+# StyleX
+
+`@stylexjs/stylex` needs no alias configuration — the extractor recognises the package directly, through the default import, a namespace import, or named imports.
+
+## Styles and props
+
+`create()` becomes a namespace-to-class-name object and `props()` becomes the attributes to spread:
+
+```tsx
+import stylex from '@stylexjs/stylex'
+
+const styles = stylex.create({
+  base: { display: 'inline-block' },
+})
+const colors = stylex.create({ red: { color: 'red' }, blue: { color: 'blue' } })
+
+const el = <div {...stylex.props(styles.base, colors[color])} />
+```
+
+```tsx
+const styles = { base: 'a' }
+const colors = { red: 'b', blue: 'c' }
+
+const el = <div {...{ className: `a ${colors[color] || ''}` }} />
+```
+
+Computed access such as `colors[color]` is resolved against the object the `create()` call was rewritten into, so every generated atom stays reachable. `stylex.attrs()` behaves the same but emits `class` instead of `className`.
+
+Accepted argument shapes:
+
+```tsx
+stylex.props(styles.base) // member access
+stylex.props(styles['base']) // literal key
+stylex.props(colors[color]) // runtime key
+stylex.props([styles.a, styles.b]) // StyleXArray, nestable
+stylex.props(on && styles.active) // conditional
+stylex.props(styles?.base) // optional chaining
+```
+
+## Variables and themes
+
+```tsx
+const colors = stylex.defineVars({ primary: 'blue', secondary: 'grey' })
+const dark = stylex.createTheme(colors, { primary: 'navy' })
+const styles = stylex.create({ box: { color: colors.primary } })
+
+const el = <div {...stylex.props(dark, styles.box)} />
+```
+
+```css
+:root {
+  --a: blue;
+  --b: grey;
+}
+.c {
+  --a: navy;
+}
+.d {
+  color: var(--a);
+}
+```
+
+```tsx
+const colors = { primary: 'var(--a)', secondary: 'var(--b)' }
+const dark = 'c'
+const styles = { box: 'd' }
+const el = <div {...{ className: 'c d' }} />
+```
+
+`createThemeContract()` produces the same references without publishing a `:root` block, and `defineConsts()` inlines its values into the `create()` calls that read them.
+
+## At-rules
+
+```tsx
+const fallback = stylex.positionTry({ top: '0', insetBlockEnd: 'auto' })
+const transition = stylex.viewTransitionClass({ animationDuration: '300ms' })
+```
+
+```css
+@position-try --a {
+  top: 0;
+  inset-block-end: auto;
+}
+.b {
+  animation-duration: 300ms;
+}
+```
+
+## Value helpers
+
+`firstThatWorks()` emits its fallbacks in CSS order, `types.*()` unwraps to the inner value, and `include()` merges another namespace's classes. Values may be plain literals, condition objects (`{ default, ':hover', '@media ...' }`), or arrow functions, which become CSS variables bound at the call site.

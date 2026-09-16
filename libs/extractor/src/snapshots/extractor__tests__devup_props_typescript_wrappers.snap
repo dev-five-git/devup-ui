@@ -1,0 +1,48 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(extract_tsx(r\"import { Box } from '@devup-ui/react';\nconst cast = <Box bg={'red' as any} />;\nconst satisfied = <Box color={'blue' satisfies string} />;\nconst nonNull = <Box mt={v!} />;\nconst parens = <Box pt={('4px')} />;\"))"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding-top",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "margin-top",
+                level: 0,
+                identifier: "v",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst cast = <div className=\"a\" />;\nconst satisfied = <div className=\"b\" />;\nconst nonNull = <div className=\"c\" style={{ \"--d\": v }} />;\nconst parens = <div className=\"e\" />;\n",
+}

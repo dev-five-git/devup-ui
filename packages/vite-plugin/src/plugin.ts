@@ -5,6 +5,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import {
   buildCanonicalMap,
   computeFileReach,
+  createCompatTypes,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -287,6 +288,11 @@ export function DevupUI({
       }
       if (!existsSync(distDir)) await mkdir(distDir, { recursive: true })
       await writeFile(join(distDir, '.gitignore'), '*', 'utf-8')
+      await writeFile(
+        join(distDir, 'compat.d.ts'),
+        createCompatTypes(importAliases),
+        'utf-8',
+      )
       await writeDataFiles({
         package: libPackage,
         cssDir,

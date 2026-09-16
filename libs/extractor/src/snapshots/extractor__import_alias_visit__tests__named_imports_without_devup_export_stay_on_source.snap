@@ -1,0 +1,5 @@
+---
+source: libs/extractor/src/import_alias_visit.rs
+expression: "transform_import_aliases(r\"import styled, { css, keyframes, createGlobalStyle, ThemeProvider } from 'styled-components'\",\n\"test.tsx\", \"@devup-ui/react\", &styled_components_alias())"
+---
+import { styled, css, keyframes } from '@devup-ui/react'; import { createGlobalStyle, ThemeProvider } from '@devup-ui/react/compat';
