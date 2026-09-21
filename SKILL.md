@@ -506,6 +506,34 @@ Do not add `include`, `optimizeDeps.exclude` or `ssr.noExternal` entries for it.
 They are redundant, and writing them suggests to the next reader that a devup-ui
 package needs wiring when none does.
 
+**It is a normalize, not a preflight.** It sets `box-sizing: border-box`
+globally and zeroes a few margins, but for form controls it does exactly two
+things:
+
+```ts
+':where(button,input,select)': { m: 0 },
+':where(button,[type=button i],[type=reset i],[type=submit i])': {
+  WebkitAppearance: 'button',
+},
+```
+
+The second *preserves* the native control appearance rather than removing it.
+Button `padding`, `border` and `appearance` are deliberately left alone, so a
+button still carries the UA defaults — in Chrome `padding: 1px 6px` and
+`border: 2px outset`.
+
+That floor shows up the moment a button is sized in design units. Because
+`box-sizing: border-box` is global, an explicit `8px` width cannot shrink below
+the `6 + 6 + 2 + 2 = 16px` the horizontal padding and border already occupy, so
+an 8x8 button from a design renders 16x8. Nothing is broken and no token is
+wrong; the reset never claimed those properties.
+
+When a button is meant to be a plain box, remove them at the call site:
+
+```tsx
+<Box as="button" appearance="none" border="none" p={0} w="8px" h="8px" />
+```
+
 ## What Decides Static Extraction
 
 One rule explains `Dynamic Values = CSS Variables`, `$token Scope` and
@@ -569,6 +597,25 @@ const colors = { active: '$primary' }
 const colors = { active: 'var(--primary)' }
 <Box bg={colors.active} />
 ```
+
+### Token With Alpha
+
+Because a token *is* a CSS custom property, a token at partial opacity is
+`color-mix()` over `var(--token)`. There is no separate alpha token to define
+and no hardcoded copy of the colour to keep in sync.
+
+```tsx
+// CORRECT - 40% of the theme's own background, still theme-reactive
+<Box bg="color-mix(in srgb, var(--bg) 40%, transparent)" />
+
+// WRONG - a literal copy, frozen at whatever the token was that day
+<Box bg="#F7F3EC66" />
+```
+
+The literal is not merely redundant, it is wrong under theming: `$bg` follows
+the active theme and `#F7F3EC66` does not, so the surface stays light in dark
+mode. `opacity` is not a substitute either — it fades the element together
+with everything inside it, while `color-mix()` fades only the paint.
 
 ## Inline Variant Pattern (Preferred)
 
