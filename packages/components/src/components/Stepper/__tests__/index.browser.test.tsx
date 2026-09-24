@@ -80,7 +80,7 @@ describe('Stepper', () => {
     )
     // Initial value is 0 (min), so decrease button should be disabled
     expect(decreaseButton).toHaveClass(
-      'color-0-var(--base10,light-dark(#0000001A,#FFFFFF1A))--255',
+      'color-0-var_lp_--base10_cm_light-dark_lp__h_0000001A_cm__h_FFFFFF1A_rp__rp_--255',
     )
   })
 
@@ -98,7 +98,7 @@ describe('Stepper', () => {
     const input = container.querySelector('[aria-label="Stepper value"]')!
     await userEvent.type(input, '100')
     expect(increaseButton).toHaveClass(
-      'color-0-var(--base10,light-dark(#0000001A,#FFFFFF1A))--255',
+      'color-0-var_lp_--base10_cm_light-dark_lp__h_0000001A_cm__h_FFFFFF1A_rp__rp_--255',
     )
   })
 
