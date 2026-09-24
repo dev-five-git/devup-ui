@@ -33,7 +33,7 @@ describe('Textarea', () => {
     const { container } = render(<Textarea error />)
     expect(container).toMatchSnapshot()
     expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
-      'border-color-0-var(--error,light-dark(#D52B2E,#FF5B5E))-_a__lb_aria-invalid_eq__dq_true_dq__rb_-1',
+      'border-color-0-var_lp_--error_cm_light-dark_lp__h_D52B2E_cm__h_FF5B5E_rp__rp_-_a__lb_aria-invalid_eq__dq_true_dq__rb_-1',
     )
   })
 
@@ -147,7 +147,7 @@ describe('Textarea', () => {
   it('should render full width by default', () => {
     const { container } = render(<Textarea />)
     expect(container.querySelector('[aria-label="textarea"]')).toHaveClass(
-      'width-0-100%--1',
+      'width-0-100_pc_--1',
     )
   })
 })

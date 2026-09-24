@@ -16,15 +16,15 @@ default = ["vanilla-extract"]
 vanilla-extract = ["dep:boa_engine"]
 
 [dependencies]
-oxc_parser = "0.147.0"
-oxc_syntax = "0.147.0"
-oxc_span = "0.147.0"
-oxc_allocator = "0.147.0"
-oxc_ast = "0.147.0"
-oxc_ast_visit = "0.147.0"
-oxc_codegen = "0.147.0"
-oxc_transformer = "0.147.0"
-oxc_semantic = "0.147.0"
+oxc_parser = "0.151.0"
+oxc_syntax = "0.151.0"
+oxc_span = "0.151.0"
+oxc_allocator = "0.151.0"
+oxc_ast = "0.151.0"
+oxc_ast_visit = "0.151.0"
+oxc_codegen = "0.151.0"
+oxc_transformer = "0.151.0"
+oxc_semantic = "0.151.0"
 css = { path = "../css" }
 phf = "0.14"
 strum = "0.28.0"
@@ -37,7 +37,7 @@ smallvec = "1"
 [dev-dependencies]
 insta = "1.48.0"
 serial_test = "4.0.1"
-rstest = "0.26.1"
+rstest = "0.27.0"
 criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]

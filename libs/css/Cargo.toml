@@ -18,7 +18,7 @@ regex-lite = "0.1"
 bimap = { version = "0.6.3" }
 
 [dev-dependencies]
-rstest = "0.26.1"
+rstest = "0.27.0"
 serial_test = "4.0.1"
 criterion = { version = "0.8", features = ["html_reports"] }
 

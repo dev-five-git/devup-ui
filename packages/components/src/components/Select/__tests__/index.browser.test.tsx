@@ -284,7 +284,7 @@ describe('Select', () => {
     fireEvent.click(selectToggle!)
     const option1 = container.querySelector('[data-value="Option 1"]')
     expect(option1?.querySelector('svg')).toHaveClass(
-      'color-0-var(--inputDisabledText,light-dark(#E5E5E5,#373737))--255',
+      'color-0-var_lp_--inputDisabledText_cm_light-dark_lp__h_E5E5E5_cm__h_373737_rp__rp_--255',
     )
   })
 

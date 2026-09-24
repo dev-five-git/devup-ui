@@ -11,8 +11,8 @@
     "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.2",
-    "react-dom": "^19.2",
+    "react": "^19.3",
+    "react-dom": "^19.3",
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {

@@ -14,9 +14,9 @@ describe('Button', () => {
   it('should render default style when variant is default', () => {
     const { container } = render(<Button variant="default">Click me</Button>)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveStyle({
-      color: 'var(--text, #272727)',
-    })
+    expect(container.querySelector('button')).toHaveClass(
+      'color-0-var_lp_--text_cm__h_272727_rp_--1',
+    )
   })
 
   it('should disable', () => {
@@ -28,9 +28,9 @@ describe('Button', () => {
   it('should render error style when danger is true and variant is default', () => {
     const { container } = render(<Button danger>Click me</Button>)
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveStyle({
-      color: 'var(--error, #D52B2E)',
-    })
+    expect(container.querySelector('button')).toHaveClass(
+      'color-0-var_lp_--error_cm__h_D52B2E_rp_--1',
+    )
   })
 
   it('should render primary background color when danger is true and variant is primary', () => {
@@ -40,17 +40,15 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveStyle({
-      backgroundColor: 'var(--primary, #8163E1)',
-    })
+    expect(container.querySelector('button')).toHaveClass(
+      'background-0-var_lp_--primary_cm__h_8163E1_rp_--1',
+    )
   })
 
   it('should not render error color when danger is false and variant is default', async () => {
     const { container } = render(<Button data-testid="button">Click me</Button>)
     const button = container.querySelector('button')
-    expect(button).toHaveStyle({
-      color: 'var(--text, #272727)',
-    })
+    expect(button).toHaveClass('color-0-var_lp_--text_cm__h_272727_rp_--1')
     expect(button).toMatchSnapshot()
   })
 
@@ -170,9 +168,9 @@ describe('Button', () => {
       </Button>,
     )
     expect(container).toMatchSnapshot()
-    expect(container.querySelector('button')).toHaveStyle({
-      color: 'var(--text, #272727)',
-    })
+    expect(container.querySelector('button')).toHaveClass(
+      'color-0-var_lp_--text_cm__h_272727_rp_--1',
+    )
   })
 
   it('should have typography when typography is provided', () => {

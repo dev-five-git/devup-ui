@@ -502,20 +502,22 @@ pub fn sheet_to_classname(
         } else {
             encode_selector(selector)
         };
+        // Encode the value like the selector: `.8`, `$text` or `#FFF` would break the
+        // CSS selector, and spaces would split the class attribute into several classes.
+        let value = encode_selector(&optimized);
         let file_suffix = filename.map(get_file_num_by_filename);
         let order = style_order.unwrap_or(255);
         let prop = property.trim();
         with_prefix(|prefix| {
-            // Estimate capacity: prefix + prop + separators + level(1-3) + optimized + encoded + order(1-3) + file
-            let mut result = String::with_capacity(
-                prefix.len() + prop.len() + optimized.len() + encoded.len() + 16,
-            );
+            // Estimate capacity: prefix + prop + separators + level(1-3) + value + encoded + order(1-3) + file
+            let mut result =
+                String::with_capacity(prefix.len() + prop.len() + value.len() + encoded.len() + 16);
             result.push_str(prefix);
             result.push_str(prop);
             result.push('-');
             write_u8(&mut result, level);
             result.push('-');
-            result.push_str(&optimized);
+            result.push_str(&value);
             result.push('-');
             result.push_str(&encoded);
             result.push('-');
@@ -1036,6 +1038,29 @@ mod tests {
             sheet_to_classname("background", 1, Some("red"), Some("hover"), None, None),
             "background-1-red-hover-255"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_debug_sheet_to_classname_encodes_value() {
+        set_debug(true);
+        for (property, value, expected) in [
+            ("scale", "0.8", "scale-0-_d_8--255"),
+            ("background", "$text", "background-0-_dl_text--255"),
+            ("color", "#fff", "color-0-_h_FFF--255"),
+            ("height", "50%", "height-0-50_pc_--255"),
+            (
+                "transition",
+                "all .2s ease-in-out",
+                "transition-0-all_s__d_2s_s_ease-in-out--255",
+            ),
+        ] {
+            assert_eq!(
+                sheet_to_classname(property, 0, Some(value), None, None, None),
+                expected
+            );
+        }
+        set_debug(false);
     }
 
     #[test]

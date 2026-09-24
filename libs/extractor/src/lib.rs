@@ -336,10 +336,10 @@ fn extract_with_source_map(
 
     let ParserReturn {
         mut program, // AST
-        panicked,    // Parser encountered an error it couldn't recover from
+        fatal_error, // Parser encountered an error it couldn't recover from
         ..
     } = Parser::new(&allocator, code_to_parse, source_type).parse();
-    if panicked {
+    if fatal_error {
         return Err("Parser panicked".into());
     }
     let mut visitor = DevupVisitor::new(
@@ -417,10 +417,10 @@ fn extract_class_map_from_code(
 
     let ParserReturn {
         mut program,
-        panicked,
+        fatal_error,
         ..
     } = Parser::new(&allocator, partial_code, source_type).parse();
-    if panicked {
+    if fatal_error {
         Ok(FxHashMap::default())
     } else {
         let mut visitor = DevupVisitor::new(
@@ -483,10 +483,12 @@ pub fn has_devup_ui(filename: &str, code: &str, package: &str) -> bool {
 
     let allocator = Allocator::default();
     let ParserReturn {
-        program, panicked, ..
+        program,
+        fatal_error,
+        ..
     } = Parser::new(&allocator, code, source_type).parse();
 
-    if panicked {
+    if fatal_error {
         return false;
     }
 
