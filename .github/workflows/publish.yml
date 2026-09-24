@@ -107,6 +107,8 @@ jobs:
       - run: bun install
       - run: bun run build
       - name: Build Landing (Next)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
@@ -121,6 +123,8 @@ jobs:
       - name: Run E2E Tests (Next)
         run: bun run test:e2e:next
       - name: Build Landing (Next, singleCss)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           rm -rf apps/landing/out apps/landing/.next apps/landing/df
           DEVUP_SINGLE_CSS=1 bun run --filter landing build:next
@@ -236,6 +240,8 @@ jobs:
           cargo fmt --all -- --check
           git diff --exit-code
       - name: Build Landing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run --filter @devup-ui/components build-storybook
           mv ./packages/components/storybook-static ./apps/landing/public/storybook
@@ -266,6 +272,8 @@ jobs:
       - name: Run E2E Tests
         run: bun run test:e2e
       - name: Build Landing (singleCss)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           rm -rf apps/landing/dist apps/landing/.next apps/landing/.vinext apps/landing/df
           DEVUP_SINGLE_CSS=1 bun run --filter landing build
