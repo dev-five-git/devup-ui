@@ -12,14 +12,14 @@
     "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.2",
+    "react": "^19.3",
     "@devup-ui/react": "workspace:^"
   },
   "devDependencies": {
-    "vite-plugin-dts": "^5.0",
+    "vite-plugin-dts": "^5.1",
     "@devup-ui/vite-plugin": "workspace:^",
     "@vitejs/plugin-react": "^6.1.1",
-    "vite": "^8.2",
+    "vite": "^8.3",
     "typescript": "^7.0.2",
     "@types/node": "^26",
     "@types/react": "^19"

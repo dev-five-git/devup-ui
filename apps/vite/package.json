@@ -10,14 +10,14 @@
     "lint": "bun ../../node_modules/@typescript/native/bin/tsc && eslint"
   },
   "dependencies": {
-    "react": "^19.2",
-    "react-dom": "^19.2",
+    "react": "^19.3",
+    "react-dom": "^19.3",
     "@devup-ui/react": "workspace:^",
     "vite-lib-example": "workspace:^"
   },
   "devDependencies": {
     "@devup-ui/vite-plugin": "workspace:^",
-    "vite": "^8.2",
+    "vite": "^8.3",
     "@vitejs/plugin-react": "^6.1",
     "typescript": "^7.0.2",
     "@types/node": "^26",
