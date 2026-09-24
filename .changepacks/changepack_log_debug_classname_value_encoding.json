@@ -1,0 +1,7 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch"
+  },
+  "note": "Encode style values in debug class names so values with dots, spaces, `$`, `#`, `%` or parentheses no longer produce invalid CSS selectors",
+  "date": "2026-09-24T11:59:26.5906307Z"
+}
