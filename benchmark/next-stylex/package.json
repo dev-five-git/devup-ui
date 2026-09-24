@@ -15,8 +15,8 @@
     "@stylexjs/stylex": "^0.19",
     "bright": "^1.0",
     "next": "16.3",
-    "react": "19.2",
-    "react-dom": "19.2"
+    "react": "19.3",
+    "react-dom": "19.3"
   },
   "devDependencies": {
     "@babel/core": "^8.0",
@@ -25,12 +25,12 @@
     "@babel/plugin-syntax-typescript": "^8.0",
     "@stylexjs/babel-plugin": "^0.19",
     "@stylexjs/nextjs-plugin": "^0.11",
-    "@types/node": "26.4",
-    "@types/react": "19.2",
-    "@types/react-dom": "19.2",
-    "@types/react-test-renderer": "^19.1",
+    "@types/node": "26.6",
+    "@types/react": "19.3",
+    "@types/react-dom": "19.3",
+    "@types/react-test-renderer": "^19.3",
     "prettier": "^3.9",
-    "react-test-renderer": "^19.2",
+    "react-test-renderer": "^19.3",
     "rimraf": "^6.1",
     "ts_dependency_graph": "^2.1",
     "typescript": "^7.0.2"

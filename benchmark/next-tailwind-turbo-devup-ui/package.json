@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "next": "^16.3",
-    "react": "^19.2",
-    "react-dom": "^19.2",
+    "react": "^19.3",
+    "react-dom": "^19.3",
     "react-icons": "^5.7",
     "@devup-ui/react": "workspace:^"
   },
