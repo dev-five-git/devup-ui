@@ -17,7 +17,12 @@ interface GithubUser {
 }
 
 const getGithubUser = cache(async (userId: string) => {
-  const response = await fetch(`https://api.github.com/users/${userId}`)
+  // CI passes GITHUB_TOKEN: the e2e suite's browser requests use up the runner's
+  // unauthenticated quota before the second landing build fetches this.
+  const token = process.env.GITHUB_TOKEN
+  const response = await fetch(`https://api.github.com/users/${userId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
   if (!response.ok) {
     throw new Error(`GitHub user request failed with ${response.status}`)
   }
