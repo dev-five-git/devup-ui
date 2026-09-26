@@ -3,8 +3,10 @@
 //! This module uses `boa_engine` to execute vanilla-extract style files
 //! and extract style definitions for processing by the existing extract logic.
 
+use crate::utils::is_unitless_key;
 use boa_engine::{
-    Context, JsArgs, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
+    Context, JsArgs, JsResult, JsValue, NativeFunction, Source, js_string,
+    object::{FunctionObjectBuilder, ObjectInitializer},
     property::Attribute,
 };
 use css::file_map::get_file_num_by_filename;
@@ -367,6 +369,38 @@ fn js_value_to_json(value: &JsValue, context: &mut Context) -> String {
     }
 }
 
+/// `JSON.stringify` replacer adding `px` to numbers the way vanilla-extract does,
+/// so they are not read as Devup UI's spacing scale.
+fn pixelify(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsValue> {
+    let key = args.get_or_undefined(0).to_string(context)?;
+    let value = args.get_or_undefined(1);
+    Ok(match value.as_number() {
+        Some(number) if number != 0.0 && !is_unitless_key(&key.to_std_string_escaped()) => {
+            JsValue::from(js_string!(format!("{number}px")))
+        }
+        _ => value.clone(),
+    })
+}
+
+/// Serialize a style rule object with vanilla-extract's number units.
+fn style_to_json(value: &JsValue, context: &mut Context) -> String {
+    let realm = context.realm().clone();
+    let replacer =
+        FunctionObjectBuilder::new(&realm, NativeFunction::from_fn_ptr(pixelify)).build();
+    let json = context.intrinsics().objects().json();
+    if let Ok(stringify) = json.get(js_string!("stringify"), context)
+        && let Some(callable) = stringify.as_callable()
+        && let Ok(result) = callable.call(
+            &JsValue::undefined(),
+            &[value.clone(), replacer.into()],
+            context,
+        )
+        && let Some(s) = result.as_string()
+    {
+        return s.to_std_string_escaped();
+    }
+    js_value_to_json(value, context)
+}
 /// Execute vanilla-extract style file and collect styles
 pub fn execute_vanilla_extract(
     code: &str,
@@ -825,7 +859,7 @@ fn register_vanilla_extract_apis(
                             base_classes.push(base_str.to_std_string_escaped());
                         } else if elem.is_object() {
                             // It's a style object - merge it
-                            let elem_json = js_value_to_json(&elem, ctx);
+                            let elem_json = style_to_json(&elem, ctx);
                             // Strip outer braces and merge
                             let inner = elem_json
                                 .trim()
@@ -846,7 +880,7 @@ fn register_vanilla_extract_apis(
                 (merged_styles, base_classes)
             } else {
                 // No length property, just a style object
-                (js_value_to_json(style_obj, ctx), SmallVec::new())
+                (style_to_json(style_obj, ctx), SmallVec::new())
             };
             collector_style.borrow_mut().styles.styles.insert(
                 id.clone(),
@@ -870,7 +904,7 @@ fn register_vanilla_extract_apis(
                 .to_string(ctx)?
                 .to_std_string_escaped();
             let style_obj = args.get_or_undefined(1);
-            let json = js_value_to_json(style_obj, ctx);
+            let json = style_to_json(style_obj, ctx);
 
             collector_global
                 .borrow_mut()
@@ -887,7 +921,7 @@ fn register_vanilla_extract_apis(
     let keyframes_fn = unsafe {
         NativeFunction::from_closure(move |_this, args, ctx| {
             let keyframes_obj = args.get_or_undefined(0);
-            let json = js_value_to_json(keyframes_obj, ctx);
+            let json = style_to_json(keyframes_obj, ctx);
             let id = next_style_id(&collector_keyframes);
 
             collector_keyframes.borrow_mut().styles.keyframes.insert(
@@ -1627,7 +1661,7 @@ fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant 
                 if base_class.starts_with("__style_") || !base_class.contains('{') {
                     // Get the style object (second element)
                     if let Ok(style_obj) = obj.get(1, context) {
-                        let json = js_value_to_json(&style_obj, context);
+                        let json = style_to_json(&style_obj, context);
                         return StyleVariant {
                             base: Some(base_class),
                             styles_json: json,
@@ -1641,7 +1675,7 @@ fn parse_single_variant(value: &JsValue, context: &mut Context) -> StyleVariant 
     // Not an array or not composition - treat as plain style object
     StyleVariant {
         base: None,
-        styles_json: js_value_to_json(value, context),
+        styles_json: style_to_json(value, context),
     }
 }
 
@@ -3437,6 +3471,24 @@ export const box = style({ padding: 8 })";
 
         let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
         assert!(code.contains("export const themeVars = {\"bg\":\"var(--bg)\"}"));
+    }
+
+    #[test]
+    fn test_style_to_json_adds_vanilla_extract_units() {
+        let mut context = Context::default();
+        let rule = context
+            .eval(Source::from_bytes(
+                "({ fontSize: 16, top: 0, lineHeight: 1.5, '--gap': 4, 'var(--x)': 2, fallback: [1, 2], ':hover': { width: 3 } })",
+            ))
+            .unwrap();
+        assert_eq!(
+            super::style_to_json(&rule, &mut context),
+            r#"{"fontSize":"16px","top":0,"lineHeight":1.5,"--gap":4,"var(--x)":2,"fallback":[1,2],":hover":{"width":"3px"}}"#
+        );
+        assert_eq!(
+            super::style_to_json(&JsValue::undefined(), &mut context),
+            "undefined"
+        );
     }
 
     #[test]

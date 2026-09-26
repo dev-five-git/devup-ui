@@ -27,7 +27,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-size",
-                value: "128px",
+                value: "32px",
                 level: 0,
                 selector: None,
                 style_order: None,

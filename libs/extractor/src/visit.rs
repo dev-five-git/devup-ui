@@ -30,11 +30,12 @@ use oxc_ast::ast::ImportDeclarationSpecifier::{self, ImportSpecifier};
 use oxc_ast::ast::JSXAttributeItem::Attribute;
 use oxc_ast::ast::JSXAttributeName::Identifier;
 use oxc_ast::ast::{
-    Argument, BindingPattern, CallExpression, ChainElement, ComputedMemberExpression, Expression,
-    ExpressionStatement, FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration,
-    ImportOrExportKind, JSXAttributeItem, JSXAttributeValue, JSXChild, JSXClosingFragment,
-    JSXElement, JSXElementName, JSXExpressionContainer, JSXOpeningFragment, ObjectPropertyKind,
-    Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral,
+    Argument, BinaryOperator, BindingPattern, CallExpression, ChainElement,
+    ComputedMemberExpression, Expression, ExpressionStatement, FormalParameter,
+    FormalParameterKind, FormalParameters, IdentifierName, ImportDeclaration, ImportOrExportKind,
+    JSXAttributeItem, JSXAttributeValue, JSXChild, JSXClosingFragment, JSXElement, JSXElementName,
+    JSXExpressionContainer, JSXOpeningFragment, ObjectPropertyKind, Program, PropertyKey,
+    PropertyKind, Statement, StaticMemberExpression, Str, StringLiteral, UnaryOperator,
     VariableDeclarator,
 };
 use oxc_ast_visit::VisitMut;
@@ -305,6 +306,71 @@ impl<'a> DevupVisitor<'a> {
         (class_exprs, style_props)
     }
 
+    /// `((v) => typeof v === "number" ? v + unit : v)(value)`: how `StyleX` gives a
+    /// dynamic number its unit without evaluating `value` twice.
+    fn with_number_unit(&self, value: Expression<'a>, unit: &'static str) -> Expression<'a> {
+        if unit.is_empty() {
+            return value;
+        }
+        let param = || Expression::new_identifier(SPAN, "v", &self.ast);
+        let body = Expression::new_conditional_expression(
+            SPAN,
+            Expression::new_binary_expression(
+                SPAN,
+                Expression::new_unary_expression(SPAN, UnaryOperator::Typeof, param(), &self.ast),
+                BinaryOperator::StrictEquality,
+                Expression::new_string_literal(SPAN, "number", None, &self.ast),
+                &self.ast,
+            ),
+            Expression::new_binary_expression(
+                SPAN,
+                param(),
+                BinaryOperator::Addition,
+                Expression::new_string_literal(SPAN, unit, None, &self.ast),
+                &self.ast,
+            ),
+            param(),
+            &self.ast,
+        );
+        let mut params = oxc_allocator::Vec::new_in(&self.ast);
+        params.push(FormalParameter::new(
+            SPAN,
+            oxc_allocator::Vec::new_in(&self.ast),
+            BindingPattern::new_binding_identifier(SPAN, "v", &self.ast),
+            None,
+            None,
+            false,
+            None,
+            false,
+            false,
+            &self.ast,
+        ));
+        let arrow = Expression::new_arrow_function_expression(
+            SPAN,
+            false,
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+            FormalParameters::boxed(
+                SPAN,
+                FormalParameterKind::ArrowFormalParameters,
+                params,
+                None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+                &self.ast,
+            ),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+            body.into(),
+            &self.ast,
+        );
+        let mut arguments = oxc_allocator::Vec::new_in(&self.ast);
+        arguments.push(Argument::from(value));
+        Expression::new_call_expression(
+            SPAN,
+            Expression::new_parenthesized_expression(SPAN, arrow, &self.ast),
+            None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterInstantiation<'a>>>,
+            arguments,
+            false,
+            &self.ast,
+        )
+    }
     /// Resolve a dynamic namespace call like `styles.bar(h)` to (className, `style_props`).
     fn resolve_stylex_dynamic_call(
         &self,
@@ -324,11 +390,12 @@ impl<'a> DevupVisitor<'a> {
             );
 
             let mut props = Vec::with_capacity(info.css_vars.len());
-            for (param_idx, var_name) in &info.css_vars {
+            for (param_idx, var_name, unit) in &info.css_vars {
                 if let Some(arg) = call.arguments.get(*param_idx)
                     && let Some(arg_expr) = arg.as_expression()
                 {
-                    let arg_expr = arg_expr.clone_in(self.ast.allocator());
+                    let arg_expr =
+                        self.with_number_unit(arg_expr.clone_in(self.ast.allocator()), unit);
                     props.push(ObjectPropertyKind::new_object_property(
                         SPAN,
                         PropertyKind::Init,
