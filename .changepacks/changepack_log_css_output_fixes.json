@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/eslint-plugin/package.json": "Patch"
+  },
+  "note": "Fix the full WASM build panicking on every vanilla-extract `.css.ts` file (Boa read the clock without its `js` feature), resolve vanilla-extract references to other styles, keyframes, fonts and themes in selectors, values and `globalStyle`, keep `globalCss` pseudo selectors in `SELECTOR_ORDER` across breakpoints, merge adjacent rules with the same selector, and let declarations written next to a conditional `typography` preset win over it. Add the `prefer-media-shorthand` and `no-typography-token-prefix` ESLint rules",
+  "date": "2026-09-27T00:00:00.000Z"
+}
