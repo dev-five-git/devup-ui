@@ -10,6 +10,8 @@ describe('export index', () => {
       noDuplicateValue: expect.any(Object),
       noUselessResponsive: expect.any(Object),
       styleOrderRange: expect.any(Object),
+      noTypographyTokenPrefix: expect.any(Object),
+      preferMediaShorthand: expect.any(Object),
     })
   })
 })
