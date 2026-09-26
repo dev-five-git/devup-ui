@@ -16,11 +16,12 @@ use crate::{
     },
 };
 use css::{
-    add_selector_params, disassemble_property, get_enum_property_map, get_enum_property_value,
-    is_enum_property,
+    add_selector_params,
+    at_rule::{media_shorthand_query, split_at_rule_key},
+    disassemble_property, get_enum_property_map, get_enum_property_value, is_enum_property,
     is_special_property::is_special_property,
-    style_selector::StyleSelector,
-    theme_tokens::{get_responsive_theme_token, is_responsive_theme_token},
+    style_selector::{AtRuleKind, StyleSelector, optimize_selector},
+    theme_tokens::{get_responsive_theme_token, get_typography_keys, is_responsive_theme_token},
     utils::to_kebab_case,
 };
 use oxc_allocator::{CloneIn, GetAllocator};
@@ -221,6 +222,31 @@ pub fn extract_style_from_expression<'a>(
     }
 
     if let Some(name) = name
+        && is_nested_selector_key(name)
+    {
+        let mut styles = vec![];
+        for part in split_selector_list(name) {
+            if let Some(nested) = nest_selectors_key(selector.as_ref(), part) {
+                styles.extend(
+                    extract_style_from_expression(
+                        ast_builder,
+                        None,
+                        expression,
+                        level,
+                        &Some(nested),
+                        literal_handling,
+                    )
+                    .styles,
+                );
+            }
+        }
+        return ExtractResult {
+            styles,
+            ..ExtractResult::default()
+        };
+    }
+
+    if let Some(name) = name
         // First-byte dispatch: only names beginning with `a` (`as`), `s`
         // (`selectors`), `@`/`_` (at-rule + `_`-selector prefixes) or `t`
         // (`typography`) can match ANY special branch below. The dominant
@@ -242,76 +268,23 @@ pub fn extract_style_from_expression<'a>(
         {
             let mut props = vec![];
             for p in &mut obj.properties {
-                if let ObjectPropertyKind::ObjectProperty(o) = p {
-                    let Some(key_name) = o.key.name() else {
-                        continue;
-                    };
-                    let name = key_name.trim();
-                    let mut part_of_selector = vec![];
-
-                    let mut level = 0;
-                    let mut last_idx = 0;
-                    for (idx, c) in name.char_indices() {
-                        if c == '(' {
-                            level += 1;
+                if let ObjectPropertyKind::ObjectProperty(o) = p
+                    && let Some(key_name) = o.key.name()
+                {
+                    for part in split_selector_list(key_name.trim()) {
+                        if let Some(child) = nest_selectors_key(selector.as_ref(), part) {
+                            props.extend(
+                                extract_style_from_expression(
+                                    ast_builder,
+                                    None,
+                                    &mut o.value,
+                                    level,
+                                    &Some(child),
+                                    literal_handling,
+                                )
+                                .styles,
+                            );
                         }
-                        if c == ')' {
-                            level -= 1;
-                        }
-                        if c == ',' && level == 0 {
-                            part_of_selector.push(name[last_idx..idx].trim());
-                            last_idx = idx + 1;
-                        }
-                    }
-                    if !name.is_empty() {
-                        part_of_selector.push(name[last_idx..].trim());
-                    }
-
-                    // The parent selector's owned string is invariant across every
-                    // comma-part, so materialize it ONCE here instead of calling
-                    // `selector.to_string()` up to 3× per part inside the closure.
-                    let parent_sel = selector.as_ref().map(ToString::to_string);
-                    for sel in part_of_selector.iter().map(|name| {
-                        if let Some(parent_sel) = parent_sel.as_deref() {
-                            if name.starts_with('_') {
-                                if name.starts_with("_theme") {
-                                    StyleSelector::from([
-                                        to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                            .as_ref(),
-                                        parent_sel,
-                                    ])
-                                    .to_string()
-                                } else {
-                                    StyleSelector::from([
-                                        parent_sel,
-                                        to_kebab_case(name.strip_prefix("_").unwrap_or(name))
-                                            .as_ref(),
-                                    ])
-                                    .to_string()
-                                }
-                            } else {
-                                name.replace('&', parent_sel)
-                            }
-                        } else if name.starts_with('_') {
-                            StyleSelector::from(
-                                to_kebab_case(name.strip_prefix("_").unwrap_or(name)).as_ref(),
-                            )
-                            .to_string()
-                        } else {
-                            StyleSelector::from(name.strip_prefix("_").unwrap_or(name)).to_string()
-                        }
-                    }) {
-                        props.extend(
-                            extract_style_from_expression(
-                                ast_builder,
-                                None,
-                                &mut o.value,
-                                level,
-                                &Some(StyleSelector::Selector(sel)),
-                                literal_handling,
-                            )
-                            .styles,
-                        );
                     }
                 }
             }
@@ -321,31 +294,16 @@ pub fn extract_style_from_expression<'a>(
             };
         }
 
-        // Handle at-rules: @media, @supports, @container (or _media, _supports, _container)
-        let at_rule_name = name
-            .strip_prefix("@")
-            .or_else(|| name.strip_prefix("_"))
-            .filter(|n| matches!(*n, "media" | "supports" | "container"));
-
-        if let Some(at_rule) = at_rule_name
+        if let Some(kind) = at_rule_record_kind(name)
             && let Expression::ObjectExpression(obj) = expression
         {
             let mut props = vec![];
-            // The parent selector renders identically for every query in this
-            // at-rule object: format it once and clone the resulting `String`
-            // per iteration instead of re-running `Display` formatting. `query`
-            // is moved into the selector (it was previously cloned even though
-            // the original was dropped immediately after).
-            let parent = selector.as_ref().map(ToString::to_string);
             for p in &mut obj.properties {
                 if let ObjectPropertyKind::ObjectProperty(o) = p
                     && let Some(query) = get_string_by_property_key(&o.key)
+                    && let Some(at_selector) =
+                        StyleSelector::nest_at_rule(selector.as_ref(), kind, &query)
                 {
-                    let at_selector = StyleSelector::At {
-                        kind: at_rule.into(),
-                        query,
-                        selector: parent.clone(),
-                    };
                     props.extend(
                         extract_style_from_expression(
                             ast_builder,
@@ -365,19 +323,23 @@ pub fn extract_style_from_expression<'a>(
             };
         }
 
-        if let Some(new_selector) = name.strip_prefix("_") {
-            return extract_style_from_expression(
-                ast_builder,
-                None,
-                expression,
-                level,
-                &Some(if let Some(selector) = selector {
-                    (selector, new_selector).into()
-                } else {
-                    new_selector.into()
-                }),
-                literal_handling,
-            );
+        let nested = if let Some((kind, query)) = split_at_rule_key(name) {
+            Some(StyleSelector::nest_at_rule(selector.as_ref(), kind, query))
+        } else {
+            name.strip_prefix('_')
+                .map(|child| nest_underscore_name(selector.as_ref(), child))
+        };
+        if let Some(nested) = nested {
+            return nested.map_or_else(ExtractResult::default, |nested| {
+                extract_style_from_expression(
+                    ast_builder,
+                    None,
+                    expression,
+                    level,
+                    &Some(nested),
+                    literal_handling,
+                )
+            });
         }
         typo = name == "typography";
     }
@@ -385,9 +347,7 @@ pub fn extract_style_from_expression<'a>(
         if let Some(name) = name {
             ExtractResult {
                 styles: if typo {
-                    vec![ExtractStyleProp::Static(ExtractStyleValue::Typography(
-                        value.into_owned(),
-                    ))]
+                    vec![typography_style(value.into_owned(), level, selector)]
                 } else if matches!(
                     literal_handling,
                     LiteralHandling::ExpandResponsiveThemeToken
@@ -508,7 +468,12 @@ pub fn extract_style_from_expression<'a>(
                 // typo branch is safe. The non-typo branch must handle the
                 // `name.is_none()` case (pseudo-selector recursion) by
                 // returning empty styles.
-                styles: if typo {
+                styles: if typo
+                    && let Some(style) =
+                        conditional_typography(ast_builder, expression, level, selector)
+                {
+                    vec![style]
+                } else if typo {
                     vec![ExtractStyleProp::Expression {
                         expression: Expression::new_template_literal(
                             SPAN,
@@ -566,6 +531,18 @@ pub fn extract_style_from_expression<'a>(
                 // like any other non-extracted style prop.
                 if IGNORED_IDENTIFIERS.contains(&identifier.name.as_str()) {
                     ExtractResult::default()
+                } else if typo
+                    && let Some(style) = conditional_typography(
+                        ast_builder,
+                        &Expression::new_identifier(SPAN, identifier.name.as_str(), ast_builder),
+                        level,
+                        selector,
+                    )
+                {
+                    ExtractResult {
+                        styles: vec![style],
+                        ..ExtractResult::default()
+                    }
                 } else if let Some(name) = name {
                     if typo {
                         ExtractResult {
@@ -839,6 +816,120 @@ pub fn extract_style_from_expression<'a>(
             _ => ExtractResult::default(),
         }
     }
+}
+
+pub(crate) fn at_rule_record_kind(name: &str) -> Option<AtRuleKind> {
+    match name.strip_prefix('@').or_else(|| name.strip_prefix('_'))? {
+        "media" => Some(AtRuleKind::Media),
+        "supports" => Some(AtRuleKind::Supports),
+        "container" => Some(AtRuleKind::Container),
+        _ => None,
+    }
+}
+
+fn split_selector_list(key: &str) -> Vec<&str> {
+    let mut parts = vec![];
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, c) in key.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(key[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if !key.is_empty() {
+        parts.push(key[start..].trim());
+    }
+    parts
+}
+
+/// Resolve a `_name` style key (without the `_`) under `parent`: media
+/// shorthands such as `print` or `motionReduce` wrap it in `@media`, anything
+/// else nests a selector. `None` means the styles can never apply.
+fn nest_underscore_name(parent: Option<&StyleSelector>, name: &str) -> Option<StyleSelector> {
+    let name = to_kebab_case(name);
+    if let Some(query) = media_shorthand_query(&name) {
+        return StyleSelector::nest_at_rule(parent, AtRuleKind::Media, query);
+    }
+    Some(StyleSelector::nest_selector(
+        parent,
+        &StyleSelector::from(name.as_ref()).to_string(),
+    ))
+}
+
+/// Emotion/styled-components style object keys that are nested selectors
+/// (`'&:hover'`, `':hover'`, `'.parent &'`) rather than CSS properties.
+fn is_nested_selector_key(key: &str) -> bool {
+    key.starts_with(':') || key.contains('&')
+}
+
+fn nest_selectors_key(parent: Option<&StyleSelector>, key: &str) -> Option<StyleSelector> {
+    if let Some((kind, query)) = split_at_rule_key(key) {
+        StyleSelector::nest_at_rule(parent, kind, query)
+    } else if let Some(name) = key.strip_prefix('_') {
+        nest_underscore_name(parent, name)
+    } else if key.starts_with(':') {
+        Some(StyleSelector::nest_selector(parent, &format!("&{key}")))
+    } else if parent.is_some() {
+        Some(StyleSelector::nest_selector(parent, key))
+    } else {
+        Some(StyleSelector::from(key))
+    }
+}
+
+fn typography_atom(name: &str, level: u8, selector: &Option<StyleSelector>) -> ExtractStaticStyle {
+    ExtractStaticStyle {
+        property: "typography".to_string(),
+        value: name.to_string(),
+        level,
+        selector: selector.clone().map(optimize_selector),
+        style_order: None,
+        layer: None,
+        theme_token_resolution: ThemeTokenResolution::default(),
+    }
+}
+
+/// A `typography` preset outside any selector or breakpoint uses the theme's
+/// shared `typo-*` class. Under a condition the class would apply
+/// unconditionally, so it becomes a `typography` atom the sheet expands into
+/// the preset's declarations under that condition.
+fn typography_style<'a>(
+    name: String,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> ExtractStyleProp<'a> {
+    ExtractStyleProp::Static(if selector.is_none() && level == 0 {
+        ExtractStyleValue::Typography(name)
+    } else {
+        ExtractStyleValue::Static(typography_atom(&name, level, selector))
+    })
+}
+
+/// A dynamic `typography` value under a condition picks, at runtime, one
+/// conditional atom per typography preset registered in the theme.
+fn conditional_typography<'a>(
+    ast_builder: &AstBuilder<'a>,
+    condition: &Expression<'a>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> Option<ExtractStyleProp<'a>> {
+    if selector.is_none() && level == 0 {
+        return None;
+    }
+    let condition = condition.clone_in(ast_builder.allocator());
+    let map = get_typography_keys()
+        .into_iter()
+        .map(|key| {
+            let atom = ExtractStyleValue::Static(typography_atom(&key, level, selector));
+            (key, vec![ExtractStyleProp::Static(atom)])
+        })
+        .collect();
+    Some(ExtractStyleProp::Enum { condition, map })
 }
 
 pub fn dynamic_style<'a>(

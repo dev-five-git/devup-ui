@@ -12,9 +12,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(prefers-color-scheme: dark)",
+                        query: "(prefers-color-scheme:dark)",
                         selector: Some(
                             "body",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),
@@ -49,9 +53,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(min-width: 768px)",
+                        query: "(min-width:768px)",
                         selector: Some(
                             "body",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),
@@ -69,9 +77,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Supports,
-                        query: "(display: grid)",
+                        query: "(display:grid)",
                         selector: Some(
                             ".container",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),

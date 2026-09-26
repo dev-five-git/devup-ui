@@ -12,9 +12,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Container,
-                        query: "(min-width: 400px)",
+                        query: "(min-width:400px)",
                         selector: Some(
                             ".card",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),

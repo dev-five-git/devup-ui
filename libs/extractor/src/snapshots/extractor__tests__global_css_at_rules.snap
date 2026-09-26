@@ -12,9 +12,13 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(min-width: 768px)",
+                        query: "(min-width:768px)",
                         selector: Some(
                             "body",
+                        ),
+                        outer: [],
+                        file: Some(
+                            "test.tsx",
                         ),
                     },
                 ),

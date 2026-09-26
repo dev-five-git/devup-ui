@@ -12,10 +12,12 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(hover: hover)",
+                        query: "(hover:hover)",
                         selector: Some(
                             "&:hover",
                         ),
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,

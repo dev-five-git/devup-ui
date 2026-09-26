@@ -94,6 +94,22 @@ pub struct CollectedStyles {
     pub themes: FxHashMap<String, ThemeEntry>,
     /// Non-style constant exports: `variable_name` -> value (as code string)
     pub constant_exports: FxHashMap<String, String>,
+    /// `__style_N__` placeholder -> what it refers to, for placeholders left in
+    /// selectors and values
+    pub references: FxHashMap<String, Reference>,
+}
+
+/// Target of a placeholder that a selector or value interpolated
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Reference {
+    /// `style()`: `variable_name` and the unique class it gains when referenced
+    Style { name: String, class_name: String },
+    /// `keyframes()`: `variable_name`, resolved to the generated keyframes name
+    Keyframes(String),
+    /// `createTheme()`: its generated class name
+    Class(String),
+    /// `fontFace()`: its generated font-family name
+    Font(String),
 }
 
 /// Internal state for collecting styles during JS execution
@@ -387,7 +403,7 @@ pub fn execute_vanilla_extract(
 #[derive(Debug, Clone)]
 enum VarInfo {
     /// A style API call (style, keyframes, createContainer, etc.)
-    StyleApi { exported: bool },
+    StyleApi { exported: bool, api: StyleApi },
     /// A regular constant export with its original code
     Constant(String),
     /// The vars object from createTheme array destructuring [themeClass, vars]
@@ -409,12 +425,12 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
 
         // Check for array destructuring: const [themeClass, vars] = createTheme(...)
         if let oxc_ast::ast::BindingPattern::ArrayPattern(array_pat) = &decl.id {
-            if is_style_api_call(init) {
+            if let Some(api) = style_api_call(init) {
                 // First element is the theme class
                 if let Some(Some(first)) = array_pat.elements.first()
                     && let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = first
                 {
-                    vars.push((id.name.to_string(), VarInfo::StyleApi { exported }));
+                    vars.push((id.name.to_string(), VarInfo::StyleApi { exported, api }));
                 }
                 // Second element is the vars object - mark as ThemeVars
                 if let Some(Some(second)) = array_pat.elements.get(1)
@@ -424,8 +440,8 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
                 }
             }
         } else if let Some(name) = decl.id.get_identifier_name() {
-            if is_style_api_call(init) {
-                vars.push((name.to_string(), VarInfo::StyleApi { exported }));
+            if let Some(api) = style_api_call(init) {
+                vars.push((name.to_string(), VarInfo::StyleApi { exported, api }));
             } else if exported {
                 // Extract the original init expression using span
                 let span = init.span();
@@ -460,26 +476,28 @@ fn extract_var_names(code: &str, _package: &str) -> Vec<(String, VarInfo)> {
     vars
 }
 
-/// Check if an expression is a call to a style API (style, keyframes, styleVariants, etc.)
-fn is_style_api_call(expr: &oxc_ast::ast::Expression) -> bool {
+/// Which placeholder counter a style API call draws from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StyleApi {
+    FontFace,
+    GlobalTheme,
+    Other,
+}
+
+/// The style API an expression calls (style, keyframes, styleVariants, etc.)
+fn style_api_call(expr: &oxc_ast::ast::Expression) -> Option<StyleApi> {
     if let oxc_ast::ast::Expression::CallExpression(call) = expr
         && let oxc_ast::ast::Expression::Identifier(id) = &call.callee
     {
-        let name = id.name.as_str();
-        return matches!(
-            name,
-            "style"
-                | "keyframes"
-                | "styleVariants"
-                | "fontFace"
-                | "createVar"
-                | "createContainer"
-                | "layer"
-                | "createGlobalTheme"
-                | "createTheme"
-        );
+        return match id.name.as_str() {
+            "fontFace" => Some(StyleApi::FontFace),
+            "createGlobalTheme" => Some(StyleApi::GlobalTheme),
+            "style" | "keyframes" | "styleVariants" | "createVar" | "createContainer" | "layer"
+            | "createTheme" => Some(StyleApi::Other),
+            _ => None,
+        };
     }
-    false
+    None
 }
 
 /// Remap style placeholder IDs to original variable names
@@ -495,7 +513,6 @@ fn remap_style_names(
     // Build mapping from placeholder ID to original name
     // The order of style() calls matches the order of variable declarations
     let mut placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
-    let mut font_placeholder_to_name: FxHashMap<String, String> = FxHashMap::default();
     let mut new_styles = FxHashMap::default();
     let mut new_keyframes = FxHashMap::default();
     let mut new_style_variants = FxHashMap::default();
@@ -524,35 +541,54 @@ fn remap_style_names(
 
     for (name, info) in vars {
         match info {
-            VarInfo::StyleApi { exported } => {
-                // First check if this is a fontFace (uses __font_N__ placeholder)
+            VarInfo::StyleApi {
+                exported,
+                api: StyleApi::FontFace,
+            } => {
                 let font_placeholder = format!("__font_{font_idx}__");
                 if let Some((json, font_family, _)) = old_font_faces.remove(&font_placeholder) {
-                    font_placeholder_to_name.insert(font_placeholder, name.clone());
+                    collected
+                        .references
+                        .insert(font_placeholder, Reference::Font(font_family.clone()));
                     new_font_faces.insert(name.clone(), (json, font_family, *exported));
                     font_idx += 1;
-                    continue;
                 }
-
-                // Check if this is a createGlobalTheme (uses __global_theme_N__ placeholder)
+            }
+            VarInfo::StyleApi {
+                exported,
+                api: StyleApi::GlobalTheme,
+            } => {
                 let global_theme_placeholder = format!("__global_theme_{global_theme_idx}__");
                 if let Some(mut entry) = old_global_themes.remove(&global_theme_placeholder) {
                     entry.exported = *exported;
                     new_global_themes.insert(name.clone(), entry);
                     global_theme_idx += 1;
-                    continue;
                 }
-
+            }
+            VarInfo::StyleApi {
+                exported,
+                api: StyleApi::Other,
+            } => {
                 let placeholder = format!("__style_{style_idx}__");
                 placeholder_to_name.insert(placeholder.clone(), name.clone());
 
                 if let Some(mut entry) = old_styles.remove(&placeholder) {
                     entry.exported = *exported;
                     new_styles.insert(name.clone(), entry);
+                    collected.references.insert(
+                        placeholder,
+                        Reference::Style {
+                            name: name.clone(),
+                            class_name: format!("{file_prefix}_{name}"),
+                        },
+                    );
                     style_idx += 1;
                 } else if let Some(mut entry) = old_keyframes.remove(&placeholder) {
                     entry.exported = *exported;
                     new_keyframes.insert(name.clone(), entry);
+                    collected
+                        .references
+                        .insert(placeholder, Reference::Keyframes(name.clone()));
                     style_idx += 1;
                 } else if let Some((variants, _)) = old_style_variants.remove(&placeholder) {
                     new_style_variants.insert(name.clone(), (variants, *exported));
@@ -591,6 +627,9 @@ fn remap_style_names(
                             .push((format!(".{class_name}"), vars_json));
                     }
 
+                    collected
+                        .references
+                        .insert(placeholder, Reference::Class(class_name.clone()));
                     entry.exported = *exported;
                     entry.vars_name = None;
                     entry.class_name = class_name;
@@ -641,23 +680,6 @@ fn remap_style_names(
             .collect();
     }
 
-    // Replace font placeholders in style JSONs with actual font-family names
-    // Build a mapping from placeholder to font-family name
-    let font_family_map: FxHashMap<&str, &str> = font_placeholder_to_name
-        .iter()
-        .filter_map(|(placeholder, name)| {
-            new_font_faces
-                .get(name)
-                .map(|(_, font_family, _)| (placeholder.as_str(), font_family.as_str()))
-        })
-        .collect();
-
-    // Replace placeholders in a single pass per style JSON.
-    // This is needed for font-family references and selectors like `${parent}:hover &`.
-    for entry in new_styles.values_mut() {
-        replace_placeholders_in_json(&mut entry.json, &font_family_map, &placeholder_to_name);
-    }
-
     collected.styles = new_styles;
     collected.keyframes = new_keyframes;
     collected.style_variants = new_style_variants;
@@ -669,12 +691,12 @@ fn remap_style_names(
     collected.themes = new_themes;
 }
 
-fn replace_placeholders_in_json(
-    json: &mut String,
-    font_family_map: &FxHashMap<&str, &str>,
-    placeholder_to_name: &FxHashMap<String, String>,
-) {
-    let source = json.as_str();
+/// Replace every `__name__` token that `lookup` resolves; `None` when nothing
+/// was replaced.
+fn replace_placeholders(
+    source: &str,
+    mut lookup: impl FnMut(&str, &str) -> Option<String>,
+) -> Option<String> {
     let mut search_start = 0;
     let mut last_copied = 0;
     let mut output = None::<String>;
@@ -685,16 +707,10 @@ fn replace_placeholders_in_json(
             break;
         };
         let end = start + 2 + relative_end + 2;
-        let placeholder = &source[start..end];
-        let replacement = font_family_map
-            .get(placeholder)
-            .copied()
-            .or_else(|| placeholder_to_name.get(placeholder).map(String::as_str));
-
-        if let Some(replacement) = replacement {
+        if let Some(replacement) = lookup(&source[start..end], &source[end..]) {
             let output = output.get_or_insert_with(|| String::with_capacity(source.len()));
             output.push_str(&source[last_copied..start]);
-            output.push_str(replacement);
+            output.push_str(&replacement);
             last_copied = end;
             search_start = end;
         } else {
@@ -702,12 +718,11 @@ fn replace_placeholders_in_json(
         }
     }
 
-    if let Some(mut output) = output {
+    output.map(|mut output| {
         output.push_str(&source[last_copied..]);
-        *json = output;
-    }
+        output
+    })
 }
-
 /// Convert TypeScript to JavaScript using Oxc Transformer and replace imports
 fn preprocess_typescript(code: &str, package: &str) -> String {
     let allocator = Allocator::default();
@@ -1165,83 +1180,178 @@ fn register_vanilla_extract_apis(
     Ok(())
 }
 
-/// Find all style names that are referenced in selectors of other styles
-/// Returns a set of style names that need to be extracted first
-pub fn find_selector_references(collected: &CollectedStyles) -> FxHashSet<String> {
-    let mut referenced = rustc_hash::FxHashSet::default();
-    // Build the probe strings once per style name instead of per (entry, name) pair
-    let probes: Vec<(String, String, &str)> = collected
-        .styles
-        .keys()
-        .map(|name| (format!("\"{name}:"), format!("\"{name} "), name.as_str()))
-        .collect();
-
-    for entry in collected.styles.values() {
-        // Cheap necessary-condition gate: a `"<name>:"` / `"<name> "` selector reference can
-        // only appear inside a `"selectors":{...}` block, so a JSON with no `selectors` object
-        // cannot match ANY probe. Skip the whole K-probe inner loop for those entries (the
-        // common case — most style JSONs carry no cross-references). Byte-identical to probing
-        // every entry: the skipped entries provably contribute nothing to `referenced`.
-        if !entry.json.contains("selectors") {
-            continue;
-        }
-        // Check if this style's JSON contains references to other style names
-        for (probe_colon, probe_space, style_name) in &probes {
-            // Look for patterns like "stylename:" or "stylename " in selectors
-            // The JSON has selectors like {"selectors":{"parent:hover &":{...}}}
-            if entry.json.contains(probe_colon.as_str())
-                || entry.json.contains(probe_space.as_str())
-            {
-                referenced.insert((*style_name).to_string());
-            }
-        }
-    }
-
-    referenced
+/// Placeholders interpolated into a selector end inside a JSON key.
+fn in_json_key(rest: &str) -> bool {
+    rest.find('"')
+        .is_some_and(|i| rest[i + 1..].starts_with(':'))
 }
 
-/// Generate code only for specific styles (used for first-pass extraction)
-pub fn collected_styles_to_code_partial(
+impl CollectedStyles {
+    fn resolve(
+        &self,
+        source: &str,
+        keyframes_names: &FxHashMap<String, String>,
+        selector: impl Fn(&str) -> bool,
+    ) -> String {
+        replace_placeholders(source, |token, rest| {
+            Some(match self.references.get(token)? {
+                Reference::Style { class_name, .. } | Reference::Class(class_name) => {
+                    if selector(rest) {
+                        format!(".{class_name}")
+                    } else {
+                        class_name.clone()
+                    }
+                }
+                Reference::Keyframes(name) => keyframes_names.get(name)?.clone(),
+                Reference::Font(family) => family.clone(),
+            })
+        })
+        .unwrap_or_else(|| source.to_string())
+    }
+
+    fn resolve_json(&self, json: &str, keyframes_names: &FxHashMap<String, String>) -> String {
+        self.resolve(json, keyframes_names, in_json_key)
+    }
+
+    /// Every text a placeholder can be interpolated into.
+    fn texts(&self) -> impl Iterator<Item = &str> {
+        self.styles
+            .values()
+            .map(|entry| entry.json.as_str())
+            .chain(self.keyframes.values().map(|entry| entry.json.as_str()))
+            .chain(
+                self.style_variants
+                    .values()
+                    .flat_map(|(variants, _)| variants.values())
+                    .map(|variant| variant.styles_json.as_str()),
+            )
+            .chain(
+                self.global_styles
+                    .iter()
+                    .flat_map(|(selector, json)| [selector.as_str(), json.as_str()]),
+            )
+    }
+
+    fn referenced(&self) -> FxHashSet<&Reference> {
+        let mut referenced = FxHashSet::default();
+        for text in self.texts() {
+            replace_placeholders(text, |token, _| {
+                if let Some(reference) = self.references.get(token) {
+                    referenced.insert(reference);
+                }
+                None
+            });
+        }
+        referenced
+    }
+
+    /// `variable_name` -> unique class of every style some selector or value refers to
+    fn referenced_classes(&self) -> FxHashMap<&str, &str> {
+        self.referenced()
+            .into_iter()
+            .filter_map(|reference| match reference {
+                Reference::Style { name, class_name } => Some((name.as_str(), class_name.as_str())),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Names of the keyframes some style refers to; their generated names have to be
+/// known before the styles referring to them are generated.
+pub fn referenced_keyframes(collected: &CollectedStyles) -> FxHashSet<String> {
+    collected
+        .referenced()
+        .into_iter()
+        .filter_map(|reference| match reference {
+            Reference::Keyframes(name) => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Code declaring only the keyframes in `names`, extracted first to learn their
+/// generated names
+pub fn keyframes_to_code(
     collected: &CollectedStyles,
     package: &str,
-    style_names: &FxHashSet<String>,
+    names: &FxHashSet<String>,
 ) -> String {
-    let mut output = String::new();
-
-    if !style_names.is_empty() {
-        output.push_str("import { css } from '");
-        output.push_str(package);
-        output.push('\'');
-    }
-
-    // Generate only the specified styles
-    let mut styles: Vec<_> = collected
-        .styles
+    let mut keyframes: Vec<_> = collected
+        .keyframes
         .iter()
-        .filter(|(name, _)| style_names.contains(*name))
+        .filter(|(name, _)| names.contains(*name))
         .collect();
-    styles.sort_by_key(|(name, _)| *name);
-
-    for (name, entry) in styles {
-        // Generate as non-exported for first pass
-        if !output.is_empty() {
-            output.push('\n');
-        }
-        output.push_str("const ");
+    keyframes.sort_by_key(|(name, _)| *name);
+    let mut output = format!("import {{ keyframes }} from '{package}'");
+    for (name, entry) in keyframes {
+        output.push_str("\nconst ");
         output.push_str(name);
-        output.push_str(" = css(");
-        output.push_str(&entry.json);
+        output.push_str(" = keyframes(");
+        output.push_str(&collected.resolve_json(&entry.json, &FxHashMap::default()));
         output.push(')');
     }
-
     output
 }
 
-/// Convert collected styles to code with selector references replaced by class names
-pub fn collected_styles_to_code_with_classes(
+fn inner_json(json: &str) -> &str {
+    json.trim()
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .trim()
+}
+
+/// `css(...)` of `own` composed onto `bases`, plus the unique classes that let
+/// selectors target them
+fn composed_css(
+    collected: &CollectedStyles,
+    keyframes_names: &FxHashMap<String, String>,
+    referenced_classes: &FxHashMap<&str, &str>,
+    bases: &[&str],
+    own_name: Option<&str>,
+    own_json: &str,
+) -> String {
+    let mut parts = Vec::with_capacity(bases.len() + 1);
+    let mut classes = Vec::new();
+    for base in bases {
+        if let Some(entry) = collected.styles.get(*base) {
+            let json = collected.resolve_json(&entry.json, keyframes_names);
+            let inner = inner_json(&json);
+            if !inner.is_empty() {
+                parts.push(inner.to_string());
+            }
+        }
+        classes.extend(referenced_classes.get(base));
+    }
+    let own = collected.resolve_json(own_json, keyframes_names);
+    let css = if bases.is_empty() {
+        format!("css({own})")
+    } else {
+        let inner = inner_json(&own);
+        if !inner.is_empty() {
+            parts.push(inner.to_string());
+        }
+        format!("css({{{}}})", parts.join(","))
+    };
+    classes.extend(own_name.and_then(|name| referenced_classes.get(name)));
+    if classes.is_empty() {
+        css
+    } else {
+        let mut unique = String::new();
+        for class in classes {
+            unique.push(' ');
+            unique.push_str(class);
+        }
+        format!("{css} + \"{unique}\"")
+    }
+}
+
+/// Convert collected styles to code, with keyframes references replaced by
+/// `keyframes_names` (`variable_name` -> generated name)
+pub fn collected_styles_to_code_with_keyframes(
     collected: &CollectedStyles,
     package: &str,
-    class_map: &FxHashMap<String, String>,
+    keyframes_names: &FxHashMap<String, String>,
 ) -> String {
     let mut code_parts = Vec::with_capacity(collected.styles.len() + 4);
 
@@ -1271,73 +1381,23 @@ pub fn collected_styles_to_code_with_classes(
         ));
     }
 
-    // Generate style declarations with selector references replaced
-    let style_json_map: FxHashMap<&str, &str> = collected
-        .styles
-        .iter()
-        .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
-        .collect();
-
-    // Pre-build search/replace pairs to avoid format!() per iteration
-    let replacements: Vec<_> = class_map
-        .iter()
-        .map(|(style_name, class_name)| {
-            (
-                format!("\"{style_name}:"),
-                format!("\"{class_name}:"),
-                format!("\"{style_name} "),
-                format!("\"{class_name} "),
-            )
-        })
-        .collect();
-
+    let referenced_classes = collected.referenced_classes();
     let mut styles: Vec<_> = collected.styles.iter().collect();
     styles.sort_by_key(|(name, _)| *name);
 
     for (name, entry) in styles {
         let prefix = if entry.exported { "export " } else { "" };
-
-        // Replace style name references with class names in JSON
-        let mut json = entry.json.clone();
-        for (search_colon, replace_colon, search_space, replace_space) in &replacements {
-            if json.contains(search_colon.as_str()) {
-                json = json.replace(search_colon, replace_colon);
-            }
-            if json.contains(search_space.as_str()) {
-                json = json.replace(search_space, replace_space);
-            }
-        }
-
-        if entry.bases.is_empty() {
-            code_parts.push(format!("{prefix}const {name} = css({json})"));
-        } else {
-            // Composition: merge all base styles
-            let mut merged_parts = Vec::new();
-            for base_name in &entry.bases {
-                if let Some(base_json) = style_json_map.get(base_name.as_str()) {
-                    let inner = base_json
-                        .trim()
-                        .trim_start_matches('{')
-                        .trim_end_matches('}')
-                        .trim();
-                    if !inner.is_empty() {
-                        merged_parts.push(inner.to_string());
-                    }
-                }
-            }
-            let own_inner = json
-                .trim()
-                .trim_start_matches('{')
-                .trim_end_matches('}')
-                .trim();
-            if !own_inner.is_empty() {
-                merged_parts.push(own_inner.to_string());
-            }
-            let merged_json = format!("{{{}}}", merged_parts.join(","));
-            code_parts.push(format!("{prefix}const {name} = css({merged_json})"));
-        }
+        let bases: Vec<&str> = entry.bases.iter().map(String::as_str).collect();
+        let css = composed_css(
+            collected,
+            keyframes_names,
+            &referenced_classes,
+            &bases,
+            Some(name),
+            &entry.json,
+        );
+        code_parts.push(format!("{prefix}const {name} = {css}"));
     }
-
     // Generate createTheme exports (class name and optionally vars object)
     // Note: CSS variables are added to global_styles during remapping
     let mut themes: Vec<_> = collected.themes.iter().collect();
@@ -1364,8 +1424,12 @@ pub fn collected_styles_to_code_with_classes(
         }
     }
 
-    // Add remaining code generation (globalCss, keyframes, etc.) - call original function's logic
-    append_non_style_code(collected, package, &mut code_parts);
+    append_non_style_code(
+        collected,
+        keyframes_names,
+        &referenced_classes,
+        &mut code_parts,
+    );
 
     code_parts.join("\n")
 }
@@ -1373,12 +1437,17 @@ pub fn collected_styles_to_code_with_classes(
 /// Append non-style code parts (globalCss, keyframes, fontFaces, etc.)
 fn append_non_style_code(
     collected: &CollectedStyles,
-    _package: &str,
+    keyframes_names: &FxHashMap<String, String>,
+    referenced_classes: &FxHashMap<&str, &str>,
     code_parts: &mut Vec<String>,
 ) {
-    // Generate globalCss calls
     for (selector, json) in &collected.global_styles {
-        code_parts.push(format!("globalCss({{ \"{selector}\": {json} }})"));
+        let selector = collected.resolve(selector, keyframes_names, |_| true);
+        let json = collected.resolve_json(json, keyframes_names);
+        code_parts.push(format!(
+            "globalCss({{ {}: {json} }})",
+            serde_json::Value::String(selector)
+        ));
     }
 
     // Generate @font-face rules
@@ -1426,61 +1495,38 @@ fn append_non_style_code(
         let prefix = if entry.exported { "export " } else { "" };
         code_parts.push(format!(
             "{}const {} = keyframes({})",
-            prefix, name, entry.json
+            prefix,
+            name,
+            collected.resolve_json(&entry.json, keyframes_names)
         ));
     }
 
-    // Generate styleVariants
     let mut variants: Vec<_> = collected.style_variants.iter().collect();
-    if !variants.is_empty() {
-        let style_json_map: FxHashMap<&str, &str> = collected
-            .styles
-            .iter()
-            .map(|(name, entry)| (name.as_str(), entry.json.as_str()))
-            .collect();
-        variants.sort_by_key(|(name, _)| *name);
-        for (name, (variant_map, exported)) in variants {
-            let mut variant_entries: Vec<_> = variant_map.iter().collect();
-            variant_entries.sort_by_key(|(k, _)| *k);
-            let mut object_parts = Vec::new();
-            for (variant_key, variant) in variant_entries {
-                let value = if let Some(base_name) = &variant.base {
-                    let mut merged_parts = Vec::new();
-                    if let Some(base_json) = style_json_map.get(base_name.as_str()) {
-                        let inner = base_json
-                            .trim()
-                            .trim_start_matches('{')
-                            .trim_end_matches('}')
-                            .trim();
-                        if !inner.is_empty() {
-                            merged_parts.push(inner.to_string());
-                        }
-                    }
-                    let own_inner = variant
-                        .styles_json
-                        .trim()
-                        .trim_start_matches('{')
-                        .trim_end_matches('}')
-                        .trim();
-                    if !own_inner.is_empty() {
-                        merged_parts.push(own_inner.to_string());
-                    }
-                    format!("css({{{}}})", merged_parts.join(","))
-                } else {
-                    format!("css({})", variant.styles_json)
-                };
-                object_parts.push(format!("  {variant_key}: {value}"));
-            }
-            let prefix = if *exported { "export " } else { "" };
-            code_parts.push(format!(
-                "{}const {} = {{\n{}\n}}",
-                prefix,
-                name,
-                object_parts.join(",\n")
-            ));
+    variants.sort_by_key(|(name, _)| *name);
+    for (name, (variant_map, exported)) in variants {
+        let mut variant_entries: Vec<_> = variant_map.iter().collect();
+        variant_entries.sort_by_key(|(k, _)| *k);
+        let mut object_parts = Vec::new();
+        for (variant_key, variant) in variant_entries {
+            let bases: Vec<&str> = variant.base.iter().map(String::as_str).collect();
+            let value = composed_css(
+                collected,
+                keyframes_names,
+                referenced_classes,
+                &bases,
+                None,
+                &variant.styles_json,
+            );
+            object_parts.push(format!("  {variant_key}: {value}"));
         }
+        let prefix = if *exported { "export " } else { "" };
+        code_parts.push(format!(
+            "{}const {} = {{\n{}\n}}",
+            prefix,
+            name,
+            object_parts.join(",\n")
+        ));
     }
-
     // Generate createVar declarations
     let mut vars: Vec<_> = collected.vars.iter().collect();
     vars.sort_by_key(|(name, _)| *name);
@@ -1529,8 +1575,9 @@ fn append_non_style_code(
 }
 
 /// Convert collected styles to code that can be processed by existing extract logic
+#[cfg(test)]
 pub fn collected_styles_to_code(collected: &CollectedStyles, package: &str) -> String {
-    collected_styles_to_code_with_classes(collected, package, &FxHashMap::default())
+    collected_styles_to_code_with_keyframes(collected, package, &FxHashMap::default())
 }
 
 /// Parse a styleVariants object and extract variant info
@@ -1935,8 +1982,11 @@ export const lightTheme = createTheme(vars, {
         .into_iter()
         .collect();
 
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("import { css } from '@devup-ui/react'"));
         // The composed style should have both base and own styles merged
         assert!(code.contains("padding"));
@@ -2638,66 +2688,99 @@ export const box = style({ padding: 8 })";
     // handle the target package imports
 
     #[test]
-    fn test_find_selector_references_no_refs() {
-        // Test find_selector_references with no selector references
+    fn test_referenced_keyframes_without_references() {
         let mut collected = CollectedStyles::default();
         collected.styles.insert(
             "box".to_string(),
             StyleEntry {
-                json: r#"{"padding":"8px"}"#.to_string(),
+                json: r#"{"padding":"8px","animation":"__style_9__ 1s"}"#.to_string(),
                 exported: true,
                 bases: SmallVec::new(),
             },
         );
-        collected.styles.insert(
-            "text".to_string(),
-            StyleEntry {
-                json: r#"{"color":"blue"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
-        );
-
-        let refs = super::find_selector_references(&collected);
-        assert!(refs.is_empty());
+        assert!(super::referenced_keyframes(&collected).is_empty());
     }
 
     #[test]
-    fn test_collected_styles_to_code_partial_empty() {
-        // Test collected_styles_to_code_partial with empty style_names
-        let collected = CollectedStyles::default();
-        let empty_set = rustc_hash::FxHashSet::default();
-        let code =
-            super::collected_styles_to_code_partial(&collected, "@devup-ui/react", &empty_set);
-        assert!(code.is_empty());
-    }
-
-    #[test]
-    fn test_collected_styles_to_code_with_classes_selector_replacement() {
-        // Test selector class name replacement in collected_styles_to_code_with_classes
+    fn test_keyframes_to_code_only_referenced() {
         let mut collected = CollectedStyles::default();
-        collected.styles.insert(
-            "parent".to_string(),
-            StyleEntry {
-                json: r#"{"background":"white"}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
-            },
+        for name in ["fade", "spin"] {
+            collected.keyframes.insert(
+                name.to_string(),
+                StyleEntry {
+                    json: r#"{"from":{"opacity":0}}"#.to_string(),
+                    exported: false,
+                    bases: SmallVec::new(),
+                },
+            );
+        }
+        let names = std::iter::once("fade".to_string()).collect();
+        assert_eq!(
+            super::keyframes_to_code(&collected, "@devup-ui/react", &names),
+            "import { keyframes } from '@devup-ui/react'\nconst fade = keyframes({\"from\":{\"opacity\":0}})"
         );
+    }
+
+    #[test]
+    fn test_collected_styles_to_code_resolves_references() {
+        let mut collected = CollectedStyles::default();
+        let entry = |json: &str| StyleEntry {
+            json: json.to_string(),
+            exported: true,
+            bases: SmallVec::new(),
+        };
+        collected
+            .styles
+            .insert("parent".to_string(), entry(r#"{"background":"white"}"#));
         collected.styles.insert(
             "child".to_string(),
-            StyleEntry {
-                json: r#"{"selectors":{"parent:hover &":{"color":"blue"}}}"#.to_string(),
-                exported: true,
-                bases: SmallVec::new(),
+            entry(r#"{"animation":"__style_2__ 1s","selectors":{"__style_0__:hover &":{"color":"blue"}}}"#),
+        );
+        collected
+            .keyframes
+            .insert("fade".to_string(), entry(r#"{"from":{"opacity":0}}"#));
+        collected.global_styles.push((
+            "__style_0__ > a".to_string(),
+            r#"{"color":"__style_1__"}"#.to_string(),
+        ));
+        collected.references.insert(
+            "__style_0__".to_string(),
+            Reference::Style {
+                name: "parent".to_string(),
+                class_name: "f0_parent".to_string(),
             },
         );
+        collected.references.insert(
+            "__style_1__".to_string(),
+            Reference::Class("f0_theme".to_string()),
+        );
+        collected.references.insert(
+            "__style_2__".to_string(),
+            Reference::Keyframes("fade".to_string()),
+        );
+        collected.references.insert(
+            "__font_0__".to_string(),
+            Reference::Font("__devup_font_0_0".to_string()),
+        );
 
-        let class_map: rustc_hash::FxHashMap<String, String> =
-            std::iter::once(("parent".to_string(), "a".to_string())).collect();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
-        assert!(code.contains("a:hover"));
+        let keyframes_names = std::iter::once(("fade".to_string(), "k".to_string())).collect();
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &keyframes_names,
+        );
+        assert!(code.contains(r#"const child = css({"animation":"k 1s","selectors":{".f0_parent:hover &":{"color":"blue"}}})"#), "{code}");
+        assert!(
+            code.contains(r#"const parent = css({"background":"white"}) + " f0_parent""#),
+            "{code}"
+        );
+        assert!(
+            code.contains(r#"globalCss({ ".f0_parent > a": {"color":"f0_theme"} })"#),
+            "{code}"
+        );
+        // An unresolved keyframes reference is left as is.
+        let code = super::collected_styles_to_code(&collected, "@devup-ui/react");
+        assert!(code.contains("__style_2__ 1s"), "{code}");
     }
 
     #[test]
@@ -2885,8 +2968,11 @@ export const box = style({ padding: 8 })";
         );
 
         let class_map = rustc_hash::FxHashMap::default();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("[theme, vars]"));
     }
 
@@ -2914,8 +3000,11 @@ export const box = style({ padding: 8 })";
         );
 
         let class_map = rustc_hash::FxHashMap::default();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("const simpleTheme = \"f0_simple\""));
     }
 
@@ -3047,8 +3136,11 @@ export const box = style({ padding: 8 })";
             .insert("sizes".to_string(), (variants, true));
 
         let class_map = rustc_hash::FxHashMap::default();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("sizes"));
     }
 
@@ -3069,8 +3161,11 @@ export const box = style({ padding: 8 })";
             .insert("CONFIG".to_string(), "{ debug: true }".to_string());
 
         let class_map = rustc_hash::FxHashMap::default();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("export const CONFIG"));
     }
 
@@ -3126,8 +3221,11 @@ export const box = style({ padding: 8 })";
 
         let class_map: rustc_hash::FxHashMap<String, String> =
             std::iter::once(("box".to_string(), "a".to_string())).collect();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
 
         assert!(code.contains("css"));
         assert!(code.contains("globalCss"));
@@ -3158,8 +3256,11 @@ export const box = style({ padding: 8 })";
         );
 
         let class_map = rustc_hash::FxHashMap::default();
-        let code =
-            super::collected_styles_to_code_with_classes(&collected, "@devup-ui/react", &class_map);
+        let code = super::collected_styles_to_code_with_keyframes(
+            &collected,
+            "@devup-ui/react",
+            &class_map,
+        );
         assert!(code.contains("const simpleTheme = \"f0_simple\""));
     }
 

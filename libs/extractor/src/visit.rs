@@ -1092,12 +1092,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &self.filename,
                         );
                         // already set style order
-                        self.styles.extend(styles.into_iter().flat_map(|mut ex| {
-                            if let ExtractStyleProp::Static(css) = &mut ex {
-                                css.set_style_order(style_order.unwrap_or(0));
-                            }
-                            ex.into_extract()
-                        }));
+                        let style_order = style_order.unwrap_or(0);
+                        self.styles.extend(
+                            styles
+                                .into_iter()
+                                .flat_map(ExtractStyleProp::into_extract)
+                                .map(|mut style| {
+                                    style.set_style_order(style_order);
+                                    style
+                                }),
+                        );
                         self.global_css_result(r.is_component())
                     }
                 } else if call.arguments.len() == 2
@@ -1139,12 +1143,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
-                    self.styles.extend(styles.into_iter().flat_map(|mut ex| {
-                        if let ExtractStyleProp::Static(css) = &mut ex {
-                            css.set_style_order(style_order.unwrap_or(0));
-                        }
-                        ex.into_extract()
-                    }));
+                    let style_order = style_order.unwrap_or(0);
+                    self.styles.extend(
+                        styles
+                            .into_iter()
+                            .flat_map(ExtractStyleProp::into_extract)
+                            .map(|mut style| {
+                                style.set_style_order(style_order);
+                                style
+                            }),
+                    );
                     *it = self.global_css_result(util_type.is_component());
                 } else {
                     *it = match util_type.as_ref() {
@@ -1633,12 +1641,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         styles,
                         style_order,
                     } = extract_global_style_from_expression(&self.ast, expression, &self.filename);
-                    self.styles.extend(styles.into_iter().flat_map(|mut ex| {
-                        if let ExtractStyleProp::Static(css) = &mut ex {
-                            css.set_style_order(style_order.unwrap_or(0));
-                        }
-                        ex.into_extract()
-                    }));
+                    let style_order = style_order.unwrap_or(0);
+                    self.styles.extend(
+                        styles
+                            .into_iter()
+                            .flat_map(ExtractStyleProp::into_extract)
+                            .map(|mut style| {
+                                style.set_style_order(style_order);
+                                style
+                            }),
+                    );
                 }
                 elem.opening_element.attributes.remove(i);
             }

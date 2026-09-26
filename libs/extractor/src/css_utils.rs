@@ -4,9 +4,10 @@ use std::fmt::Write as _;
 
 use crate::utils::{get_str_by_property_key, get_string_by_literal_expression, wrap_direct_call};
 use css::{
+    at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
     rm_css_comment::rm_css_comment,
-    style_selector::{AtRuleKind, StyleSelector},
+    style_selector::StyleSelector,
 };
 use oxc_allocator::Allocator;
 use oxc_span::SPAN;
@@ -421,238 +422,13 @@ pub fn css_to_style_literal(
     styles
 }
 
-const AT_RULES: [(&str, AtRuleKind); 3] = [
-    ("@media", AtRuleKind::Media),
-    ("@supports", AtRuleKind::Supports),
-    ("@container", AtRuleKind::Container),
-];
-
 pub fn css_to_style(
     css: &str,
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<ExtractStaticStyle> {
     let mut styles = vec![];
-    let mut input = css;
-
-    // Split by at-rules (@media, @supports, @container) to handle multiple at-rules in a single input.
-    // Every at-rule prefix begins with `@`, so a single `@` byte scan is a sound necessary-condition
-    // guard: if the input has no `@` at all (the overwhelmingly common declaration block), none of the
-    // three prefixes can match, so skip all three `input.contains(at_rule)` substring scans entirely.
-    if input.contains('@') {
-        // Classify which of the three at-rule prefixes are present in ONE pass over the
-        // `@`-anchored positions, instead of re-scanning the whole input with a separate
-        // `input.contains(at_rule)` per prefix inside the loop. For an `@`-bearing block
-        // carrying just one kind (the common single-`@media`/`@supports`/`@container` case),
-        // the two absent kinds previously each paid a full substring scan; now every
-        // `@`-run is examined once here and the loop reads a precomputed `bool`. The
-        // presence check keys off the byte right after `@` (`m`/`s`/`c`), matching the
-        // prefixes' first distinguishing letter, so it is byte-identical to `contains`.
-        let mut present = [false; AT_RULES.len()];
-        for (pos, _) in input.match_indices('@') {
-            let rest = &input[pos..];
-            for (i, (at_rule, _)) in AT_RULES.iter().enumerate() {
-                if !present[i] && rest.starts_with(at_rule) {
-                    present[i] = true;
-                }
-            }
-        }
-        for (idx, (at_rule, _)) in AT_RULES.iter().enumerate() {
-            // Only the multi-segment case recurses. Walk the non-empty trimmed `@rule` segments with
-            // a single `split` pass (dropping the earlier separate `count` scan + identical `collect`
-            // scan) via a peekable iterator: confirm a *second* non-empty segment before allocating,
-            // so the common single-`@media`/`@supports`/`@container` block (already dispatched by an
-            // outer recursion level) still skips materializing a throwaway `Vec<String>`.
-            // Absent prefixes are skipped via the precomputed `present` flags (no re-scan).
-            if !present[idx] {
-                continue;
-            }
-            let mut segments = input.split(at_rule).filter_map(|s| {
-                let s = s.trim();
-                (!s.is_empty()).then_some(s)
-            });
-            if let Some(first) = segments.next()
-                && let Some(second) = segments.next()
-            {
-                // Re-attach the known `at_rule` prefix to each segment with a presized
-                // `String` + two `push_str` instead of `format!`, which pulls in the
-                // `Arguments` formatting machinery and its grow path. Both lengths are
-                // known up front, so a single exact allocation suffices. Byte-identical
-                // to `format!("{at_rule}{seg}")`.
-                let join_at = |seg: &str| {
-                    let mut s = String::with_capacity(at_rule.len() + seg.len());
-                    s.push_str(at_rule);
-                    s.push_str(seg);
-                    s
-                };
-                styles.extend(css_to_style(&join_at(first), level, selector));
-                styles.extend(css_to_style(&join_at(second), level, selector));
-                for rest in segments {
-                    styles.extend(css_to_style(&join_at(rest), level, selector));
-                }
-                return styles;
-            }
-        }
-    }
-
-    if input.contains('{') {
-        while let Some(start) = input.find('{') {
-            // Check if there are properties before the selector
-            let before_brace = &input[..start].trim();
-
-            // The overwhelmingly common case has no `;`-separated plain props before the
-            // selector (e.g. `&:hover { ... }`), which maps to the single-part `else`
-            // branch below. Only build the `Vec<&str>` split when a `;` is actually present.
-            let (plain_props, selector_part): (&str, &str) = if before_brace.contains(';') {
-                // Split by semicolon to find the last part which should be the selector
-                let parts: Vec<&str> = before_brace.split(';').map(str::trim).collect();
-
-                // Find the selector part (the last part that doesn't contain ':')
-                // or if all parts contain ':', then the last part is the selector
-                // `before_brace` contains `;`, so `split` always yields at least two parts.
-                // Check if any part doesn't contain ':' (which would be a selector).
-                let mut selector_idx = parts.len();
-                for (i, part) in parts.iter().enumerate().rev() {
-                    if !part.contains(':') || part.starts_with('&') || part.starts_with('@') {
-                        selector_idx = i;
-                        break;
-                    }
-                }
-
-                // Borrow the props/selector partition directly from `before_brace`
-                // instead of allocating two `join(";")` Strings. The split boundary is the
-                // byte offset of the `selector_idx`-th `;` (parts are `;`-separated), so
-                // `[..boundary]` is the props run and `[boundary + 1..]` the selector run.
-                // `css_to_style_block` re-splits/re-trims each `;` part on the props side and
-                // the selector side is `.trim()`ed downstream, so the parsed output stays
-                // byte-identical to the previous `join(";")` form.
-                // `selector_idx` is 0 when the very first `;`-part is the selector
-                // (e.g. `foo;color:red { .. }`), leaving no props run before it.
-                // `checked_sub` yields `None` there, which the match below already
-                // treats as "the whole run is the selector" - the same result release
-                // builds reached by wrapping, without the debug-build overflow panic.
-                let boundary = selector_idx
-                    .checked_sub(1)
-                    .and_then(|nth| before_brace.match_indices(';').nth(nth).map(|(idx, _)| idx));
-                match boundary {
-                    Some(b) => (before_brace[..b].trim(), before_brace[b + 1..].trim()),
-                    // No selector boundary: whole `before_brace` is the selector.
-                    None => ("", before_brace),
-                }
-            } else {
-                ("", before_brace)
-            };
-
-            // Process plain properties if any
-            if !plain_props.is_empty() {
-                styles.extend(css_to_style_block(plain_props, level, selector));
-            }
-
-            let rest = &input[start + 1..];
-
-            // Find the matching closing brace by counting braces
-            let mut brace_count = 1;
-            let mut end = 0;
-            for (i, byte) in rest.bytes().enumerate() {
-                match byte {
-                    b'{' => brace_count += 1,
-                    b'}' => {
-                        brace_count -= 1;
-                        if brace_count == 0 {
-                            end = i;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // If we didn't find a matching brace, use the first '}' as fallback
-            if brace_count > 0 {
-                end = rest.find('}').unwrap_or(rest.len());
-            }
-            let block = &rest[..end];
-            let sel = &if let Some(StyleSelector::At { kind, query, .. }) = selector {
-                let local_sel = selector_part.trim().to_string();
-                Some(StyleSelector::At {
-                    kind: *kind,
-                    query: query.clone(),
-                    selector: if local_sel == "&" {
-                        None
-                    } else {
-                        Some(local_sel)
-                    },
-                })
-            } else {
-                let sel = selector_part.trim().to_string();
-                if let Some((prefix, kind)) =
-                    AT_RULES.iter().find(|(prefix, _)| sel.starts_with(prefix))
-                {
-                    // The prefix contains neither spaces nor "and(", so slicing it off
-                    // first is equivalent to slicing after the replaces. Strip spaces into
-                    // one pre-sized buffer, then a single "and(" -> "and (" normalization.
-                    let rest = &sel[prefix.len()..];
-                    let mut query = String::with_capacity(rest.len());
-                    for ch in rest.chars() {
-                        if ch != ' ' {
-                            query.push(ch);
-                        }
-                    }
-                    // `and(` only appears in multi-condition media queries. Skip the
-                    // second-buffer allocation of `replace` on the common
-                    // single-condition path where the normalization is a no-op.
-                    let query = if query.contains("and(") {
-                        query.replace("and(", "and (")
-                    } else {
-                        query
-                    };
-                    Some(StyleSelector::At {
-                        kind: *kind,
-                        query,
-                        selector: None,
-                    })
-                } else if sel.is_empty() {
-                    selector.clone()
-                } else {
-                    Some(StyleSelector::Selector(sel))
-                }
-            };
-            let block = if block.contains('{') {
-                css_to_style(block, level, sel)
-            } else {
-                css_to_style_block(block, level, sel)
-            };
-
-            // Find the matching closing brace
-            let closing_brace_pos = start + 1 + end;
-
-            // Process the block
-            styles.extend(block);
-
-            // Update input to continue processing after the closing brace
-            // Check if there's more content after the closing brace
-            if closing_brace_pos + 1 < input.len() {
-                let remaining = &input[closing_brace_pos + 1..].trim();
-                if remaining.is_empty() {
-                    break;
-                }
-                // If there's remaining text after the closing brace, process it
-                // This handles cases like "} color: blue;"
-                if remaining.contains('{') {
-                    // If it contains '{', continue the loop
-                    input = remaining;
-                } else {
-                    // If it doesn't contain '{', process it as a block and break
-                    styles.extend(css_to_style_block(remaining, level, selector));
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-    } else {
-        styles.extend(css_to_style_block(input, level, selector));
-    }
+    collect_css_block(&rm_css_comment(css), level, selector, &mut styles);
 
     // A single declaration (or none) is trivially ordered, so skip the comparison
     // sort's setup entirely for the very common single-property case. The multi-source
@@ -662,6 +438,70 @@ pub fn css_to_style(
         styles.sort_unstable_by(|a, b| a.property().cmp(b.property()));
     }
     styles
+}
+
+/// Walk one level of CSS text: declarations apply to `selector`, and every
+/// nested `prelude { … }` block recurses with its prelude composed onto it, so
+/// `&:hover { @media print { … } }` keeps both the hover and the media query.
+fn collect_css_block(
+    css: &str,
+    level: u8,
+    selector: &Option<StyleSelector>,
+    styles: &mut Vec<ExtractStaticStyle>,
+) {
+    let mut rest = css;
+    while let Some(open) = rest.find('{') {
+        let head = &rest[..open];
+        let (declarations, prelude) = head.rsplit_once(';').unwrap_or(("", head));
+        styles.extend(css_to_style_block(declarations, level, selector));
+
+        let body_start = open + 1;
+        let mut depth = 1usize;
+        let body_end = rest[body_start..]
+            .char_indices()
+            .find_map(|(index, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(body_start + index)
+            })
+            .unwrap_or(rest.len());
+        let body = &rest[body_start..body_end];
+        let prelude = prelude.trim();
+        if prelude.is_empty() || prelude == "&" {
+            collect_css_block(body, level, selector, styles);
+        } else if let Some(nested) = nest_prelude(selector.as_ref(), prelude) {
+            collect_css_block(body, level, &Some(nested), styles);
+        }
+        rest = rest.get(body_end + 1..).unwrap_or_default();
+    }
+    styles.extend(css_to_style_block(rest, level, selector));
+}
+
+/// The selector a nested block applies to: at-rule preludes wrap `parent`,
+/// `&`-selectors substitute it, and a bare selector under a selector nests as
+/// a descendant. `None` drops the block (an unknown at-rule, or conditions
+/// that can never match together).
+fn nest_prelude(parent: Option<&StyleSelector>, prelude: &str) -> Option<StyleSelector> {
+    if prelude.starts_with('@') {
+        let (kind, query) = split_at_rule_key(prelude)?;
+        return StyleSelector::nest_at_rule(parent, kind, query);
+    }
+    let parent_selector = match parent {
+        Some(StyleSelector::Selector(selector) | StyleSelector::Global(selector, _)) => {
+            Some(selector)
+        }
+        Some(StyleSelector::At { selector, .. }) => selector.as_ref(),
+        None => None,
+    };
+    let template = if prelude.contains('&') || parent_selector.is_none() {
+        Cow::Borrowed(prelude)
+    } else {
+        Cow::Owned(format!("& {prelude}"))
+    };
+    Some(StyleSelector::nest_selector(parent, &template))
 }
 
 /// Optimize a declaration's value only when its property warrants multi-value
@@ -868,6 +708,7 @@ fn remove_semicolon_before_closing_brace(value: &mut String) {
 mod tests {
     use super::*;
 
+    use css::style_selector::AtRuleKind;
     use oxc_allocator::Allocator;
     use oxc_ast::ast::{Expression, Statement};
     use oxc_parser::Parser;
@@ -942,12 +783,12 @@ mod tests {
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -965,22 +806,22 @@ mod tests {
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -999,22 +840,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1033,22 +874,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1077,42 +918,42 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1131,22 +972,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1169,12 +1010,12 @@ mod tests {
             ("display", "grid", Some(StyleSelector::At {
                 kind: AtRuleKind::Supports,
                 query: "(display:grid)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("grid-template-columns", "1fr 1fr", Some(StyleSelector::At {
                 kind: AtRuleKind::Supports,
                 query: "(display:grid)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1188,7 +1029,7 @@ mod tests {
             ("display", "flex", Some(StyleSelector::At {
                 kind: AtRuleKind::Supports,
                 query: "(display:flex)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1199,8 +1040,8 @@ mod tests {
         vec![
             ("display", "block", Some(StyleSelector::At {
                 kind: AtRuleKind::Supports,
-                query: "not(display:grid)".to_string(),
-                selector: None,
+                query: "not (display:grid)".to_string(),
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1213,7 +1054,7 @@ mod tests {
             ("padding", "10px", Some(StyleSelector::At {
                 kind: AtRuleKind::Container,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1224,8 +1065,8 @@ mod tests {
         vec![
             ("display", "flex", Some(StyleSelector::At {
                 kind: AtRuleKind::Container,
-                query: "sidebar(min-width:400px)".to_string(),
-                selector: None,
+                query: "sidebar (min-width:400px)".to_string(),
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1451,12 +1292,12 @@ mod tests {
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1474,22 +1315,22 @@ mod tests {
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)and (max-width:1024px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1508,22 +1349,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()),
+                selector: Some("&:hover,&:active,&:nth-child(2)".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1542,22 +1383,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1586,42 +1427,42 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: Some("&:hover".to_string()),
+                selector: Some("&:hover".to_string()), outer: vec![], file: None,
             })),
         ]
     )]
@@ -1640,22 +1481,22 @@ mod tests {
             ("border", "1px solid #FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#FFF", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(min-width:768px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("border", "1px solid #000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
             ("color", "#000", Some(StyleSelector::At {
                 kind: AtRuleKind::Media,
                 query: "(max-width:768px)and (min-width:480px)".to_string(),
-                selector: None,
+                selector: None, outer: vec![], file: None,
             })),
         ]
     )]
@@ -1681,29 +1522,30 @@ mod tests {
             ("background", "blue", Some(StyleSelector::Selector("div".to_string()))),
         ]
     )]
+    // As in CSS nesting, only the text after the last `;` is the nested rule's
+    // selector; everything before it is declarations.
     #[case(
         "color:red;background:blue { width: 1px; }",
-        vec![(
-            "width",
-            "1px",
-            Some(StyleSelector::Selector(
-                "color:red;background:blue".to_string()
-            ))
-        )]
+        vec![
+            ("color", "red", None),
+            ("width", "1px", Some(StyleSelector::Selector("background:blue".to_string()))),
+        ]
     )]
-    // The selector is the very first `;`-part, so there is no props run before it.
     #[case(
         "foo;color:red { width: 1px; }",
         vec![(
             "width",
             "1px",
-            Some(StyleSelector::Selector("foo;color:red".to_string()))
+            Some(StyleSelector::Selector("color:red".to_string()))
         )]
     )]
     #[case(
         "color: red;;invalid;display: block;",
         vec![("color", "red", None), ("display", "block", None)]
     )]
+    // Blocks that can never apply produce nothing: unknown at-rules and
+    // mutually exclusive media types.
+    #[case("@layer base { color: red; } @media print { @media screen { color: red; } }", vec![])]
     fn test_css_to_style(
         #[case] input: &str,
         #[case] expected: Vec<(&str, &str, Option<StyleSelector>)>,

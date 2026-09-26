@@ -9,7 +9,9 @@ use crate::{
     },
     extractor::{
         GlobalExtractResult,
-        extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
+        extract_style_from_expression::{
+            LiteralHandling, at_rule_record_kind, extract_style_from_expression,
+        },
     },
     utils::{
         get_str_by_property_key, get_string_by_literal_expression, get_string_by_property_key,
@@ -17,9 +19,10 @@ use crate::{
     },
 };
 use css::{
+    at_rule::{media_shorthand_query, split_at_rule_key},
     disassemble_property,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value, wrap_url},
-    style_selector::StyleSelector,
+    style_selector::{AtRule, AtRuleKind, StyleSelector},
 };
 use oxc_ast::{
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind},
@@ -32,6 +35,35 @@ pub fn extract_global_style_from_expression<'a>(
     file: &str,
 ) -> GlobalExtractResult<'a> {
     let mut styles = vec![];
+    collect_global_styles(ast_builder, expression, file, &[], &mut styles);
+    GlobalExtractResult {
+        styles,
+        style_order: None,
+    }
+}
+
+/// A top-level at-rule key wrapping a selector map: `'@media print'` or a
+/// media shorthand such as `_print` / `_motionReduce`.
+fn global_at_rule_key(name: &str) -> Option<AtRule> {
+    let (kind, query) = split_at_rule_key(name).or_else(|| {
+        let query = media_shorthand_query(name.strip_prefix('_')?)?;
+        Some((AtRuleKind::Media, query))
+    })?;
+    Some(AtRule {
+        kind,
+        query: query.to_string(),
+    })
+}
+
+/// Collect a `globalCss` selector map whose rules sit inside `at_rules`
+/// (outermost first).
+fn collect_global_styles<'a>(
+    ast_builder: &AstBuilder<'a>,
+    expression: &mut Expression<'a>,
+    file: &str,
+    at_rules: &[AtRule],
+    styles: &mut Vec<ExtractStyleProp<'a>>,
+) {
     let expression = unwrap_syntax_only_mut(expression);
 
     if let Expression::ObjectExpression(obj) = expression {
@@ -39,7 +71,29 @@ pub fn extract_global_style_from_expression<'a>(
             match p {
                 ObjectPropertyKind::ObjectProperty(o) => {
                     if let Some(name) = get_string_by_property_key(&o.key) {
-                        if name == "imports" {
+                        if let Some(kind) = at_rule_record_kind(&name)
+                            && let Expression::ObjectExpression(record) = &mut o.value
+                        {
+                            for entry in &mut record.properties {
+                                if let ObjectPropertyKind::ObjectProperty(entry) = entry
+                                    && let Some(query) = get_string_by_property_key(&entry.key)
+                                {
+                                    let mut nested = at_rules.to_vec();
+                                    nested.push(AtRule { kind, query });
+                                    collect_global_styles(
+                                        ast_builder,
+                                        &mut entry.value,
+                                        file,
+                                        &nested,
+                                        styles,
+                                    );
+                                }
+                            }
+                        } else if let Some(at_rule) = global_at_rule_key(&name) {
+                            let mut nested = at_rules.to_vec();
+                            nested.push(at_rule);
+                            collect_global_styles(ast_builder, &mut o.value, file, &nested, styles);
+                        } else if name == "imports" {
                             if let Expression::ArrayExpression(arr) = &o.value {
                                 for p in &arr.elements {
                                     // `...spread` elements carry no statically readable url.
@@ -169,21 +223,30 @@ pub fn extract_global_style_from_expression<'a>(
                                 None
                             };
 
-                            let extracted = extract_style_from_expression(
-                                ast_builder,
-                                None,
-                                &mut o.value,
-                                0,
-                                &Some(StyleSelector::Global(
-                                    if let Some(name) = name.strip_prefix("_") {
-                                        StyleSelector::from(name).to_string().replace('&', "*")
-                                    } else {
-                                        name
-                                    },
-                                    file.to_string(),
-                                )),
-                                LiteralHandling::ExpandResponsiveThemeToken,
+                            let global = StyleSelector::Global(
+                                if let Some(name) = name.strip_prefix("_") {
+                                    StyleSelector::from(name).to_string().replace('&', "*")
+                                } else {
+                                    name
+                                },
+                                file.to_string(),
                             );
+                            // `None` when the enclosing at-rules can never match together.
+                            let selector = at_rules.iter().try_fold(global, |selector, rule| {
+                                StyleSelector::nest_at_rule(Some(&selector), rule.kind, &rule.query)
+                            });
+                            let extracted = selector
+                                .map(|selector| {
+                                    extract_style_from_expression(
+                                        ast_builder,
+                                        None,
+                                        &mut o.value,
+                                        0,
+                                        &Some(selector),
+                                        LiteralHandling::ExpandResponsiveThemeToken,
+                                    )
+                                })
+                                .unwrap_or_default();
 
                             // Filter out @layer property from styles and set layer on remaining styles
                             for mut style in extracted.styles {
@@ -206,20 +269,15 @@ pub fn extract_global_style_from_expression<'a>(
                     }
                 }
                 ObjectPropertyKind::SpreadProperty(o) => {
-                    styles.extend(
-                        extract_global_style_from_expression(
-                            ast_builder,
-                            o.argument.get_inner_expression_mut(),
-                            file,
-                        )
-                        .styles,
+                    collect_global_styles(
+                        ast_builder,
+                        o.argument.get_inner_expression_mut(),
+                        file,
+                        at_rules,
+                        styles,
                     );
                 }
             }
         }
-    }
-    GlobalExtractResult {
-        styles,
-        style_order: None,
     }
 }

@@ -12,8 +12,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(prefers-color-scheme: dark)",
+                        query: "(prefers-color-scheme:dark)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,
@@ -28,8 +30,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(prefers-color-scheme: dark)",
+                        query: "(prefers-color-scheme:dark)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,
@@ -54,8 +58,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "screen and (min-width: 768px)",
+                        query: "screen and (min-width:768px)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,
@@ -70,8 +76,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "screen and (min-width: 1024px)",
+                        query: "screen and (min-width:1024px)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,

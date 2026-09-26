@@ -22,8 +22,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Container,
-                        query: "(min-width: 300px)",
+                        query: "(min-width:300px)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,
