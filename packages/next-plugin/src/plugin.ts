@@ -31,7 +31,6 @@ import {
 } from './coordinator'
 import { collectProductionPrewarmFiles } from './prewarm'
 import { elapsedMs, profileStart, reportProfile } from './profile'
-import { transformStaticVanillaExtract } from './static-vanilla'
 import { loadWasm, loadWebpackPlugin } from './wasm'
 
 /** Options accepted by the Next.js integration. */
@@ -118,11 +117,9 @@ export function resetTurboSetupCacheForTesting(): void {
 export function selectWasmVariant(
   graph: StaticImportGraph | undefined,
   candidateFiles: string[] = graph?.files ?? [],
-  staticVanillaExtract = false,
 ): 'lite' | 'full' {
   return graph &&
-    (staticVanillaExtract ||
-      !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename)))
+    !candidateFiles.some((filename) => /\.css\.(?:ts|js)$/.test(filename))
     ? 'lite'
     : 'full'
 }
@@ -248,31 +245,7 @@ export function DevupUI(
         })
       : []
     const candidateCollectMs = elapsedMs(candidateCollectStartedAt)
-    const staticVanillaSources = new Map<
-      string,
-      { code: string; source: string }
-    >()
-    const vanillaCandidates = wasmCandidateFiles.filter((filename) =>
-      /\.css\.(?:ts|js)$/.test(filename),
-    )
-    let staticVanillaExtract =
-      !watch && !sourceMap && vanillaCandidates.length > 0
-    for (const filename of vanillaCandidates) {
-      if (!staticVanillaExtract) break
-      const source = readFileSync(resolve(process.cwd(), filename), 'utf-8')
-      const code = transformStaticVanillaExtract(filename, source, libPackage)
-      if (code === undefined) {
-        staticVanillaExtract = false
-        staticVanillaSources.clear()
-        break
-      }
-      staticVanillaSources.set(filename, { code, source })
-    }
-    const wasmVariant = selectWasmVariant(
-      staticGraph,
-      wasmCandidateFiles,
-      staticVanillaExtract,
-    )
+    const wasmVariant = selectWasmVariant(staticGraph, wasmCandidateFiles)
     const wasm = loadWasm(wasmVariant === 'lite')
     const {
       codeExtract,
@@ -452,9 +425,7 @@ export function DevupUI(
         ).replaceAll('\\', '/')}`
         const readStartedAt =
           prewarmStartedAt === undefined ? undefined : performance.now()
-        const preparedVanilla = staticVanillaSources.get(filename)
-        const source =
-          preparedVanilla?.source ?? readFileSync(resourcePath, 'utf-8')
+        const source = readFileSync(resourcePath, 'utf-8')
         if (readStartedAt !== undefined) {
           prewarmReadMs += performance.now() - readStartedAt
           prewarmSourceBytes += Buffer.byteLength(source)
@@ -464,7 +435,7 @@ export function DevupUI(
         const output = takeExtractOutput(
           extract(
             filename,
-            preparedVanilla?.code ?? source,
+            source,
             libPackage,
             relCssDir,
             singleCss,
@@ -544,7 +515,6 @@ export function DevupUI(
       prewarmedFiles,
       prewarmedOutputs,
       sourceMap,
-      staticVanillaExtract,
     })
 
     // Cleanup on exit
