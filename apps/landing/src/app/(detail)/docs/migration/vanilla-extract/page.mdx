@@ -20,6 +20,8 @@ export const light = createTheme(vars, { colors: { bg: 'white' } })
 export const box = style({ background: vars.colors.bg })
 ```
 
+Numbers keep vanilla-extract's meaning, here and in ordinary modules: `padding: 8` is `8px`, and unitless properties such as `lineHeight` or `zIndex` stay as written.
+
 ## Ordinary modules
 
 `style` and `globalStyle` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts:

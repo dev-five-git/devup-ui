@@ -33,6 +33,8 @@ const el = <div {...{ className: `a ${colors[color] || ''}` }} />
 
 Computed access such as `colors[color]` is resolved against the object the `create()` call was rewritten into, so every generated atom stays reachable. `stylex.attrs()` behaves the same but emits `class` instead of `className`.
 
+Numbers get the unit StyleX gives them: `fontSize: 16` is `16px`, `transitionDuration: 300` is `300ms`, and unitless properties such as `lineHeight` stay as written. A number passed to a dynamic style gets the same unit at runtime.
+
 Accepted argument shapes:
 
 ```tsx

@@ -148,6 +148,10 @@ All standard CSS properties from `csstype` are also accepted directly (e.g., `di
 <Box p="20px" /> // padding: 20px (with unit = exact value)
 ```
 
+Unitless CSS properties keep the number as written: `lineHeight`, `zIndex`, `opacity`, `fontWeight`, `flexGrow`, `order`, `aspectRatio`, `columnCount`, `strokeWidth`, `zoom`, and the rest of the unitless list vanilla-extract uses.
+
+Styles from other libraries keep that library's number meaning instead of the scale: in `.css.ts` files, in vanilla-extract `style()`, `globalStyle()` and `keyframes()` calls inside ordinary modules, and in `stylex.create()`, `fontSize: 16` is `16px`.
+
 ### Responsive Arrays (5 breakpoints)
 
 ```tsx
