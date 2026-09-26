@@ -31,7 +31,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "margin-top",
-                value: "32px",
+                value: "8px",
                 level: 0,
                 selector: Some(
                     Selector(

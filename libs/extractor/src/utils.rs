@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::extract_style::constant::MAINTAIN_VALUE_PROPERTIES;
+use css::utils::to_kebab_case;
 use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
@@ -23,6 +25,31 @@ use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
 /// rewriting needs the check in every build — including the lite WASM variant.
 pub(super) fn is_vanilla_extract_file(filename: &str) -> bool {
     filename.ends_with(".css.ts") || filename.ends_with(".css.js")
+}
+
+/// Whether vanilla-extract leaves a number on `key` without a unit: unitless
+/// properties, custom properties, and array indices.
+pub(super) fn is_unitless_key(key: &str) -> bool {
+    key.starts_with("--")
+        || key.starts_with("var(")
+        || key.bytes().all(|byte| byte.is_ascii_digit())
+        || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
+}
+
+/// A JS number literal (`8`, `-8`, `(8)`), unlike a numeric string.
+pub(super) fn js_number_literal(value: &Expression) -> Option<f64> {
+    match value {
+        Expression::NumericLiteral(number) => Some(number.value),
+        Expression::ParenthesizedExpression(inner) => js_number_literal(&inner.expression),
+        Expression::UnaryExpression(unary) => {
+            js_number_literal(&unary.argument).and_then(|number| match unary.operator {
+                UnaryOperator::UnaryNegation => Some(-number),
+                UnaryOperator::UnaryPlus => Some(number),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Strip the wrappers that exist only in the source text: TypeScript's `as` /
@@ -494,6 +521,30 @@ mod tests {
         // Non-numeric values borrow the input; only the numeric branch allocates.
         assert!(matches!(convert_value("foo"), Cow::Borrowed(_)));
         assert!(matches!(convert_value("4"), Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_js_number_literal() {
+        let allocator = Allocator::default();
+        for (source, expected) in [
+            ("8", Some(8.0)),
+            ("(8)", Some(8.0)),
+            ("+8", Some(8.0)),
+            ("-8", Some(-8.0)),
+            ("-(1.5)", Some(-1.5)),
+            ("!8", None),
+            ("'8'", None),
+            ("-x", None),
+        ] {
+            let expression = Parser::new(&allocator, source, SourceType::ts())
+                .parse_expression()
+                .unwrap();
+            assert_eq!(js_number_literal(&expression), expected, "{source}");
+        }
+        assert!(is_unitless_key("lineHeight"));
+        assert!(is_unitless_key("--gap"));
+        assert!(is_unitless_key("0"));
+        assert!(!is_unitless_key("padding"));
     }
 
     #[test]

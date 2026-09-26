@@ -3,10 +3,10 @@ use crate::extract_style::extract_dynamic_style::ExtractDynamicStyle;
 use crate::extract_style::extract_static_style::ExtractStaticStyle;
 use crate::extract_style::extract_style_value::ExtractStyleValue;
 use crate::stylex::{
-    SelectorPart, StylexIncludeRef, decompose_value_conditions, is_first_that_works_call,
-    is_include_call_static, is_types_call, normalize_stylex_property,
+    SelectorPart, StylexIncludeRef, decompose_value_conditions, dynamic_number_suffix,
+    is_first_that_works_call, is_include_call_static, is_types_call, normalize_stylex_property,
+    stylex_value,
 };
-use crate::utils::get_string_by_literal_expression;
 use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
@@ -45,12 +45,9 @@ pub fn extract_stylex_declarations(value: &Expression<'_>) -> Vec<(String, Strin
             let ObjectPropertyKind::ObjectProperty(prop) = prop else {
                 return None;
             };
-            let name = get_str_by_property_key(&prop.key)?;
-            let value = get_string_by_literal_expression(&prop.value)?;
-            Some((
-                normalize_stylex_property(name.as_ref()),
-                optimize_value(&value).into_owned(),
-            ))
+            let property = normalize_stylex_property(get_str_by_property_key(&prop.key)?.as_ref());
+            let value = stylex_value(&property, &prop.value)?;
+            Some((property, optimize_value(&value).into_owned()))
         })
         .collect()
 }
@@ -110,7 +107,7 @@ pub fn extract_stylex_namespace_styles<'a>(
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
-    Option<Vec<(usize, String)>>,
+    Option<Vec<(usize, String, &'static str)>>,
     Vec<StylexIncludeRef>,
 )> {
     let Expression::ObjectExpression(obj) = expression else {
@@ -250,7 +247,7 @@ pub fn extract_stylex_namespace_styles<'a>(
             }
 
             // Phase 1: static string/number values
-            let css_value = if let Some(s) = get_string_by_literal_expression(&style_prop.value) {
+            let css_value = if let Some(s) = stylex_value(&css_property, &style_prop.value) {
                 s
             } else if matches!(&style_prop.value, Expression::ObjectExpression(_)) {
                 // Phase 2: value-level conditions
@@ -272,7 +269,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 // CSS fallback: output in reverse order (least preferred first, most preferred last).
                 for arg in call.arguments.iter().rev() {
                     if let Some(arg_expr) = arg.as_expression()
-                        && let Some(s) = get_string_by_literal_expression(arg_expr)
+                        && let Some(s) = stylex_value(&css_property, arg_expr)
                     {
                         styles.push(raw_static_style(css_property.clone(), &s, None));
                     }
@@ -283,7 +280,7 @@ pub fn extract_stylex_namespace_styles<'a>(
                 // stylex.types.length('100px') → extract inner value '100px'
                 && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
             {
-                let css_value = if let Some(s) = get_string_by_literal_expression(inner) {
+                let css_value = if let Some(s) = stylex_value(&css_property, inner) {
                     s
                 } else {
                     continue; // Can't resolve inner value
@@ -310,12 +307,16 @@ pub fn extract_stylex_namespace_styles<'a>(
 }
 
 /// Extract styles from a dynamic `StyleX` namespace (arrow function).
-/// Returns (`styles_for_css`, `css_vars`) where `css_vars` maps `param_index` to CSS variable name.
+/// Returns (`styles_for_css`, `css_vars`) where `css_vars` maps `param_index` to a CSS variable
+/// name and the unit a number passed for it gets.
 #[allow(clippy::type_complexity)]
 fn extract_stylex_dynamic_namespace<'a>(
     arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
     keyframe_names: &FxHashMap<String, String>,
-) -> Option<(Vec<ExtractStyleProp<'a>>, Vec<(usize, String)>)> {
+) -> Option<(
+    Vec<ExtractStyleProp<'a>>,
+    Vec<(usize, String, &'static str)>,
+)> {
     // 1. Extract parameter names
     let param_names: Vec<String> = arrow
         .params
@@ -373,7 +374,7 @@ fn extract_stylex_dynamic_namespace<'a>(
         if let Some(param_idx) = is_dynamic {
             // Dynamic property: generate CSS variable
             let var_name = sheet_to_variable_name(&css_property, 0, None);
-            css_vars.push((param_idx, var_name));
+            css_vars.push((param_idx, var_name, dynamic_number_suffix(&css_property)));
             let param_name = &param_names[param_idx];
             styles.push(ExtractStyleProp::Static(ExtractStyleValue::Dynamic(
                 ExtractDynamicStyle::new(&css_property, 0, param_name, None),
@@ -386,7 +387,7 @@ fn extract_stylex_dynamic_namespace<'a>(
                 styles.push(raw_static_style(css_property, anim_name, None));
                 continue;
             }
-            let css_value = if let Some(s) = get_string_by_literal_expression(&prop.value) {
+            let css_value = if let Some(s) = stylex_value(&css_property, &prop.value) {
                 s
             } else {
                 continue;

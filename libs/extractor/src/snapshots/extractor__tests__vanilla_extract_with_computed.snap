@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "margin",
-                value: "16px",
+                value: "4px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
-                value: "64px",
+                value: "16px",
                 level: 0,
                 selector: None,
                 style_order: None,

@@ -14746,6 +14746,132 @@ const styles = stylex.create({
         ));
     }
 
+    fn static_values(output: &ExtractOutput) -> BTreeSet<(String, String)> {
+        output
+            .styles
+            .iter()
+            .filter_map(|style| match style {
+                ExtractStyleValue::Static(st) => {
+                    Some((st.property().to_string(), st.value().to_string()))
+                }
+                ExtractStyleValue::Keyframes(keyframes) => keyframes
+                    .keyframes
+                    .values()
+                    .flatten()
+                    .next()
+                    .map(|st| (st.property().to_string(), st.value().to_string())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_numbers_follow_vanilla_extract_units() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "numbers.css.ts",
+            r"import { style, globalStyle, keyframes, styleVariants } from '@devup-ui/react'
+export const box = style({
+  fontSize: 16,
+  top: -2,
+  width: 0,
+  lineHeight: 1.5,
+  zIndex: 2,
+  columnCount: 3,
+  strokeWidth: 2,
+  aspectRatio: 1.5,
+  selectors: { '&:hover': { marginTop: 4 } },
+  '@media': { print: { left: 1.5 } },
+})
+export const spin = keyframes({ to: { height: 10 } })
+export const size = styleVariants({ small: { maxWidth: 20 } })
+globalStyle('body', { margin: 2 })
+",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        let values = static_values(&output);
+        for (property, value) in [
+            ("font-size", "16px"),
+            ("top", "-2px"),
+            ("width", "0"),
+            ("line-height", "1.5"),
+            ("z-index", "2"),
+            ("column-count", "3"),
+            ("stroke-width", "2"),
+            ("aspect-ratio", "1.5"),
+            ("margin-top", "4px"),
+            ("left", "1.5px"),
+            ("height", "10px"),
+            ("max-width", "20px"),
+            ("margin", "2px"),
+        ] {
+            assert!(
+                values.contains(&(property.to_string(), value.to_string())),
+                "{property}: {value} not in {values:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_stylex_numbers_follow_stylex_units() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import stylex from '@stylexjs/stylex';
+const styles = stylex.create({
+  base: {
+    fontSize: 16,
+    marginTop: -8,
+    width: -0,
+    height: '16',
+    lineHeight: 1.5,
+    transitionDuration: 300,
+    '--size': 4,
+    left: 1.33333,
+    top: { default: 2, ':hover': 4 },
+    right: stylex.firstThatWorks(6, 'auto'),
+  },
+  dynamic: (opacity, delay) => ({ opacity, transitionDelay: delay, bottom: 3 }),
+});
+const result = stylex.props(styles.dynamic(o, d));",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        let values = static_values(&output);
+        for (property, value) in [
+            ("font-size", "16px"),
+            ("margin-top", "-8px"),
+            ("width", "0"),
+            ("height", "16"),
+            ("line-height", "1.5"),
+            ("transition-duration", "300ms"),
+            ("--size", "4"),
+            ("left", "1.3333px"),
+            ("top", "2px"),
+            ("top", "4px"),
+            ("right", "6px"),
+            ("bottom", "3px"),
+        ] {
+            assert!(
+                values.contains(&(property.to_string(), value.to_string())),
+                "{property}: {value} not in {values:?}"
+            );
+        }
+        assert!(output.code.contains(r#""--a": o"#), "{}", output.code);
+        assert!(
+            output
+                .code
+                .contains(r#"((v) => typeof v === "number" ? v + "ms" : v)(d)"#),
+            "{}",
+            output.code
+        );
+    }
+
     #[test]
     #[serial]
     fn test_stylex_create_numeric_values() {

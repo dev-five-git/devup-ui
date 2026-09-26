@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-size",
-                value: "16",
+                value: "16px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -47,7 +47,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
-                value: "8",
+                value: "8px",
                 level: 0,
                 selector: None,
                 style_order: None,

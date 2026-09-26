@@ -8,13 +8,82 @@
 //! - `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
 
 use crate::ImportAlias;
-use crate::utils::is_vanilla_extract_file;
+use crate::utils::{
+    get_str_by_property_key, is_unitless_key, is_vanilla_extract_file, js_number_literal,
+};
 use oxc_allocator::Allocator;
-use oxc_ast::ast::{ImportDeclarationSpecifier, ModuleExportName};
+use oxc_ast::ast::{
+    Argument, CallExpression, Expression, ImportDeclarationSpecifier, ModuleExportName,
+    ObjectPropertyKind, Statement,
+};
+use oxc_ast_visit::{Visit, walk::walk_call_expression};
 use oxc_parser::Parser;
-use oxc_span::SourceType;
+use oxc_span::{GetSpan, SourceType};
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+/// Numbers in vanilla-extract `style()` / `globalStyle()` / `keyframes()` rules outside a
+/// stylesheet. Those calls become Devup UI's `css()` / `globalCss()` / `keyframes()`, which read a
+/// number as its spacing scale, so it is rewritten to the `px` string
+/// vanilla-extract makes of it.
+struct VanillaNumbers<'n> {
+    /// Local name of each call and the index of its rules argument
+    calls: Vec<(&'n str, usize)>,
+    replacements: Vec<(usize, usize, String)>,
+}
+
+impl VanillaNumbers<'_> {
+    fn pixelify(&mut self, rules: &Expression) {
+        match rules {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    if let Some(element) = element.as_expression() {
+                        self.pixelify(element);
+                    }
+                }
+            }
+            Expression::ObjectExpression(object) => {
+                for property in &object.properties {
+                    if let ObjectPropertyKind::ObjectProperty(property) = property
+                        && let Some(key) = get_str_by_property_key(&property.key)
+                    {
+                        if matches!(property.value, Expression::ObjectExpression(_)) {
+                            if key != "vars" {
+                                self.pixelify(&property.value);
+                            }
+                        } else if let Some(number) = js_number_literal(&property.value)
+                            && number != 0.0
+                            && !is_unitless_key(&key)
+                        {
+                            let span = property.value.span();
+                            self.replacements.push((
+                                span.start as usize,
+                                span.end as usize,
+                                format!("\"{number}px\""),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl<'a> Visit<'a> for VanillaNumbers<'_> {
+    fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
+        if let Expression::Identifier(callee) = &call.callee
+            && let Some(&(_, index)) = self
+                .calls
+                .iter()
+                .find(|(name, _)| *name == callee.name.as_str())
+            && let Some(rules) = call.arguments.get(index).and_then(Argument::as_expression)
+        {
+            self.pixelify(rules);
+        }
+        walk_call_expression(self, call);
+    }
+}
 
 /// Map an aliased package's export onto the `@devup-ui/react` export that implements the
 /// same behaviour, so the extractor consumes the call and drops the import entirely — no
@@ -87,9 +156,13 @@ pub fn transform_import_aliases<'a>(
 
     // Collect import transformations
     let mut transformations: Vec<(usize, usize, String)> = Vec::new();
+    let mut numbers = VanillaNumbers {
+        calls: Vec::new(),
+        replacements: Vec::new(),
+    };
 
     for stmt in &program.body {
-        if let oxc_ast::ast::Statement::ImportDeclaration(import_decl) = stmt {
+        if let Statement::ImportDeclaration(import_decl) = stmt {
             let source_value = import_decl.source.value.as_str();
 
             if let Some(alias) = import_aliases.get(source_value) {
@@ -97,8 +170,25 @@ pub fn transform_import_aliases<'a>(
                 let new_import =
                     generate_transformed_import(import_decl, alias, package, redirect_every_name);
                 transformations.push((span.start as usize, span.end as usize, new_import));
+                if source_value == "@vanilla-extract/css" && !redirect_every_name {
+                    for specifier in import_decl.specifiers.iter().flatten() {
+                        if let ImportDeclarationSpecifier::ImportSpecifier(spec) = specifier {
+                            let rules_index = match imported_name(&spec.imported).as_ref() {
+                                "style" | "keyframes" => 0,
+                                "globalStyle" => 1,
+                                _ => continue,
+                            };
+                            numbers.calls.push((spec.local.name.as_str(), rules_index));
+                        }
+                    }
+                }
             }
         }
+    }
+    if !numbers.calls.is_empty() {
+        numbers.visit_program(&program);
+        transformations.append(&mut numbers.replacements);
+        transformations.sort_unstable_by_key(|(start, ..)| *start);
     }
 
     // Apply transformations in reverse order to preserve positions
@@ -499,6 +589,45 @@ export const container = style({ background: 'red' })",
             "@devup-ui/react",
             &vanilla_extract_alias()
         ));
+    }
+
+    #[test]
+    fn test_vanilla_extract_numbers_become_px_outside_stylesheets() {
+        let code = r"import { style as s, globalStyle, keyframes, styleVariants } from '@vanilla-extract/css'
+export const a = s({ padding: 8, top: -2, left: (1.5), width: 0, lineHeight: 1.5, vars: { '--x': 4 }, [key]: 5, ...rest, selectors: { '&:hover': { margin: 4 } } })
+export const b = s([a, { right: 3 }], 'debug')
+globalStyle('body', { margin: 2 })
+keyframes({ from: { width: 10, opacity: 0 }, '50%': { width: 20 } })
+styleVariants({ small: { padding: 1 } })
+other({ padding: 8 })
+s()";
+        assert_eq!(
+            transform_import_aliases(
+                code,
+                "test.tsx",
+                "@devup-ui/react",
+                &vanilla_extract_alias()
+            ),
+            r#"import { css as s, globalCss as globalStyle, keyframes } from '@devup-ui/react'; import { styleVariants } from '@vanilla-extract/css';
+export const a = s({ padding: "8px", top: "-2px", left: "1.5px", width: 0, lineHeight: 1.5, vars: { '--x': 4 }, [key]: 5, ...rest, selectors: { '&:hover': { margin: "4px" } } })
+export const b = s([a, { right: "3px" }], 'debug')
+globalStyle('body', { margin: "2px" })
+keyframes({ from: { width: "10px", opacity: 0 }, '50%': { width: "20px" } })
+styleVariants({ small: { padding: 1 } })
+other({ padding: 8 })
+s()"#
+        );
+        let stylesheet =
+            "import { style } from '@vanilla-extract/css'\nexport const a = style({ padding: 8 })";
+        assert!(
+            transform_import_aliases(
+                stylesheet,
+                "a.css.ts",
+                "@devup-ui/react",
+                &vanilla_extract_alias()
+            )
+            .ends_with("style({ padding: 8 })")
+        );
     }
 
     #[test]

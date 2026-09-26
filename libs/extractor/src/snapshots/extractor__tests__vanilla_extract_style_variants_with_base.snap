@@ -7,6 +7,26 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "border-radius",
+                value: "4px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
+                value: "12px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "font-size",
                 value: "16px",
                 level: 0,
                 selector: None,
@@ -17,27 +37,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-size",
-                value: "48px",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "font-size",
-                value: "64px",
-                level: 0,
-                selector: None,
-                style_order: None,
-                layer: None,
-            },
-        ),
-        Static(
-            ExtractStaticStyle {
-                property: "font-size",
-                value: "80px",
+                value: "20px",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -47,7 +47,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
-                value: "32px",
+                value: "8px",
                 level: 0,
                 selector: None,
                 style_order: None,

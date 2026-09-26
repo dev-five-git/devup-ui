@@ -1,7 +1,11 @@
+use std::borrow::Cow;
+
 use css::style_selector::{AtRuleKind, StyleSelector};
 use oxc_ast::ast::{Expression, ObjectPropertyKind};
 
-use crate::utils::{get_string_by_literal_expression, get_string_by_property_key};
+use crate::utils::{
+    get_string_by_literal_expression, get_string_by_property_key, js_number_literal,
+};
 
 /// Which `StyleX` function a named import refers to
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,6 +117,248 @@ pub fn normalize_stylex_property(name: &str) -> String {
     css::utils::to_kebab_case(name).into_owned()
 }
 
+/// Properties `StyleX` leaves unitless when given a number.
+static UNITLESS_NUMBER_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
+    "webkit-line-clamp",
+    "animation-iteration-count",
+    "aspect-ratio",
+    "border-image-outset",
+    "border-image-slice",
+    "border-image-width",
+    "counter-set",
+    "counter-reset",
+    "column-count",
+    "flex",
+    "flex-grow",
+    "flex-shrink",
+    "flex-order",
+    "grid-row",
+    "grid-row-start",
+    "grid-row-end",
+    "grid-column",
+    "grid-column-start",
+    "grid-column-end",
+    "grid-area",
+    "font-size-adjust",
+    "font-weight",
+    "hyphenate-limit-chars",
+    "line-clamp",
+    "line-height",
+    "mask-border-outset",
+    "mask-border-slice",
+    "mask-border-width",
+    "opacity",
+    "order",
+    "orphans",
+    "tab-size",
+    "widows",
+    "z-index",
+    "fill-opacity",
+    "flood-opacity",
+    "rotate",
+    "scale",
+    "shape-image-threshold",
+    "stop-opacity",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "stroke-miterlimit",
+    "stroke-opacity",
+    "stroke-width",
+    "math-depth",
+    "zoom",
+};
+
+/// Properties whose numbers `StyleX` reads as milliseconds.
+static TIME_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
+    "animation-delay",
+    "animation-duration",
+    "transition-delay",
+    "transition-duration",
+    "voice-duration",
+};
+
+/// Properties whose dynamic values `StyleX` gives a unit when they are numbers.
+static LENGTH_PROPERTIES: phf::Set<&'static str> = phf::phf_set! {
+    "background-position-x",
+    "background-position-y",
+    "block-size",
+    "border-block-end-width",
+    "border-block-start-width",
+    "border-block-width",
+    "border-vertical-width",
+    "border-bottom-left-radius",
+    "border-bottom-right-radius",
+    "border-bottom-width",
+    "border-end-end-radius",
+    "border-end-start-radius",
+    "border-inline-end-width",
+    "border-end-width",
+    "border-inline-start-width",
+    "border-start-width",
+    "border-inline-width",
+    "border-horizontal-width",
+    "border-left-width",
+    "border-right-width",
+    "border-spacing",
+    "border-start-end-radius",
+    "border-start-start-radius",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-top-width",
+    "bottom",
+    "column-gap",
+    "column-rule-width",
+    "column-width",
+    "contain-intrinsic-block-size",
+    "contain-intrinsic-height",
+    "contain-intrinsic-inline-size",
+    "contain-intrinsic-width",
+    "flex-basis",
+    "font-size",
+    "font-smooth",
+    "height",
+    "inline-size",
+    "inset-block-end",
+    "inset-block-start",
+    "inset-inline-end",
+    "inset-inline-start",
+    "left",
+    "letter-spacing",
+    "margin-block-end",
+    "margin-block-start",
+    "margin-bottom",
+    "margin-inline-end",
+    "margin-end",
+    "margin-inline-start",
+    "margin-start",
+    "margin-left",
+    "margin-right",
+    "margin-top",
+    "max-block-size",
+    "max-height",
+    "max-inline-size",
+    "max-width",
+    "min-block-size",
+    "min-height",
+    "min-inline-size",
+    "min-width",
+    "offset-distance",
+    "outline-offset",
+    "outline-width",
+    "overflow-clip-margin",
+    "padding-block-end",
+    "padding-block-start",
+    "padding-bottom",
+    "padding-inline-end",
+    "padding-end",
+    "padding-inline-start",
+    "padding-start",
+    "padding-left",
+    "padding-right",
+    "padding-top",
+    "perspective",
+    "right",
+    "row-gap",
+    "scroll-margin-block-end",
+    "scroll-margin-block-start",
+    "scroll-margin-bottom",
+    "scroll-margin-inline-end",
+    "scroll-margin-inline-start",
+    "scroll-margin-left",
+    "scroll-margin-right",
+    "scroll-margin-top",
+    "scroll-padding-block-end",
+    "scroll-padding-block-start",
+    "scroll-padding-bottom",
+    "scroll-padding-inline-end",
+    "scroll-padding-inline-start",
+    "scroll-padding-left",
+    "scroll-padding-right",
+    "scroll-padding-top",
+    "scroll-snap-margin-bottom",
+    "scroll-snap-margin-left",
+    "scroll-snap-margin-right",
+    "scroll-snap-margin-top",
+    "shape-margin",
+    "tab-size",
+    "text-decoration-thickness",
+    "text-indent",
+    "text-underline-offset",
+    "top",
+    "transform-origin",
+    "translate",
+    "vertical-align",
+    "width",
+    "word-spacing",
+    "border",
+    "border-block",
+    "border-block-end",
+    "border-block-start",
+    "border-bottom",
+    "border-left",
+    "border-radius",
+    "border-right",
+    "border-top",
+    "border-width",
+    "column-rule",
+    "contain-intrinsic-size",
+    "gap",
+    "inset",
+    "inset-block",
+    "inset-inline",
+    "margin",
+    "margin-block",
+    "margin-vertical",
+    "margin-inline",
+    "margin-horizontal",
+    "offset",
+    "outline",
+    "padding",
+    "padding-block",
+    "padding-vertical",
+    "padding-inline",
+    "padding-horizontal",
+    "scroll-margin",
+    "scroll-margin-block",
+    "scroll-margin-inline",
+    "scroll-padding",
+    "scroll-padding-block",
+    "scroll-padding-inline",
+    "scroll-snap-margin",
+};
+
+/// The unit `StyleX` appends to a number on `property`.
+fn number_suffix(property: &str) -> &'static str {
+    if UNITLESS_NUMBER_PROPERTIES.contains(property) || property.starts_with("--") {
+        ""
+    } else if TIME_PROPERTIES.contains(property) {
+        "ms"
+    } else {
+        "px"
+    }
+}
+
+/// The unit a dynamic value on `property` gets when it is a number at runtime.
+pub fn dynamic_number_suffix(property: &str) -> &'static str {
+    if TIME_PROPERTIES.contains(property) || LENGTH_PROPERTIES.contains(property) {
+        number_suffix(property)
+    } else {
+        ""
+    }
+}
+
+/// A literal `StyleX` value as CSS text: a number gets the unit `StyleX` gives it.
+pub fn stylex_value<'a>(property: &str, value: &Expression<'a>) -> Option<Cow<'a, str>> {
+    js_number_literal(value).map_or_else(
+        || get_string_by_literal_expression(value),
+        |number| {
+            // `+ 0.0` turns `-0` into `0`, as JS prints it.
+            let rounded = (number * 10_000.0).round() / 10_000.0 + 0.0;
+            Some(Cow::Owned(format!("{rounded}{}", number_suffix(property))))
+        },
+    )
+}
+
 /// Intermediate selector parts collected during recursion.
 #[derive(Debug, Clone)]
 pub enum SelectorPart {
@@ -136,8 +382,8 @@ pub struct DecomposedStyle {
 pub struct StylexDynamicInfo {
     /// Combined class name string for all properties (static + dynamic)
     pub class_name: String,
-    /// Maps (`param_index`, `css_variable_name`) for each dynamic property
-    pub css_vars: Vec<(usize, String)>,
+    /// (`param_index`, `css_variable_name`, unit for a number) for each dynamic property
+    pub css_vars: Vec<(usize, String, &'static str)>,
 }
 
 /// A `StyleX` namespace entry — either static or dynamic (arrow function)
@@ -163,8 +409,8 @@ pub fn decompose_value_conditions(
     value: &Expression,
     parent_selectors: &[SelectorPart],
 ) -> Vec<DecomposedStyle> {
-    // String literal → leaf
-    if let Some(s) = get_string_by_literal_expression(value) {
+    // String or number literal → leaf
+    if let Some(s) = stylex_value(css_property, value) {
         return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
             .into_iter()
             .collect();
@@ -184,7 +430,7 @@ pub fn decompose_value_conditions(
         let mut results = vec![];
         for arg in call.arguments.iter().rev() {
             if let Some(arg_expr) = arg.as_expression()
-                && let Some(s) = get_string_by_literal_expression(arg_expr)
+                && let Some(s) = stylex_value(css_property, arg_expr)
             {
                 results.extend(decomposed_leaf(
                     css_property,
@@ -201,7 +447,7 @@ pub fn decompose_value_conditions(
         && is_types_call(&call.callee)
         && let Some(inner) = call.arguments.first().and_then(|arg| arg.as_expression())
     {
-        if let Some(s) = get_string_by_literal_expression(inner) {
+        if let Some(s) = stylex_value(css_property, inner) {
             return decomposed_leaf(css_property, Some(s.into_owned()), parent_selectors)
                 .into_iter()
                 .collect();
