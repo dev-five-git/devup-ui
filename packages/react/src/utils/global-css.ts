@@ -1,10 +1,12 @@
 import type { DevupCommonProps } from '../types/props'
 import type {
   AdvancedSelector,
+  AtRuleKey,
   CamelCase,
   DevupSelectorProps,
   DevupThemeSelectorProps,
   ExtractSelector,
+  MediaShorthand,
   SimpleSelector,
 } from '../types/props/selector'
 
@@ -36,6 +38,19 @@ export type GlobalCssProps = {
   [
     K in `${keyof HTMLElementTagNameMap | keyof SVGElementTagNameMap | '.' | '*' | '#' | ':' | '['}${string}`
   ]?: DevupCommonProps & DevupSelectorProps & DevupThemeSelectorProps
+} & {
+  // Top-level at-rules wrap whole selector maps: `'@media print': { body: … }`.
+  [K in AtRuleKey | MediaShorthand]?: GlobalCssProps
+} & {
+  [
+    K in
+      | '_media'
+      | '_supports'
+      | '_container'
+      | '@media'
+      | '@supports'
+      | '@container'
+  ]?: Record<string, GlobalCssProps>
 }
 
 interface FontFaceProps {

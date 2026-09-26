@@ -186,7 +186,7 @@ const generated = (
 ```tsx
 // 타입 세이프 테마 토큰
 const textExample = <Text color="$primary" />
-const boxExample = <Box typography="$heading" />
+const boxExample = <Box typography="heading" />
 ```
 
 **사용자 정의 shorthand:**

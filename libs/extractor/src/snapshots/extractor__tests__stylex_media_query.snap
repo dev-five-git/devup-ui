@@ -12,8 +12,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Media,
-                        query: "(max-width: 600px)",
+                        query: "(max-width:600px)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,

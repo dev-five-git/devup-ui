@@ -1,0 +1,8 @@
+{
+  "changes": {
+    "bindings/devup-ui-wasm/package.json": "Patch",
+    "packages/react/package.json": "Patch"
+  },
+  "note": "Fix at-rule composition and cascade: `_print`/`_media`/`@media …` nest correctly with selectors in both directions and inside `globalCss`, nested media queries merge (`print and (…)`), breakpoints put media types first, distribute query lists, and nest `not …` queries, and at-rules are emitted after all breakpoint values while pseudo selectors keep `SELECTOR_ORDER` across breakpoints. Add `_motionReduce`, `_motionSafe`, `_portrait`, `_landscape`, `_contrastMore`, `_contrastLess` and `_forcedColors`, remove the never-matching `_speech`, normalize query whitespace, support Emotion-style `'@media …'`/`'&:hover'` object keys, fix template literals losing declarations before `@media` or selectors around nested at-rules, apply `typography` conditionally under selectors, and drop stale global at-rules on re-extraction",
+  "date": "2026-09-26T00:00:00.000Z"
+}

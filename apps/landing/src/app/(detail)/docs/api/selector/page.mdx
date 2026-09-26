@@ -182,3 +182,129 @@ The attributes defined in Pseudo-Class correspond to those defined in Selector, 
     </tr>
   </tbody>
 </table>
+
+## Media Shorthands
+
+These props wrap their styles in a fixed media query. They accept responsive arrays and nest in either direction with selectors and other at-rules.
+
+<br />
+
+<table>
+  <thead>
+    <tr>
+      <th width="300px">Selector</th>
+      <th width="300px">Media Query</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <code>_print</code>
+      </td>
+      <td>
+        <code>print</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_screen</code>
+      </td>
+      <td>
+        <code>screen</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_all</code>
+      </td>
+      <td>
+        <code>all</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_portrait</code>
+      </td>
+      <td>
+        <code>(orientation:portrait)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_landscape</code>
+      </td>
+      <td>
+        <code>(orientation:landscape)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_motionReduce</code>
+      </td>
+      <td>
+        <code>(prefers-reduced-motion:reduce)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_motionSafe</code>
+      </td>
+      <td>
+        <code>(prefers-reduced-motion:no-preference)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_contrastMore</code>
+      </td>
+      <td>
+        <code>(prefers-contrast:more)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_contrastLess</code>
+      </td>
+      <td>
+        <code>(prefers-contrast:less)</code>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <code>_forcedColors</code>
+      </td>
+      <td>
+        <code>(forced-colors:active)</code>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+```tsx
+const example = (
+  <Box
+    _motionReduce={{ transition: 'none' }}
+    _motionSafe={{ _hover: { transform: 'scale(1.05)' } }}
+    transition={['opacity .2s', null, 'all .3s']}
+  />
+)
+```
+
+## At-Rules
+
+`_media`, `_supports` and `_container` take a record of queries to styles. A query can also sit in the key itself, as in Emotion, and `globalCss` accepts at-rules around whole selector maps.
+
+```tsx
+const example = (
+  <Box
+    _media={{ '(min-width: 500px)': { p: 2 } }}
+    selectors={{ '@media print': { display: 'none' } }}
+  />
+)
+
+globalCss({
+  _motionReduce: { '*, *::before, *::after': { transition: 'none' } },
+})
+```
+
+Conditions always win over breakpoint values: at-rule styles come after every responsive rule. Among themselves they are ordered by condition, with width queries mobile-first (`min-width` ascending, then `max-width` descending), then media types, other features, and user preferences such as `prefers-*` last.

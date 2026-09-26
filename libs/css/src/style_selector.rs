@@ -7,6 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    at_rule::{MediaCombination, combine_media_queries, media_shorthand_query, normalize_query},
     constant::SELECTOR_ORDER,
     selector_separator::SelectorSeparator,
     to_kebab_case,
@@ -47,12 +48,25 @@ impl From<&str> for AtRuleKind {
     }
 }
 
+#[derive(Debug, PartialEq, PartialOrd, Ord, Clone, Hash, Eq, Serialize, Deserialize)]
+pub struct AtRule {
+    pub kind: AtRuleKind,
+    pub query: String,
+}
+
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Serialize, Deserialize)]
 pub enum StyleSelector {
     At {
         kind: AtRuleKind,
         query: String,
         selector: Option<String>,
+        /// At-rules enclosing this one, outermost first. Only set when the
+        /// rules cannot be folded into a single `@media` query.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        outer: Vec<AtRule>,
+        /// Source file of a `globalCss` rule, so re-extracting that file drops it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        file: Option<String>,
     },
     Selector(String),
     // selector, file
@@ -84,10 +98,14 @@ pub fn optimize_selector(selector: StyleSelector) -> StyleSelector {
             kind,
             query,
             selector,
+            outer,
+            file,
         } => StyleSelector::At {
             kind,
             query,
             selector: selector.map(collapse_owned_selector),
+            outer,
+            file,
         },
         StyleSelector::Selector(selector) => {
             StyleSelector::Selector(collapse_owned_selector(selector))
@@ -111,20 +129,22 @@ impl Ord for StyleSelector {
                     kind: ka,
                     query: a,
                     selector: aa,
+                    outer: oa,
+                    file: fa,
                 },
                 StyleSelector::At {
                     kind: kb,
                     query: b,
                     selector: bb,
+                    outer: ob,
+                    file: fb,
                 },
-            ) => {
-                let k = (*ka as u8).cmp(&(*kb as u8));
-                if k != Ordering::Equal {
-                    return k;
-                }
-                let c = a.cmp(b);
-                if c == Ordering::Equal { aa.cmp(bb) } else { c }
-            }
+            ) => (*ka as u8)
+                .cmp(&(*kb as u8))
+                .then_with(|| a.cmp(b))
+                .then_with(|| aa.cmp(bb))
+                .then_with(|| oa.cmp(ob))
+                .then_with(|| fa.cmp(fb)),
             (StyleSelector::Selector(a), StyleSelector::Selector(b)) => {
                 let order_cmp = get_selector_order(a).cmp(&get_selector_order(b));
                 if order_cmp == Ordering::Equal {
@@ -181,11 +201,13 @@ impl From<&str> for StyleSelector {
         } else if let Some(s) = value.strip_prefix("theme-") {
             // first character should lower case
             StyleSelector::Selector(format!(":root[data-theme={}] &", to_camel_case(s)))
-        } else if matches!(value.as_ref(), "print" | "screen" | "speech" | "all") {
+        } else if let Some(query) = media_shorthand_query(&value) {
             StyleSelector::At {
                 kind: AtRuleKind::Media,
-                query: value.into_owned(),
+                query: query.to_string(),
                 selector: None,
+                outer: vec![],
+                file: None,
             }
         } else {
             let post = to_kebab_case(&value);
@@ -214,23 +236,19 @@ impl From<[&str; 2]> for StyleSelector {
         ))
     }
 }
-impl From<(&StyleSelector, &str)> for StyleSelector {
-    fn from(value: (&StyleSelector, &str)) -> Self {
-        if let StyleSelector::Global(_, file) = value.0 {
-            let post = to_kebab_case(value.1);
-            StyleSelector::Global(
-                format!(
-                    "{}{}{}",
-                    value.0,
-                    SelectorSeparator::from(post.as_ref()),
-                    post
-                ),
-                file.clone(),
-            )
-        } else {
-            StyleSelector::from([&value.0.to_string(), value.1])
-        }
+
+/// Write an at-rule prelude (`@media print`, `@media(min-width:1px)`), spacing
+/// the query only when it does not open with a parenthesis.
+pub fn write_at_rule(
+    out: &mut impl std::fmt::Write,
+    kind: AtRuleKind,
+    query: &str,
+) -> std::fmt::Result {
+    write!(out, "@{kind}")?;
+    if !query.starts_with('(') {
+        out.write_char(' ')?;
     }
+    out.write_str(query)
 }
 
 impl Display for StyleSelector {
@@ -241,12 +259,14 @@ impl Display for StyleSelector {
                 kind,
                 query,
                 selector,
+                outer,
+                ..
             } => {
-                write!(f, "@{kind}")?;
-                if !query.starts_with('(') {
+                for rule in outer {
+                    write_at_rule(f, rule.kind, &rule.query)?;
                     f.write_str(" ")?;
                 }
-                f.write_str(query)?;
+                write_at_rule(f, *kind, query)?;
                 if let Some(selector) = selector {
                     write!(f, " {selector}")?;
                 }
@@ -271,6 +291,87 @@ impl StyleSelector {
             }
             StyleSelector::At { .. } => std::borrow::Cow::Owned(self.to_string()),
         }
+    }
+
+    /// Nest a selector `template` (e.g. `&:hover`, `:root[data-theme=dark] &`)
+    /// inside `parent`, substituting the parent's selector for `&`.
+    #[must_use]
+    pub fn nest_selector(parent: Option<&Self>, template: &str) -> Self {
+        match parent {
+            None => Self::Selector(template.to_string()),
+            Some(Self::Selector(selector)) => Self::Selector(template.replace('&', selector)),
+            Some(Self::Global(selector, file)) => {
+                Self::Global(template.replace('&', selector), file.clone())
+            }
+            Some(Self::At {
+                kind,
+                query,
+                selector,
+                outer,
+                file,
+            }) => Self::At {
+                kind: *kind,
+                query: query.clone(),
+                selector: Some(
+                    selector
+                        .as_deref()
+                        .map_or_else(|| template.to_string(), |s| template.replace('&', s)),
+                ),
+                outer: outer.clone(),
+                file: file.clone(),
+            },
+        }
+    }
+
+    /// Wrap `parent` (the bare class when `None`) in an at-rule. Nested
+    /// `@media` rules fold into one query where possible; `None` means the
+    /// combined condition can never match, so the styles must be dropped.
+    #[must_use]
+    pub fn nest_at_rule(parent: Option<&Self>, kind: AtRuleKind, query: &str) -> Option<Self> {
+        let query = normalize_query(query);
+        let (selector, outer, file) = match parent {
+            None => (None, vec![], None),
+            Some(Self::Selector(selector)) => (Some(selector.clone()), vec![], None),
+            Some(Self::Global(selector, file)) => {
+                (Some(selector.clone()), vec![], Some(file.clone()))
+            }
+            Some(Self::At {
+                kind: parent_kind,
+                query: parent_query,
+                selector,
+                outer,
+                file,
+            }) => {
+                if *parent_kind == AtRuleKind::Media && kind == AtRuleKind::Media {
+                    match combine_media_queries(parent_query, &query) {
+                        MediaCombination::Merged(query) => {
+                            return Some(Self::At {
+                                kind,
+                                query,
+                                selector: selector.clone(),
+                                outer: outer.clone(),
+                                file: file.clone(),
+                            });
+                        }
+                        MediaCombination::Never => return None,
+                        MediaCombination::Nest => {}
+                    }
+                }
+                let mut outer = outer.clone();
+                outer.push(AtRule {
+                    kind: *parent_kind,
+                    query: parent_query.clone(),
+                });
+                (selector.clone(), outer, file.clone())
+            }
+        };
+        Some(Self::At {
+            kind,
+            query,
+            selector,
+            outer,
+            file,
+        })
     }
 }
 
@@ -355,6 +456,7 @@ mod tests {
     #[case("group-focus-visible", StyleSelector::Selector(":is([role=group],[data-group]):focus-visible &".to_string()))]
     #[case("group-1", StyleSelector::Selector(":is([role=group],[data-group]):1 &".to_string()))]
     #[case(["theme-dark", "placeholder"], StyleSelector::Selector(":root[data-theme=dark] &::placeholder".to_string()))]
+    #[case(["theme-dark", "&:hover"], StyleSelector::Selector(":root[data-theme=dark] &:hover".to_string()))]
     #[case("theme-light", StyleSelector::Selector(":root[data-theme=light] &".to_string()))]
     #[case("*[aria=disabled='true'] &:hover", StyleSelector::Selector("*[aria=disabled='true'] &:hover".to_string()))]
     fn test_style_selector(
@@ -369,28 +471,28 @@ mod tests {
     #[case(StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "screen and (max-width: 600px)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         "@media screen and (max-width: 600px)"
     )]
     #[case(StyleSelector::At {
             kind: AtRuleKind::Supports,
             query: "(display: grid)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         "@supports(display: grid)"
     )]
     #[case(StyleSelector::At {
             kind: AtRuleKind::Container,
             query: "(min-width: 768px)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         "@container(min-width: 768px)"
     )]
     #[case(StyleSelector::At {
             kind: AtRuleKind::Container,
             query: "sidebar (min-width: 400px)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         "@container sidebar (min-width: 400px)"
     )]
@@ -398,7 +500,7 @@ mod tests {
     #[case(StyleSelector::At {
             kind: AtRuleKind::Layer,
             query: "reset".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         "@layer reset"
     )]
@@ -412,7 +514,7 @@ mod tests {
         StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "screen".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         StyleSelector::Selector("&:hover".to_string()),
         std::cmp::Ordering::Greater
@@ -426,12 +528,12 @@ mod tests {
         StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "a".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "b".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         std::cmp::Ordering::Less
     )]
@@ -439,12 +541,12 @@ mod tests {
         StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "(min-width: 768px)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         StyleSelector::At {
             kind: AtRuleKind::Supports,
             query: "(display: grid)".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         std::cmp::Ordering::Less
     )]
@@ -463,7 +565,7 @@ mod tests {
         StyleSelector::At {
             kind: AtRuleKind::Media,
             query: "screen".to_string(),
-            selector: None,
+            selector: None, outer: vec![], file: None,
         },
         std::cmp::Ordering::Less
     )]
@@ -628,6 +730,180 @@ mod tests {
         assert!(
             before_ampersand.ends_with(expected_pseudo_suffix),
             "selector `{rendered}` does not end with pseudo `{expected_pseudo_suffix}`"
+        );
+    }
+
+    fn at(kind: AtRuleKind, query: &str, selector: Option<&str>) -> StyleSelector {
+        StyleSelector::At {
+            kind,
+            query: query.to_string(),
+            selector: selector.map(str::to_string),
+            outer: vec![],
+            file: None,
+        }
+    }
+
+    #[rstest]
+    #[case(None, "&:hover", StyleSelector::Selector("&:hover".to_string()))]
+    #[case(
+        Some(StyleSelector::Selector("&:hover".to_string())),
+        ":root[data-theme=dark] &",
+        StyleSelector::Selector(":root[data-theme=dark] &:hover".to_string())
+    )]
+    #[case(
+        Some(StyleSelector::Global("body".to_string(), "a.tsx".to_string())),
+        "&:hover",
+        StyleSelector::Global("body:hover".to_string(), "a.tsx".to_string())
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "print", None)),
+        "&:hover",
+        at(AtRuleKind::Media, "print", Some("&:hover"))
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "print", Some("&:focus"))),
+        "&:hover",
+        at(AtRuleKind::Media, "print", Some("&:focus:hover"))
+    )]
+    fn test_nest_selector(
+        #[case] parent: Option<StyleSelector>,
+        #[case] template: &str,
+        #[case] expected: StyleSelector,
+    ) {
+        assert_eq!(
+            StyleSelector::nest_selector(parent.as_ref(), template),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(
+        None,
+        AtRuleKind::Media,
+        "(prefers-reduced-motion: reduce)",
+        Some(at(AtRuleKind::Media, "(prefers-reduced-motion:reduce)", None))
+    )]
+    #[case(
+        Some(StyleSelector::Selector("&:hover".to_string())),
+        AtRuleKind::Media,
+        "print",
+        Some(at(AtRuleKind::Media, "print", Some("&:hover")))
+    )]
+    #[case(
+        Some(StyleSelector::Global("body".to_string(), "a.tsx".to_string())),
+        AtRuleKind::Media,
+        "print",
+        Some(StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "print".to_string(),
+            selector: Some("body".to_string()),
+            outer: vec![],
+            file: Some("a.tsx".to_string()),
+        })
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "print", Some("&:hover"))),
+        AtRuleKind::Media,
+        "(prefers-reduced-motion:reduce)",
+        Some(at(
+            AtRuleKind::Media,
+            "print and (prefers-reduced-motion:reduce)",
+            Some("&:hover")
+        ))
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "print", None)),
+        AtRuleKind::Media,
+        "screen",
+        None
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "print", None)),
+        AtRuleKind::Supports,
+        "(display: grid)",
+        Some(StyleSelector::At {
+            kind: AtRuleKind::Supports,
+            query: "(display:grid)".to_string(),
+            selector: None,
+            outer: vec![AtRule { kind: AtRuleKind::Media, query: "print".to_string() }],
+            file: None,
+        })
+    )]
+    #[case(
+        Some(at(AtRuleKind::Media, "not print and (color)", None)),
+        AtRuleKind::Media,
+        "(hover:none)",
+        Some(StyleSelector::At {
+            kind: AtRuleKind::Media,
+            query: "(hover:none)".to_string(),
+            selector: None,
+            outer: vec![AtRule { kind: AtRuleKind::Media, query: "not print and (color)".to_string() }],
+            file: None,
+        })
+    )]
+    fn test_nest_at_rule(
+        #[case] parent: Option<StyleSelector>,
+        #[case] kind: AtRuleKind,
+        #[case] query: &str,
+        #[case] expected: Option<StyleSelector>,
+    ) {
+        assert_eq!(
+            StyleSelector::nest_at_rule(parent.as_ref(), kind, query),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_nested_at_rule_display_and_order() {
+        let nested = StyleSelector::At {
+            kind: AtRuleKind::Supports,
+            query: "(display:grid)".to_string(),
+            selector: Some("&:hover".to_string()),
+            outer: vec![AtRule {
+                kind: AtRuleKind::Media,
+                query: "print".to_string(),
+            }],
+            file: None,
+        };
+        assert_eq!(
+            nested.to_string(),
+            "@media print @supports(display:grid) &:hover"
+        );
+        assert_eq!(
+            nested.as_class_str(),
+            "@media print @supports(display:grid) &:hover"
+        );
+
+        let plain = at(AtRuleKind::Supports, "(display:grid)", Some("&:hover"));
+        assert_eq!(plain.cmp(&nested), std::cmp::Ordering::Less);
+        let global = StyleSelector::At {
+            kind: AtRuleKind::Supports,
+            query: "(display:grid)".to_string(),
+            selector: Some("&:hover".to_string()),
+            outer: vec![],
+            file: Some("a.tsx".to_string()),
+        };
+        assert_eq!(plain.cmp(&global), std::cmp::Ordering::Less);
+        assert_eq!(
+            optimize_selector(global.clone()),
+            global,
+            "optimizing keeps the enclosing rules and file"
+        );
+    }
+
+    #[test]
+    fn test_media_shorthand_selector() {
+        assert_eq!(
+            StyleSelector::from("motion-reduce"),
+            at(AtRuleKind::Media, "(prefers-reduced-motion:reduce)", None)
+        );
+        assert_eq!(
+            StyleSelector::from("print"),
+            at(AtRuleKind::Media, "print", None)
+        );
+        assert_eq!(
+            StyleSelector::from("speech"),
+            StyleSelector::Selector("&:speech".to_string())
         );
     }
 

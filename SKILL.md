@@ -215,7 +215,22 @@ Available: `_groupHover`, `_groupFocus`, `_groupActive`, `_groupDisabled`.
 
 // @ prefix syntax (equivalent)
 <Box {...{ "@media": { "(min-width: 768px)": { w: "50%" } } }} />
+
+// Query in the key (Emotion style), also inside `selectors` and css()/styled()
+<Box selectors={{ "@media print": { display: "none" } }} />
 ```
+
+Media shorthands wrap styles in a fixed query and nest in either direction with selectors:
+`_print`, `_screen`, `_all`, `_portrait`, `_landscape`, `_motionReduce` (`prefers-reduced-motion: reduce`), `_motionSafe` (`no-preference`), `_contrastMore`, `_contrastLess`, `_forcedColors`.
+
+```tsx
+<Box transition={["opacity .2s", null, "all .3s"]} _motionReduce={{ transition: "none" }} />
+<Box _motionSafe={{ _hover: { transform: "scale(1.05)" } }} />
+globalCss({ _motionReduce: { "*, *::before, *::after": { transition: "none" } } })
+```
+
+- Conditions beat breakpoint values: at-rule styles are emitted after every responsive rule.
+- Nested `@media` rules merge into one query (`print and (prefers-reduced-motion:reduce)`); ones that can never match together (`_print` inside `_screen`) are dropped.
 
 ### Custom Selectors
 
@@ -365,7 +380,7 @@ const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rot
 ```
 
 - **Colors**: Use with `$` prefix in JSX props: `<Box color="$primary" />`
-- **Typography**: Use with `$` prefix: `<Text typography="$heading" />`
+- **Typography**: Use the preset name without `$`: `<Text typography="heading" />`. Under selectors or at-rules (`_hover={{ typography: "heading" }}`) the preset applies only under that condition.
 - **Length**: Responsive length tokens: `<Box px="$containerX" />`, `<Flex gap="$gutter" />`
 - **Shadow**: Responsive shadow tokens: `<Box boxShadow="$card" />`
 - **extends**: Inherit from base config files (deep merge, last wins)

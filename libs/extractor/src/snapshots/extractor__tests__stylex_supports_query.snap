@@ -22,8 +22,10 @@ ToBTreeSet {
                 selector: Some(
                     At {
                         kind: Supports,
-                        query: "(display: grid)",
+                        query: "(display:grid)",
                         selector: None,
+                        outer: [],
+                        file: None,
                     },
                 ),
                 style_order: None,

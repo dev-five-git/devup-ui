@@ -160,6 +160,7 @@ dependencies = [
  "float16",
  "futures-concurrency",
  "futures-lite",
+ "getrandom",
  "hashbrown 0.17.1",
  "icu_calendar",
  "icu_normalizer",
@@ -188,6 +189,7 @@ dependencies = [
  "thiserror",
  "time",
  "timezone_provider",
+ "web-time",
  "xsum",
 ]
 
@@ -582,6 +584,7 @@ name = "devup-ui-wasm"
 version = "0.1.0"
 dependencies = [
  "bimap",
+ "boa_engine",
  "console_error_panic_hook",
  "css",
  "extractor",
@@ -2380,6 +2383,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",
@@ -2619,6 +2623,16 @@ name = "web-sys"
 version = "0.3.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fbddc4a036f00ec4f18c83445bd3115cb306a91da554919a099d9222fe4a7f8"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

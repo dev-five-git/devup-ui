@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "animation",
-                value: "spin",
+                value: "a",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -67,5 +67,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const spinner = \"a\";\nconst internal = \"b\";\nexport const spin = \"c\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const spinner = \"b\";\nconst internal = \"c\";\nexport const spin = \"a\";\n",
 }

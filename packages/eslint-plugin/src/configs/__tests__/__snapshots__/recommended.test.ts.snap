@@ -39,6 +39,23 @@ exports[`recommended export recommended config 1`] = `
             },
             "name": "no-duplicate-value",
           },
+          "no-typography-token-prefix": {
+            "create": [Function: create],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "Disallow the \`$\` token prefix on typography keys.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/no-typography-token-prefix",
+              },
+              "fixable": "code",
+              "messages": {
+                "noTypographyTokenPrefix": "Typography keys take no \`$\` prefix. Use "{{name}}".",
+              },
+              "schema": [],
+              "type": "problem",
+            },
+            "name": "no-typography-token-prefix",
+          },
           "no-useless-responsive": {
             "create": [Function: create],
             "defaultOptions": [],
@@ -73,6 +90,23 @@ exports[`recommended export recommended config 1`] = `
             },
             "name": "no-useless-tailing-nulls",
           },
+          "prefer-media-shorthand": {
+            "create": [Function: create],
+            "defaultOptions": [],
+            "meta": {
+              "docs": {
+                "description": "Prefer media shorthand props over their media queries.",
+                "url": "https://github.com/dev-five-git/devup-ui/tree/main/packages/eslint-plugin/src/rules/prefer-media-shorthand",
+              },
+              "fixable": "code",
+              "messages": {
+                "preferMediaShorthand": "Use the \`{{shorthand}}\` shorthand for this query.",
+              },
+              "schema": [],
+              "type": "suggestion",
+            },
+            "name": "prefer-media-shorthand",
+          },
           "style-order-range": {
             "create": [Function: create],
             "defaultOptions": [],
@@ -96,8 +130,10 @@ exports[`recommended export recommended config 1`] = `
     "rules": {
       "@devup-ui/css-utils-literal-only": "error",
       "@devup-ui/no-duplicate-value": "error",
+      "@devup-ui/no-typography-token-prefix": "error",
       "@devup-ui/no-useless-responsive": "error",
       "@devup-ui/no-useless-tailing-nulls": "error",
+      "@devup-ui/prefer-media-shorthand": "warn",
       "@devup-ui/style-order-range": "error",
     },
   },
