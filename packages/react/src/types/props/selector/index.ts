@@ -71,13 +71,30 @@ export type AtRuleRecord = Partial<
   Record<string & {}, SelectorProps<DevupProps>>
 >
 
+/** Props that wrap styles in a fixed `@media` query, e.g. `_motionReduce`. */
+export type MediaShorthand =
+  | '_print'
+  | '_screen'
+  | '_all'
+  | '_portrait'
+  | '_landscape'
+  | '_motionReduce'
+  | '_motionSafe'
+  | '_contrastMore'
+  | '_contrastLess'
+  | '_forcedColors'
+
+export type MediaShorthandProps = {
+  [K in MediaShorthand]?: SelectorProps<DevupProps>
+}
+
+/** At-rule keys carrying their condition, e.g. `'@media print'`. */
+export type AtRuleKey =
+  `@media ${string}` | `@supports ${string}` | `@container ${string}`
+
 export interface DevupSelectorProps
-  extends SimpleSelectorProps, AdvancedSelectorProps {
-  // media query
-  _print?: SelectorProps<DevupProps>
-  _screen?: SelectorProps<DevupProps>
-  _speech?: SelectorProps<DevupProps>
-  _all?: SelectorProps<DevupProps>
+  extends SimpleSelectorProps, AdvancedSelectorProps, MediaShorthandProps {
+  [key: AtRuleKey]: SelectorProps<DevupProps> | undefined
 
   // at-rules (underscore prefix)
   _container?: AtRuleRecord

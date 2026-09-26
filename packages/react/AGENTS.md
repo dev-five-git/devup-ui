@@ -68,7 +68,7 @@ src/
 ### Theme Tokens
 ```tsx
 <Text color="$primary" />     // Color token
-<Text typography="$heading" /> // Typography preset
+<Text typography="heading" /> // Typography preset
 ```
 
 ## ANTI-PATTERNS
