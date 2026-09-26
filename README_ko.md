@@ -103,7 +103,7 @@ Turbopack 값은 실행 순서를 번갈아 측정한 cold build 6회의 중앙�
 | **devup-ui (direct APIs, single CSS)** | 1.0.40 | **6.54s**        | **36,519,234 bytes** |
 | **devup-ui (static `.css.ts`)**        | 1.0.40 | **6.47s**        | 36,550,197 bytes     |
 
-Turbopack 측정 범위는 서로 겹치므로 direct API 결과는 이 fixture에서 Tailwind와 사실상 동률입니다. static `.css.ts` 행은 `lite` WASM 빠른 경로를 사용하며, full Boa evaluator가 필요한 dynamic `.css.ts`는 해당 중앙값에 포함되지 않습니다.
+Turbopack 측정 범위는 서로 겹치므로 direct API 결과는 이 fixture에서 Tailwind와 사실상 동률입니다. static `.css.ts` 행은 정적 모듈용 `lite` 빠른 경로가 있던 때에 측정한 값입니다. 지금은 모든 `.css.ts`를 full Boa evaluator로 처리하며, 첫 모듈에 약 20ms, 이후 모듈마다 1ms 미만이 더 듭니다.
 
 ## 작동 원리
 
