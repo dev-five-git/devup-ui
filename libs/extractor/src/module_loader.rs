@@ -5,8 +5,8 @@ use std::fmt::Write;
 use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
 use oxc_ast::ast::{
-    Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier, ModuleExportName,
-    Statement,
+    Argument, Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier,
+    ModuleExportName, Statement,
 };
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
@@ -180,6 +180,16 @@ impl<'r> ModuleLoader<'r> {
                 format!("{exported:?}: {{ get() {{ return {local}; }}, enumerable: true }}")
             })
             .collect();
+        if module_script.commonjs {
+            // Its exports are what `module.exports` holds once it ran; the
+            // default follows bundler interop (`__esModule` marks a compiled
+            // ES module)
+            self.definitions.push(format!(
+                "(function () {{\n{name}$.start();\nconst module = {{ exports: {{}} }};\nconst exports = module.exports;\n{}\nconst e = module.exports;\nObject.defineProperty({name}, \"__exports__\", {{ value: e }});\nif (e !== null && (typeof e === \"object\" || typeof e === \"function\")) for (const key of Object.keys(e)) if (key !== \"default\") Object.defineProperty({name}, key, {{ get: () => e[key], enumerable: true }});\nObject.defineProperty({name}, \"default\", {{ value: e !== null && typeof e === \"object\" && e.__esModule ? e.default : e, enumerable: true }});\n}})();\n",
+                module_script.body,
+            ));
+            return Ok(());
+        }
         let mut spreads = String::new();
         for spread in &module_script.spreads {
             let _ = writeln!(
@@ -204,6 +214,8 @@ pub(crate) struct ModuleScript {
     exports: Vec<(String, String)>,
     /// Modules re-exported whole
     spreads: Vec<String>,
+    /// Written with `module.exports` rather than `export`
+    commonjs: bool,
 }
 
 pub(crate) fn module_script(
@@ -281,6 +293,33 @@ pub(crate) fn module_script(
                 _ => binding.clone(),
             };
             replacements.push((span.start, span.end, replacement));
+        }
+    }
+    // CommonJS: equire of a literal path loads the module like an import
+    let commonjs = !program.body.iter().any(Statement::is_module_declaration)
+        && semantic
+            .scoping()
+            .root_unresolved_references()
+            .keys()
+            .any(|name| matches!(name.as_str(), "module" | "exports" | "require"));
+    if commonjs
+        && let Some(references) = semantic
+            .scoping()
+            .root_unresolved_references()
+            .get("require")
+    {
+        for reference in references {
+            let node = semantic.scoping().get_reference(*reference).node_id();
+            if let AstKind::CallExpression(call) = semantic.nodes().parent_kind(node)
+                && let [Argument::StringLiteral(specifier)] = call.arguments.as_slice()
+            {
+                let module = loader.load(specifier.value.as_str(), filename, entry)?;
+                replacements.push((
+                    call.span.start,
+                    call.span.end,
+                    format!("(\"__exports__\" in {module} ? {module}.__exports__ : {module})"),
+                ));
+            }
         }
     }
     replacements.sort_by_key(|(start, ..)| *start);
@@ -389,6 +428,7 @@ pub(crate) fn module_script(
         body,
         exports,
         spreads,
+        commonjs,
     })
 }
 fn export_name(name: &ModuleExportName<'_>) -> String {
