@@ -17909,6 +17909,48 @@ export const j = css({ height: 2 });",
 
     #[test]
     #[serial]
+    fn test_styled_components_attrs_and_every_styled_import() {
+        let aliases = HashMap::from([
+            (
+                "@emotion/styled".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+            (
+                "styled-components".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+        ]);
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import emotion from '@emotion/styled';
+import sc from 'styled-components';
+export const A = emotion.div({ top: 1 });
+export const B = sc.span({ left: 2 });
+export const C = sc.button.attrs({ type: 'button' }).withConfig({ displayName: 'c' })({ right: 3 });
+export const D = sc(Base).withConfig({ shouldForwardProp: () => true })`color: red;`;
+export const E = (sc.input.attrs((props) => ({ size: props.small ? 5 : 10 })) as any).attrs(extra)({ bottom: 4 });
+export const F = sc.div.attrs({ role: 'note' });
+export const G = other.div.attrs({ role: 'note' })({ margin: 1 });
+export const H = sc.div.attrs(...rest)({ margin: 2 });
+export const I = factory.attrs({ id: 'i' })({ margin: 3 });
+export const J = other(Base).attrs({ id: 'j' })({ margin: 4 });",
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: aliases,
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_composed_css_keeps_composed_classes() {
         reset_class_map();
         reset_file_map();

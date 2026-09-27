@@ -13,7 +13,7 @@ use crate::{
     gen_style::gen_styles,
     utils::{
         StyleArguments, merge_object_expressions, style_arguments, unwrap_syntax_only,
-        wrap_array_filter,
+        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -21,11 +21,12 @@ use oxc_ast::{
     ast::{
         Argument, BindingPattern, BindingProperty, BindingRestElement, CallExpression, Expression,
         FormalParameter, FormalParameterKind, FormalParameters, JSXAttributeItem, JSXAttributeName,
-        JSXAttributeValue, JSXElementName, JSXOpeningElement, PropertyKey, Str,
+        JSXAttributeValue, JSXElementName, JSXOpeningElement, ObjectPropertyKind, PropertyKey, Str,
     },
     builder::AstBuilder,
 };
 use oxc_span::SPAN;
+use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
 
 fn extract_base_tag_and_class_name(
     input: &Expression<'_>,
@@ -106,6 +107,7 @@ pub fn extract_style_from_styled<'a>(
     expression: &mut Expression<'a>,
     split_filename: Option<&str>,
     imports: &FxHashMap<String, ExportVariableKind>,
+    attrs: &[Expression<'a>],
 ) -> (ExtractResult<'a>, Expression<'a>) {
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(&call.callee, imports)
@@ -136,11 +138,15 @@ pub fn extract_style_from_styled<'a>(
         }
 
         let class_name = gen_class_names(ast_builder, &mut props_styles, None, split_filename);
-        let styled_component = create_styled_component(
+        let styled_component = apply_attrs(
             ast_builder,
-            &tag_name,
-            &class_name,
-            &gen_styles(ast_builder, &props_styles, None),
+            create_styled_component(
+                ast_builder,
+                &tag_name,
+                &class_name,
+                &gen_styles(ast_builder, &props_styles, None),
+            ),
+            attrs,
         );
 
         let result = ExtractResult {
@@ -188,11 +194,15 @@ pub fn extract_style_from_styled<'a>(
         }
 
         let class_name = gen_class_names(ast_builder, &mut styles, style_order, split_filename);
-        let styled_component = create_styled_component(
+        let styled_component = apply_attrs(
             ast_builder,
-            &tag_name,
-            &class_name,
-            &gen_styles(ast_builder, &styles, None),
+            create_styled_component(
+                ast_builder,
+                &tag_name,
+                &class_name,
+                &gen_styles(ast_builder, &styles, None),
+            ),
+            attrs,
         );
 
         let result = ExtractResult {
@@ -210,6 +220,173 @@ pub fn extract_style_from_styled<'a>(
     (
         result.unwrap_or_else(ExtractResult::default),
         new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
+    )
+}
+
+/// The name the attrs wrapper binds props to, chosen not to shadow what the
+/// attrs expressions read
+const ATTRS_PROPS: &str = "__devupProps";
+
+/// Strip styled-components' `.attrs()` / `.withConfig()` off a styled factory
+/// such as `styled.div.attrs(a).withConfig(c)`, returning the attrs in the
+/// order they apply. `withConfig` only tunes runtime behavior, so it is dropped.
+pub fn take_styled_modifiers<'a>(
+    ast_builder: &AstBuilder<'a>,
+    factory: &mut Expression<'a>,
+    is_styled: impl Fn(&str) -> bool,
+) -> Vec<Expression<'a>> {
+    let mut attrs = Vec::new();
+    if !is_modified_styled(factory, is_styled) {
+        return attrs;
+    }
+    while let Expression::CallExpression(call) = unwrap_syntax_only_mut(factory)
+        && let CallExpression {
+            callee, arguments, ..
+        } = &mut **call
+        && let Expression::StaticMemberExpression(member) = unwrap_syntax_only_mut(callee)
+        && matches!(member.property.name.as_str(), "attrs" | "withConfig")
+    {
+        let placeholder = || Expression::new_null_literal(SPAN, ast_builder);
+        if member.property.name == "attrs"
+            && let Some(argument) = arguments[0].as_expression_mut()
+        {
+            attrs.push(std::mem::replace(argument, placeholder()));
+        }
+        let object = std::mem::replace(&mut member.object, placeholder());
+        *factory = object;
+    }
+    attrs.reverse();
+    attrs
+}
+
+fn is_modified_styled(expression: &Expression<'_>, is_styled: impl Fn(&str) -> bool) -> bool {
+    let mut expression = unwrap_syntax_only(expression);
+    let mut modified = false;
+    while let Some(object) = modifier_object(expression) {
+        expression = unwrap_syntax_only(object);
+        modified = true;
+    }
+    modified
+        && match expression {
+            Expression::StaticMemberExpression(member) => {
+                matches!(&member.object, Expression::Identifier(ident) if is_styled(&ident.name))
+            }
+            Expression::CallExpression(call) => {
+                matches!(&call.callee, Expression::Identifier(ident) if is_styled(&ident.name))
+            }
+            _ => false,
+        }
+}
+
+fn modifier_object<'b, 'a>(expression: &'b Expression<'a>) -> Option<&'b Expression<'a>> {
+    if let Expression::CallExpression(call) = expression
+        && let [argument] = call.arguments.as_slice()
+        && argument.is_expression()
+        && let Expression::StaticMemberExpression(member) = unwrap_syntax_only(&call.callee)
+        && matches!(member.property.name.as_str(), "attrs" | "withConfig")
+    {
+        Some(&member.object)
+    } else {
+        None
+    }
+}
+
+/// Wrap `component` so the attrs are merged over its props first: an object is
+/// spread, anything else is called with the props when it is a function, as
+/// styled-components does
+fn apply_attrs<'a>(
+    ast_builder: &AstBuilder<'a>,
+    component: Expression<'a>,
+    attrs: &[Expression<'a>],
+) -> Expression<'a> {
+    if attrs.is_empty() {
+        return component;
+    }
+    let props = || Expression::new_identifier(SPAN, ATTRS_PROPS, ast_builder);
+    let mut merged = props();
+    for attr in attrs {
+        let attr = attr.clone_in(ast_builder.allocator());
+        if matches!(unwrap_syntax_only(&attr), Expression::ObjectExpression(_)) {
+            merged = spread_objects(ast_builder, merged, attr);
+            continue;
+        }
+        let called = wrap_direct_call(ast_builder, &attr, &[props()]);
+        let resolved = if matches!(
+            unwrap_syntax_only(&attr),
+            Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+        ) {
+            called
+        } else {
+            let is_function = Expression::new_binary_expression(
+                SPAN,
+                Expression::new_unary_expression(
+                    SPAN,
+                    UnaryOperator::Typeof,
+                    attr.clone_in(ast_builder.allocator()),
+                    ast_builder,
+                ),
+                BinaryOperator::StrictEquality,
+                Expression::new_string_literal(SPAN, "function", None, ast_builder),
+                ast_builder,
+            );
+            Expression::new_conditional_expression(SPAN, is_function, called, attr, ast_builder)
+        };
+        let step = props_arrow(ast_builder, spread_objects(ast_builder, props(), resolved));
+        merged = wrap_direct_call(ast_builder, &step, &[merged]);
+    }
+    props_arrow(
+        ast_builder,
+        wrap_direct_call(ast_builder, &component, &[merged]),
+    )
+}
+
+fn spread_objects<'a>(
+    ast_builder: &AstBuilder<'a>,
+    first: Expression<'a>,
+    second: Expression<'a>,
+) -> Expression<'a> {
+    let mut properties = oxc_allocator::Vec::with_capacity_in(2, ast_builder);
+    properties.push(ObjectPropertyKind::new_spread_property(
+        SPAN,
+        first,
+        ast_builder,
+    ));
+    properties.push(ObjectPropertyKind::new_spread_property(
+        SPAN,
+        second,
+        ast_builder,
+    ));
+    Expression::new_object_expression(SPAN, properties, ast_builder)
+}
+
+fn props_arrow<'a>(ast_builder: &AstBuilder<'a>, body: Expression<'a>) -> Expression<'a> {
+    let parameter = FormalParameter::new(
+        SPAN,
+        oxc_allocator::Vec::new_in(ast_builder),
+        BindingPattern::new_binding_identifier(SPAN, ATTRS_PROPS, ast_builder),
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        None::<oxc_allocator::Box<Expression<'a>>>,
+        false,
+        None,
+        false,
+        false,
+        ast_builder,
+    );
+    let params = FormalParameters::boxed(
+        SPAN,
+        FormalParameterKind::ArrowFormalParameters,
+        oxc_allocator::Vec::from_iter_in([parameter], ast_builder),
+        None::<oxc_allocator::Box<oxc_ast::ast::FormalParameterRest<'a>>>,
+        ast_builder,
+    );
+    Expression::new_arrow_function_expression(
+        SPAN,
+        false,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeParameterDeclaration<'a>>>,
+        params,
+        None::<oxc_allocator::Box<oxc_ast::ast::TSTypeAnnotation<'a>>>,
+        body.into(),
+        ast_builder,
     )
 }
 

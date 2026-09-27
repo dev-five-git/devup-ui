@@ -16,6 +16,26 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "left",
+                value: "9px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "right",
+                value: "7px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "width",
                 value: "1px",
                 level: 0,
@@ -25,5 +45,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const G = Styled.div.attrs({ type: \"button\" }).withConfig({ displayName: \"g\" })({ right: \"7px\" });\nexport const H = Styled(Base).withConfig({ displayName: \"h\" })({ left: \"9px\" });\nexport const I = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const j = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const G = (__devupProps) => (({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />)({\n\t...__devupProps,\n\t...{ type: \"button\" }\n});\nexport const H = ({ style, className, ...rest }) => <Base {...rest} className={[\"b\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const I = ({ style, className, ...rest }) => <div {...rest} className={[\"c\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const j = \"d\";\n",
 }
