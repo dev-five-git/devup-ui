@@ -77,6 +77,8 @@ const example = <Box bg={colors.brand} color={PRIMARY} />
 const generated = <div className="a b" />
 ```
 
+The same holds for a `const` declared at the top of the file itself, and templates or arithmetic over such constants fold into one value (`` `${SIZE * 2}px` ``).
+
 Imports are resolved like the bundler resolves them — relative paths, `tsconfig` `paths` and packages (`exports`, `module`, `main`) — and a change to the module rebuilds the files reading it. CommonJS modules count too when they assign the export once (`exports.PRIMARY = 'red'`, `module.exports = { ... }`). Anything that can change or is computed — a `let`, a property assigned twice, a function call — stays a CSS variable.
 
 ## Conditional Expressions
@@ -228,6 +230,8 @@ const cardStyles = css({
 
 const example = <Box {...cardStyles} />
 ```
+
+`css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so their values must be known at build time — literals, theme tokens or constants. A value known only at runtime is a build error naming it; for a runtime value, use a style prop (`<Box as={Component} w={width} />`).
 
 ## globalCss() API
 

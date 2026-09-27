@@ -339,7 +339,7 @@ const spin = keyframes({ from: { transform: "rotate(0)" }, to: { transform: "rot
 
 ### Dynamic Values with Custom Components
 
-`css()` only accepts **static values**. For dynamic values on custom components, use `<Box as={Component}>`:
+`css()`, `globalCss()`, `keyframes()` and `stylex.create()` only accept values known at build time - literals, theme tokens, imported constants and module-level `const`s (templates and arithmetic over them fold). A runtime value is a **build error**. For dynamic values on custom components, use `<Box as={Component}>`:
 
 ```tsx
 // WRONG - css() cannot handle dynamic values
@@ -573,6 +573,7 @@ One rule explains `Dynamic Values = CSS Variables`, `$token Scope` and
 |------|--------|
 | `<Box color="red" />` | Static class |
 | `<Box color={{ 1: "red", 2: "blue" }[v]} />` | Static class per value - **preferred** |
+| `<Box color={PRIMARY} />` where `PRIMARY` is a module-level or imported `const` string/number | Static class |
 | `<Box color={colors[v]} />` where `colors` is declared elsewhere | CSS variable |
 | `<Box color={props.color} />` | CSS variable (genuinely dynamic - correct) |
 | `const s = { a: css({ ... }) }` then `className={s[v]}` | Neither - see below |
