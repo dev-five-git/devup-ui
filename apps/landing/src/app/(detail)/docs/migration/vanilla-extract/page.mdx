@@ -36,6 +36,8 @@ export const button = style([base, { color: PRIMARY, margin: vars.space }])
 
 A change to an imported file rebuilds the stylesheets importing it. Import cycles behave as in ES modules: they work as long as neither side reads the other before it has been evaluated, and reading too early is a build error naming the binding and the module.
 
+A stylesheet that throws while it is evaluated — an import that does not resolve, a property read on `undefined` — is a build error carrying that exception, rather than output that still calls `style()` at runtime.
+
 ## Ordinary modules
 
 `style`, `globalStyle` and `keyframes` also resolve in `.ts` / `.tsx`, mapped onto their Devup UI counterparts, and `style([base, { ... }])` keeps composing `base`:
