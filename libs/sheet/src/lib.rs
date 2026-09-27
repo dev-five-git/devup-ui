@@ -3616,6 +3616,30 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_dynamic_base_style_updates_base_sheet() {
+        reset_class_map();
+        reset_file_map();
+        let mut sheet = StyleSheet::default();
+        let output = extract(
+            "test.tsx",
+            "import {Box} from '@devup-ui/core'\n<Box styleOrder={0} bg={color} />",
+            ExtractOption {
+                package: "@devup-ui/core".to_string(),
+                css_dir: "@devup-ui/core".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: std::collections::HashMap::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            sheet.update_styles(&output.styles, "test.tsx", true),
+            (true, true)
+        );
+    }
+
+    #[test]
+    #[serial]
     fn test_dynamic_style_important_full_pipeline() {
         // Full pipeline: extract JSX with `${color} !important` → sheet → CSS
         // Verifies !important ends up on the CSS property, not in the style attribute
