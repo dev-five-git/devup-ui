@@ -41,5 +41,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const animated = \"a\";\nexport const fadeIn = \"b\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const fadeIn = \"a\";\nexport const animated = \"b\";\n",
 }

@@ -6,7 +6,7 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "--color-primary-global_theme_0-0",
+                property: "--color-primary-0-4",
                 value: "blue",
                 level: 0,
                 selector: Some(
@@ -44,7 +44,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__devup_font_0_0",
+                value: "font-0-3",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -78,11 +78,17 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@layer components-0-2;",
+                file: "all-combined.css.ts",
+            },
+        ),
         FontFace(
             ExtractFontFace {
                 file: "all-combined.css.ts",
                 properties: {
-                    "font-family": "__devup_font_0_0",
+                    "font-family": "font-0-3",
                     "src": "local(Arial)",
                 },
             },
@@ -114,5 +120,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst base = \"a\";\nexport const box = \"b\";\n;\n;\n;\nexport const fade = \"c\";\nexport const buttons = {\n\tprimary: \"a d\",\n\tsecondary: \"e\"\n};\nexport const myVar = \"--var-0\";\nexport const myFont = \"__devup_font_0_0\";\nexport const myContainer = \"__container_0__\";\nexport const myLayer = \"components\";\nexport const vars = { \"color\": { \"primary\": \"var(--color-primary-global_theme_0-0)\" } };\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const fade = \"a\";\nconst _ve2 = \"b c\";\nconst _ve3 = \"d\";\nconst base = \"b\";\nexport const box = \"e\";\n;\n;\n;\nexport const myVar = \"var(--var-0-0)\";\nexport const myContainer = \"container-0-1\";\nexport const myLayer = \"components-0-2\";\nexport const myFont = \"font-0-3\";\nexport const vars = { \"color\": { \"primary\": \"var(--color-primary-0-4)\" } };\nexport const buttons = {\n\t\"primary\": _ve2,\n\t\"secondary\": _ve3\n};\n",
 }

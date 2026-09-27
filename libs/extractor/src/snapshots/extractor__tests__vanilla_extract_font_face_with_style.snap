@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__devup_font_0_0",
+                value: "font-0-0",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -18,12 +18,12 @@ ToBTreeSet {
             ExtractFontFace {
                 file: "font-usage.css.ts",
                 properties: {
-                    "font-family": "__devup_font_0_0",
+                    "font-family": "font-0-0",
                     "font-weight": "400",
                     "src": "local(\"Comic Sans MS\")",
                 },
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const text = \"a\";\n;\nexport const myFont = \"__devup_font_0_0\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const text = \"a\";\n;\nexport const myFont = \"font-0-0\";\n",
 }

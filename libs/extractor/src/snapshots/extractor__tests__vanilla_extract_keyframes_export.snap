@@ -67,5 +67,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const spinner = \"b\";\nconst internal = \"c\";\nexport const spin = \"a\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nconst internal = \"b\";\nexport const spin = \"a\";\nexport const spinner = \"c\";\n",
 }

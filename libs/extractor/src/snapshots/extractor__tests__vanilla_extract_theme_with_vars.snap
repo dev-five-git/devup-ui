@@ -6,12 +6,12 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "--color-primary-style_0-0",
+                property: "--color-primary-0-1",
                 value: "blue",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_lightTheme",
+                        ".theme-0-0",
                         "theme-vars.css.ts",
                     ),
                 ),
@@ -23,12 +23,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--color-secondary-style_0-1",
+                property: "--color-secondary-0-2",
                 value: "green",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_lightTheme",
+                        ".theme-0-0",
                         "theme-vars.css.ts",
                     ),
                 ),
@@ -40,12 +40,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--space-medium-style_0-3",
+                property: "--space-medium-0-4",
                 value: "8px",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_lightTheme",
+                        ".theme-0-0",
                         "theme-vars.css.ts",
                     ),
                 ),
@@ -57,12 +57,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--space-small-style_0-2",
+                property: "--space-small-0-3",
                 value: "4px",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_lightTheme",
+                        ".theme-0-0",
                         "theme-vars.css.ts",
                     ),
                 ),
@@ -73,5 +73,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const [lightTheme, vars] = [\"f0_lightTheme\", {\n\t\"color\": {\n\t\t\"primary\": \"var(--color-primary-style_0-0)\",\n\t\t\"secondary\": \"var(--color-secondary-style_0-1)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-style_0-2)\",\n\t\t\"medium\": \"var(--space-medium-style_0-3)\"\n\t}\n}];\n;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const lightTheme = \"theme-0-0\";\nexport const vars = {\n\t\"color\": {\n\t\t\"primary\": \"var(--color-primary-0-1)\",\n\t\t\"secondary\": \"var(--color-secondary-0-2)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-0-3)\",\n\t\t\"medium\": \"var(--space-medium-0-4)\"\n\t}\n};\n",
 }

@@ -33,6 +33,7 @@ use oxc_ast::{
     builder::AstBuilder,
 };
 use oxc_span::SPAN;
+use std::collections::BTreeMap;
 
 const IGNORED_IDENTIFIERS: [&str; 3] = ["undefined", "NaN", "Infinity"];
 
@@ -286,6 +287,34 @@ pub fn extract_style_from_expression<'a>(
                             );
                         }
                     }
+                }
+            }
+            return ExtractResult {
+                styles: props,
+                ..ExtractResult::default()
+            };
+        }
+
+        // vanilla-extract's `'@layer': { [layerName]: rules }`
+        if name == "@layer"
+            && let Expression::ObjectExpression(obj) = expression
+        {
+            let mut props = vec![];
+            for p in &mut obj.properties {
+                if let ObjectPropertyKind::ObjectProperty(o) = p
+                    && let Some(layer) = get_string_by_property_key(&o.key)
+                {
+                    let mut styles = extract_style_from_expression(
+                        ast_builder,
+                        None,
+                        &mut o.value,
+                        level,
+                        selector,
+                        literal_handling,
+                    )
+                    .styles;
+                    place_in_layer(&mut styles, &layer);
+                    props.extend(styles);
                 }
             }
             return ExtractResult {
@@ -818,6 +847,169 @@ pub fn extract_style_from_expression<'a>(
     }
 }
 
+/// Put every static declaration of `props` in `layer`, nesting the layer one
+/// already sits in
+pub(crate) fn place_in_layer(props: &mut [ExtractStyleProp<'_>], layer: &str) {
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Static(ExtractStyleValue::Static(style)) => {
+                style.layer = Some(match style.layer.take() {
+                    Some(inner) => format!("{layer}.{inner}"),
+                    None => layer.to_string(),
+                });
+            }
+            ExtractStyleProp::StaticArray(props) => place_in_layer(props, layer),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    place_in_layer(std::slice::from_mut(branch.as_mut()), layer);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values_mut() {
+                    place_in_layer(props, layer);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values_mut() {
+                    place_in_layer(std::slice::from_mut(prop.as_mut()), layer);
+                }
+            }
+            // Dynamic values and dynamic `typography` carry no static declaration
+            ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
+        }
+    }
+}
+
+const TYPOGRAPHY_PROPERTIES: [&str; 5] = [
+    "font-family",
+    "font-size",
+    "font-weight",
+    "line-height",
+    "letter-spacing",
+];
+
+/// `(selector, typography property)` -> breakpoint its declaration starts at
+type Declared = BTreeMap<(Option<StyleSelector>, &'static str), u8>;
+
+/// Typography properties `props` always declare, per selector
+fn declared_from(props: &[ExtractStyleProp<'_>]) -> Declared {
+    let mut declared = Declared::new();
+    for prop in props {
+        let found = match prop {
+            ExtractStyleProp::Static(value) => {
+                let (property, level, selector) = match value {
+                    ExtractStyleValue::Static(style) => {
+                        (style.property(), style.level(), style.selector())
+                    }
+                    ExtractStyleValue::Dynamic(style) => {
+                        (style.property(), style.level(), style.selector())
+                    }
+                    _ => continue,
+                };
+                let Some(property) = TYPOGRAPHY_PROPERTIES.into_iter().find(|p| *p == property)
+                else {
+                    continue;
+                };
+                Declared::from([((selector.cloned(), property), level)])
+            }
+            ExtractStyleProp::StaticArray(props) => declared_from(props),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => declared_by_every([consequent, alternate].map(|branch| {
+                branch.as_deref().map_or_else(Declared::new, |branch| {
+                    declared_from(std::slice::from_ref(branch))
+                })
+            })),
+            ExtractStyleProp::Enum { map, .. } => {
+                declared_by_every(map.values().map(|props| declared_from(props)))
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => declared_by_every(
+                map.values()
+                    .map(|prop| declared_from(std::slice::from_ref(prop.as_ref()))),
+            ),
+            ExtractStyleProp::Expression { .. } => continue,
+        };
+        for (key, level) in found {
+            declared
+                .entry(key)
+                .and_modify(|from| *from = (*from).min(level))
+                .or_insert(level);
+        }
+    }
+    declared
+}
+
+/// What every alternative declares, from the widest breakpoint one starts at
+fn declared_by_every(alternatives: impl IntoIterator<Item = Declared>) -> Declared {
+    let mut alternatives = alternatives.into_iter();
+    let Some(mut common) = alternatives.next() else {
+        return Declared::new();
+    };
+    for alternative in alternatives {
+        common = common
+            .into_iter()
+            .filter_map(|(key, level)| alternative.get(&key).map(|other| (key, level.max(*other))))
+            .collect();
+    }
+    common
+}
+
+/// A `typography` preset gives way to the declarations written beside it: under
+/// the same selector it skips each of their properties from the breakpoint the
+/// written one starts at, so a wider breakpoint of the preset cannot win.
+pub(crate) fn yield_typography(props: &mut [ExtractStyleProp<'_>]) {
+    let declared = declared_from(props);
+    if !declared.is_empty() {
+        skip_declared(props, &declared);
+    }
+}
+
+fn skip_declared(props: &mut [ExtractStyleProp<'_>], declared: &Declared) {
+    for prop in props {
+        match prop {
+            ExtractStyleProp::Static(ExtractStyleValue::Static(style))
+                if style.property() == "typography" =>
+            {
+                let skipped: Vec<String> = declared
+                    .iter()
+                    .filter(|((selector, _), _)| selector.as_ref() == style.selector())
+                    .map(|((_, property), level)| format!("{property}:{level}"))
+                    .collect();
+                if !skipped.is_empty() {
+                    style.value = format!("{}|{}", style.value, skipped.join(","));
+                }
+            }
+            ExtractStyleProp::StaticArray(props) => skip_declared(props, declared),
+            ExtractStyleProp::Conditional {
+                consequent,
+                alternate,
+                ..
+            } => {
+                for branch in [consequent, alternate].into_iter().flatten() {
+                    skip_declared(std::slice::from_mut(branch.as_mut()), declared);
+                }
+            }
+            ExtractStyleProp::Enum { map, .. } => {
+                for props in map.values_mut() {
+                    skip_declared(props, declared);
+                }
+            }
+            ExtractStyleProp::MemberExpression { map, .. } => {
+                for prop in map.values_mut() {
+                    skip_declared(std::slice::from_mut(prop.as_mut()), declared);
+                }
+            }
+            ExtractStyleProp::Static(_) | ExtractStyleProp::Expression { .. } => {}
+        }
+    }
+}
+
 pub(crate) fn at_rule_record_kind(name: &str) -> Option<AtRuleKind> {
     match name.strip_prefix('@').or_else(|| name.strip_prefix('_'))? {
         "media" => Some(AtRuleKind::Media),
@@ -976,6 +1168,16 @@ mod tests {
     use oxc_ast::ast::Statement;
     use oxc_parser::Parser;
     use oxc_span::SourceType;
+
+    #[test]
+    fn test_declared_by_every() {
+        assert!(declared_by_every(std::iter::empty()).is_empty());
+        let declared = declared_by_every([
+            Declared::from([((None, "font-size"), 0), ((None, "line-height"), 1)]),
+            Declared::from([((None, "font-size"), 2)]),
+        ]);
+        assert_eq!(declared, Declared::from([((None, "font-size"), 2)]));
+    }
 
     #[test]
     fn test_extract_selector_object_styles() {

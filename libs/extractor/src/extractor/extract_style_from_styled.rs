@@ -11,7 +11,10 @@ use crate::{
     },
     gen_class_name::gen_class_names,
     gen_style::gen_styles,
-    utils::{merge_object_expressions, unwrap_syntax_only, wrap_array_filter},
+    utils::{
+        StyleArguments, merge_object_expressions, style_arguments, unwrap_syntax_only,
+        wrap_array_filter,
+    },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
 use oxc_ast::{
@@ -104,6 +107,16 @@ pub fn extract_style_from_styled<'a>(
     split_filename: Option<&str>,
     imports: &FxHashMap<String, ExportVariableKind>,
 ) -> (ExtractResult<'a>, Expression<'a>) {
+    if let Expression::CallExpression(call) = expression
+        && extract_base_tag_and_class_name(&call.callee, imports)
+            .0
+            .is_some()
+        && let Some(StyleArguments { classes, rules }) =
+            style_arguments(ast_builder, &call.arguments)
+        && classes.is_empty()
+    {
+        call.arguments = oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
+    }
     let (result, new_expr) = if let Expression::TaggedTemplateExpression(tag) = expression
         && let (Some(tag_name), default_class_name) =
             extract_base_tag_and_class_name(&tag.tag, imports)

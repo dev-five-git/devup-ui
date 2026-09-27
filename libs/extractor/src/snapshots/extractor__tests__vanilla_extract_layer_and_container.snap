@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "container-name",
-                value: "__container_0__",
+                value: "container-0-2",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -24,6 +24,12 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@layer reset-0-0,base-0-1;",
+                file: "layer-container.css.ts",
+            },
+        ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const containerStyle = \"a b\";\nexport const myContainer = \"__container_0__\";\nexport const baseLayer = \"base\";\nexport const resetLayer = \"reset\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nexport const containerStyle = \"a b\";\nexport const resetLayer = \"reset-0-0\";\nexport const baseLayer = \"base-0-1\";\nexport const myContainer = \"container-0-2\";\n",
 }

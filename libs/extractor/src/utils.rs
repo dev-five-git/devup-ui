@@ -36,6 +36,21 @@ pub(super) fn is_unitless_key(key: &str) -> bool {
         || MAINTAIN_VALUE_PROPERTIES.contains(to_kebab_case(key).as_ref())
 }
 
+/// Whether a number on `key` stays bare in a library whose numbers mean pixels:
+/// unitless keys, and Devup UI shorthands (`p`, `bg`, `mx`, ...), which keep
+/// Devup UI's spacing scale because no such library defines them.
+pub(super) fn keeps_bare_number(key: &str) -> bool {
+    if is_unitless_key(key) {
+        return true;
+    }
+    let mut properties = css::disassemble_property(key);
+    let kebab = to_kebab_case(key);
+    !(properties.len() == 1
+        && properties.next().is_some_and(|property| {
+            property.trim_start_matches('-') == kebab.trim_start_matches('-')
+        }))
+}
+
 /// A JS number literal (`8`, `-8`, `(8)`), unlike a numeric string.
 pub(super) fn js_number_literal(value: &Expression) -> Option<f64> {
     match value {
@@ -463,6 +478,112 @@ pub(super) fn merge_object_expressions<'a>(
     Some(Expression::new_object_expression(SPAN, props, ast_builder))
 }
 
+/// Several style arguments, or arrays of them, as vanilla-extract, Emotion and
+/// styled-components compose them
+pub(super) struct StyleArguments<'a> {
+    /// Classes composed as they are: other styles held in variables, strings
+    pub classes: Vec<Expression<'a>>,
+    /// The rule objects merged: later declarations replace earlier ones and
+    /// nested rules merge
+    pub rules: Expression<'a>,
+}
+
+/// `None` for a single non-array argument, which needs no composing, or when a
+/// part is neither a rule object nor a class (`null`/`undefined`/`false` parts
+/// are skipped).
+pub(super) fn style_arguments<'a>(
+    ast_builder: &AstBuilder<'a>,
+    arguments: &[Argument<'a>],
+) -> Option<StyleArguments<'a>> {
+    if let [argument] = arguments
+        && !matches!(argument, Argument::ArrayExpression(_))
+    {
+        return None;
+    }
+    let mut objects = Vec::new();
+    let mut classes = Vec::new();
+    for argument in arguments {
+        collect_style_parts(argument.as_expression()?, &mut objects, &mut classes)?;
+    }
+    let mut merged = oxc_allocator::Vec::new_in(ast_builder);
+    for object in objects {
+        merge_style_properties(ast_builder, &mut merged, &object.properties);
+    }
+    Some(StyleArguments {
+        classes: classes
+            .into_iter()
+            .map(|class| class.clone_in(ast_builder.allocator()))
+            .collect(),
+        rules: Expression::new_object_expression(SPAN, merged, ast_builder),
+    })
+}
+
+fn collect_style_parts<'b, 'a>(
+    expression: &'b Expression<'a>,
+    objects: &mut Vec<&'b oxc_ast::ast::ObjectExpression<'a>>,
+    classes: &mut Vec<&'b Expression<'a>>,
+) -> Option<()> {
+    match expression {
+        Expression::ObjectExpression(object) => objects.push(object),
+        Expression::ArrayExpression(array) => {
+            for element in &array.elements {
+                collect_style_parts(element.as_expression()?, objects, classes)?;
+            }
+        }
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => {}
+        Expression::Identifier(identifier) if identifier.name == "undefined" => {}
+        Expression::Identifier(_)
+        | Expression::StaticMemberExpression(_)
+        | Expression::ComputedMemberExpression(_)
+        | Expression::StringLiteral(_)
+        | Expression::TemplateLiteral(_) => classes.push(expression),
+        _ => return None,
+    }
+    Some(())
+}
+
+fn merge_style_properties<'a>(
+    ast_builder: &AstBuilder<'a>,
+    merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    properties: &[ObjectPropertyKind<'a>],
+) {
+    for property in properties {
+        let existing = match property {
+            ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+                get_str_by_property_key(&property.key).and_then(|key| {
+                    merged.iter().position(|existing| {
+                        matches!(existing, ObjectPropertyKind::ObjectProperty(existing)
+                            if !existing.computed
+                                && get_str_by_property_key(&existing.key).as_deref() == Some(key.as_ref()))
+                    })
+                })
+            }
+            _ => None,
+        };
+        let Some(index) = existing else {
+            merged.push(property.clone_in(ast_builder.allocator()));
+            continue;
+        };
+        let previous = merged.remove(index);
+        if let (
+            ObjectPropertyKind::ObjectProperty(previous),
+            ObjectPropertyKind::ObjectProperty(next),
+        ) = (&previous, property)
+            && let (Expression::ObjectExpression(before), Expression::ObjectExpression(after)) =
+                (&previous.value, &next.value)
+        {
+            let mut nested = oxc_allocator::Vec::new_in(ast_builder);
+            merge_style_properties(ast_builder, &mut nested, &before.properties);
+            merge_style_properties(ast_builder, &mut nested, &after.properties);
+            let mut combined = next.clone_in(ast_builder.allocator());
+            combined.value = Expression::new_object_expression(SPAN, nested, ast_builder);
+            merged.push(ObjectPropertyKind::ObjectProperty(combined));
+        } else {
+            merged.push(property.clone_in(ast_builder.allocator()));
+        }
+    }
+}
+
 /// Borrowing variant of [`get_string_by_property_key`].
 ///
 /// For a `StaticIdentifier` key this returns `Cow::Borrowed`, avoiding the heap
@@ -545,6 +666,61 @@ mod tests {
         assert!(is_unitless_key("--gap"));
         assert!(is_unitless_key("0"));
         assert!(!is_unitless_key("padding"));
+        assert!(keeps_bare_number("lineHeight"));
+        assert!(keeps_bare_number("p"));
+        assert!(keeps_bare_number("mx"));
+        assert!(!keeps_bare_number("padding"));
+        assert!(!keeps_bare_number("backgroundColor"));
+        assert!(!keeps_bare_number("WebkitTextStrokeWidth"));
+    }
+
+    #[test]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_style_arguments() {
+        let allocator = Allocator::default();
+        let ast_builder = AstBuilder::new(&allocator);
+        let compose = |source: &str| {
+            let parsed = Parser::new(&allocator, source, SourceType::tsx()).parse();
+            let Statement::ExpressionStatement(statement) = &parsed.program.body[0] else {
+                unreachable!()
+            };
+            let Expression::CallExpression(call) = &statement.expression else {
+                unreachable!()
+            };
+            style_arguments(&ast_builder, &call.arguments).map(
+                |StyleArguments { classes, rules }| {
+                    (
+                        classes
+                            .iter()
+                            .map(expression_to_code)
+                            .collect::<std::vec::Vec<_>>(),
+                        expression_to_code(&rules),
+                    )
+                },
+            )
+        };
+        assert_eq!(compose("f({ a: 1 })"), None);
+        assert_eq!(compose("f(x)"), None);
+        assert_eq!(compose("f(...x)"), None);
+        assert_eq!(compose("f([{ a: 1 }, [cond && x]])"), None);
+        assert_eq!(
+            compose(
+                "f([{ a: 1, b: { c: 1 }, d: { e: 1 } }, null, undefined, false, [{ a: 2, b: { f: 2 }, d: 3, [g]: 1, ...h, 'i': 1 }]], { [g]: 2, i: 2 })"
+            ),
+            Some((
+                std::vec::Vec::new(),
+                "({a:2,b:{c:1,f:2},d:3,[g]:1,...h,[g]:2,i:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f([x, a.b, a[b], 'c', `d`, { e: 1 }])"),
+            Some((
+                ["x;", "a.b;", "a[b];", "`c`;", "`d`;"]
+                    .map(ToString::to_string)
+                    .to_vec(),
+                "({e:1});".to_string()
+            ))
+        );
     }
 
     #[test]

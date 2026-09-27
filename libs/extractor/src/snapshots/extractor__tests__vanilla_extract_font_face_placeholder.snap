@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__devup_font_0_0",
+                value: "font-0-0",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-family",
-                value: "__devup_font_0_1",
+                value: "font-0-1",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -29,7 +29,7 @@ ToBTreeSet {
                 file: "fontface-remap.css.ts",
                 properties: {
                     "font-display": "swap",
-                    "font-family": "__devup_font_0_0",
+                    "font-family": "font-0-0",
                     "font-weight": "400",
                     "src": "url(\"/fonts/custom.woff2\")",
                 },
@@ -39,11 +39,11 @@ ToBTreeSet {
             ExtractFontFace {
                 file: "fontface-remap.css.ts",
                 properties: {
-                    "font-family": "__devup_font_0_1",
+                    "font-family": "font-0-1",
                     "src": "local(\"Helvetica\")",
                 },
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const heading = \"a\";\nexport const text = \"b\";\n;\n;\nexport const customFont = \"__devup_font_0_0\";\nexport const secondFont = \"__devup_font_0_1\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const heading = \"a\";\nexport const text = \"b\";\n;\nexport const customFont = \"font-0-0\";\nexport const secondFont = \"font-0-1\";\n",
 }

@@ -46,9 +46,9 @@ use oxc_ast_visit::walk_mut::{
 use strum::IntoEnumIterator;
 
 use crate::utils::{
-    ParsedStyleOrder, expression_to_style_order, get_str_by_property_key,
+    ParsedStyleOrder, StyleArguments, expression_to_style_order, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    unwrap_syntax_only,
+    style_arguments, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -675,6 +675,24 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
         }
     }
     fn visit_expression(&mut self, it: &mut Expression<'a>) {
+        // Emotion's `styled(tag, options)` is called for a component, so its second
+        // argument holds options rather than the rules of Devup UI's two-argument form
+        let factory = match it {
+            Expression::CallExpression(call) => Some(&mut call.callee),
+            Expression::TaggedTemplateExpression(tag) => Some(&mut tag.tag),
+            _ => None,
+        };
+        if let Some(styled_name) = &self.styled_import
+            && let Some(factory) = factory
+            && let Expression::CallExpression(call) = unwrap_syntax_only_mut(factory)
+            && call.arguments.len() == 2
+            && call.arguments[1].as_expression().is_some_and(|options| {
+                matches!(unwrap_syntax_only(options), Expression::ObjectExpression(_))
+            })
+            && matches!(&call.callee, Expression::Identifier(ident) if ident.name == styled_name.as_str())
+        {
+            call.arguments.truncate(1);
+        }
         walk_expression(self, it);
 
         // Handle styled function calls
@@ -1082,6 +1100,16 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if let Some(util_type) = util_type {
+                let composed_classes = if matches!(util_type.as_ref(), UtilType::Css)
+                    && let Some(StyleArguments { classes, rules }) =
+                        style_arguments(&self.ast, &call.arguments)
+                {
+                    call.arguments =
+                        oxc_allocator::Vec::from_array_in([Argument::from(rules)], &self.ast);
+                    classes
+                } else {
+                    vec![]
+                };
                 if call.arguments.len() == 1 {
                     let r = util_type.as_ref();
                     *it = if matches!(r, UtilType::Css) {
@@ -1228,6 +1256,17 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         }
                         global => self.global_css_result(global.is_component()),
                     };
+                }
+                if !composed_classes.is_empty() {
+                    let own = std::mem::replace(
+                        it,
+                        Expression::new_string_literal(SPAN, "", None, &self.ast),
+                    );
+                    *it = merge_expression_for_class_name(
+                        &self.ast,
+                        composed_classes.into_iter().chain([own]),
+                    )
+                    .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast));
                 }
             }
         } else if let Expression::TaggedTemplateExpression(tag) = it
