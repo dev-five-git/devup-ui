@@ -335,9 +335,15 @@ fn extract_with_source_map(
                         .collect()
                 })
             }
-            // A stylesheet another one imports must give its own values, so its
-            // failure is reported rather than hidden behind plain extraction
-            Err(error) if module_loader::loading_for_stylesheet() => return Err(error.into()),
+            // A stylesheet another one imports must give its own values, and an
+            // import cycle read too early fails as it does in ES modules, so both
+            // are reported rather than hidden behind plain extraction
+            Err(error)
+                if module_loader::loading_for_stylesheet()
+                    || error.contains(module_loader::IMPORT_CYCLE) =>
+            {
+                return Err(error.into());
+            }
             // Fall back to treating as regular file if execution fails
             Err(_) => None,
         }
@@ -18287,6 +18293,27 @@ export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } 
             ]
         );
         assert_debug_snapshot!(ToBTreeSet::from(output));
+        let cycle: &'static [(&str, &str)] = &[
+            ("/src/b.css.ts", ""),
+            (
+                "/src/a.css.ts",
+                "import { style } from '@devup-ui/react';\nimport { b } from './b.css';\nexport const a = style([b, { color: 'red' }]);",
+            ),
+        ];
+        let error = extract_with_modules(
+            "/src/b.css.ts",
+            "import { style } from '@devup-ui/react';\nimport { a } from './a.css';\nexport const b = style({ margin: 4 });\nexport const useA = () => a;",
+            ExtractOption::default(),
+            false,
+            &memory_resolver(cycle),
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(
+            error.contains("Cannot access 'b' of '/src/b.css.ts' before its initialization: it is part of an import cycle"),
+            "{error}"
+        );
     }
 
     #[test]

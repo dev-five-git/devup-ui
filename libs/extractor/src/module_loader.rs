@@ -19,6 +19,9 @@ use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 /// The object the package's API is bound to while a stylesheet runs
 pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
 
+/// The end of the error a module read before its evaluation throws
+pub(crate) const IMPORT_CYCLE: &str = "before its initialization: it is part of an import cycle";
+
 const MODULE_HELPER: &str = "function __module__(path) { let started = false; const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\") throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); return Reflect.get(target, key, receiver); } }); return { module, start() { started = true; } }; }\n";
 
 thread_local! {
