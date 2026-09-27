@@ -37,6 +37,16 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
                 value: "blue",
                 level: 0,
                 selector: None,
@@ -309,6 +319,15 @@ ToBTreeSet {
                 style_order: None,
             },
         ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "`red`.length",
+                selector: None,
+                style_order: None,
+            },
+        ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x z _ ab a-d af ah aj al an ap ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--y\": TEMPLATE_EXPRESSION,\n\t\t\"--aa\": NOT_OBJECT,\n\t\t\"--ac\": colors.skip,\n\t\t\"--ae\": colors.nope,\n\t\t\"--ag\": colors[key],\n\t\t\"--ai\": alsoMutable,\n\t\t\"--ak\": notThere,\n\t\t\"--am\": gone,\n\t\t\"--ao\": helper,\n\t\t\"--aq\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"ar\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"as\" style={{ \"--at\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY: \"red\",\n\tunused,\n\tSIZE: 4\n};\nexport const g = <div color={\"red\"} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: 4 });\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x z _ ab a-d af ah aj al an ap ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--y\": TEMPLATE_EXPRESSION,\n\t\t\"--aa\": NOT_OBJECT,\n\t\t\"--ac\": colors.skip,\n\t\t\"--ae\": colors.nope,\n\t\t\"--ag\": colors[key],\n\t\t\"--ai\": alsoMutable,\n\t\t\"--ak\": notThere,\n\t\t\"--am\": gone,\n\t\t\"--ao\": helper,\n\t\t\"--aq\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"ar\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"as\" style={{ \"--at\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY: \"red\",\n\tunused,\n\tSIZE: 4\n};\nexport const g = <div color={\"red\"} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: 4 });\nexport const j = \"_\";\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"au\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }
