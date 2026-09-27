@@ -9060,6 +9060,32 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
 
     #[test]
     #[serial]
+    fn test_inline_local_constants_edges() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "test.tsx",
+            r"import { Box } from '@devup-ui/react';
+export function helper() {}
+const OBJ = { a: 1 };
+export const a = <Box content={`${OBJ}`} w={`${1e400}px`} h={`${-1e400}px`} />;",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        let mut values: Vec<String> = output
+            .styles
+            .iter()
+            .map(|style| format!("{style:?}"))
+            .collect();
+        values.sort();
+        let values = values.join("\n");
+        assert!(values.contains("\"Infinitypx\""), "{values}");
+        assert!(values.contains("\"-Infinitypx\""), "{values}");
+        assert!(output.code.contains("OBJ"), "{}", output.code);
+    }
+
+    #[test]
+    #[serial]
     fn test_inline_local_constants() {
         reset_class_map();
         reset_file_map();
@@ -16117,7 +16143,7 @@ const result = stylex.props(styles.bar(myH, myW));",
             extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
-const key = 'color';
+let key = 'color';
 const styles = stylex.create({
   base: {
     [key]: 'red',
@@ -16634,7 +16660,7 @@ const styles = stylex.create({ ...other, base: { color: 'red' } });",
             extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
-const key = 'base';
+let key = 'base';
 const styles = stylex.create({ [key]: { color: 'red' } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
@@ -17134,7 +17160,7 @@ const styles = stylex.create({ base: { color: { ...spreadObj, default: 'red' } }
             extract(
                 "test.tsx",
                 r"import stylex from '@stylexjs/stylex';
-const key = ':hover';
+let key = ':hover';
 const styles = stylex.create({ base: { color: { [key]: 'blue', default: 'red' } } });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),

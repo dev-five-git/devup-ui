@@ -352,9 +352,6 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
 /// after (see `as_visit`): the arena bytes outlive the node reassignment.
 /// `number` as JavaScript's `String(number)` writes it
 pub(crate) fn js_number_string(number: f64) -> String {
-    if number.is_nan() {
-        return "NaN".to_string();
-    }
     if number.is_infinite() {
         return if number > 0.0 {
             "Infinity"
