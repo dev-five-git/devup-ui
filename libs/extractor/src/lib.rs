@@ -18055,7 +18055,7 @@ export const d = style([cond && base]);",
             files
                 .iter()
                 .find(|(file, _)| {
-                    [".ts", ".css.ts", ""]
+                    [".ts", ".css.ts", ".js", ""]
                         .iter()
                         .any(|extension| format!("{path}{extension}") == *file)
                 })
@@ -18092,6 +18092,15 @@ export class Scale {}",
             "export default function named() { return 1 }\nexport const other = 1",
         ),
         ("/src/anonymous.ts", "export default class { }"),
+        (
+            "/src/legacy.js",
+            "const { extra } = require('./more');\nconst compiled = require('./compiled');\nmodule.exports = { legacy: extra + compiled.default + compiled.named, default: 'ignored' };",
+        ),
+        (
+            "/src/compiled.js",
+            "'use strict';\nObject.defineProperty(exports, '__esModule', { value: true });\nexports.named = 2;\nexports.default = 10;",
+        ),
+        ("/src/value.js", "module.exports = 5;"),
     ];
 
     const CONSTANT_MODULES: &[(&str, &str)] = &[
@@ -18217,7 +18226,10 @@ import * as tokens from './tokens';
 import named from './named';
 import Anonymous from './anonymous';
 import './global.css';
-export const button = style([base, { color: vars.color.brand, background: brand, margin: double(size), padding: shown + extra + more.extra + renamed + tokens.default + named(), zIndex: typeof Scale === typeof Anonymous ? 1 : 0 }]);
+import legacyModule, { legacy } from './legacy';
+import value from './value';
+import compiled from './compiled';
+export const button = style([base, { color: vars.color.brand, background: brand, margin: double(size), padding: shown + extra + more.extra + renamed + tokens.default + named(), zIndex: typeof Scale === typeof Anonymous ? 1 : 0, borderWidth: legacy + value + compiled + legacyModule.legacy }]);
 export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } } });",
             ExtractOption {
                 package: "@devup-ui/react".to_string(),
@@ -18237,10 +18249,13 @@ export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } 
             output.dependencies,
             [
                 "/src/anonymous.ts",
+                "/src/compiled.js",
+                "/src/legacy.js",
                 "/src/more.ts",
                 "/src/named.ts",
                 "/src/theme.css.ts",
-                "/src/tokens.ts"
+                "/src/tokens.ts",
+                "/src/value.js"
             ]
         );
         assert_debug_snapshot!(ToBTreeSet::from(output));

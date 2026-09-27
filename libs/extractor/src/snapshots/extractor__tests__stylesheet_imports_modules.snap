@@ -16,6 +16,16 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "border-width",
+                value: "45px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "color",
                 value: "red",
                 level: 0,
@@ -69,5 +79,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport \"./theme.css\";\nimport \"./global.css\";\nexport const button = \"b c d e f\" + \" a\";\nexport const hover = \"g\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport \"./theme.css\";\nimport \"./global.css\";\nexport const button = \"b c d e f g\" + \" a\";\nexport const hover = \"h\";\n",
 }
