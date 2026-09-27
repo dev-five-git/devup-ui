@@ -13,9 +13,9 @@ This rule ensures that CSS utility functions (`css`, `globalCss`, `keyframes`) f
 ```tsx
 import { css } from '@devup-ui/react'
 
-const v = 'some-value'
+let v = 'some-value'
 
-// Variables are not allowed in CSS utilities
+// Values that can change are not allowed in CSS utilities
 css({ w: v })
 css({ w: [v] })
 css({ w: [1, null, v] })
@@ -33,10 +33,10 @@ globalCss({ color: dynamicValue })
 ```tsx
 import { keyframes } from '@devup-ui/react'
 
-const animationName = 'fade'
-
-// Variables in keyframes are not allowed
-keyframes({ from: { opacity: animationName } })
+function fade(opacity: number) {
+  // A parameter is only known at runtime
+  return keyframes({ from: { opacity } })
+}
 ```
 
 #### ✅ Correct
@@ -65,6 +65,18 @@ import { keyframes } from '@devup-ui/react'
 
 // Literal values in keyframes
 keyframes({ from: { opacity: 0 }, to: { opacity: 1 } })
+```
+
+```tsx
+import { css } from '@devup-ui/react'
+
+import { SIZE } from './tokens'
+
+// The build inlines constants: an import, or a module-level `const` whose
+// value is a literal, a template or arithmetic over constants
+const GAP = SIZE * 2
+const UNIT = `${GAP}px`
+css({ p: UNIT, m: SIZE })
 ```
 
 ```tsx
