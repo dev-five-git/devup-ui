@@ -350,9 +350,36 @@ pub(super) fn get_number_by_literal_expression(expr: &Expression) -> Option<f64>
 /// `Cow::Owned`. The borrow is tied to the arena lifetime `'a`, not the `&expr`
 /// reference, so a caller can drop the borrow and mutate `*expr` immediately
 /// after (see `as_visit`): the arena bytes outlive the node reassignment.
+/// `number` as JavaScript's `String(number)` writes it
+pub(crate) fn js_number_string(number: f64) -> String {
+    if number.is_nan() {
+        return "NaN".to_string();
+    }
+    if number.is_infinite() {
+        return if number > 0.0 {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }
+        .to_string();
+    }
+    if number == 0.0 {
+        return "0".to_string();
+    }
+    if (1e-6..1e21).contains(&number.abs()) {
+        return number.to_string();
+    }
+    // Exponent notation, with an explicit sign on a positive exponent
+    let exponent = format!("{number:e}");
+    match exponent.split_once('e') {
+        Some((mantissa, power)) if !power.starts_with('-') => format!("{mantissa}e+{power}"),
+        _ => exponent,
+    }
+}
+
 pub(super) fn get_string_by_literal_expression<'a>(expr: &Expression<'a>) -> Option<Cow<'a, str>> {
     get_number_by_literal_expression(expr)
-        .map(|num| Cow::Owned(num.to_string()))
+        .map(|num| Cow::Owned(js_number_string(num)))
         .or_else(|| match expr {
             Expression::ParenthesizedExpression(parenthesized) => {
                 get_string_by_literal_expression(&parenthesized.expression)
@@ -607,6 +634,32 @@ fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Exp
         value.clone_in(ast_builder.allocator()),
         Expression::new_string_literal(SPAN, "", None, ast_builder),
         ast_builder,
+    )
+}
+
+/// The first value in `props` that is only known at runtime
+pub(super) fn runtime_value(props: &[crate::ExtractStyleProp<'_>]) -> Option<String> {
+    props
+        .iter()
+        .flat_map(crate::ExtractStyleProp::extract)
+        .find_map(|value| match value {
+            crate::ExtractStyleValue::Dynamic(style) => Some(style.identifier().to_string()),
+            _ => None,
+        })
+}
+
+/// `api` has no element to set a runtime value on, so its values must be
+/// known at build time
+pub(super) fn runtime_value_error(api: &str, value: &str) -> String {
+    format!(
+        "`{api}()` cannot use `{value}` at build time: its values must be literals, theme tokens or imported constants"
+    )
+}
+
+pub(super) fn unplaced_error(expression: &Expression<'_>) -> String {
+    format!(
+        "Cannot place `{}` at build time: an interpolation in a selector or a property name must be a literal or a constant",
+        readable_code(expression)
     )
 }
 

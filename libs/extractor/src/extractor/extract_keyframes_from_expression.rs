@@ -5,7 +5,7 @@ use crate::{
         ExtractResult, KeyframesExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
-    utils::get_string_by_property_key,
+    utils::{get_string_by_property_key, runtime_value},
 };
 use oxc_ast::{
     ast::{Expression, ObjectPropertyKind},
@@ -17,6 +17,7 @@ pub fn extract_keyframes_from_expression<'a>(
     expression: &mut Expression<'a>,
 ) -> KeyframesExtractResult {
     let mut keyframes = ExtractKeyframes::default();
+    let mut runtime = None;
 
     if let Expression::ObjectExpression(obj) = expression {
         for p in &mut obj.properties {
@@ -31,6 +32,7 @@ pub fn extract_keyframes_from_expression<'a>(
                     &None,
                     LiteralHandling::ExpandResponsiveThemeToken,
                 );
+                runtime = runtime.or_else(|| runtime_value(&styles));
 
                 let mut styles = styles
                     .into_iter()
@@ -47,5 +49,8 @@ pub fn extract_keyframes_from_expression<'a>(
             }
         }
     }
-    KeyframesExtractResult { keyframes }
+    KeyframesExtractResult {
+        keyframes,
+        runtime_value: runtime,
+    }
 }

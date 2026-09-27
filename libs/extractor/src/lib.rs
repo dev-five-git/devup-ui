@@ -386,10 +386,8 @@ fn extract_with_source_map(
     if fatal_error {
         return Err("Parser panicked".into());
     }
-    if let Some(resolver) = resolver
-        && processed_code.is_none()
-    {
-        dependencies.extend(imported_constants::inline_imported_constants(
+    if processed_code.is_none() {
+        dependencies.extend(imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &mut program,
             filename,
@@ -8938,7 +8936,7 @@ keyframes(...{
 keyframes({
   from: { opacity: 0 },
   [true]: { opacity: 0.5 },
-  to: { opacity: 1, color: dy }
+  to: { opacity: 1 }
 })
 "#,
                 ExtractOption {
@@ -8948,6 +8946,144 @@ keyframes({
                     import_main_css: false,
                     import_aliases: HashMap::new()
                 }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_runtime_values_where_no_element_holds_them() {
+        for (code, error) in [
+            (
+                "import { css } from '@devup-ui/react';\nexport const a = css({ color: x });",
+                "`css()` cannot use `x`",
+            ),
+            (
+                "import { globalCss } from '@devup-ui/react';\nglobalCss({ body: { color: x } });",
+                "`globalCss()` cannot use `x`",
+            ),
+            (
+                "import { globalCss } from '@devup-ui/react';\nglobalCss('body', { color: x });",
+                "`globalCss()` cannot use `x`",
+            ),
+            (
+                "import { keyframes } from '@devup-ui/react';\nkeyframes({ from: { opacity: 0 }, to: { color: dy } });",
+                "`keyframes()` cannot use `dy`",
+            ),
+            (
+                "import * as stylex from '@stylexjs/stylex';\nexport const spin = stylex.keyframes({ to: { color: dy } });",
+                "`stylex.keyframes()` cannot use `dy`",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract("test.tsx", code, ExtractOption::default())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(message.starts_with(error), "{message}");
+            assert!(
+                message.ends_with(
+                    "at build time: its values must be literals, theme tokens or imported constants"
+                ),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_template_interpolations() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import { css, globalCss, keyframes, styled } from '@devup-ui/react';
+const C = 'red';
+const O = 0.5;
+const SEL = '.x';
+const SNIPPET = 'display: flex;';
+const mixin = css`display: grid;`;
+globalCss`body { color: ${C}; padding: ${4}px; }`;
+globalCss`a { color: ${(p) => p.theme.colors.link}; }`;
+export const k = keyframes`from { opacity: ${O} } to { opacity: 1 }`;
+export const c = css`${SNIPPET} color: ${C};`;
+export const d = css`${mixin}; margin: 0;`;
+export const A = styled.div`${mixin} color: red; ${(p) => p.active && mixin}`;
+export const B = styled.div`${SEL} & { color: ${C}; }`;",
+                ExtractOption::default(),
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_template_interpolations_known_only_at_runtime() {
+        for (code, error) in [
+            (
+                "import { globalCss } from '@devup-ui/react';\nglobalCss`body { color: ${x}; }`;",
+                "`globalCss()` cannot use `x` at build time",
+            ),
+            (
+                "import { keyframes } from '@devup-ui/react';\nexport const k = keyframes`from { opacity: ${x} }`;",
+                "`keyframes()` cannot use `x` at build time",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nexport const c = css`color: ${x};`;",
+                "`css()` cannot use `x` at build time",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\nexport const c = css`${x}: red;`;",
+                "Cannot place `x` at build time",
+            ),
+            (
+                "import { styled } from '@devup-ui/react';\nexport const A = styled.div`${Other}:hover & { color: red; }`;",
+                "Cannot place `Other` at build time",
+            ),
+            (
+                "import { styled } from '@devup-ui/react';\nexport const A = styled.div`& ${x} { color: red; }`;",
+                "Cannot place `x` at build time",
+            ),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract("test.tsx", code, ExtractOption::default())
+                .err()
+                .map(|error| error.to_string())
+                .unwrap_or_default();
+            assert!(message.starts_with(error), "{message}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_inline_local_constants() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import { Box, css, keyframes, globalCss } from '@devup-ui/react';
+const SIZE = 4;
+const UNIT = `${SIZE}px`;
+const DOUBLE = SIZE * 2;
+const HALF = SIZE / 2 - 1;
+const LABEL = 'a' + SIZE;
+const TINY = 0.0000001;
+const HUGE = 1e21;
+const ZERO = -0;
+const PX = 'px';
+const SELF = SELF;
+let mutable = 1;
+export const a = <Box p={DOUBLE} m={UNIT} w={SIZE + 1} h={HALF} content={LABEL} top={`${TINY}px`} left={`${HUGE}px`} right={ZERO + PX} bottom={mutable} zIndex={SELF} />;
+export const b = css({ padding: `${SIZE * 2}px`, margin: SIZE - 1, width: SIZE * SIZE, height: (SIZE) });
+export const k = keyframes({ from: { opacity: SIZE / 8 } });
+globalCss({ body: { padding: UNIT } });
+export const c = <Box p={SIZE / 0} m={PX - 1} w={`${PX}${other}`} h={SIZE % 3} />;",
+                ExtractOption::default(),
             )
             .unwrap()
         ));
@@ -9849,7 +9985,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {styled} from '@devup-ui/core'
-        const color = 'red';
+        let color = 'red';
         const StyledDiv = styled.div`
           color: ${color};
           background: blue;
@@ -9874,8 +10010,8 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const primaryColor = 'blue';
-        const padding = '16px';
+        let primaryColor = 'blue';
+        let padding = '16px';
         const StyledDiv = styled("div")`
           color: ${primaryColor};
           padding: ${padding};
@@ -9899,8 +10035,8 @@ keyframes({
             extract(
                 "test.tsx",
                 r#"import {styled} from '@devup-ui/core'
-        const primaryColor = 'blue';
-        const padding = '16px';
+        let primaryColor = 'blue';
+        let padding = '16px';
         const StyledDiv = styled("div")({ bg: primaryColor, padding })
         "#,
                 ExtractOption {
@@ -9921,8 +10057,8 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {styled} from '@devup-ui/core'
-        const primaryColor = 'blue';
-        const padding = '16px';
+        let primaryColor = 'blue';
+        let padding = '16px';
         const StyledDiv = styled.div({ bg: primaryColor, padding })
         ",
                 ExtractOption {
@@ -10036,7 +10172,7 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {styled, Box} from '@devup-ui/core'
-        const fontSize = '18px';
+        let fontSize = '18px';
         const StyledComponent = styled(Box)`
           font-size: ${fontSize};
           color: ${props => props.color || 'black'};
@@ -10061,8 +10197,8 @@ keyframes({
             extract(
                 "test.tsx",
                 r"import {styled} from '@devup-ui/core'
-        const margin = '10px';
-        const padding = '20px';
+        let margin = '10px';
+        let padding = '20px';
         const StyledDiv = styled.div`
           margin: ${margin};
           padding: ${padding};
@@ -10627,8 +10763,8 @@ globalCss({
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const colors = { primary: "blue", secondary: "red" };
-const key = "primary";
+let colors = { primary: "blue", secondary: "red" };
+let key = "primary";
 <Box bg={colors[key]} />
 "#,
                 ExtractOption {
@@ -10805,7 +10941,7 @@ const b = false;
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const color = "red";
+let color = "red";
 <Box style={{ padding: 10 }} bg={color} />
 "#,
                 ExtractOption {
@@ -10950,8 +11086,8 @@ const className = DevUI.css({ bg: "red" })
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const variant = "primary";
-const colors = { primary: "blue", secondary: "red" };
+let variant = "primary";
+let colors = { primary: "blue", secondary: "red" };
 <Box bg={colors[variant]} />
 "#,
                 ExtractOption {
@@ -10976,7 +11112,7 @@ const colors = { primary: "blue", secondary: "red" };
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const dynamicColor = "blue";
+let dynamicColor = "blue";
 <Box styleVars={{ color: dynamicColor }} bg="var(--color)" />
 "#,
                 ExtractOption {
@@ -11050,9 +11186,9 @@ const extraProps = { onClick: () => {} };
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const color = "red";
-const padding = 10;
-const margin = 5;
+let color = "red";
+let padding = 10;
+let margin = 5;
 <Box bg={color} p={padding} m={margin} />
 "#,
                 ExtractOption {
@@ -11078,7 +11214,7 @@ const margin = 5;
             extract(
                 "test.tsx",
                 r#"import {Box} from '@devup-ui/core'
-const color = "red";
+let color = "red";
 <Box bg={`${color} !important`} />
 "#,
                 ExtractOption {
@@ -12052,8 +12188,8 @@ export const darkTheme = createTheme(vars, {
         assert_debug_snapshot!(ToBTreeSet::from(
             extract(
                 "test.tsx",
-                r"import { css } from '@devup-ui/react'
-const a = css({ '@layer': { base: {
+                r"import { styled } from '@devup-ui/react'
+const A = styled.div({ '@layer': { base: {
   color: cond ? 'red' : 'blue',
   positioning: pos,
   bg: { a: 'red', b: 'blue' }[key],
@@ -16030,28 +16166,30 @@ const styles = stylex.create({
     #[test]
     #[serial]
     fn test_stylex_error_non_static_value() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
+        for (value, shown) in [
+            ("someVariable", "someVariable"),
+            ("someFunc()", "someFunc()"),
+            ("theme.colors.primary", "theme.colors.primary"),
+        ] {
+            reset_class_map();
+            reset_file_map();
+            let message = extract(
                 "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-const styles = stylex.create({
-  base: {
-    color: someVariable,
-    fontSize: '16px',
-  },
-});",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
+                &format!(
+                    "import stylex from '@stylexjs/stylex';\nconst styles = stylex.create({{ base: {{ color: {value}, fontSize: '16px' }} }});"
+                ),
+                ExtractOption::default(),
             )
-            .unwrap()
-        ));
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default();
+            assert_eq!(
+                message,
+                format!(
+                    "`stylex.create()` cannot use `{shown}` at build time: its values must be literals, theme tokens or imported constants"
+                )
+            );
+        }
     }
 
     #[test]
@@ -16915,29 +17053,6 @@ const styles = create({ base: { width: types.length('100px') } });",
     }
 
     /// Line 70: false from `is_types_call` — call expression value that's not types or firstThatWorks
-    #[test]
-    #[serial]
-    fn test_stylex_non_types_non_ftw_call() {
-        reset_class_map();
-        reset_file_map();
-        assert_debug_snapshot!(ToBTreeSet::from(
-            extract(
-                "test.tsx",
-                r"import stylex from '@stylexjs/stylex';
-function someFunc() { return 'red'; }
-const styles = stylex.create({ base: { color: someFunc() } });",
-                ExtractOption {
-                    package: "@devup-ui/react".to_string(),
-                    css_dir: "@devup-ui/react".to_string(),
-                    single_css: true,
-                    import_main_css: false,
-                    import_aliases: HashMap::new()
-                },
-            )
-            .unwrap()
-        ));
-    }
-
     /// Line 183: types with unresolvable inside condition object
     #[test]
     #[serial]
@@ -17778,7 +17893,9 @@ export const A = () => <Box _hover={fn()} />;
     fn test_spread_arguments_never_panic() {
         let stylex = "import stylex from '@stylexjs/stylex';\n";
         for source in [format!("{stylex}const e = <div {{...stylex.props(...a)}} />;"), format!("{stylex}const s = stylex.create(...a);"), format!("{stylex}const k = stylex.keyframes(...a);"), format!("{stylex}const s = stylex.create({{ bar: (h) => ({{ height: h }}) }});\nconst e = <div {{...stylex.props(s.bar(...a))}} />;"), format!("{stylex}const s = stylex.create({{ b: {{ position: stylex.firstThatWorks(...a) }} }});"), format!("{stylex}const s = stylex.create({{ b: {{ width: stylex.types.length(...a) }} }});"), format!("{stylex}const s = stylex.create({{ b: {{ ...stylex.include(...a) }} }});"), format!("{stylex}const s = stylex.create({{ b: {{ color: {{ default: stylex.firstThatWorks(...a) }} }} }});"), format!("{stylex}const s = stylex.create({{ b: {{ width: {{ default: stylex.types.length(...a) }} }} }});"), "import { jsx } from 'react/jsx-runtime';\nimport { Box } from '@devup-ui/react';\nconst e = jsx(...a);".to_string(), "import { jsx } from 'react/jsx-runtime';\nimport { Box } from '@devup-ui/react';\nconst e = jsx(Box, ...a);".to_string(), "import { globalCss } from '@devup-ui/react';\nglobalCss({ imports: [...list] });".to_string()] {
-            extract_tsx(&source);
+            reset_class_map();
+            reset_file_map();
+            let _ = extract("test.tsx", &source, ExtractOption::default());
         }
     }
 
@@ -17853,7 +17970,6 @@ const empty = stylex.defineVars({ dynamic: someValue });
 const unknownContract = stylex.createTheme(notAContract, { primary: 'navy' });
 const noOverlap = stylex.createTheme(empty, { missing: 'navy' });
 const notAnObject = stylex.defineVars(someVariable);
-const deepRef = stylex.create({ box: { color: theme.colors.primary } });
 const spreadVars = stylex.defineVars({ ...other, kept: 'red' });
 const spreadTheme = stylex.createTheme(empty, { ...other });"
         )));
@@ -18205,8 +18321,8 @@ export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
 export const g = <div color={PRIMARY} />;
 export const h = <Devup.Inner.Box color={SIZE} />;
 export const i = Devup['css']({ color: SIZE });
-export const l = css({ color: COMPILED, bg: FROM_REQUIRE, borderColor: DESTRUCTURED, outlineColor: MUTATED, fill: cjs, stroke: OBJ, caretColor: OVERRIDDEN, accentColor: LATER, stopColor: cjsObject.OBJ, zIndex: twelve, floodColor: twice.A, lightingColor: DYNAMIC, columnRuleColor: marker, textDecorationColor: markerNamed });
-export const j = css({ zIndex: PRIMARY.length, order: PRIMARY['length'] });
+export const l = <Box color={COMPILED} bg={FROM_REQUIRE} borderColor={DESTRUCTURED} outlineColor={MUTATED} fill={cjs} stroke={OBJ} caretColor={OVERRIDDEN} accentColor={LATER} stopColor={cjsObject.OBJ} zIndex={twelve} floodColor={twice.A} lightingColor={DYNAMIC} columnRuleColor={marker} textDecorationColor={markerNamed} />;
+export const j = <Box zIndex={PRIMARY.length} order={PRIMARY['length']} />;
 export const k = styled('div')({ color: SIZE });",
             ExtractOption {
                 package: "@devup-ui/react".to_string(),

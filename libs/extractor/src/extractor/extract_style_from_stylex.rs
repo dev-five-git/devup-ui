@@ -13,7 +13,9 @@ use css::style_selector::StyleSelector;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind};
 use rustc_hash::FxHashMap;
 
-use crate::utils::{get_str_by_property_key, get_string_by_property_key};
+use crate::utils::{
+    get_str_by_property_key, get_string_by_property_key, readable_code, runtime_value_error,
+};
 
 /// Construct a static style directly — bypass `convert_value()` to avoid devup-ui
 /// spacing transformations. `StyleX` values are raw CSS, only `optimize_value()`.
@@ -104,6 +106,7 @@ pub fn extract_stylex_namespace_styles<'a>(
     expression: &mut Expression<'a>,
     keyframe_names: &FxHashMap<String, String>,
     var_refs: &FxHashMap<String, String>,
+    errors: &mut Vec<String>,
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
@@ -288,11 +291,11 @@ pub fn extract_stylex_namespace_styles<'a>(
                 styles.push(raw_static_style(css_property, &css_value, None));
                 continue;
             } else {
-                // Phase 4c: Non-static values in create() are not supported
                 if !matches!(&style_prop.value, Expression::NullLiteral(_)) {
-                    eprintln!(
-                        "[stylex] ERROR: Non-static value for property '{prop_name}' in stylex.create(). Only string literals, numbers, null, objects (conditions), firstThatWorks(), types.*(), and arrow functions are allowed."
-                    );
+                    errors.push(runtime_value_error(
+                        "stylex.create",
+                        &readable_code(&style_prop.value),
+                    ));
                 }
                 continue;
             };

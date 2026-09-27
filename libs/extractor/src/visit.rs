@@ -1,6 +1,9 @@
 use crate::as_visit::AsVisitor;
 use crate::component::ExportVariableKind;
-use crate::css_utils::{css_to_style_literal, keyframes_to_keyframes_style, optimize_css_block};
+use crate::css_utils::{
+    TemplateStyles, css_to_style_template, keyframes_to_keyframes_style, optimize_css_block,
+    template_css_text,
+};
 use crate::extract_style::ExtractStyleProperty;
 use crate::extract_style::extract_css::ExtractCss;
 use crate::extract_style::extract_keyframes::ExtractKeyframes;
@@ -48,7 +51,8 @@ use strum::IntoEnumIterator;
 use crate::utils::{
     ParsedStyleOrder, StyleArguments, expression_to_style_order, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    style_arguments, uncomposable_error, unwrap_syntax_only, unwrap_syntax_only_mut,
+    runtime_value, runtime_value_error, style_arguments, uncomposable_error, unplaced_error,
+    unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -769,6 +773,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 arg,
                 &self.stylex_keyframe_names,
                 &self.stylex_var_refs,
+                &mut self.errors,
             );
 
             let mut namespace_map: FxHashMap<String, StylexNamespaceValue> = FxHashMap::default();
@@ -1021,8 +1026,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let [arg] = call.arguments.as_mut_slice()
             && let Some(arg) = arg.as_expression_mut()
         {
-            let KeyframesExtractResult { keyframes } =
-                extract_keyframes_from_expression(&self.ast, arg);
+            let KeyframesExtractResult {
+                keyframes,
+                runtime_value,
+            } = extract_keyframes_from_expression(&self.ast, arg);
+            if let Some(value) = runtime_value {
+                self.errors
+                    .push(runtime_value_error("stylex.keyframes", &value));
+            }
             let name =
                 style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
             self.styles.insert(ExtractStyleValue::Keyframes(keyframes));
@@ -1150,6 +1161,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &None,
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
+                        if let Some(value) = runtime_value(&styles) {
+                            self.errors.push(runtime_value_error("css", &value));
+                        }
 
                         if styles.is_empty() {
                             Expression::new_string_literal(SPAN, "", None, &self.ast)
@@ -1173,15 +1187,20 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             }
                         }
                     } else if matches!(r, UtilType::Keyframes) {
-                        let KeyframesExtractResult { keyframes } =
-                            extract_keyframes_from_expression(
-                                &self.ast,
-                                if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
-                                    &mut spread.argument
-                                } else {
-                                    call.arguments[0].to_expression_mut()
-                                },
-                            );
+                        let KeyframesExtractResult {
+                            keyframes,
+                            runtime_value,
+                        } = extract_keyframes_from_expression(
+                            &self.ast,
+                            if let Argument::SpreadElement(spread) = &mut call.arguments[0] {
+                                &mut spread.argument
+                            } else {
+                                call.arguments[0].to_expression_mut()
+                            },
+                        );
+                        if let Some(value) = runtime_value {
+                            self.errors.push(runtime_value_error("keyframes", &value));
+                        }
 
                         let name = style_property_into_string(
                             keyframes.extract(self.split_filename.as_deref()),
@@ -1207,6 +1226,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                             &self.filename,
                         );
+                        if let Some(value) = runtime_value(&styles) {
+                            self.errors.push(runtime_value_error("globalCss", &value));
+                        }
                         // already set style order
                         let style_order = style_order.unwrap_or(0);
                         self.styles.extend(
@@ -1259,6 +1281,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &mut folded,
                         &self.filename,
                     );
+                    if let Some(value) = runtime_value(&styles) {
+                        self.errors.push(runtime_value_error("globalCss", &value));
+                    }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
                         styles
@@ -1294,20 +1319,35 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             && let Expression::Identifier(ident) = &tag.tag
             && let Some(css_type) = self.util_imports.get(ident.name.as_str())
         {
-            // Only the Keyframes and GlobalCss arms need the concatenated quasi string
-            let build_css_str = || {
-                let mut s = String::new();
-                for quasi in &tag.quasi.quasis {
-                    s.push_str(quasi.value.raw.as_str());
-                }
-                s
-            };
             let r = css_type.as_ref();
+            let api = match r {
+                UtilType::Css => "css",
+                UtilType::Keyframes => "keyframes",
+                UtilType::GlobalCss | UtilType::GlobalCssComponent => "globalCss",
+            };
+            let mut build_css_str = || {
+                template_css_text(&tag.quasi, api).unwrap_or_else(|error| {
+                    self.errors.push(error);
+                    String::new()
+                })
+            };
             *it = if matches!(r, UtilType::Css) {
-                let mut style_props = css_to_style_literal(&tag.quasi, 0, &None)
+                let TemplateStyles {
+                    styles,
+                    statements,
+                    unplaced,
+                } = css_to_style_template(&tag.quasi, 0, &None);
+                let mut style_props = styles
                     .into_iter()
                     .map(|ex| ExtractStyleProp::Static(ex.into()))
                     .collect::<Vec<_>>();
+                if let Some(value) = runtime_value(&style_props) {
+                    self.errors.push(runtime_value_error(api, &value));
+                }
+                if let Some(index) = unplaced.first() {
+                    self.errors
+                        .push(unplaced_error(&tag.quasi.expressions[*index]));
+                }
                 let class_name = gen_class_names(
                     &self.ast,
                     &mut style_props,
@@ -1321,11 +1361,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         self.styles.insert(v);
                     }
                 }
-                if let Some(cls) = class_name {
-                    cls
-                } else {
-                    Expression::new_string_literal(SPAN, "", None, &self.ast)
-                }
+                let mixins = statements
+                    .iter()
+                    .map(|index| tag.quasi.expressions[*index].clone_in(self.ast.allocator()));
+                merge_expression_for_class_name(&self.ast, mixins.chain(class_name))
+                    .unwrap_or_else(|| Expression::new_string_literal(SPAN, "", None, &self.ast))
                 // already set style order
             } else if matches!(r, UtilType::Keyframes) {
                 let keyframes = ExtractKeyframes {

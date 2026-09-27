@@ -2,7 +2,10 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::utils::{get_str_by_property_key, get_string_by_literal_expression, wrap_direct_call};
+use crate::utils::{
+    get_str_by_property_key, get_string_by_literal_expression, readable_code, runtime_value_error,
+    wrap_direct_call,
+};
 use css::{
     at_rule::split_at_rule_key,
     optimize_multi_css_value::{check_multi_css_optimize, optimize_multi_css_value},
@@ -15,7 +18,7 @@ use oxc_span::SPAN;
 use crate::utils::expression_to_code;
 use oxc_ast::ast::BindingPattern;
 use oxc_ast::ast::Expression;
-use oxc_ast::ast::TemplateLiteral;
+use oxc_ast::ast::{TemplateElement, TemplateLiteral};
 use oxc_ast::builder::AstBuilder;
 
 use crate::extract_style::{
@@ -128,6 +131,71 @@ pub fn css_to_style_literal(
     level: u8,
     selector: &Option<StyleSelector>,
 ) -> Vec<CssToStyleResult> {
+    css_to_style_template(css, level, selector).styles
+}
+
+/// The declarations of a CSS template, and the interpolations that are not the
+/// value of one
+#[derive(Debug, Default)]
+pub struct TemplateStyles {
+    pub styles: Vec<CssToStyleResult>,
+    /// Indexes of the interpolations standing where a declaration would, such
+    /// as a mixin
+    pub statements: Vec<usize>,
+    /// Indexes of the interpolations in a selector or a property name
+    pub unplaced: Vec<usize>,
+}
+
+enum Place {
+    Value,
+    Statement,
+    Other,
+}
+
+/// Where an interpolation stands, from the CSS written before and after it
+fn interpolation_place(before: &str, after: &[TemplateElement<'_>]) -> Place {
+    let head = &before[before.rfind([';', '{', '}']).map_or(0, |index| index + 1)..];
+    let rest: String = after.iter().map(|quasi| quasi.value.raw.as_str()).collect();
+    let end = rest.find([';', '{', '}']);
+    if end.is_some_and(|end| rest.as_bytes()[end] == b'{') {
+        return Place::Other;
+    }
+    if head.contains(':') {
+        Place::Value
+    } else if head.trim().is_empty()
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || c == ';')
+    {
+        Place::Statement
+    } else {
+        Place::Other
+    }
+}
+
+/// The CSS text of a template whose interpolations must all be known at build
+/// time, as `api` has no element to set a runtime value on
+pub(crate) fn template_css_text(css: &TemplateLiteral<'_>, api: &str) -> Result<String, String> {
+    let mut text = String::new();
+    for (index, quasi) in css.quasis.iter().enumerate() {
+        text.push_str(&quasi.value.raw);
+        if let Some(expression) = css.expressions.get(index) {
+            let value = get_string_by_literal_expression(expression)
+                .map(Cow::into_owned)
+                .or_else(|| theme_var_reference(expression))
+                .ok_or_else(|| runtime_value_error(api, &readable_code(expression)))?;
+            text.push_str(&value);
+        }
+    }
+    Ok(text)
+}
+
+pub fn css_to_style_template(
+    css: &TemplateLiteral<'_>,
+    level: u8,
+    selector: &Option<StyleSelector>,
+) -> TemplateStyles {
     let mut styles = vec![];
 
     // If there are no expressions, just process quasis as static CSS
@@ -139,8 +207,13 @@ pub fn css_to_style_literal(
                     .map(CssToStyleResult::Static),
             );
         }
-        return styles;
+        return TemplateStyles {
+            styles,
+            ..TemplateStyles::default()
+        };
     }
+    let mut statements = vec![];
+    let mut unplaced = vec![];
 
     // Process template literal with expressions
     // Template literal format: `text ${expr1} text ${expr2} text`
@@ -170,8 +243,20 @@ pub fn css_to_style_literal(
     for (i, quasi) in css.quasis.iter().enumerate() {
         combined_css.push_str(&quasi.value.raw);
 
-        // Add expression placeholder if not the last quasi
+        // Add expression placeholder if not the last quasi. Only a value keeps a
+        // placeholder: anything else is written in when known, or reported
         if i < css.expressions.len() {
+            let place = interpolation_place(&combined_css, &css.quasis[i + 1..]);
+            if !matches!(place, Place::Value) {
+                if let Some(text) = get_string_by_literal_expression(&css.expressions[i]) {
+                    combined_css.push_str(&text);
+                } else if matches!(place, Place::Statement) {
+                    statements.push(i);
+                } else {
+                    unplaced.push(i);
+                }
+                continue;
+            }
             // Use a unique placeholder format that CSS parser won't modify.
             // Build the placeholder once into the reused scratch buffer, push it
             // into `combined_css`, then clone it as the owned map key.
@@ -419,7 +504,11 @@ pub fn css_to_style_literal(
         }
     }
 
-    styles
+    TemplateStyles {
+        styles,
+        statements,
+        unplaced,
+    }
 }
 
 pub fn css_to_style(

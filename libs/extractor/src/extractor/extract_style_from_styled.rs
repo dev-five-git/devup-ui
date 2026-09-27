@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     ExtractStyleProp,
     component::ExportVariableKind,
-    css_utils::css_to_style_literal,
+    css_utils::{TemplateStyles, css_to_style_template},
     extract_style::extract_style_value::ExtractStyleValue,
     extractor::{
         ExtractResult,
@@ -13,7 +13,8 @@ use crate::{
     gen_style::gen_styles,
     utils::{
         StyleArguments, merge_object_expressions, style_arguments, uncomposable_error,
-        unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        unplaced_error, unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter,
+        wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -26,7 +27,7 @@ use oxc_ast::{
     builder::AstBuilder,
 };
 use oxc_span::SPAN;
-use oxc_syntax::operator::{BinaryOperator, UnaryOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 fn extract_base_tag_and_class_name(
     input: &Expression<'_>,
@@ -138,7 +139,14 @@ pub fn extract_style_from_styled<'a>(
         // Check if tag is styled.div or styled(...)
         // Extract CSS from template literal
 
-        let styles = css_to_style_literal(&tag.quasi, 0, &None);
+        let TemplateStyles {
+            styles,
+            statements,
+            unplaced,
+        } = css_to_style_template(&tag.quasi, 0, &None);
+        if let Some(index) = unplaced.first() {
+            error = Some(unplaced_error(&tag.quasi.expressions[*index]));
+        }
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
             .map(|ex| ExtractStyleProp::Static(ex.into()))
@@ -148,7 +156,40 @@ pub fn extract_style_from_styled<'a>(
             props_styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
 
-        let class_name = gen_class_names(ast_builder, &mut props_styles, None, split_filename);
+        let mixins = statements.into_iter().map(|index| {
+            let mixin = &tag.quasi.expressions[index];
+            if matches!(
+                unwrap_syntax_only(mixin),
+                Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_)
+            ) {
+                // A mixin returns a class, or `false` when its condition fails
+                Expression::new_logical_expression(
+                    SPAN,
+                    wrap_direct_call(
+                        ast_builder,
+                        mixin,
+                        &[Expression::new_identifier(SPAN, "rest", ast_builder)],
+                    ),
+                    LogicalOperator::Or,
+                    Expression::new_string_literal(SPAN, "", None, ast_builder),
+                    ast_builder,
+                )
+            } else {
+                mixin.clone_in(ast_builder.allocator())
+            }
+        });
+        let class_name = merge_expression_for_class_name(
+            ast_builder,
+            mixins
+                .collect::<Vec<_>>()
+                .into_iter()
+                .chain(gen_class_names(
+                    ast_builder,
+                    &mut props_styles,
+                    None,
+                    split_filename,
+                )),
+        );
         let styled_component = apply_attrs(
             ast_builder,
             create_styled_component(
