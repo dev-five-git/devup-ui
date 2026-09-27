@@ -949,7 +949,9 @@ export const box = style({ color: 'red' })`
       codeExtractWithoutSourceMapSpy.mockImplementation(
         (filename: string, contents: string) => {
           events.push(`extract:${filename}`)
-          return createCodeExtractResult(contents)
+          return Object.assign(createCodeExtractResult(contents), {
+            dependencies: [`${filename}.tokens.ts`],
+          })
         },
       )
       startCoordinatorSpy.mockImplementation(() => {
@@ -996,11 +998,19 @@ export const box = style({ color: 'red' })`
           new Map([
             [
               'src/app/page.tsx',
-              expect.objectContaining({ code: '{}', source: '{}' }),
+              expect.objectContaining({
+                code: '{}',
+                source: '{}',
+                dependencies: ['src/app/page.tsx.tokens.ts'],
+              }),
             ],
             [
               'src/lazy/panel.tsx',
-              expect.objectContaining({ code: '{}', source: '{}' }),
+              expect.objectContaining({
+                code: '{}',
+                source: '{}',
+                dependencies: ['src/lazy/panel.tsx.tokens.ts'],
+              }),
             ],
           ]),
         )

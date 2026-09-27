@@ -453,6 +453,7 @@ export function DevupUI(
           map: output.map,
           source,
           updatedBaseStyle: output.updatedBaseStyle,
+          dependencies: output.dependencies,
         })
         prewarmedFiles.push(filename)
       }
