@@ -31,7 +31,7 @@ import {
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
-import type { ModuleNode, PluginOption, UserConfig } from 'vite'
+import type { EnvironmentModuleNode, PluginOption, UserConfig } from 'vite'
 
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
@@ -271,6 +271,15 @@ export function DevupUI({
   const cssMap = new Map()
   let serverBundleToForward: Record<string, ViteOutputWithMetadata> | undefined
   let isServe = false
+  // The dev server watches cssDir, so every write is an update signal. A
+  // module transformed again writes its sheet again, and the reload that
+  // signal causes transforms it once more: signal only a changed sheet.
+  const writtenCss = new Map<string, string>()
+  function writeCssFile(fileName: string, css: string): Promise<void> {
+    if (writtenCss.get(fileName) === css) return Promise.resolve()
+    writtenCss.set(fileName, css)
+    return writeFile(join(cssDir, fileName), css, 'utf-8')
+  }
   return {
     name: 'devup-ui',
     // The WASM sheet and transform state are intentionally shared. Vite
@@ -403,7 +412,21 @@ export function DevupUI({
         }
       }
     },
-    async handleHotUpdate({ file, server, modules, timestamp }) {
+    // Runs once per environment. Vite 6+ ignores `handleHotUpdate` on a plugin
+    // that defines this hook, so the devup.json reload lives here as well.
+    async hotUpdate({ file, modules, timestamp }) {
+      const { environment } = this
+      if (environment.config.consumer === 'server') {
+        // A module runner cannot apply CSS, so Vite answers a sheet change
+        // with a full reload: the render restarts mid-request, and the modules
+        // it transforms again write their sheets again. Server environments
+        // only reference sheets by URL; the client refreshes their contents.
+        const fileName = basename(file)
+        return DEVUP_CSS_FILE_RE.test(fileName) &&
+          resolve(file) === resolve(cssDir, fileName)
+          ? []
+          : undefined
+      }
       if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
         return
       }
@@ -416,16 +439,16 @@ export function DevupUI({
         singleCss,
       })
 
-      const invalidatedModules = new Set<ModuleNode>()
+      const invalidatedModules = new Set<EnvironmentModuleNode>()
       for (const mod of modules) {
-        server.moduleGraph.invalidateModule(
+        environment.moduleGraph.invalidateModule(
           mod,
           invalidatedModules,
           timestamp,
           true,
         )
       }
-      server.ws.send({ type: 'full-reload' })
+      environment.hot.send({ type: 'full-reload' })
       return []
     },
     resolveId(id, importer) {
@@ -492,22 +515,15 @@ export function DevupUI({
 
       if (updatedBaseStyle) {
         // update base style
-        promises.push(
-          writeFile(join(cssDir, 'devup-ui.css'), getCss(null, false), 'utf-8'),
-        )
+        promises.push(writeCssFile('devup-ui.css', getCss(null, false)))
       }
 
       if (cssFile) {
         const fileNum = getFileNumByFilename(cssFile)
         const prevCss = cssMap.get(fileNum)
         if (prevCss && prevCss.length < css.length) cssMap.set(fileNum, css)
-        promises.push(
-          writeFile(
-            join(cssDir, basename(cssFile)),
-            `/* ${id} ${Date.now()} */`,
-            'utf-8',
-          ),
-        )
+        // `css` is only set when this transform added styles to the sheet.
+        if (css) promises.push(writeCssFile(basename(cssFile), css))
       }
       await Promise.all(promises)
       return {
