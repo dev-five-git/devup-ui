@@ -223,7 +223,7 @@ pub struct StyleSheetCss {
 type PropertyMap = BTreeMap<u8, BTreeMap<u8, FxHashSet<StyleSheetProperty>>>;
 type KeyframesMap = BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<(String, String)>>>>;
 /// layer name -> Vec<(selector, property, value)> collected for `@layer` output.
-type LayeredStyles = BTreeMap<String, Vec<(String, String, String)>>;
+type LayeredStyles = BTreeMap<String, String>;
 
 fn deserialize_btree_map_u8<'de, D>(
     deserializer: D,
@@ -507,9 +507,28 @@ impl StyleSheet {
                 ExtractStyleValue::Static(st) if st.property() == "typography" => {
                     let (StyleProperty::ClassName(class_name)
                     | StyleProperty::Variable { class_name, .. }) = st.extract(name_scope);
+                    // `preset|property:level,...` lists the properties declared
+                    // directly beside the preset and the breakpoint each starts at
+                    let (preset, yielded) = st
+                        .value()
+                        .split_once('|')
+                        .unwrap_or_else(|| (st.value(), ""));
+                    let yielded: Vec<(&str, u8)> = yielded
+                        .split(',')
+                        .filter_map(|item| {
+                            let (property, level) = item.split_once(':')?;
+                            Some((property, level.parse().ok()?))
+                        })
+                        .collect();
                     for (level, property, value) in
-                        self.theme.typography_declarations(st.value(), st.level())
+                        self.theme.typography_declarations(preset, st.level())
                     {
+                        if yielded
+                            .iter()
+                            .any(|(yielded, from)| *yielded == property && level >= *from)
+                        {
+                            continue;
+                        }
                         if self.insert_property(
                             level,
                             st.style_order(),
@@ -805,10 +824,38 @@ impl StyleSheet {
     // deep-cloning every `StyleSheetProperty` (3 owned `String`s + `Option<StyleSelector>`).
     // Each `prop` here is a `&P`; `.borrow()` yields the `&StyleSheetProperty` all downstream
     // buckets already hold. Output is byte-identical.
+    /// Layered properties are written with the same rules as the others, each
+    /// layer on its own: into `layered_styles` when given, else as trailing
+    /// `@layer` blocks.
     fn create_style_with_layers<P: std::borrow::Borrow<StyleSheetProperty>>(
         &self,
         map: &BTreeMap<u8, FxHashSet<P>>,
-        layered_styles: Option<&mut LayeredStyles>,
+        mut layered_styles: Option<&mut LayeredStyles>,
+    ) -> String {
+        let mut css = self.create_layer_style(map, None);
+        let layers: BTreeSet<&str> = map
+            .values()
+            .flatten()
+            .filter_map(|prop| prop.borrow().layer.as_deref())
+            .collect();
+        for layer in layers {
+            let layer_css = self.create_layer_style(map, Some(layer));
+            match layered_styles.as_deref_mut() {
+                Some(layered) => layered
+                    .entry(layer.to_string())
+                    .or_default()
+                    .push_str(&layer_css),
+                None => push_fmt!(&mut css, "@layer {layer}{{{layer_css}}}"),
+            }
+        }
+        css
+    }
+
+    /// The properties of `map` in `layer` (`None`: in no layer)
+    fn create_layer_style<P: std::borrow::Borrow<StyleSheetProperty>>(
+        &self,
+        map: &BTreeMap<u8, FxHashSet<P>>,
+        layer: Option<&str>,
     ) -> String {
         // Estimate ~64 bytes per property for pre-allocation
         let prop_count: usize = map.values().map(FxHashSet::len).sum();
@@ -820,6 +867,9 @@ impl StyleSheet {
         for (level, props) in map {
             for prop in props {
                 let prop: &StyleSheetProperty = prop.borrow();
+                if prop.layer.as_deref() != layer {
+                    continue;
+                }
                 match &prop.selector {
                     Some(StyleSelector::Global(selector, _)) => {
                         global_props.push((*level, selector.as_str(), prop));
@@ -861,7 +911,7 @@ impl StyleSheet {
             }
         }
         if !global_props.is_empty() {
-            self.write_global_props(&mut current_css, global_props, layered_styles);
+            self.write_global_props(&mut current_css, global_props);
         }
 
         // Selector group (plain, then `SELECTOR_ORDER`) sorts before the breakpoint
@@ -968,12 +1018,7 @@ impl StyleSheet {
         Some(rules.len())
     }
 
-    fn write_global_props(
-        &self,
-        css: &mut String,
-        mut global_props: Vec<GlobalProp<'_>>,
-        mut layered_styles: Option<&mut LayeredStyles>,
-    ) {
+    fn write_global_props(&self, css: &mut String, mut global_props: Vec<GlobalProp<'_>>) {
         // Same order as class rules: selector group before breakpoint level, so a
         // `:hover` set at a wider breakpoint still precedes `:active`.
         global_props.sort_by(|a, b| {
@@ -988,20 +1033,6 @@ impl StyleSheet {
         let mut open_level: Option<u8> = None;
         let mut open_selector: Option<&str> = None;
         for (level, selector, prop) in global_props {
-            if let (Some(layered_styles), Some(layer)) =
-                (layered_styles.as_deref_mut(), prop.layer.as_ref())
-            {
-                let bucket = match layered_styles.get_mut(layer.as_str()) {
-                    Some(bucket) => bucket,
-                    None => layered_styles.entry(layer.clone()).or_default(),
-                };
-                bucket.push((
-                    selector.to_string(),
-                    prop.property.clone(),
-                    prop.value.clone(),
-                ));
-                continue;
-            }
             if open_level != Some(level) {
                 if open_selector.take().is_some() {
                     css.push('}');
@@ -1204,24 +1235,8 @@ impl StyleSheet {
                 }
                 css.push(';');
 
-                // Generate styles wrapped in @layer blocks
-                for (layer_name, styles) in layered_styles {
-                    push_fmt!(&mut css, "@layer {layer_name}{{");
-                    let mut open_selector: Option<&str> = None;
-                    for (selector, p, v) in &styles {
-                        if open_selector == Some(selector.as_str()) {
-                            css.push(';');
-                        } else {
-                            if open_selector.is_some() {
-                                css.push('}');
-                            }
-                            css.push_str(selector);
-                            css.push('{');
-                            open_selector = Some(selector);
-                        }
-                        push_fmt!(&mut css, "{p}:{v}");
-                    }
-                    css.push_str("}}");
+                for (layer_name, layer_css) in layered_styles {
+                    push_fmt!(&mut css, "@layer {layer_name}{{{layer_css}}}");
                 }
             }
             // Atom hoisting: emit shared (hoisted) order!=0 atoms into the global
@@ -1536,8 +1551,8 @@ mod tests {
         set_file_routes(previous_routes);
 
         assert!(
-            css.contains("@layer o2{div{border-radius:9px}}"),
-            "layered global hoist must emit direct CSS: {css}"
+            css.contains("@layer o2{@layer components{div{border-radius:9px}}}"),
+            "layered global hoist must keep its layer: {css}"
         );
     }
 
@@ -3419,6 +3434,25 @@ mod tests {
     #[test]
     #[serial]
     #[allow(clippy::literal_string_with_formatting_args)]
+    fn test_layer_pipeline() {
+        for (source, expected) in [
+            // A layer keeps breakpoints, selectors and at-rules of its declarations.
+            (
+                "globalCss({ '*': { '@layer': 'reset', margin: [0, null, 4], _hover: { color: ['red', null, 'blue'] }, _print: { color: 'black' } }, body: { color: 'white' } })",
+                "@layer b;@layer b{body{color:white}}@layer reset;@layer reset{*{margin:0}@media(min-width:768px){*{margin:16px}}*:hover{color:red}@media(min-width:768px){*:hover{color:blue}}@media print{*{color:black}}}",
+            ),
+            (
+                "<div className={css({ color: 'red', '@layer': { base: { color: 'blue', p: [1, null, 2], _hover: { color: 'green' }, '@layer': { inner: { m: 1 } } } } })} />",
+                ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.c5{.c6{margin:4px}}",
+            ),
+        ] {
+            assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    #[serial]
+    #[allow(clippy::literal_string_with_formatting_args)]
     fn test_conditional_typography_pipeline() {
         for (source, expected) in [
             (
@@ -3442,14 +3476,51 @@ mod tests {
                 "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}",
             ),
             ("<Box _hover={{ typography: 'missing' }} />", "@layer t;"),
-            // A declaration written next to the preset wins over the preset's.
+            // A declaration written next to the preset wins over the preset's, at
+            // every breakpoint from the one it starts at.
             (
                 "<Box _hover={{ typography: 'small', fontSize: '11px' }} />",
-                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-size:11px}",
+                "@layer t;.c2:hover{line-height:1.2}.c3:hover{font-size:11px}",
+            ),
+            (
+                "<Box _hover={{ typography: 'title', fontSize: '11px' }} />",
+                "@layer t;.c2:hover{font-family:var(--heading);font-weight:700}.c3:hover{font-size:11px}",
+            ),
+            (
+                "<Box _hover={{ typography: 'title', fontSize: [null, null, null, '11px'] }} />",
+                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c2:hover{font-size:32px}}@media(min-width:992px){.c3:hover{font-size:11px}}",
+            ),
+            (
+                "<Box typography={['small', null, 'title']} fontSize=\"11px\" />",
+                "@layer t;.c2{font-size:11px}@media(min-width:768px){.c3{font-family:var(--heading);font-weight:700}}",
+            ),
+            (
+                "<Box _hover={{ typography: 'title', fontSize: size }} />",
+                "@layer t;.c2:hover{font-family:var(--heading);font-weight:700}.c3:hover{font-size:var(--c)}",
+            ),
+            (
+                "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : [null, null, '12px'] }} />",
+                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:11px}@media(min-width:768px){.c4:hover{font-size:12px}}",
+            ),
+            (
+                "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : undefined, lineHeight: { a: '1', b: '2' }[key] }} />",
+                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:11px}.c4:hover{line-height:1}.c5:hover{line-height:2}@media(min-width:768px){.c2:hover{font-size:32px}}",
+            ),
+            (
+                "<Box _hover={{ typography: cond ? 'small' : { a: 'title' }[key], fontSize: '11px' }} typography={size} positioning={pos} />",
+                "@layer t;.c2{bottom:0}.c3{left:0}.c4{right:0}.c5{top:0}.c6:hover{line-height:1.2}.c7:hover{font-family:var(--heading);font-weight:700}.c8:hover{font-size:11px}",
+            ),
+            (
+                "<Box _hover={{ typography: size, fontSize: '11px' }} />",
+                "@layer t;.c2:hover{line-height:1.2}.c3:hover{font-family:var(--heading);font-weight:700}.c4:hover{font-size:11px}",
             ),
             (
                 "globalCss({ body: { typography: 'small' } })",
                 "@layer b,t;@layer b{body{font-size:12px;line-height:1.2}}",
+            ),
+            (
+                "globalCss({ h1: { typography: 'title', fontSize: '13px' } })",
+                "@layer b,t;@layer b{h1{font-family:var(--heading);font-size:13px;font-weight:700}}",
             ),
         ] {
             let mut theme = Theme::default();
