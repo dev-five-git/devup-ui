@@ -570,7 +570,7 @@ impl StyleSheet {
                     };
 
                     let class_name = if is_first_value {
-                        let selector = st.selector().map(StyleSelector::as_class_str);
+                        let selector = st.class_selector();
                         sheet_to_classname(
                             st.property(),
                             st.level(),
@@ -627,7 +627,7 @@ impl StyleSheet {
                             if important {
                                 dynamic_value.push_str(" !important");
                             }
-                            self.add_property(
+                            self.add_property_with_layer(
                                 &class_name,
                                 dy.property(),
                                 dy.level(),
@@ -635,6 +635,7 @@ impl StyleSheet {
                                 dy.selector(),
                                 dy.style_order(),
                                 bucket_scope,
+                                dy.layer(),
                             )
                         }
                     {
@@ -3444,6 +3445,11 @@ mod tests {
             (
                 "<div className={css({ color: 'red', '@layer': { base: { color: 'blue', p: [1, null, 2], _hover: { color: 'green' }, '@layer': { inner: { m: 1 } } } } })} />",
                 ".c0{color:red}@layer base{.c1{color:blue}.c2{padding:4px}@media(min-width:768px){.c3{padding:8px}}.c4:hover{color:green}}@layer base.c5{.c6{margin:4px}}",
+            ),
+            // Layered and unlayered declarations keep apart, dynamic ones included.
+            (
+                "<div className={css({ color: 'red', width: w, '@layer': { base: { color: 'red', width: v } } })} />",
+                ".c0{color:red}.c1{width:var(--c)}@layer base{.c2{color:red}.c3{width:var(--f)}}",
             ),
         ] {
             assert_eq!(pipeline_css(Theme::default(), source), expected, "{source}");
