@@ -7,6 +7,7 @@ import {
   buildCanonicalMap,
   computeFileReach,
   createCompatTypes,
+  createModuleResolver,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -31,6 +32,7 @@ import {
   registerTheme,
   setAtomHoist,
   setDebug,
+  setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import { type Compiler } from 'webpack'
@@ -152,6 +154,13 @@ export class DevupUIWebpackPlugin {
   private prewarmExtractor() {
     try {
       const cwd = process.cwd()
+      // The same resolver as the loader's, so imported constants and
+      // stylesheets extract to the classes the loader emits
+      setModuleResolver(
+        createModuleResolver({
+          toId: (path) => relative(cwd, path).replaceAll('\\', '/'),
+        }),
+      )
       const srcDir = resolve(cwd, 'src')
       for (const file of listSourceFiles(srcDir)) {
         const relativePath = relative(cwd, file).replaceAll('\\', '/')
