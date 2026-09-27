@@ -9,8 +9,11 @@ export {
   type ComputeFileReachOptions,
   computeFileRoutes,
   type ComputeFileRoutesOptions,
+  createModuleResolver,
+  type CreateModuleResolverOptions,
   listSourceFiles,
   planAtomHoist,
+  type ResolvedModule,
   type StaticImportGraph,
 } from './import-graph'
 export { deepMerge, loadDevupConfig, loadDevupConfigSync } from './load-config'

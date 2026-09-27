@@ -940,9 +940,65 @@ function resolveImport(
   return undefined
 }
 
+/** A module an import resolved to, as `setModuleResolver` expects it. */
+export interface ResolvedModule {
+  path: string
+  code: string
+}
+
+export interface CreateModuleResolverOptions {
+  cwd?: string
+  tsconfigPath?: string
+  /**
+   * The name the plugin extracts a file under, given its absolute path. A
+   * resolved module is extracted under this name, so it has to be the one the
+   * bundler later extracts the same file under.
+   */
+  toId?: (path: string) => string
+}
+
+/**
+ * Resolve the imports of extracted files the way the import graph does
+ * (relative paths and tsconfig `paths`, not packages), reading each module.
+ */
+export function createModuleResolver({
+  cwd = process.cwd(),
+  tsconfigPath = join(cwd, 'tsconfig.json'),
+  toId = (path) => path,
+}: CreateModuleResolverOptions = {}): (
+  specifier: string,
+  importer: string,
+) => ResolvedModule | undefined {
+  const { aliases, baseDir } = readPathAliases(tsconfigPath)
+  return (specifier, importer) => {
+    const bases = specifier.startsWith('.')
+      ? [resolve(dirname(resolve(cwd, importer)), specifier)]
+      : isAbsolute(specifier)
+        ? [specifier]
+        : resolveAliasCandidates(specifier, { aliases, aliasBaseDir: baseDir })
+    for (const base of bases) {
+      const path = resolveSourceFile(base)
+      if (path) return { path: toId(path), code: readFileSync(path, 'utf-8') }
+    }
+    return undefined
+  }
+}
+
+/** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
+function resolveSourceFile(base: string): string | undefined {
+  const candidates = jsExtensions.includes(extname(base))
+    ? [base]
+    : [
+        ...jsExtensions.map((extension) => `${base}${extension}`),
+        ...jsExtensions.map((extension) => join(base, `index${extension}`)),
+      ]
+  const found = candidates.find(isFile)
+  return found && resolve(found)
+}
+
 function resolveAliasCandidates(
   specifier: string,
-  context: ResolveContext,
+  context: Pick<ResolveContext, 'aliases' | 'aliasBaseDir'>,
 ): string[] {
   const candidates: string[] = []
   for (const alias of context.aliases) {
