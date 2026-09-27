@@ -77,7 +77,7 @@ const example = <Box bg={colors.brand} color={PRIMARY} />
 const generated = <div className="a b" />
 ```
 
-Imports are resolved like the bundler resolves them (relative paths and `tsconfig` `paths`), and a change to the module rebuilds the files reading it. Anything else — a `let`, a function call, a package import — stays a CSS variable.
+Imports are resolved like the bundler resolves them — relative paths, `tsconfig` `paths` and packages (`exports`, `module`, `main`) — and a change to the module rebuilds the files reading it. CommonJS modules count too when they assign the export once (`exports.PRIMARY = 'red'`, `module.exports = { ... }`). Anything that can change or is computed — a `let`, a property assigned twice, a function call — stays a CSS variable.
 
 ## Conditional Expressions
 
