@@ -6,6 +6,7 @@ import {
   buildCanonicalMap,
   computeFileReach,
   createCompatTypes,
+  createModuleResolver,
   createNodeModulesExcludeRegex,
   createThemeInterfaceArgs,
   type CustomShorthands,
@@ -26,6 +27,7 @@ import {
   registerTheme,
   setAtomHoist,
   setDebug,
+  setModuleResolver,
   setPrefix,
 } from '@devup-ui/wasm'
 import type { RsbuildPlugin } from '@rsbuild/core'
@@ -151,6 +153,11 @@ export const DevupUI = ({
       // POSIX-normalized to match.
       const atomMode =
         atomHoist !== undefined && Number.isFinite(atomHoist) && atomHoist > 0
+      setModuleResolver(
+        createModuleResolver({
+          toId: (path) => (atomMode ? path.replaceAll('\\', '/') : path),
+        }),
+      )
       if (atomMode) {
         try {
           const root = process.cwd()
@@ -249,7 +256,7 @@ export const DevupUI = ({
         {
           test: /\.(tsx|ts|js|mjs|jsx)$/,
         },
-        async ({ code, resourcePath }) => {
+        async ({ code, resourcePath, addDependency }) => {
           if (createNodeModulesExcludeRegex(include).test(resourcePath))
             return code
           // The stylesheet import is emitted relative to the importing file, as
@@ -280,6 +287,7 @@ export const DevupUI = ({
             map,
             cssFile,
             updatedBaseStyle,
+            dependencies = [],
           } = codeExtract(
             extractName,
             code,
@@ -290,6 +298,7 @@ export const DevupUI = ({
             !atomMode,
             importAliases,
           )
+          for (const dependency of dependencies) addDependency(dependency)
           const promises: Promise<void>[] = []
           if (updatedBaseStyle) {
             // update base style
