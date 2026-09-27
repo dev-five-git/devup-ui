@@ -34,6 +34,8 @@ macro_rules! push_fmt {
     }};
 }
 
+const TYPOGRAPHY_LAYER: &str = "t";
+
 /// Plain rules first, then pseudo selectors in `SELECTOR_ORDER`.
 fn selector_group(selector: Option<&str>) -> (u8, u8) {
     selector.map_or((0, 0), |selector| (1, get_selector_order(selector)))
@@ -538,7 +540,13 @@ impl StyleSheet {
                                 property: property.to_string(),
                                 value,
                                 selector: st.selector().cloned(),
-                                layer: st.layer().map(ToString::to_string),
+                                // Under the declarations written directly, like the
+                                // theme's typography classes, even when those only
+                                // apply on a condition
+                                layer: Some(st.layer().map_or_else(
+                                    || TYPOGRAPHY_LAYER.to_string(),
+                                    |layer| format!("{layer}.{TYPOGRAPHY_LAYER}"),
+                                )),
                                 typography: true,
                             },
                         ) {
@@ -842,11 +850,13 @@ impl StyleSheet {
         for layer in layers {
             let layer_css = self.create_layer_style(map, Some(layer));
             match layered_styles.as_deref_mut() {
-                Some(layered) => layered
+                // Typography stays nested in the origin it was written in, below
+                // what that origin declares directly
+                Some(layered) if layer != TYPOGRAPHY_LAYER => layered
                     .entry(layer.to_string())
                     .or_default()
                     .push_str(&layer_css),
-                None => push_fmt!(&mut css, "@layer {layer}{{{layer_css}}}"),
+                _ => push_fmt!(&mut css, "@layer {layer}{{{layer_css}}}"),
             }
         }
         css
@@ -3463,70 +3473,70 @@ mod tests {
         for (source, expected) in [
             (
                 "<Box _hover={{ typography: 'small' }} />",
-                "@layer t;.c2:hover{font-size:12px;line-height:1.2}",
+                "@layer t;@layer t{.c2:hover{font-size:12px;line-height:1.2}}",
             ),
             (
                 "<Box _motionReduce={{ typography: 'title' }} />",
-                "@layer t;@media(prefers-reduced-motion:reduce){.c2{font-family:var(--heading);font-size:20px;font-weight:700}}@media(min-width:768px)and (prefers-reduced-motion:reduce){.c2{font-size:32px}}",
+                "@layer t;@layer t{@media(prefers-reduced-motion:reduce){.c2{font-family:var(--heading);font-size:20px;font-weight:700}}@media(min-width:768px)and (prefers-reduced-motion:reduce){.c2{font-size:32px}}}",
             ),
             (
                 "<Box _hover={[null, null, { typography: 'title' }]} />",
-                "@layer t;@media(min-width:768px){.c2:hover{font-family:var(--heading);font-size:32px;font-weight:700}}",
+                "@layer t;@layer t{@media(min-width:768px){.c2:hover{font-family:var(--heading);font-size:32px;font-weight:700}}}",
             ),
             (
                 "<Box _hover={{ typography: size }} />",
-                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}",
+                "@layer t;@layer t{.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}}",
             ),
             (
                 "<Box _hover={{ typography: `${size}` }} />",
-                "@layer t;.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}",
+                "@layer t;@layer t{.c2:hover{font-size:12px;line-height:1.2}.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}}",
             ),
             ("<Box _hover={{ typography: 'missing' }} />", "@layer t;"),
             // A declaration written next to the preset wins over the preset's, at
             // every breakpoint from the one it starts at.
             (
                 "<Box _hover={{ typography: 'small', fontSize: '11px' }} />",
-                "@layer t;.c2:hover{line-height:1.2}.c3:hover{font-size:11px}",
+                "@layer t;.c2:hover{font-size:11px}@layer t{.c3:hover{line-height:1.2}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: '11px' }} />",
-                "@layer t;.c2:hover{font-family:var(--heading);font-weight:700}.c3:hover{font-size:11px}",
+                "@layer t;.c2:hover{font-size:11px}@layer t{.c3:hover{font-family:var(--heading);font-weight:700}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: [null, null, null, '11px'] }} />",
-                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c2:hover{font-size:32px}}@media(min-width:992px){.c3:hover{font-size:11px}}",
+                "@layer t;@media(min-width:992px){.c2:hover{font-size:11px}}@layer t{.c3:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c3:hover{font-size:32px}}}",
             ),
             (
                 "<Box typography={['small', null, 'title']} fontSize=\"11px\" />",
-                "@layer t;.c2{font-size:11px}@media(min-width:768px){.c3{font-family:var(--heading);font-weight:700}}",
+                "@layer t;.c2{font-size:11px}@layer t{@media(min-width:768px){.c3{font-family:var(--heading);font-weight:700}}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: size }} />",
-                "@layer t;.c2:hover{font-family:var(--heading);font-weight:700}.c3:hover{font-size:var(--c)}",
+                "@layer t;.c2:hover{font-size:var(--c)}@layer t{.c3:hover{font-family:var(--heading);font-weight:700}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : [null, null, '12px'] }} />",
-                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:11px}@media(min-width:768px){.c4:hover{font-size:12px}}",
+                "@layer t;.c2:hover{font-size:11px}@media(min-width:768px){.c3:hover{font-size:12px}}@layer t{.c4:hover{font-family:var(--heading);font-size:20px;font-weight:700}}",
             ),
             (
                 "<Box _hover={{ typography: 'title', fontSize: cond ? '11px' : undefined, lineHeight: { a: '1', b: '2' }[key] }} />",
-                "@layer t;.c2:hover{font-family:var(--heading);font-size:20px;font-weight:700}.c3:hover{font-size:11px}.c4:hover{line-height:1}.c5:hover{line-height:2}@media(min-width:768px){.c2:hover{font-size:32px}}",
+                "@layer t;.c2:hover{font-size:11px}.c3:hover{line-height:1}.c4:hover{line-height:2}@layer t{.c5:hover{font-family:var(--heading);font-size:20px;font-weight:700}@media(min-width:768px){.c5:hover{font-size:32px}}}",
             ),
             (
                 "<Box _hover={{ typography: cond ? 'small' : { a: 'title' }[key], fontSize: '11px' }} typography={size} positioning={pos} />",
-                "@layer t;.c2{bottom:0}.c3{left:0}.c4{right:0}.c5{top:0}.c6:hover{line-height:1.2}.c7:hover{font-family:var(--heading);font-weight:700}.c8:hover{font-size:11px}",
+                "@layer t;.c2{bottom:0}.c3{left:0}.c4{right:0}.c5{top:0}.c6:hover{font-size:11px}@layer t{.c7:hover{line-height:1.2}.c8:hover{font-family:var(--heading);font-weight:700}}",
             ),
             (
                 "<Box _hover={{ typography: size, fontSize: '11px' }} />",
-                "@layer t;.c2:hover{line-height:1.2}.c3:hover{font-family:var(--heading);font-weight:700}.c4:hover{font-size:11px}",
+                "@layer t;.c2:hover{font-size:11px}@layer t{.c3:hover{line-height:1.2}.c4:hover{font-family:var(--heading);font-weight:700}}",
             ),
             (
                 "globalCss({ body: { typography: 'small' } })",
-                "@layer b,t;@layer b{body{font-size:12px;line-height:1.2}}",
+                "@layer b,t;@layer b{@layer t{body{font-size:12px;line-height:1.2}}}",
             ),
             (
                 "globalCss({ h1: { typography: 'title', fontSize: '13px' } })",
-                "@layer b,t;@layer b{h1{font-family:var(--heading);font-size:13px;font-weight:700}}",
+                "@layer b,t;@layer b{h1{font-size:13px}@layer t{h1{font-family:var(--heading);font-weight:700}}}",
             ),
         ] {
             let mut theme = Theme::default();
