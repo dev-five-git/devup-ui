@@ -28,6 +28,21 @@ const F = styled('div', { bg: 'red' })
 
 Object styles follow the libraries: several style arguments, or an array of them, merge into one rule set where a later declaration replaces an earlier one and nested rules merge; Emotion's options argument (`styled('div', { shouldForwardProp })(...)`) is accepted, and every prop is forwarded. Numbers mean pixels as they do in Emotion and styled-components — `padding: 8` is `8px`, unitless properties such as `lineHeight` stay as written — while Devup UI shorthands such as `p` keep the spacing scale.
 
+A style argument can be conditional — `cond && { ... }` or `cond ? { ... } : { ... }`, in `styled` as in `css`. Each property it sets becomes a per-property ternary over what came before (`color: cond ? 'blue' : 'red'`), so the result does not depend on the order atomic classes land in the stylesheet; a conditional class joins as `cond ? cls : ''`.
+
+`.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props; `.withConfig()` only tunes runtime behavior, so it is dropped:
+
+```tsx
+const Button = styled.button
+  .attrs({ type: 'button' })
+  .attrs((props) => ({ disabled: props.loading }))
+  .withConfig({ displayName: 'Button' })`
+  color: red;
+`
+```
+
+A file may import `styled` from several of these libraries at once; every import compiles.
+
 Namespace imports work too. `@emotion/styled` and `styled-components` export a single callable, so the namespace binding _is_ that value and it is bound straight to the Devup UI export:
 
 ```tsx
@@ -96,4 +111,4 @@ Emotion's `<Global styles={...} />` behaves the same way: the `styles` prop is e
 | `ServerStyleSheet`, `StyleSheetManager`  | inert — Devup UI already emits a real stylesheet, so there is nothing to collect |
 | `isStyledComponent`                      | always `false`                                                                   |
 | `ClassNames`, `CacheProvider`            | no equivalent; stays on its own package with a build warning                     |
-| `.attrs()`, `.withConfig()`              | not supported yet                                                                |
+| `.attrs()`, `.withConfig()`              | attrs merged over props; `withConfig` dropped                                    |

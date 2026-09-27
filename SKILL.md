@@ -257,7 +257,13 @@ globalCss({ _motionReduce: { "*, *::before, *::after": { transition: "none" } } 
 
 // Conditional -> preserved
 <Box bg={isActive ? "blue" : "gray"} />  // className={isActive ? "a" : "b"}
+
+// Imported const -> static (resolved like the bundler: relative paths, tsconfig paths)
+import { PRIMARY } from "./tokens"  // export const PRIMARY = "red"
+<Box bg={PRIMARY} />  // className="a"; a `let`, call or package import stays a variable
 ```
+
+A `.css.ts` file may import other stylesheets and modules; an imported stylesheet exports the same names its own CSS uses. styled-components `.attrs()` (objects and functions) and `.withConfig()` compile, and `css(base, cond && { ... })` / `styled.div(base, cond ? a : b)` merge per property.
 
 ### Responsive + Pseudo Combined
 
