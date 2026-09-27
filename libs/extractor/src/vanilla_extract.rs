@@ -794,11 +794,7 @@ fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<S
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
 /// generated custom property, registered with `@property` when declared
-fn create_var(
-    collector: &StyleCollector,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
+fn create_var(styles: &StyleCollector, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let first = args.get_or_undefined(0);
     let (declaration, debug_id) = match first.as_object() {
         Some(declaration) => (Some(declaration), args.get_or_undefined(1)),
@@ -806,11 +802,11 @@ fn create_var(
     };
     let name = format!(
         "--{}",
-        collector.borrow_mut().identifier(js_str(debug_id), "var")
+        styles.borrow_mut().identifier(js_str(debug_id), "var")
     );
     if let Some(declaration) = declaration {
-        let rule = property_rule(&name, &declaration, context)?;
-        collector.borrow_mut().styles.property_rules.push(rule);
+        let rule = property_rule(&name, &declaration, ctx)?;
+        styles.borrow_mut().styles.property_rules.push(rule);
     }
     Ok(js_string!(format!("var({name})")).into())
 }
