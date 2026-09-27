@@ -335,6 +335,9 @@ fn extract_with_source_map(
                         .collect()
                 })
             }
+            // A stylesheet another one imports must give its own values, so its
+            // failure is reported rather than hidden behind plain extraction
+            Err(error) if module_loader::loading_for_stylesheet() => return Err(error.into()),
             // Fall back to treating as regular file if execution fails
             Err(_) => None,
         }

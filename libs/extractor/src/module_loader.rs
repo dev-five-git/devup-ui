@@ -3,18 +3,23 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use oxc_allocator::Allocator;
+use oxc_ast::AstKind;
 use oxc_ast::ast::{
     Declaration, ExportDefaultDeclarationKind, ImportDeclarationSpecifier, ModuleExportName,
     Statement,
 };
 use oxc_parser::Parser;
+use oxc_semantic::SemanticBuilder;
 use oxc_span::{GetSpan, SourceType};
-use rustc_hash::FxHashMap;
+use oxc_syntax::symbol::SymbolId;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{ExtractOption, ModuleResolver, utils::is_vanilla_extract_file};
 
 /// The object the package's API is bound to while a stylesheet runs
 pub(crate) const PACKAGE_BINDING: &str = "__vanilla_extract__";
+
+const MODULE_HELPER: &str = "function __module__(path) { let started = false; const module = new Proxy({}, { get(target, key, receiver) { if (!started && typeof key === \"string\") throw new ReferenceError(`Cannot access '${key}' of '${path}' before its initialization: it is part of an import cycle`); return Reflect.get(target, key, receiver); } }); return { module, start() { started = true; } }; }\n";
 
 thread_local! {
     /// Stylesheets being evaluated, outermost first: a stylesheet importing one
@@ -38,6 +43,12 @@ impl Drop for Evaluating {
     }
 }
 
+/// Whether a stylesheet is being evaluated, so the one extracted now is loaded
+/// by it and must not fall back to plain extraction
+pub(crate) fn loading_for_stylesheet() -> bool {
+    EVALUATING.with_borrow(|stack| !stack.is_empty())
+}
+
 fn is_evaluating(filename: &str) -> bool {
     EVALUATING.with_borrow(|stack| stack.iter().any(|entry| entry == filename))
 }
@@ -50,7 +61,12 @@ pub(crate) struct ModuleLoader<'r> {
     /// Definitions of the loaded modules, each after the ones it uses
     definitions: Vec<String>,
     loaded: FxHashMap<String, String>,
-    loading: Vec<String>,
+    /// `(path, name)` of the modules being defined, outermost first
+    loading: Vec<(String, String)>,
+    /// Names of modules imported before they finished evaluating, whose
+    /// bindings are read when used, as ES modules read an import cycle
+    pending: FxHashSet<String>,
+    next_module: usize,
     /// Every file read, including those the loaded stylesheets read
     pub dependencies: BTreeSet<String>,
     /// What the stylesheet imports for its side effects, and the stylesheets it
@@ -66,6 +82,8 @@ impl<'r> ModuleLoader<'r> {
             definitions: Vec::new(),
             loaded: FxHashMap::default(),
             loading: Vec::new(),
+            pending: FxHashSet::default(),
+            next_module: 0,
             dependencies: BTreeSet::new(),
             kept_imports: Vec::new(),
         }
@@ -96,26 +114,45 @@ impl<'r> ModuleLoader<'r> {
         if let Some(name) = self.loaded.get(&module.path) {
             return Ok(name.clone());
         }
-        // A stylesheet falling back to plain extraction still imports the other
-        // side of the cycle, so the cycle has to end here
-        if self.loading.contains(&module.path) || is_evaluating(&module.path) {
-            return Err(format!("Circular import of '{}'", module.path));
+        if let Some((_, name)) = self.loading.iter().find(|(path, _)| *path == module.path) {
+            let name = name.clone();
+            self.pending.insert(name.clone());
+            return Ok(name);
+        }
+        let name = format!("__module_{}__", self.next_module);
+        self.next_module += 1;
+        // Created before the modules it imports, so a cycle among them can
+        // reach it; reading it before it starts evaluating is an error
+        if self.definitions.is_empty() {
+            self.definitions.push(MODULE_HELPER.to_string());
+        }
+        self.definitions.push(format!(
+            "const {name}$ = __module__({:?});\nconst {name} = {name}$.module;\n",
+            module.path
+        ));
+        if is_evaluating(&module.path) {
+            // The stylesheet importing it is evaluated on its own, so it never
+            // starts here
+            self.pending.insert(name.clone());
+            self.loaded.insert(module.path, name.clone());
+            return Ok(name);
         }
         self.dependencies.insert(module.path.clone());
-        self.loading.push(module.path.clone());
-        let name = self.define(module, stylesheet, resolver);
-        self.loading.pop();
-        let (path, name) = name?;
+        self.loading.push((module.path.clone(), name.clone()));
+        let defined = self.define(&name, module, stylesheet, resolver);
+        let (path, _) = self.loading.pop().unwrap_or_default();
+        defined?;
         self.loaded.insert(path, name.clone());
         Ok(name)
     }
 
     fn define(
         &mut self,
+        name: &str,
         module: crate::ResolvedModule,
         stylesheet: bool,
         resolver: &ModuleResolver,
-    ) -> Result<(String, String), String> {
+    ) -> Result<(), String> {
         let code = if stylesheet {
             // Extracted the way the bundler extracts it, so the names it
             // exports are the ones its own CSS uses
@@ -132,26 +169,30 @@ impl<'r> ModuleLoader<'r> {
         } else {
             module.code
         };
-        let script = crate::vanilla_extract::strip_typescript(&code);
+        let script = crate::vanilla_extract::strip_typescript(&code, &module.path);
         let module_script = module_script(&script, &module.path, self, false)?;
-        let name = format!("__module_{}__", self.definitions.len());
-        let exports: Vec<String> = module_script
-            .spreads
+        // Live bindings: a read before the binding is initialized fails as it
+        // does in an ES module
+        let getters: Vec<String> = module_script
+            .exports
             .iter()
-            .map(|spread| format!("...{spread}"))
-            .chain(
-                module_script
-                    .exports
-                    .iter()
-                    .map(|(exported, local)| format!("{exported:?}: {local}")),
-            )
+            .map(|(exported, local)| {
+                format!("{exported:?}: {{ get() {{ return {local}; }}, enumerable: true }}")
+            })
             .collect();
+        let mut spreads = String::new();
+        for spread in &module_script.spreads {
+            let _ = writeln!(
+                spreads,
+                "for (const key of Object.keys({spread})) if (key !== \"default\" && !(key in {name})) Object.defineProperty({name}, key, {{ get: () => {spread}[key], enumerable: true }});"
+            );
+        }
         self.definitions.push(format!(
-            "const {name} = (function () {{\n{}\nreturn {{ {} }};\n}})();\n",
+            "(function () {{\n{name}$.start();\nObject.defineProperties({name}, {{ {} }});\n{spreads}{}\n}})();\n",
+            getters.join(", "),
             module_script.body,
-            exports.join(", ")
         ));
-        Ok((module.path, name))
+        Ok(())
     }
 }
 
@@ -175,29 +216,102 @@ pub(crate) fn module_script(
     let program = Parser::new(&allocator, script, SourceType::mjs())
         .parse()
         .program;
-    let package = loader.option.package.as_str();
-    let text = |span: oxc_span::Span| &script[span.start as usize..span.end as usize];
+    let semantic = SemanticBuilder::new()
+        .with_build_nodes(true)
+        .build(&program)
+        .semantic;
+    let package = loader.option.package.clone();
+
+    // Imports of a module still evaluating are read where they are used, as ES
+    // modules read an import cycle
+    let mut modules: FxHashMap<u32, String> = FxHashMap::default();
+    let mut lazy: FxHashMap<SymbolId, String> = FxHashMap::default();
+    let mut lazy_names: FxHashMap<String, String> = FxHashMap::default();
+    for statement in &program.body {
+        let Statement::ImportDeclaration(import) = statement else {
+            continue;
+        };
+        let source = import.source.value.as_str();
+        let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
+        if specifiers.is_empty() {
+            if entry && !source.starts_with(package.as_str()) {
+                loader.keep_import(source);
+            }
+            continue;
+        }
+        let module = if source == package {
+            PACKAGE_BINDING.to_string()
+        } else {
+            loader.load(source, filename, entry)?
+        };
+        if loader.pending.contains(&module) {
+            let lazy_module = &module;
+            for specifier in specifiers {
+                let binding = match specifier {
+                    ImportDeclarationSpecifier::ImportSpecifier(specifier) => {
+                        format!("{lazy_module}[{:?}]", specifier.imported.name())
+                    }
+                    ImportDeclarationSpecifier::ImportDefaultSpecifier(_) => {
+                        format!("{lazy_module}[\"default\"]")
+                    }
+                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(_) => module.clone(),
+                };
+                let local = specifier.local();
+                if let Some(symbol) = local.symbol_id.get() {
+                    lazy.insert(symbol, binding.clone());
+                }
+                lazy_names.insert(local.name.to_string(), binding);
+            }
+        }
+        modules.insert(import.span.start, module);
+    }
+    let mut replacements: Vec<(u32, u32, String)> = Vec::new();
+    for (symbol, binding) in &lazy {
+        for reference in semantic.scoping().get_resolved_reference_ids(*symbol) {
+            let node = semantic.scoping().get_reference(*reference).node_id();
+            let span = semantic.nodes().kind(node).span();
+            let replacement = match semantic.nodes().parent_kind(node) {
+                AstKind::ObjectProperty(property) if property.shorthand => {
+                    format!(
+                        "{}: {binding}",
+                        &script[span.start as usize..span.end as usize]
+                    )
+                }
+                AstKind::ExportSpecifier(_) => continue,
+                _ => binding.clone(),
+            };
+            replacements.push((span.start, span.end, replacement));
+        }
+    }
+    replacements.sort_by_key(|(start, ..)| *start);
+    let text = |span: oxc_span::Span| {
+        let mut code = String::new();
+        let mut copied = span.start;
+        for (start, end, replacement) in &replacements {
+            if *start >= span.start && *end <= span.end {
+                code.push_str(&script[copied as usize..*start as usize]);
+                code.push_str(replacement);
+                copied = *end;
+            }
+        }
+        code.push_str(&script[copied as usize..span.end as usize]);
+        code
+    };
+
     let mut body = String::with_capacity(script.len());
     let mut exports = Vec::new();
     let mut spreads = Vec::new();
     for statement in &program.body {
         match statement {
             Statement::ImportDeclaration(import) => {
-                let source = import.source.value.as_str();
-                let specifiers = import.specifiers.as_deref().map_or(&[][..], |s| s);
-                if specifiers.is_empty() {
-                    if entry && !source.starts_with(package) {
-                        loader.keep_import(source);
-                    }
+                let Some(module) = modules.get(&import.span.start) else {
+                    continue;
+                };
+                if loader.pending.contains(module) {
                     continue;
                 }
-                let module = if source == package {
-                    PACKAGE_BINDING.to_string()
-                } else {
-                    loader.load(source, filename, entry)?
-                };
                 let mut named = Vec::new();
-                for specifier in specifiers {
+                for specifier in import.specifiers.iter().flatten() {
                     match specifier {
                         ImportDeclarationSpecifier::ImportSpecifier(specifier) => named.push(
                             format!("{:?}: {}", specifier.imported.name(), specifier.local.name),
@@ -215,7 +329,7 @@ pub(crate) fn module_script(
                 }
             }
             Statement::ExportDeclaration(export) => {
-                body.push_str(text(export.declaration.span()));
+                body.push_str(&text(export.declaration.span()));
                 body.push('\n');
                 for name in declared_names(&export.declaration) {
                     exports.push((name.clone(), name));
@@ -223,9 +337,10 @@ pub(crate) fn module_script(
             }
             Statement::ExportNamedDeclaration(export) => {
                 for specifier in &export.specifiers {
+                    let local = export_name(&specifier.local);
                     exports.push((
                         export_name(&specifier.exported),
-                        export_name(&specifier.local),
+                        lazy_names.get(&local).cloned().unwrap_or(local),
                     ));
                 }
             }
@@ -248,7 +363,7 @@ pub(crate) fn module_script(
                 };
                 let declaration = text(export.declaration.span());
                 let local = if let Some(id) = id {
-                    body.push_str(declaration);
+                    body.push_str(&declaration);
                     id.name.to_string()
                 } else {
                     let _ = write!(body, "const __default__ = ({declaration});");
@@ -265,7 +380,7 @@ pub(crate) fn module_script(
                 }
             }
             statement => {
-                body.push_str(text(statement.span()));
+                body.push_str(&text(statement.span()));
                 body.push('\n');
             }
         }
@@ -276,7 +391,6 @@ pub(crate) fn module_script(
         spreads,
     })
 }
-
 fn export_name(name: &ModuleExportName<'_>) -> String {
     name.name().to_string()
 }
