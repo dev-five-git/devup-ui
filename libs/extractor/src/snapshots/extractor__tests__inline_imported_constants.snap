@@ -6,8 +6,28 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
+                property: "accent-color",
+                value: "lime",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "background",
                 value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "teal",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -26,8 +46,28 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "border-color",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "bottom",
                 value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "caret-color",
+                value: "y",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -48,6 +88,16 @@ ToBTreeSet {
             ExtractStaticStyle {
                 property: "color",
                 value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "maroon",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -78,6 +128,16 @@ ToBTreeSet {
             ExtractStaticStyle {
                 property: "content",
                 value: "olive",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "fill",
+                value: "indigo",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -156,8 +216,28 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "stop-color",
+                value: "plum",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "stroke",
                 value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stroke",
+                value: "plum",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -176,8 +256,28 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
+                property: "text-decoration-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
                 property: "width",
                 value: "10px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "z-index",
+                value: "12",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -222,6 +322,15 @@ ToBTreeSet {
         ),
         Dynamic(
             ExtractDynamicStyle {
+                property: "column-rule-color",
+                level: 0,
+                identifier: "marker",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
                 property: "flex",
                 level: 0,
                 identifier: "notThere",
@@ -258,6 +367,15 @@ ToBTreeSet {
         ),
         Dynamic(
             ExtractDynamicStyle {
+                property: "flood-color",
+                level: 0,
+                identifier: "twice.A",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
                 property: "gap",
                 level: 0,
                 identifier: "colors.skip",
@@ -276,9 +394,27 @@ ToBTreeSet {
         ),
         Dynamic(
             ExtractDynamicStyle {
+                property: "lighting-color",
+                level: 0,
+                identifier: "DYNAMIC",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
                 property: "order",
                 level: 0,
                 identifier: "alsoMutable",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "outline-color",
+                level: 0,
+                identifier: "MUTATED",
                 selector: None,
                 style_order: None,
             },
@@ -329,5 +465,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x z _ ab a-d af ah aj al an ap ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--y\": TEMPLATE_EXPRESSION,\n\t\t\"--aa\": NOT_OBJECT,\n\t\t\"--ac\": colors.skip,\n\t\t\"--ae\": colors.nope,\n\t\t\"--ag\": colors[key],\n\t\t\"--ai\": alsoMutable,\n\t\t\"--ak\": notThere,\n\t\t\"--am\": gone,\n\t\t\"--ao\": helper,\n\t\t\"--aq\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"ar\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"as\" style={{ \"--at\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY: \"red\",\n\tunused,\n\tSIZE: 4\n};\nexport const g = <div color={\"red\"} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: 4 });\nexport const j = \"_\";\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"au\", className].filter(Boolean).join(\" \")} style={style} />;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from \"./cjs-tokens\";\nimport cjsObject, { OBJ, OVERRIDDEN, LATER } from \"./cjs-object\";\nimport twelve from \"./cjs-value\";\nimport twice from \"./cjs-twice\";\nimport marker, { named as markerNamed } from \"./cjs-marker\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x z _ ab a-d af ah aj al an ap ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--y\": TEMPLATE_EXPRESSION,\n\t\t\"--aa\": NOT_OBJECT,\n\t\t\"--ac\": colors.skip,\n\t\t\"--ae\": colors.nope,\n\t\t\"--ag\": colors[key],\n\t\t\"--ai\": alsoMutable,\n\t\t\"--ak\": notThere,\n\t\t\"--am\": gone,\n\t\t\"--ao\": helper,\n\t\t\"--aq\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"ar\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"as\" style={{ \"--at\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY: \"red\",\n\tunused,\n\tSIZE: 4\n};\nexport const g = <div color={\"red\"} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: 4 });\nexport const l = \"au av aw ax az a0 a1 a2 a3 a4 a5 a7 a9 ba\";\nexport const j = \"_\";\nexport const k = ({ style, className, ...rest }) => <div {...rest} className={[\"bb\", className].filter(Boolean).join(\" \")} style={style} />;\n",
 }
