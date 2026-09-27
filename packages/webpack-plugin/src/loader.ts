@@ -1,12 +1,14 @@
 import { writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
+import { createModuleResolver } from '@devup-ui/plugin-utils'
 import {
   codeExtract,
   exportClassMap,
   exportFileMap,
   exportSheet,
   getCss,
+  setModuleResolver,
 } from '@devup-ui/wasm'
 import type { RawLoaderDefinitionFunction } from 'webpack'
 
@@ -30,6 +32,16 @@ function parseSourceMap(sourceMap: string | undefined): string | null {
 
   JSON.parse(sourceMap)
   return sourceMap
+}
+
+let moduleResolver: ReturnType<typeof createModuleResolver> | undefined
+
+/** Resolve imports to the cwd-relative ids this loader extracts files under */
+function setCwdModuleResolver(): void {
+  moduleResolver ??= createModuleResolver({
+    toId: (path) => relative(process.cwd(), path).replaceAll('\\', '/'),
+  })
+  setModuleResolver(moduleResolver)
 }
 
 const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
@@ -63,12 +75,14 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
       const relativePath = relative(process.cwd(), id).replaceAll('\\', '/')
 
       if (!relCssDir.startsWith('./')) relCssDir = `./${relCssDir}`
+      setCwdModuleResolver()
       const {
         code,
         css = '',
         map,
         cssFile,
         updatedBaseStyle,
+        dependencies = [],
       } = codeExtract(
         relativePath,
         source.toString(),
@@ -79,6 +93,9 @@ const devupUILoader: RawLoaderDefinitionFunction<DevupUILoaderOptions> =
         true,
         importAliases,
       )
+      for (const dependency of dependencies) {
+        this.addDependency(resolve(dependency))
+      }
       const sourceMap = parseSourceMap(map)
       const promises: Promise<void>[] = []
       if (updatedBaseStyle) {
