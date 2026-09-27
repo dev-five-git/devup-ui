@@ -769,23 +769,27 @@ fn global_font_face(
     Ok(JsValue::undefined())
 }
 
+fn font_face_rule(family_json: &str, rule: &JsValue, context: &mut Context) -> String {
+    let json = js_value_to_json(rule, context);
+    match inner_json(&json) {
+        "" => format!("{{\"fontFamily\":{family_json}}}"),
+        inner => format!("{{{inner},\"fontFamily\":{family_json}}}"),
+    }
+}
+
 /// `@font-face` rule objects for `rule`, or each rule of a list, naming `family`
 fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<String> {
-    let rules = array_items(rule, context)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| Vec::from([rule.clone()]));
-    let family = json_string(family);
-    rules
-        .iter()
-        .map(|rule| {
-            let json = js_value_to_json(rule, context);
-            match inner_json(&json) {
-                "" => format!("{{\"fontFamily\":{family}}}"),
-                inner => format!("{{{inner},\"fontFamily\":{family}}}"),
+    let family_json = json_string(family);
+    match array_items(rule, context).ok().flatten() {
+        Some(rules) => {
+            let mut faces = Vec::with_capacity(rules.len());
+            for rule in &rules {
+                faces.push(font_face_rule(&family_json, rule, context));
             }
-        })
-        .collect()
+            faces
+        }
+        None => vec![font_face_rule(&family_json, rule, context)],
+    }
 }
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
