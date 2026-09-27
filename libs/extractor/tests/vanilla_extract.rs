@@ -68,9 +68,11 @@ createGlobalTheme(':root', createGlobalThemeContract({ gap: 'gap' }), { gap: '1p
 export const assigned = style({ vars: assignVars(contract, { color: 'blue' }) })
 export const variants = styleVariants({ a: { color: 'red' } }, (rule) => [box, rule])
 globalStyle(`${variants.a} span`, { '@layer': { [globalLayer({ parent: 'base' }, 'x')]: { margin: 1 } } })
-export const spin = keyframes({ to: { opacity: 1 } })",
+export const spin = keyframes({ to: { opacity: 1 } })
+export const named = style({ content: `'${box}'` })",
     );
     for expected in [
+        "_box'\", level: 0, selector: None",
         "@property --size-",
         "var(--size-",
         "container-name",
