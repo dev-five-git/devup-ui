@@ -32,6 +32,8 @@ A style argument can be conditional — `cond && { ... }`, `cond ? { ... } : { .
 
 A style argument that cannot be known at build time — a function call, a spread, a computed key — is a build error naming it, rather than a silently missing style.
 
+Inside a template, an interpolation standing where a declaration would is a mixin: `${mixin}` and `${(p) => p.active && mixin}` compose their class with the component's. A literal or constant is written into the CSS wherever it stands — a value, a CSS snippet, a selector. Any other interpolation in a selector or a property name is a build error, as are runtime values in `css`, `keyframes` and global styles, which have no element to set a CSS variable on.
+
 `.attrs()` and `.withConfig()` chain onto any factory. Attrs are merged over the props in order, as styled-components does — an object is spread, a function is called with the props; `.withConfig()` only tunes runtime behavior, so it is dropped:
 
 ```tsx
