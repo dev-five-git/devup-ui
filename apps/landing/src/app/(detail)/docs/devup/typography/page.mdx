@@ -315,7 +315,7 @@ const Title = styled('h1', {
 
 ## Combining with Other Styles
 
-Typography can be combined with other style props. A property written next to `typography` wins over the preset at every breakpoint from the one it is set at, so `<Text typography="h1" fontSize="14px" />` stays `14px` even where `h1` grows:
+Typography can be combined with other style props. A property written next to `typography` wins over the preset at every breakpoint from the one it is set at, so `<Text typography="h1" fontSize="14px" />` stays `14px` even where `h1` grows. That holds for a property set only on a condition too (`fontSize={small ? '12px' : undefined}`): preset declarations sit in a cascade layer below the ones written directly, so whichever applies wins:
 
 ```tsx
 const example = (

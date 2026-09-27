@@ -62,6 +62,23 @@ const generated = <div className="a" style={{ '--a': colorVariable }} />
 // .a { background-color: var(--a); }
 ```
 
+A value imported from another module stays static when that module declares it with `const` — a string or number literal, a member of an object literal (`as const` included), an alias of another constant, a re-export or a default export:
+
+```tsx
+// tokens.ts
+export const PRIMARY = 'red'
+export const colors = { brand: '#123456' } as const
+
+// App.tsx
+import { colors, PRIMARY } from './tokens'
+const example = <Box bg={colors.brand} color={PRIMARY} />
+
+// Devup UI generates:
+const generated = <div className="a b" />
+```
+
+Imports are resolved like the bundler resolves them (relative paths and `tsconfig` `paths`), and a change to the module rebuilds the files reading it. Anything else — a `let`, a function call, a package import — stays a CSS variable.
+
 ## Conditional Expressions
 
 Ternary operators and logical expressions are statically analyzed.
