@@ -774,7 +774,7 @@ fn declare_font_faces(
     let family = format!("\"fontFamily\":{}", json_string(family));
     let rules = match array_items(rules, context)? {
         Some(items) => items,
-        None => vec![rules.clone()],
+        None => Vec::from([rules.clone()]),
     };
     for rule in &rules {
         let json = js_value_to_json(rule, context);
