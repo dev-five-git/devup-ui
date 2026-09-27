@@ -145,6 +145,13 @@ impl ExtractStaticStyle {
         self.layer.as_deref()
     }
 
+    /// The selector part of the class name key, holding the layer so a layered
+    /// declaration never shares a class with an unlayered one
+    #[must_use]
+    pub fn class_selector(&self) -> Option<Cow<'_, str>> {
+        super::class_selector(self.selector.as_ref(), self.layer.as_deref())
+    }
+
     #[must_use]
     pub const fn property(&self) -> &str {
         self.property.as_str()
@@ -178,7 +185,7 @@ impl ExtractStaticStyle {
 
 impl ExtractStyleProperty for ExtractStaticStyle {
     fn extract(&self, filename: Option<&str>) -> StyleProperty {
-        let s = self.selector.as_ref().map(StyleSelector::as_class_str);
+        let s = self.class_selector();
         // `self.value` is already the result of `optimize_value(convert_value(..))`
         // (computed in the constructors), so re-running convert_value + optimize_value
         // here is redundant. Only the multi-css optimization is not applied at construction.
