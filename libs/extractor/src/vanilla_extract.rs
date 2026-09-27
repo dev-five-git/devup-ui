@@ -796,19 +796,24 @@ fn font_face_rules(family: &str, rule: &JsValue, context: &mut Context) -> Vec<S
 /// generated custom property, registered with `@property` when declared
 fn create_var(styles: &StyleCollector, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let first = args.get_or_undefined(0);
-    let (declaration, debug_id) = match first.as_object() {
-        Some(declaration) => (Some(declaration), args.get_or_undefined(1)),
-        None => (None, first),
+    let Some(declaration) = first.as_object() else {
+        return Ok(var_reference(&new_var(styles, first)));
     };
-    let name = format!(
+    let name = new_var(styles, args.get_or_undefined(1));
+    let rule = property_rule(&name, &declaration, ctx)?;
+    styles.borrow_mut().styles.property_rules.push(rule);
+    Ok(var_reference(&name))
+}
+
+fn new_var(styles: &StyleCollector, debug_id: &JsValue) -> String {
+    format!(
         "--{}",
         styles.borrow_mut().identifier(js_str(debug_id), "var")
-    );
-    if let Some(declaration) = declaration {
-        let rule = property_rule(&name, &declaration, ctx)?;
-        styles.borrow_mut().styles.property_rules.push(rule);
-    }
-    Ok(js_string!(format!("var({name})")).into())
+    )
+}
+
+fn var_reference(name: &str) -> JsValue {
+    js_string!(format!("var({name})")).into()
 }
 
 fn property_rule(name: &str, declaration: &JsObject, context: &mut Context) -> JsResult<String> {
