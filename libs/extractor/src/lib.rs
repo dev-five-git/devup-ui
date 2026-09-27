@@ -18150,6 +18150,23 @@ export const looped = x;",
             "const DEFAULT = 'olive';\nexport default DEFAULT;",
         ),
         ("/src/handler.ts", "export const handler = () => {};"),
+        (
+            "/src/cjs-tokens.js",
+            "'use strict';\nObject.defineProperty(exports, '__esModule', { value: true });\nexports.COMPILED = exports.OTHER = void 0;\nconst base_1 = require('./base');\nconst { value: navy } = require('./base');\nlet loose = require('./base');\nconst notRequire = load('./base');\nconst [first] = require('./base');\nconst fromName = require(name);\nother.exports.y = 1;\nlist[0].x = 1;\nexports.COMPILED = 'maroon';\nexports.FROM_REQUIRE = base_1.base;\nexports.DESTRUCTURED = navy;\nexports.MUTATED = 'a';\nfunction mutate() { exports.MUTATED = 'b'; }\nexports['computed'] = 'x';\nexports.DYNAMIC = compute();\nother.thing = 1;\nexports.default = 'indigo';",
+        ),
+        (
+            "/src/cjs-object.js",
+            "module.exports = { OBJ: 'plum', OVERRIDDEN: 'x' };\nmodule.exports.OVERRIDDEN = 'y';\nmodule.exports.LATER = 'lime';\nmodule.id = 1;",
+        ),
+        ("/src/cjs-value.js", "module.exports = 12;"),
+        (
+            "/src/cjs-twice.js",
+            "module.exports = { A: 'a' };\nmodule.exports = { A: 'b' };",
+        ),
+        (
+            "/src/cjs-marker.js",
+            "exports.__esModule = true;\nexports.named = 'teal';",
+        ),
     ];
 
     #[test]
@@ -18166,6 +18183,11 @@ import orange from './tokens';
 import * as tokens from './tokens';
 import named from './named';
 import { handler } from './handler';
+import cjs, { COMPILED, FROM_REQUIRE, DESTRUCTURED, MUTATED, DYNAMIC } from './cjs-tokens';
+import cjsObject, { OBJ, OVERRIDDEN, LATER } from './cjs-object';
+import twelve from './cjs-value';
+import twice from './cjs-twice';
+import marker, { named as markerNamed } from './cjs-marker';
 import { unused } from './unused';
 import missing from './missing';
 export const a = <Box color={PRIMARY} p={SIZE} m={NEG} w={TEMPLATE} bg={colors.primary} borderColor={colors.nested.deep} outlineColor={colors['fromBase']} textDecorationColor={ALIAS} caretColor={MUTABLE} accentColor={DYNAMIC} columnRuleColor={renamed} fill={reBase} stroke={value} stopColor={ns.value} floodColor={tokens.PRIMARY} lightingColor={orange} content={named} top={missing} left={NEG_STRING} right={TEMPLATE_EXPRESSION} bottom={SPACED} zIndex={NOT_OBJECT} gap={colors.skip} rowGap={colors.nope} columnGap={colors[key]} order={alsoMutable} flex={notThere} flexBasis={gone} flexGrow={helper} flexShrink={looped} {...colors} onClick={handler} />;
@@ -18177,6 +18199,7 @@ export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
 export const g = <div color={PRIMARY} />;
 export const h = <Devup.Inner.Box color={SIZE} />;
 export const i = Devup['css']({ color: SIZE });
+export const l = css({ color: COMPILED, bg: FROM_REQUIRE, borderColor: DESTRUCTURED, outlineColor: MUTATED, fill: cjs, stroke: OBJ, caretColor: OVERRIDDEN, accentColor: LATER, stopColor: cjsObject.OBJ, zIndex: twelve, floodColor: twice.A, lightingColor: DYNAMIC, columnRuleColor: marker, textDecorationColor: markerNamed });
 export const j = css({ zIndex: PRIMARY.length, order: PRIMARY['length'] });
 export const k = styled('div')({ color: SIZE });",
             ExtractOption {
@@ -18194,6 +18217,11 @@ export const k = styled('div')({ color: SIZE });",
             output.dependencies,
             [
                 "/src/base.ts",
+                "/src/cjs-marker.js",
+                "/src/cjs-object.js",
+                "/src/cjs-tokens.js",
+                "/src/cjs-twice.js",
+                "/src/cjs-value.js",
                 "/src/handler.ts",
                 "/src/loop.ts",
                 "/src/named.ts",

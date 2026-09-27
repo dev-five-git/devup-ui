@@ -7,11 +7,11 @@ use std::rc::Rc;
 
 use oxc_allocator::{Allocator, FromIn, GetAllocator};
 use oxc_ast::ast::{
-    Expression, ImportDeclarationSpecifier, JSXAttributeItem, JSXElementName, ObjectPropertyKind,
-    Program, Statement, Str, VariableDeclarationKind,
+    Argument, Expression, ImportDeclarationSpecifier, JSXAttributeItem, JSXElementName,
+    ObjectPropertyKind, Program, Statement, Str, VariableDeclarationKind,
 };
 use oxc_ast::builder::AstBuilder;
-use oxc_ast_visit::{Visit, VisitMut, walk_mut};
+use oxc_ast_visit::{Visit, VisitMut, walk, walk_mut};
 use oxc_parser::Parser;
 use oxc_semantic::{Scoping, SemanticBuilder};
 use oxc_span::{SPAN, SourceType};
@@ -251,6 +251,7 @@ impl Modules<'_> {
             imports: FxHashMap::default(),
         };
         let mut exports = FxHashMap::default();
+        let mut commonjs = CommonJs::new(&program);
         for statement in &program.body {
             match statement {
                 Statement::ImportDeclaration(import) => {
@@ -273,7 +274,11 @@ impl Modules<'_> {
                     }
                 }
                 Statement::VariableDeclaration(declaration) => {
+                    scope.require(declaration);
                     scope.declare(self, declaration, None);
+                }
+                Statement::ExpressionStatement(statement) => {
+                    commonjs.assign(&scope, self, &statement.expression);
                 }
                 Statement::ExportDeclaration(export) => {
                     if let oxc_ast::ast::Declaration::VariableDeclaration(declaration) =
@@ -329,8 +334,152 @@ impl Modules<'_> {
                 _ => {}
             }
         }
+        commonjs.finish(&mut exports);
         exports
     }
+}
+
+/// The exports of a `CommonJS` module. A property counts only when the module
+/// assigns it once, as anything assigned again may change after it is read.
+#[derive(Default)]
+struct CommonJs {
+    /// Assignments to each exported property anywhere in the module, `*` for
+    /// `module.exports` itself; `void 0` placeholders do not count
+    writes: FxHashMap<String, usize>,
+    exports: FxHashMap<String, Constant>,
+    whole: Option<Constant>,
+    es_module: bool,
+    seen: bool,
+}
+
+impl CommonJs {
+    fn new(program: &Program<'_>) -> Self {
+        let mut commonjs = Self::default();
+        commonjs.visit_program(program);
+        commonjs
+    }
+
+    fn assign(
+        &mut self,
+        scope: &ModuleScope<'_>,
+        modules: &mut Modules<'_>,
+        expression: &Expression<'_>,
+    ) {
+        if let Expression::CallExpression(call) = expression
+            && is_define_es_module(call)
+        {
+            self.es_module = true;
+            return;
+        }
+        let Expression::AssignmentExpression(assignment) = expression else {
+            return;
+        };
+        let Some(key) = assignment
+            .left
+            .as_simple_assignment_target()
+            .and_then(|target| target.as_member_expression())
+            .and_then(commonjs_target)
+        else {
+            return;
+        };
+        self.seen = true;
+        if key == "__esModule" {
+            self.es_module = true;
+            return;
+        }
+        if self.writes.get(&key) != Some(&1) {
+            return;
+        }
+        let Some(value) = scope.evaluate(modules, &assignment.right) else {
+            return;
+        };
+        if key == "*" {
+            self.whole = Some(value);
+        } else {
+            self.exports.insert(key, value);
+        }
+    }
+
+    fn finish(self, exports: &mut FxHashMap<String, Constant>) {
+        if !self.seen {
+            return;
+        }
+        let mut properties = FxHashMap::default();
+        if let Some(Constant::Object(object)) = &self.whole {
+            for (key, value) in object.iter() {
+                if !self.writes.contains_key(key) {
+                    properties.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        properties.extend(self.exports);
+        let default = if self.es_module {
+            properties.get("default").cloned()
+        } else {
+            match self.whole {
+                Some(Constant::Object(_)) | None => Some(Constant::Object(Rc::new(
+                    properties
+                        .clone()
+                        .into_iter()
+                        .filter(|(key, _)| key != "default")
+                        .collect(),
+                ))),
+                primitive => primitive,
+            }
+        };
+        exports.extend(properties);
+        if let Some(default) = default {
+            exports.insert("default".to_string(), default);
+        }
+    }
+}
+
+impl<'a> Visit<'a> for CommonJs {
+    fn visit_assignment_expression(&mut self, assignment: &oxc_ast::ast::AssignmentExpression<'a>) {
+        let mut value = &assignment.right;
+        while let Expression::AssignmentExpression(inner) = value {
+            value = &inner.right;
+        }
+        let placeholder = matches!(value, Expression::UnaryExpression(unary)
+            if unary.operator == oxc_syntax::operator::UnaryOperator::Void);
+        if !placeholder
+            && let Some(key) = assignment
+                .left
+                .as_simple_assignment_target()
+                .and_then(|target| target.as_member_expression())
+                .and_then(commonjs_target)
+        {
+            *self.writes.entry(key).or_default() += 1;
+        }
+        walk::walk_assignment_expression(self, assignment);
+    }
+}
+
+/// `exports.x` / `module.exports.x` -> `x`, `module.exports` -> `*`
+fn commonjs_target(member: &oxc_ast::ast::MemberExpression<'_>) -> Option<String> {
+    let key = member.static_property_name()?;
+    let object = member.object();
+    if matches!(object, Expression::Identifier(identifier) if identifier.name == "module") {
+        return (key == "exports").then(|| "*".to_string());
+    }
+    let is_exports = match object {
+        Expression::Identifier(identifier) => identifier.name == "exports",
+        Expression::StaticMemberExpression(inner) => {
+            inner.property.name == "exports"
+                && matches!(&inner.object, Expression::Identifier(identifier) if identifier.name == "module")
+        }
+        _ => false,
+    };
+    is_exports.then(|| key.to_string())
+}
+
+/// `Object.defineProperty(exports, '__esModule', ...)`
+fn is_define_es_module(call: &oxc_ast::ast::CallExpression<'_>) -> bool {
+    matches!(&call.callee, Expression::StaticMemberExpression(callee)
+        if callee.property.name == "defineProperty"
+            && matches!(&callee.object, Expression::Identifier(object) if object.name == "Object"))
+        && matches!(call.arguments.first(), Some(Argument::Identifier(target)) if target.name == "exports")
+        && matches!(call.arguments.get(1), Some(Argument::StringLiteral(key)) if key.value == "__esModule")
 }
 
 /// The top-level constants and imports of a module being read
@@ -341,6 +490,43 @@ struct ModuleScope<'p> {
 }
 
 impl ModuleScope<'_> {
+    /// `const x = require('m')` and `const { a, b: c } = require('m')`
+    fn require(&mut self, declaration: &oxc_ast::ast::VariableDeclaration<'_>) {
+        for declarator in &declaration.declarations {
+            let Some(Expression::CallExpression(call)) = &declarator.init else {
+                continue;
+            };
+            let (Expression::Identifier(callee), [Argument::StringLiteral(source)]) =
+                (&call.callee, call.arguments.as_slice())
+            else {
+                continue;
+            };
+            if callee.name != "require" {
+                continue;
+            }
+            let source = source.value.to_string();
+            match &declarator.id {
+                oxc_ast::ast::BindingPattern::BindingIdentifier(identifier) => {
+                    self.imports
+                        .insert(identifier.name.to_string(), (source, Imported::Namespace));
+                }
+                oxc_ast::ast::BindingPattern::ObjectPattern(pattern) => {
+                    for property in &pattern.properties {
+                        if let Some(key) = property.key.static_name()
+                            && let Some(local) = property.value.get_identifier_name()
+                        {
+                            self.imports.insert(
+                                local.to_string(),
+                                (source.clone(), Imported::Named(key.to_string())),
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn declare(
         &mut self,
         modules: &mut Modules<'_>,
