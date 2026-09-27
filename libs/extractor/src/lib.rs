@@ -11978,6 +11978,66 @@ export const darkTheme = createTheme(vars, {
 
     #[test]
     #[serial]
+    fn test_layer_record_places_every_declaration() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import { css } from '@devup-ui/react'
+const a = css({ '@layer': { base: {
+  color: cond ? 'red' : 'blue',
+  positioning: pos,
+  bg: { a: 'red', b: 'blue' }[key],
+  typography: typo,
+  width: w,
+  p: [1, 2],
+  '@layer': { inner: { m: 1 } },
+} } })
+",
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new()
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_vanilla_extract_layer_records() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "layers.css.ts",
+                r"import { layer, style, globalStyle } from '@vanilla-extract/css'
+const reset = layer('reset')
+export const components = layer('components')
+globalStyle('a', { color: 'blue', '@layer': { [reset]: { color: 'inherit', padding: 0 } } })
+export const button = style({ color: 'red', '@layer': { [components]: { color: 'green', padding: 4 } } })
+",
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::from([(
+                        "@vanilla-extract/css".to_string(),
+                        ImportAlias::NamedToNamed
+                    )])
+                }
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_vanilla_extract_layer() {
         reset_class_map();
         reset_file_map();
@@ -17788,6 +17848,90 @@ export const App = () => <><Global styles={{ body: { margin: '0px' } }} /><S /><
                         (
                             "@emotion/styled".to_string(),
                             ImportAlias::DefaultToNamed("styled".to_string())
+                        )
+                    ])
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
+    fn test_emotion_and_styled_components_object_styles() {
+        let aliases = HashMap::from([
+            ("@emotion/react".to_string(), ImportAlias::NamedToNamed),
+            (
+                "@emotion/styled".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+            (
+                "styled-components".to_string(),
+                ImportAlias::DefaultToNamed("styled".to_string()),
+            ),
+        ]);
+        for code in [
+            r"import styled from '@emotion/styled';
+import { css, keyframes, Global } from '@emotion/react';
+export const a = css({ padding: 8, lineHeight: 1.5, m: 2 }, [{ margin: 1 }, null, undefined, false]);
+export const B = styled('div', { shouldForwardProp: (p) => p !== 'x' })({ left: 3 });
+export const C = styled('span', { label: 'c' })`color: red;`;
+export const D = styled.div([{ top: 1, color: 'red', '&:hover': { margin: 5 } }, { top: 3, '&:hover': { padding: 6 } }]);
+export const E = styled.div({ bottom: 2 }, cond && { right: 4 });
+export const F = styled('p', { color: 'blue' });
+export const spin = keyframes({ to: { width: 10 } });
+export const App = () => <><Global styles={{ body: { margin: 8 } }} /><Other styles={{ top: 1 }} /><Global css={{ top: 2 }} /></>;",
+            r"import * as Styled from 'styled-components';
+import { css } from 'styled-components';
+export const G = Styled.div.attrs({ type: 'button' }).withConfig({ displayName: 'g' })({ right: 7 });
+export const H = Styled(Base).withConfig({ displayName: 'h' })({ left: 9 });
+export const I = Styled.div({ width: 1 });
+export const j = css({ height: 2 });",
+        ] {
+            reset_class_map();
+            reset_file_map();
+            assert_debug_snapshot!(ToBTreeSet::from(
+                extract(
+                    "test.tsx",
+                    code,
+                    ExtractOption {
+                        package: "@devup-ui/react".to_string(),
+                        css_dir: "@devup-ui/react".to_string(),
+                        single_css: true,
+                        import_main_css: false,
+                        import_aliases: aliases.clone(),
+                    },
+                )
+                .unwrap()
+            ));
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_composed_css_keeps_composed_classes() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import { style } from '@vanilla-extract/css';
+import { css } from '@emotion/react';
+const base = style({ color: 'red' });
+export const a = style([base, { margin: 2 }]);
+export const b = css(base, 'extra', { padding: 1 });
+export const c = css([base]);
+export const d = style([cond && base]);",
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::from([
+                        ("@emotion/react".to_string(), ImportAlias::NamedToNamed),
+                        (
+                            "@vanilla-extract/css".to_string(),
+                            ImportAlias::NamedToNamed
                         )
                     ])
                 },

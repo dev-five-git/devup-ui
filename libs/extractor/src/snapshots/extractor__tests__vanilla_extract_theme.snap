@@ -6,12 +6,12 @@ ToBTreeSet {
     styles: {
         Static(
             ExtractStaticStyle {
-                property: "--color-brand-style_0-0",
+                property: "--color-brand-0-1",
                 value: "blue",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_themeClass",
+                        ".theme-0-0",
                         "theme.css.ts",
                     ),
                 ),
@@ -23,12 +23,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--color-text-style_0-1",
+                property: "--color-text-0-2",
                 value: "black",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_themeClass",
+                        ".theme-0-0",
                         "theme.css.ts",
                     ),
                 ),
@@ -40,12 +40,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--space-large-style_0-4",
+                property: "--space-large-0-5",
                 value: "16px",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_themeClass",
+                        ".theme-0-0",
                         "theme.css.ts",
                     ),
                 ),
@@ -57,12 +57,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--space-medium-style_0-3",
+                property: "--space-medium-0-4",
                 value: "8px",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_themeClass",
+                        ".theme-0-0",
                         "theme.css.ts",
                     ),
                 ),
@@ -74,12 +74,12 @@ ToBTreeSet {
         ),
         Static(
             ExtractStaticStyle {
-                property: "--space-small-style_0-2",
+                property: "--space-small-0-3",
                 value: "4px",
                 level: 0,
                 selector: Some(
                     Global(
-                        ".f0_themeClass",
+                        ".theme-0-0",
                         "theme.css.ts",
                     ),
                 ),
@@ -92,7 +92,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--color-text-style_0-1)",
+                value: "var(--color-text-0-2)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -102,7 +102,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "padding",
-                value: "var(--space-medium-style_0-3)",
+                value: "var(--space-medium-0-4)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -110,5 +110,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\nexport const [themeClass, vars] = [\"f0_themeClass\", {\n\t\"color\": {\n\t\t\"brand\": \"var(--color-brand-style_0-0)\",\n\t\t\"text\": \"var(--color-text-style_0-1)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-style_0-2)\",\n\t\t\"medium\": \"var(--space-medium-style_0-3)\",\n\t\t\"large\": \"var(--space-large-style_0-4)\"\n\t}\n}];\n;\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\n;\nexport const themeClass = \"theme-0-0\";\nexport const vars = {\n\t\"color\": {\n\t\t\"brand\": \"var(--color-brand-0-1)\",\n\t\t\"text\": \"var(--color-text-0-2)\"\n\t},\n\t\"space\": {\n\t\t\"small\": \"var(--space-small-0-3)\",\n\t\t\"medium\": \"var(--space-medium-0-4)\",\n\t\t\"large\": \"var(--space-large-0-5)\"\n\t}\n};\n",
 }

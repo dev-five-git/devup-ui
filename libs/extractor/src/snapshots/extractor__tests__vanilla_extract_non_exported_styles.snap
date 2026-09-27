@@ -24,6 +24,12 @@ ToBTreeSet {
                 layer: None,
             },
         ),
+        Css(
+            ExtractCss {
+                css: "@layer internal-0-2;",
+                file: "mixed-exports.css.ts",
+            },
+        ),
         Keyframes(
             ExtractKeyframes {
                 keyframes: {
@@ -51,5 +57,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nconst internalStyle = \"a\";\nexport const publicStyle = \"b\";\nconst internalKeyframe = \"c\";\nconst internalVar = \"--var-0\";\nconst internalContainer = \"__container_0__\";\nconst internalLayer = \"internal\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\n;\nconst internalKeyframe = \"a\";\nconst internalStyle = \"b\";\nexport const publicStyle = \"c\";\n",
 }

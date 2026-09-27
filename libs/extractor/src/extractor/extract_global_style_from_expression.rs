@@ -10,7 +10,8 @@ use crate::{
     extractor::{
         GlobalExtractResult,
         extract_style_from_expression::{
-            LiteralHandling, at_rule_record_kind, extract_style_from_expression,
+            LiteralHandling, at_rule_record_kind, extract_style_from_expression, place_in_layer,
+            yield_typography,
         },
     },
     utils::{
@@ -248,23 +249,17 @@ fn collect_global_styles<'a>(
                                 })
                                 .unwrap_or_default();
 
-                            // Filter out @layer property from styles and set layer on remaining styles
-                            for mut style in extracted.styles {
-                                if let ExtractStyleProp::Static(ExtractStyleValue::Static(
-                                    ref mut st,
-                                )) = style
-                                {
-                                    // Skip @layer property - it's not a CSS property, set layer on other styles
-                                    if st.property() != "@layer" {
-                                        if let Some(ref layer) = layer_name {
-                                            st.layer = Some(layer.to_string());
-                                        }
-                                        styles.push(style);
-                                    }
-                                } else {
-                                    styles.push(style);
-                                }
+                            // `@layer` names the layer of every other declaration,
+                            // responsive and nested ones included
+                            let mut extracted = extracted.styles;
+                            extracted.retain(|style| {
+                                !matches!(style, ExtractStyleProp::Static(ExtractStyleValue::Static(st)) if st.property() == "@layer")
+                            });
+                            if let Some(layer) = layer_name {
+                                place_in_layer(&mut extracted, &layer);
                             }
+                            yield_typography(&mut extracted);
+                            styles.extend(extracted);
                         }
                     }
                 }

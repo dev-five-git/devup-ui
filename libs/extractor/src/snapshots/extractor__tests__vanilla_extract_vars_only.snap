@@ -7,7 +7,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "color",
-                value: "var(--var-0,blue)",
+                value: "var(--var-0-0,blue)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -17,7 +17,7 @@ ToBTreeSet {
         Static(
             ExtractStaticStyle {
                 property: "font-size",
-                value: "var(--var-1)",
+                value: "var(--var-0-1)",
                 level: 0,
                 selector: None,
                 style_order: None,
@@ -25,5 +25,5 @@ ToBTreeSet {
             },
         ),
     },
-    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\nexport const colorVar = \"--var-0\";\nexport const sizeVar = \"--var-1\";\n",
+    code: "import \"@devup-ui/react/devup-ui.css\";\nexport const box = \"a b\";\nexport const colorVar = \"var(--var-0-0)\";\nexport const sizeVar = \"var(--var-0-1)\";\n",
 }
