@@ -78,6 +78,24 @@ const el = <div {...{ className: 'c d' }} />
 
 `createThemeContract()` produces the same references without publishing a `:root` block, and `defineConsts()` inlines its values into the `create()` calls that read them.
 
+As StyleX requires, variables usually live in a `.stylex.ts` file and are imported where they are used. Imports resolve like the bundler resolves them, and the importing file reads the same custom properties, theme classes and constants that the defining file generates:
+
+```tsx
+// tokens.stylex.ts
+export const colors = stylex.defineVars({ primary: 'blue' })
+export const spacing = stylex.defineConsts({ gap: '8px' })
+
+// Button.tsx
+import { colors, spacing } from './tokens.stylex'
+
+const dark = stylex.createTheme(colors, { primary: 'navy' })
+const styles = stylex.create({
+  box: { color: colors.primary, marginTop: spacing.gap },
+})
+```
+
+A value in `create()` that is only known at runtime, such as a variable or a function call, is a build error naming it. Pass runtime values through a dynamic style (`(color) => ({ color })`), which becomes a CSS variable instead.
+
 ## At-rules
 
 ```tsx

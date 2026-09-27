@@ -233,6 +233,13 @@ const example = <Box {...cardStyles} />
 
 `css()`, `globalCss()` and `keyframes()` have no element to set a CSS variable on, so their values must be known at build time — literals, theme tokens or constants. A value known only at runtime is a build error naming it; for a runtime value, use a style prop (`<Box as={Component} w={width} />`).
 
+Build errors point at the code they are about, and a file with several problems reports them all at once, in source order:
+
+```
+src/App.tsx:6:18: `css()` cannot use `width` at build time: its values must be literals, theme tokens or imported constants
+src/App.tsx:9:27: `globalCss()` cannot use `color` at build time: its values must be literals, theme tokens or imported constants
+```
+
 ## globalCss() API
 
 Define global styles that are extracted at build time.
