@@ -241,7 +241,12 @@ pub fn execute_stylesheet(
 ) -> Result<(CollectedStyles, StylesheetImports), String> {
     let _evaluating = Evaluating::enter(filename);
     let mut loader = ModuleLoader::new(resolver, option);
-    let script = module_script(&strip_typescript(code), filename, &mut loader, true)?;
+    let script = module_script(
+        &strip_typescript(code, filename),
+        filename,
+        &mut loader,
+        true,
+    )?;
     let file_num = get_file_num_by_filename(filename);
     let collector: StyleCollector = Rc::new(RefCell::new(Collector {
         file_num,
@@ -518,11 +523,10 @@ fn replace_placeholders(
 }
 
 /// Convert TypeScript to JavaScript using Oxc Transformer
-pub(crate) fn strip_typescript(code: &str) -> String {
+pub(crate) fn strip_typescript(code: &str, filename: &str) -> String {
     let allocator = Allocator::default();
-    let mut program = Parser::new(&allocator, code, SourceType::ts())
-        .parse()
-        .program;
+    let source_type = SourceType::from_path(filename).unwrap_or_else(|_| SourceType::ts());
+    let mut program = Parser::new(&allocator, code, source_type).parse().program;
     let scoping = SemanticBuilder::new()
         .build(&program)
         .semantic
@@ -1434,18 +1438,26 @@ mod tests {
             import_error("import { b } from './missing'\nexport const x = b", &[]),
             "Cannot resolve './missing' from '/a.css.ts'"
         );
-        assert_eq!(
-            import_error(
+        let cycle_error = |code, files| {
+            let error = import_error(code, files);
+            assert!(
+                error.contains("before its initialization: it is part of an import cycle"),
+                "{error}"
+            );
+            error
+        };
+        assert!(
+            cycle_error(
                 "import { b } from './b'\nexport const x = b",
                 &[
                     ("/b", "import { c } from './c'\nexport const b = c"),
                     ("/c", "import { b } from './b'\nexport const c = b"),
                 ]
-            ),
-            "Circular import of '/b'"
+            )
+            .contains("Cannot access 'b' of '/b'")
         );
-        assert_eq!(
-            import_error(
+        assert!(
+            cycle_error(
                 "import { d } from './d.css'\nexport const x = d",
                 &[
                     ("/a.css.ts", ""),
@@ -1454,11 +1466,32 @@ mod tests {
                         "import { style } from '@devup-ui/react'\nimport { a } from './a.css.ts'\nexport const d = style({ color: a })"
                     ),
                 ]
+            )
+            .contains("Cannot access 'a' of '/a.css.ts'")
+        );
+        // Cycles read only once both sides are evaluated work as in ES modules
+        assert_eq!(
+            import_error(
+                "import { style } from '@devup-ui/react'\nimport { both, reexported } from './b'\nimport { d, withA } from './d.css'\nexport const x = style([d, { color: both, background: reexported }])\nexport const y = typeof withA",
+                &[
+                    (
+                        "/b",
+                        "import { c, lazy } from './c'\nexport const b = 'blue'\nexport const both = c()\nexport { lazy as reexported }"
+                    ),
+                    (
+                        "/c",
+                        "import { b } from './b'\nimport * as all from './b'\nexport const c = () => b + all.b.length\nexport const lazy = 'red'\nexport { b as again }"
+                    ),
+                    ("/a.css.ts", ""),
+                    (
+                        "/d.css.ts",
+                        "import { style } from '@devup-ui/react'\nimport { x } from './a.css.ts'\nexport const d = style({ color: 'green' })\nexport const withA = () => ({ x })"
+                    ),
+                ]
             ),
-            "Circular import of '/a.css.ts'"
+            ""
         );
     }
-
     fn generate_with(code: &str, keyframes_names: &[(&str, &str)]) -> String {
         reset_file_map();
         let collected = execute_vanilla_extract(
