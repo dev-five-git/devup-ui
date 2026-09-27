@@ -6,8 +6,8 @@ use oxc_allocator::{Allocator, CloneIn, GetAllocator};
 use oxc_ast::{
     ast::{
         Argument, CallExpression, Expression, ExpressionStatement, IdentifierName,
-        JSXAttributeValue, ObjectPropertyKind, Program, PropertyKey, Statement,
-        StaticMemberExpression,
+        JSXAttributeValue, ObjectExpression, ObjectProperty, ObjectPropertyKind, Program,
+        PropertyKey, Statement, StaticMemberExpression,
     },
     builder::AstBuilder,
 };
@@ -500,46 +500,234 @@ pub(super) fn style_arguments<'a>(
     {
         return None;
     }
-    let mut objects = Vec::new();
+    let mut parts = Vec::new();
     let mut classes = Vec::new();
     for argument in arguments {
-        collect_style_parts(argument.as_expression()?, &mut objects, &mut classes)?;
+        collect_style_parts(
+            ast_builder,
+            argument.as_expression()?,
+            &mut parts,
+            &mut classes,
+        )?;
     }
     let mut merged = oxc_allocator::Vec::new_in(ast_builder);
-    for object in objects {
-        merge_style_properties(ast_builder, &mut merged, &object.properties);
+    for part in parts {
+        match part {
+            StylePart::Rules(object) => {
+                merge_style_properties(ast_builder, &mut merged, &object.properties);
+            }
+            StylePart::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => merge_conditional_properties(
+                ast_builder,
+                &mut merged,
+                test,
+                consequent.map_or(&[], |object| &object.properties),
+                alternate.map_or(&[], |object| &object.properties),
+            )?,
+        }
     }
     Some(StyleArguments {
-        classes: classes
-            .into_iter()
-            .map(|class| class.clone_in(ast_builder.allocator()))
-            .collect(),
+        classes,
         rules: Expression::new_object_expression(SPAN, merged, ast_builder),
     })
 }
 
-fn collect_style_parts<'b, 'a>(
-    expression: &'b Expression<'a>,
-    objects: &mut Vec<&'b oxc_ast::ast::ObjectExpression<'a>>,
-    classes: &mut Vec<&'b Expression<'a>>,
-) -> Option<()> {
+enum StylePart<'b, 'a> {
+    Rules(&'b ObjectExpression<'a>),
+    Conditional {
+        test: &'b Expression<'a>,
+        consequent: Option<&'b ObjectExpression<'a>>,
+        alternate: Option<&'b ObjectExpression<'a>>,
+    },
+}
+
+enum Branch<'b, 'a> {
+    Empty,
+    Rules(&'b ObjectExpression<'a>),
+    Class(&'b Expression<'a>),
+}
+
+fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
+    let expression = unwrap_syntax_only(expression);
     match expression {
-        Expression::ObjectExpression(object) => objects.push(object),
-        Expression::ArrayExpression(array) => {
-            for element in &array.elements {
-                collect_style_parts(element.as_expression()?, objects, classes)?;
-            }
-        }
-        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => {}
-        Expression::Identifier(identifier) if identifier.name == "undefined" => {}
+        Expression::ObjectExpression(object) => Some(Branch::Rules(object)),
+        Expression::NullLiteral(_) | Expression::BooleanLiteral(_) => Some(Branch::Empty),
+        Expression::Identifier(identifier) if identifier.name == "undefined" => Some(Branch::Empty),
         Expression::Identifier(_)
         | Expression::StaticMemberExpression(_)
         | Expression::ComputedMemberExpression(_)
         | Expression::StringLiteral(_)
-        | Expression::TemplateLiteral(_) => classes.push(expression),
-        _ => return None,
+        | Expression::TemplateLiteral(_) => Some(Branch::Class(expression)),
+        _ => None,
+    }
+}
+
+fn collect_style_parts<'b, 'a>(
+    ast_builder: &AstBuilder<'a>,
+    expression: &'b Expression<'a>,
+    parts: &mut Vec<StylePart<'b, 'a>>,
+    classes: &mut Vec<Expression<'a>>,
+) -> Option<()> {
+    let (test, consequent, alternate) = match unwrap_syntax_only(expression) {
+        Expression::ArrayExpression(array) => {
+            for element in &array.elements {
+                collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+            }
+            return Some(());
+        }
+        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+            (&logical.left, branch(&logical.right)?, Branch::Empty)
+        }
+        Expression::ConditionalExpression(conditional) => (
+            &conditional.test,
+            branch(&conditional.consequent)?,
+            branch(&conditional.alternate)?,
+        ),
+        _ => {
+            match branch(expression)? {
+                Branch::Rules(object) => parts.push(StylePart::Rules(object)),
+                Branch::Class(class) => classes.push(class.clone_in(ast_builder.allocator())),
+                Branch::Empty => {}
+            }
+            return Some(());
+        }
+    };
+    let class = |branch: &Branch<'b, 'a>| match branch {
+        Branch::Class(class) => Some(class.clone_in(ast_builder.allocator())),
+        _ => None,
+    };
+    let rules = |branch: &Branch<'b, 'a>| match branch {
+        Branch::Rules(object) => Some(*object),
+        _ => None,
+    };
+    let (class_true, class_false) = (class(&consequent), class(&alternate));
+    if class_true.is_some() || class_false.is_some() {
+        let empty = || Expression::new_string_literal(SPAN, "", None, ast_builder);
+        classes.push(Expression::new_conditional_expression(
+            SPAN,
+            test.clone_in(ast_builder.allocator()),
+            class_true.unwrap_or_else(empty),
+            class_false.unwrap_or_else(empty),
+            ast_builder,
+        ));
+    }
+    let (rules_true, rules_false) = (rules(&consequent), rules(&alternate));
+    if rules_true.is_some() || rules_false.is_some() {
+        parts.push(StylePart::Conditional {
+            test,
+            consequent: rules_true,
+            alternate: rules_false,
+        });
     }
     Some(())
+}
+
+/// Merge `test ? consequent : alternate` into `merged` one property at a time,
+/// so each property becomes `test ? value : fallback` over what came before.
+/// A class per branch would not do: which of two atomic classes wins depends on
+/// the stylesheet order, not on the order they were composed in.
+fn merge_conditional_properties<'a>(
+    ast_builder: &AstBuilder<'a>,
+    merged: &mut oxc_allocator::Vec<'a, ObjectPropertyKind<'a>>,
+    test: &Expression<'a>,
+    consequent: &[ObjectPropertyKind<'a>],
+    alternate: &[ObjectPropertyKind<'a>],
+) -> Option<()> {
+    let mut keys: Vec<Cow<'_, str>> = Vec::new();
+    for property in consequent.iter().chain(alternate) {
+        let key = static_property(property)?.0;
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    for key in keys {
+        let previous = merged
+            .iter()
+            .position(|property| static_property(property).is_some_and(|(k, _)| k == key))
+            .map(|index| merged.remove(index));
+        let fallback = previous
+            .as_ref()
+            .and_then(static_property)
+            .map(|(_, property)| &property.value);
+        let (when_true, when_false) = (
+            find_property(consequent, &key),
+            find_property(alternate, &key),
+        );
+        let source = when_true.or(when_false)?;
+        let when_true = when_true.map(|property| &property.value);
+        let when_false = when_false.map(|property| &property.value);
+        let value = if [when_true, when_false, fallback]
+            .iter()
+            .any(|value| matches!(value, Some(Expression::ObjectExpression(_))))
+        {
+            let mut nested = oxc_allocator::Vec::new_in(ast_builder);
+            merge_style_properties(ast_builder, &mut nested, object_properties(fallback)?);
+            merge_conditional_properties(
+                ast_builder,
+                &mut nested,
+                test,
+                object_properties(when_true)?,
+                object_properties(when_false)?,
+            )?;
+            Expression::new_object_expression(SPAN, nested, ast_builder)
+        } else {
+            let (when_true, when_false) = (when_true.or(fallback), when_false.or(fallback));
+            Expression::new_conditional_expression(
+                SPAN,
+                test.clone_in(ast_builder.allocator()),
+                value_or_undefined(ast_builder, when_true),
+                value_or_undefined(ast_builder, when_false),
+                ast_builder,
+            )
+        };
+        let mut property = source.clone_in(ast_builder.allocator());
+        property.value = value;
+        merged.push(ObjectPropertyKind::ObjectProperty(property));
+    }
+    Some(())
+}
+
+fn find_property<'b, 'a>(
+    properties: &'b [ObjectPropertyKind<'a>],
+    key: &str,
+) -> Option<&'b oxc_allocator::Box<'a, ObjectProperty<'a>>> {
+    properties
+        .iter()
+        .filter_map(static_property)
+        .find_map(|(k, property)| (k == key).then_some(property))
+}
+
+fn object_properties<'b, 'a>(
+    value: Option<&'b Expression<'a>>,
+) -> Option<&'b [ObjectPropertyKind<'a>]> {
+    match value {
+        None => Some(&[]),
+        Some(Expression::ObjectExpression(object)) => Some(&object.properties),
+        Some(_) => None,
+    }
+}
+
+fn value_or_undefined<'a>(
+    ast_builder: &AstBuilder<'a>,
+    value: Option<&Expression<'a>>,
+) -> Expression<'a> {
+    value.map_or_else(
+        || Expression::new_identifier(SPAN, "undefined", ast_builder),
+        |value| value.clone_in(ast_builder.allocator()),
+    )
+}
+fn static_property<'b, 'a>(
+    property: &'b ObjectPropertyKind<'a>,
+) -> Option<(Cow<'b, str>, &'b oxc_allocator::Box<'a, ObjectProperty<'a>>)> {
+    match property {
+        ObjectPropertyKind::ObjectProperty(property) if !property.computed => {
+            Some((get_str_by_property_key(&property.key)?, property))
+        }
+        _ => None,
+    }
 }
 
 fn merge_style_properties<'a>(
@@ -702,7 +890,25 @@ mod tests {
         assert_eq!(compose("f({ a: 1 })"), None);
         assert_eq!(compose("f(x)"), None);
         assert_eq!(compose("f(...x)"), None);
-        assert_eq!(compose("f([{ a: 1 }, [cond && x]])"), None);
+        assert_eq!(
+            compose("f([{ a: 1 }, [cond && x]])"),
+            Some((vec!["cond?x:``;".to_string()], "({a:1});".to_string()))
+        );
+        assert_eq!(
+            compose(
+                "f({ a: 1, b: { c: 1 } }, cond && { a: 2, b: { d: 2 } }, flag ? { e: 1 } : null, (on ? x : { a: 3 }), off ? null : undefined)"
+            ),
+            Some((
+                vec!["on?x:``;".to_string()],
+                "({b:{c:1,d:cond?2:undefined},e:flag?1:undefined,a:on?cond?2:1:3});".to_string()
+            ))
+        );
+        assert_eq!(compose("f({ a: 1 }, cond && y())"), None);
+        assert_eq!(compose("f({ a: 1 }, flag ? y() : null)"), None);
+        assert_eq!(compose("f({ a: 1 }, flag ? null : y())"), None);
+        assert_eq!(compose("f({ a: 1 }, cond && { [k]: 1 })"), None);
+        assert_eq!(compose("f({ b: 1 }, cond && { b: { c: 1 } })"), None);
+        assert_eq!(compose("f({ a: 1 }, cond || { a: 2 })"), None);
         assert_eq!(
             compose(
                 "f([{ a: 1, b: { c: 1 }, d: { e: 1 } }, null, undefined, false, [{ a: 2, b: { f: 2 }, d: 3, [g]: 1, ...h, 'i': 1 }]], { [g]: 2, i: 2 })"

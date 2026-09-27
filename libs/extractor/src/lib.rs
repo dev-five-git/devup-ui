@@ -17984,6 +17984,36 @@ export const d = style([cond && base]);",
 
     #[test]
     #[serial]
+    fn test_conditional_composition() {
+        reset_class_map();
+        reset_file_map();
+        assert_debug_snapshot!(ToBTreeSet::from(
+            extract(
+                "test.tsx",
+                r"import { css } from '@devup-ui/react';
+export const a = css({ color: 'red', p: 1 }, cond && { color: 'blue', _hover: { color: 'green' } });
+export const b = css([{ m: 1 }, flag ? { m: 2 } : { m: 3, bg: 'red' }]);
+export const c = css({ color: 'red' }, cond && other, flag ? 'x' : null, [undefined, false]);
+export const d = css({ _hover: { color: 'red' } }, cond && { _hover: { bg: 'blue' } });
+export const e = css({ color: 'red' }, flag ? other : { color: 'blue' });
+export const f = css({ _hover: 'x' }, cond && { _hover: { color: 'blue' } });
+export const g = css({ color: 'red' }, cond && { [key]: 'blue' });
+export const h = css({ color: 'red' }, cond || { color: 'blue' });
+export const i = css({ color: 'red' }, cond ? null : undefined);",
+                ExtractOption {
+                    package: "@devup-ui/react".to_string(),
+                    css_dir: "@devup-ui/react".to_string(),
+                    single_css: true,
+                    import_main_css: false,
+                    import_aliases: HashMap::new(),
+                },
+            )
+            .unwrap()
+        ));
+    }
+
+    #[test]
+    #[serial]
     fn test_devup_props_typescript_wrappers() {
         assert_debug_snapshot!(ToBTreeSet::from(extract_tsx(
             r"import { Box } from '@devup-ui/react';
