@@ -133,6 +133,7 @@ describe('coordinator', () => {
       map: '{"version":3}',
       cssFile: 'devup-ui-1.css',
       updatedBaseStyle: true,
+      dependencies: ['src/tokens.ts'],
       free: mock(),
       [Symbol.dispose]: mock(),
     }
@@ -172,6 +173,7 @@ describe('coordinator', () => {
     expect(data.map).toBe('{"version":3}')
     expect(data.cssFile).toBe('devup-ui-1.css')
     expect(data.updatedBaseStyle).toBe(true)
+    expect(data.dependencies).toEqual(['src/tokens.ts'])
 
     // Verify WASM was called
     expect(codeExtractSpy).toHaveBeenCalledTimes(1)

@@ -74,6 +74,8 @@ export interface PrewarmedOutput {
   map?: string
   source: string
   updatedBaseStyle: boolean
+  /** Files the extraction read through the module resolver */
+  dependencies?: string[]
 }
 
 interface ExtractOutputSnapshot extends Omit<PrewarmedOutput, 'source'> {
@@ -91,6 +93,7 @@ export function takeExtractOutput(
       cssFile: output.cssFile,
       map: output.map,
       updatedBaseStyle: output.updatedBaseStyle,
+      dependencies: output.dependencies,
     }
   } finally {
     output.free()
