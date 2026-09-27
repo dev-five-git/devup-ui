@@ -11,6 +11,7 @@ use css::optimize_value::optimize_value;
 use css::sheet_to_variable_name;
 use css::style_selector::StyleSelector;
 use oxc_ast::ast::{BindingPattern, Expression, ObjectPropertyKind};
+use oxc_span::GetSpan;
 use rustc_hash::FxHashMap;
 
 use crate::utils::{
@@ -106,7 +107,7 @@ pub fn extract_stylex_namespace_styles<'a>(
     expression: &mut Expression<'a>,
     keyframe_names: &FxHashMap<String, String>,
     var_refs: &FxHashMap<String, String>,
-    errors: &mut Vec<String>,
+    errors: &mut Vec<(u32, String)>,
 ) -> Vec<(
     String,
     Vec<ExtractStyleProp<'a>>,
@@ -292,9 +293,9 @@ pub fn extract_stylex_namespace_styles<'a>(
                 continue;
             } else {
                 if !matches!(&style_prop.value, Expression::NullLiteral(_)) {
-                    errors.push(runtime_value_error(
-                        "stylex.create",
-                        &readable_code(&style_prop.value),
+                    errors.push((
+                        style_prop.value.span().start,
+                        runtime_value_error("stylex.create", &readable_code(&style_prop.value)),
                     ));
                 }
                 continue;

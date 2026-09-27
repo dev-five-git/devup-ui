@@ -22,7 +22,10 @@ use crate::extractor::{
 };
 use crate::gen_class_name::{gen_class_names, merge_expression_for_class_name};
 use crate::prop_modify_utils::{convert_class_name, modify_prop_object, modify_props};
-use crate::stylex::{StylexDynamicInfo, StylexFunction, StylexNamespaceValue, css_variable_block};
+use crate::stylex::{
+    StylexDynamicInfo, StylexFunction, StylexNamespaceValue, create_theme_class,
+    css_variable_block, define_vars_variable,
+};
 use crate::util_type::UtilType;
 use crate::{ExtractStyleProp, ExtractStyleValue};
 use css::disassemble_property;
@@ -55,7 +58,7 @@ use crate::utils::{
     unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 
@@ -87,11 +90,12 @@ pub struct DevupVisitor<'a> {
     split_filename: Option<String>,
     pub css_files: Vec<String>,
     pub styles: FxHashSet<ExtractStyleValue>,
-    /// Styles the file writes that cannot be extracted at build time
-    pub errors: Vec<String>,
+    /// Styles the file writes that cannot be extracted at build time, by the
+    /// offset of the code each is about
+    pub errors: Vec<(u32, String)>,
     styled_imports: FxHashSet<String>,
-    /// Tracked `StyleX` default/namespace import name (e.g., `stylex` from `import stylex from '...'`)
-    stylex_import: Option<String>,
+    /// Tracked `StyleX` default/namespace import names (e.g., `stylex` from `import stylex from '...'`)
+    stylex_imports: FxHashSet<String>,
     /// Tracked `StyleX` named imports (e.g., `create` from `import { create } from '...'`)
     stylex_named_imports: FxHashMap<String, StylexFunction>,
     /// Pending `StyleX` namespace map from the most recent `stylex.create()` call.
@@ -152,7 +156,7 @@ impl<'a> DevupVisitor<'a> {
             util_imports: FxHashMap::default(),
             split_filename,
             styled_imports: FxHashSet::default(),
-            stylex_import: None,
+            stylex_imports: FxHashSet::default(),
             stylex_named_imports: FxHashMap::default(),
             global_style_components: FxHashSet::default(),
             stylex_var_refs: FxHashMap::default(),
@@ -174,10 +178,9 @@ impl<'a> DevupVisitor<'a> {
     /// Check if a callee expression is a `stylex.create(...)` or named `create(...)` call.
     fn is_stylex_create_call(&self, callee: &Expression) -> bool {
         // Check namespace/default call: stylex.create(...)
-        if let Some(stylex_name) = &self.stylex_import
-            && let Expression::StaticMemberExpression(member) = callee
+        if let Expression::StaticMemberExpression(member) = callee
             && let Expression::Identifier(ident) = &member.object
-            && ident.name.as_str() == stylex_name.as_str()
+            && self.stylex_imports.contains(ident.name.as_str())
             && member.property.name.as_str() == "create"
         {
             return true;
@@ -199,10 +202,9 @@ impl<'a> DevupVisitor<'a> {
     /// (`class`); everything else about the two calls is identical.
     fn stylex_class_attribute(&self, callee: &Expression) -> Option<&'static str> {
         // Check namespace/default call: stylex.props(...)
-        if let Some(stylex_name) = &self.stylex_import
-            && let Expression::StaticMemberExpression(member) = callee
+        if let Expression::StaticMemberExpression(member) = callee
             && let Expression::Identifier(ident) = &member.object
-            && ident.name.as_str() == stylex_name.as_str()
+            && self.stylex_imports.contains(ident.name.as_str())
         {
             return match member.property.name.as_str() {
                 "props" => Some("className"),
@@ -219,6 +221,23 @@ impl<'a> DevupVisitor<'a> {
             };
         }
         None
+    }
+
+    /// `StyleX` variables and themes the program imports from other modules,
+    /// by the name it binds them to
+    pub fn import_stylex(
+        &mut self,
+        vars: FxHashMap<String, FxHashMap<String, String>>,
+        themes: FxHashMap<String, String>,
+    ) {
+        for (name, contract) in vars {
+            for (key, variable) in &contract {
+                self.stylex_var_refs
+                    .insert(format!("{name}.{key}"), format!("var({variable})"));
+            }
+            self.stylex_var_names.insert(name, contract);
+        }
+        self.stylex_theme_classes.extend(themes);
     }
 
     fn string_property(&self, key: &str, value: &str) -> ObjectPropertyKind<'a> {
@@ -247,10 +266,9 @@ impl<'a> DevupVisitor<'a> {
     /// Check if a callee resolves to the given `StyleX` API, through either the
     /// namespace form (`stylex.defineVars`) or a named import.
     fn is_stylex_call(&self, callee: &Expression, function: &StylexFunction) -> bool {
-        if let Some(stylex_name) = &self.stylex_import
-            && let Expression::StaticMemberExpression(member) = callee
+        if let Expression::StaticMemberExpression(member) = callee
             && let Expression::Identifier(ident) = &member.object
-            && ident.name.as_str() == stylex_name.as_str()
+            && self.stylex_imports.contains(ident.name.as_str())
         {
             return StylexFunction::from_export_name(member.property.name.as_str())
                 .is_some_and(|found| &found == function);
@@ -263,10 +281,9 @@ impl<'a> DevupVisitor<'a> {
 
     /// Check if a callee is `stylex.keyframes()` or named `keyframes()` call.
     fn is_stylex_keyframes_call(&self, callee: &Expression) -> bool {
-        if let Some(stylex_name) = &self.stylex_import
-            && let Expression::StaticMemberExpression(member) = callee
+        if let Expression::StaticMemberExpression(member) = callee
             && let Expression::Identifier(ident) = &member.object
-            && ident.name.as_str() == stylex_name.as_str()
+            && self.stylex_imports.contains(ident.name.as_str())
             && member.property.name.as_str() == "keyframes"
         {
             return true;
@@ -745,14 +762,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if is_styled {
-                let (result, new_expr, error) = extract_style_from_styled(
+                let (result, new_expr, errors) = extract_style_from_styled(
                     &self.ast,
                     it,
                     self.split_filename.as_deref(),
                     &self.imports,
                     &attrs,
                 );
-                self.errors.extend(error);
+                self.errors.extend(errors);
                 self.styles.extend(
                     result
                         .styles
@@ -913,13 +930,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 if publishes_values && value.is_none() {
                     continue;
                 }
-                let variable = format!(
-                    "--{}",
-                    keyframes_to_keyframes_name(
-                        &format!("sxv-{}-{key}", self.filename),
-                        self.split_filename.as_deref(),
-                    )
-                );
+                let variable =
+                    define_vars_variable(&self.filename, &key, self.split_filename.as_deref());
                 if let Some(value) = value {
                     assignments.push((variable.clone(), value.into_owned()));
                 }
@@ -956,8 +968,9 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     Some((contract.get(&key)?.clone(), value.into_owned()))
                 })
                 .collect();
-            let class_name = keyframes_to_keyframes_name(
-                &format!("sxt-{}-{}", self.filename, contract_ident.name),
+            let class_name = create_theme_class(
+                &self.filename,
+                &contract_ident.name,
                 self.split_filename.as_deref(),
             );
             if !assignments.is_empty() {
@@ -1031,8 +1044,10 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 runtime_value,
             } = extract_keyframes_from_expression(&self.ast, arg);
             if let Some(value) = runtime_value {
-                self.errors
-                    .push(runtime_value_error("stylex.keyframes", &value));
+                self.errors.push((
+                    call.span.start,
+                    runtime_value_error("stylex.keyframes", &value),
+                ));
             }
             let name =
                 style_property_into_string(keyframes.extract(self.split_filename.as_deref()));
@@ -1125,6 +1140,7 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if let Some(util_type) = util_type {
+                let offset = call.span.start;
                 let is_css = matches!(util_type.as_ref(), UtilType::Css);
                 let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
@@ -1138,7 +1154,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         && (call.arguments.len() > 1
                             || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))))
                     {
-                        self.errors.push(uncomposable_error(&call.arguments));
+                        self.errors
+                            .push((offset, uncomposable_error(&call.arguments)));
                     }
                     vec![]
                 };
@@ -1162,7 +1179,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             LiteralHandling::ExpandResponsiveThemeToken,
                         );
                         if let Some(value) = runtime_value(&styles) {
-                            self.errors.push(runtime_value_error("css", &value));
+                            self.errors
+                                .push((offset, runtime_value_error("css", &value)));
                         }
 
                         if styles.is_empty() {
@@ -1199,7 +1217,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             },
                         );
                         if let Some(value) = runtime_value {
-                            self.errors.push(runtime_value_error("keyframes", &value));
+                            self.errors
+                                .push((offset, runtime_value_error("keyframes", &value)));
                         }
 
                         let name = style_property_into_string(
@@ -1227,7 +1246,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                             &self.filename,
                         );
                         if let Some(value) = runtime_value(&styles) {
-                            self.errors.push(runtime_value_error("globalCss", &value));
+                            self.errors
+                                .push((offset, runtime_value_error("globalCss", &value)));
                         }
                         // already set style order
                         let style_order = style_order.unwrap_or(0);
@@ -1282,7 +1302,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         &self.filename,
                     );
                     if let Some(value) = runtime_value(&styles) {
-                        self.errors.push(runtime_value_error("globalCss", &value));
+                        self.errors
+                            .push((offset, runtime_value_error("globalCss", &value)));
                     }
                     let style_order = style_order.unwrap_or(0);
                     self.styles.extend(
@@ -1342,11 +1363,13 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                     .map(|ex| ExtractStyleProp::Static(ex.into()))
                     .collect::<Vec<_>>();
                 if let Some(value) = runtime_value(&style_props) {
-                    self.errors.push(runtime_value_error(api, &value));
-                }
-                if let Some(index) = unplaced.first() {
                     self.errors
-                        .push(unplaced_error(&tag.quasi.expressions[*index]));
+                        .push((tag.span.start, runtime_value_error(api, &value)));
+                }
+                for index in unplaced {
+                    let expression = &tag.quasi.expressions[index];
+                    self.errors
+                        .push((expression.span().start, unplaced_error(expression)));
                 }
                 let class_name = gen_class_names(
                     &self.ast,
@@ -1763,10 +1786,11 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                 for specifier in specifiers {
                     match specifier {
                         ImportDeclarationSpecifier::ImportDefaultSpecifier(default_spec) => {
-                            self.stylex_import = Some(default_spec.local.name.to_string());
+                            self.stylex_imports
+                                .insert(default_spec.local.name.to_string());
                         }
                         ImportDeclarationSpecifier::ImportNamespaceSpecifier(ns_spec) => {
-                            self.stylex_import = Some(ns_spec.local.name.to_string());
+                            self.stylex_imports.insert(ns_spec.local.name.to_string());
                         }
                         ImportSpecifier(named_spec) => {
                             let imported = named_spec.imported.to_string();

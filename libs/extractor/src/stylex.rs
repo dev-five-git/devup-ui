@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use css::keyframes_to_keyframes_name;
 use css::style_selector::{AtRuleKind, StyleSelector};
 use oxc_ast::ast::{Expression, ObjectPropertyKind};
 
@@ -39,6 +40,23 @@ impl StylexFunction {
             _ => None,
         }
     }
+}
+
+/// The custom property `stylex.defineVars()` in `filename` declares for `key`;
+/// a module importing it computes the same name
+#[must_use]
+pub fn define_vars_variable(filename: &str, key: &str, split_filename: Option<&str>) -> String {
+    format!(
+        "--{}",
+        keyframes_to_keyframes_name(&format!("sxv-{filename}-{key}"), split_filename)
+    )
+}
+
+/// The class `stylex.createTheme()` in `filename` applies to `contract`, the
+/// name that module binds the contract to
+#[must_use]
+pub fn create_theme_class(filename: &str, contract: &str, split_filename: Option<&str>) -> String {
+    keyframes_to_keyframes_name(&format!("sxt-{filename}-{contract}"), split_filename)
 }
 
 #[must_use]

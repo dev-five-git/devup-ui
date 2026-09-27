@@ -38,9 +38,9 @@ export const text = style({ fontFamily: body, content: icons })",
 }
 
 #[test]
-fn an_unreadable_var_declaration_leaves_the_stylesheet_alone() {
+fn an_unreadable_var_declaration_is_reported() {
     let code = "import { createVar } from '@devup-ui/react'\nexport const v = createVar({ syntax: Symbol() })";
-    let output = extract(
+    let error = extract(
         "broken.css.ts",
         code,
         ExtractOption {
@@ -51,8 +51,10 @@ fn an_unreadable_var_declaration_leaves_the_stylesheet_alone() {
             import_aliases: HashMap::new(),
         },
     )
-    .unwrap();
-    assert!(output.styles.is_empty());
+    .err()
+    .map(|error| error.to_string())
+    .unwrap_or_default();
+    assert!(error.starts_with("JS execution error"), "{error}");
 }
 
 #[test]

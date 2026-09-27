@@ -268,7 +268,7 @@ fn extract_with_source_map(
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
     // e.g., `import { style } from '@vanilla-extract/css'` → `import { style } from '@devup-ui/react'`
-    let transformed_code = import_alias_visit::transform_import_aliases(
+    let (transformed_code, alias_edits) = import_alias_visit::transform_import_aliases_with_edits(
         code,
         filename,
         &option.package,
@@ -291,6 +291,8 @@ fn extract_with_source_map(
     }
 
     let mut dependencies = std::collections::BTreeSet::new();
+    #[cfg(feature = "vanilla-extract")]
+    let mut evaluation_error = None;
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
     // otherwise the untouched `transformed_code` is parsed directly (no copy).
@@ -344,8 +346,12 @@ fn extract_with_source_map(
             {
                 return Err(error.into());
             }
-            // Fall back to treating as regular file if execution fails
-            Err(_) => None,
+            // Plain extraction still compiles Devup UI's own APIs; the error is
+            // reported when calls it cannot compile remain
+            Err(error) => {
+                evaluation_error = Some(error);
+                None
+            }
         }
     } else {
         None
@@ -386,15 +392,18 @@ fn extract_with_source_map(
     if fatal_error {
         return Err("Parser panicked".into());
     }
-    if processed_code.is_none() {
-        dependencies.extend(imported_constants::inline_constants(
+    let inlined = if processed_code.is_none() {
+        imported_constants::inline_constants(
             &oxc_ast::builder::AstBuilder::new(&allocator),
             &mut program,
             filename,
-            &option.package,
+            &option,
             resolver,
-        ));
-    }
+        )
+    } else {
+        imported_constants::Inlined::default()
+    };
+    dependencies.extend(inlined.dependencies);
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -402,9 +411,16 @@ fn extract_with_source_map(
         css_files,
         if global { None } else { Some(bucket) },
     );
+    visitor.import_stylex(inlined.stylex_vars, inlined.stylex_themes);
     visitor.visit_program(&mut program);
-    if let Some(error) = visitor.errors.into_iter().next() {
+    #[cfg(feature = "vanilla-extract")]
+    if let Some(error) = evaluation_error
+        && imports_uncompiled(&program, &option.package)
+    {
         return Err(error.into());
+    }
+    if !visitor.errors.is_empty() {
+        return Err(located_errors(filename, code, &alias_edits, visitor.errors).into());
     }
     let codegen_options = if source_map {
         CodegenOptions {
@@ -443,6 +459,55 @@ fn main_css_path(css_dir: &str) -> String {
 /// kept for parse/sourcemap. Global (shared-chunk) files are emitted like
 /// single-css: into devup-ui.css with prefix-less global naming, so styles
 /// shared across routes ship once.
+/// Whether `program` still imports a value from `package` that extraction did
+/// not compile away
+#[cfg(feature = "vanilla-extract")]
+fn imports_uncompiled(program: &oxc_ast::ast::Program<'_>, package: &str) -> bool {
+    program.body.iter().any(|statement| {
+        matches!(statement, oxc_ast::ast::Statement::ImportDeclaration(import)
+        if import.source.value == package
+            && !import.import_kind.is_type()
+            && import.specifiers.iter().flatten().any(|specifier| matches!(
+                specifier,
+                oxc_ast::ast::ImportDeclarationSpecifier::ImportSpecifier(named)
+                    if !named.import_kind.is_type()
+            )))
+    })
+}
+
+/// `errors` in source order, one per line, each led by `filename:line:column`
+/// of the code it is about; `edits` map the offsets back to `source`
+fn located_errors(
+    filename: &str,
+    source: &str,
+    edits: &[import_alias_visit::Edit],
+    mut errors: Vec<(u32, String)>,
+) -> String {
+    errors.sort_unstable();
+    errors.dedup();
+    errors
+        .into_iter()
+        .map(|(offset, message)| {
+            let before = source
+                .get(..import_alias_visit::source_offset(edits, offset as usize))
+                .unwrap_or(source);
+            let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+            format!(
+                "{filename}:{}:{}: {message}",
+                before.matches('\n').count() + 1,
+                before[line_start..].chars().count() + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The file name generated names of `filename` are scoped by, `None` when its
+/// CSS goes to the shared sheet
+fn css_bucket(filename: &str, option: &ExtractOption) -> Option<String> {
+    (!(option.single_css || is_global(filename))).then(|| canonical(filename))
+}
+
 fn resolve_css_target(filename: &str, option: &ExtractOption) -> (String, bool, String) {
     let bucket = canonical(filename);
     let global = option.single_css || is_global(filename);
@@ -8982,7 +9047,10 @@ keyframes({
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();
-            assert!(message.starts_with(error), "{message}");
+            assert!(
+                message.starts_with("test.tsx:2:") && message.contains(error),
+                "{message}"
+            );
             assert!(
                 message.ends_with(
                     "at build time: its values must be literals, theme tokens or imported constants"
@@ -9054,8 +9122,41 @@ export const B = styled.div`${SEL} & { color: ${C}; }`;",
                 .err()
                 .map(|error| error.to_string())
                 .unwrap_or_default();
-            assert!(message.starts_with(error), "{message}");
+            assert!(
+                message.starts_with("test.tsx:2:") && message.contains(error),
+                "{message}"
+            );
         }
+    }
+
+    #[test]
+    #[serial]
+    fn test_errors_are_located_and_all_reported() {
+        reset_class_map();
+        reset_file_map();
+        let message = extract(
+            "src/App.tsx",
+            "import {\n  css,\n  keyframes,\n} from '@emotion/react';\nimport { globalCss } from '@devup-ui/react';\nexport const a = css({ padding: 8 }); export const b = css({ color: x });\nglobalCss`body { color: ${y}; }`;\nexport const k = keyframes({ to: { opacity: z } });\nexport const c = css({ color: x });",
+            ExtractOption {
+                import_aliases: HashMap::from([(
+                    "@emotion/react".to_string(),
+                    ImportAlias::NamedToNamed,
+                )]),
+                ..ExtractOption::default()
+            },
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert_eq!(
+            message.lines().collect::<Vec<_>>(),
+            [
+                "src/App.tsx:6:56: `css()` cannot use `x` at build time: its values must be literals, theme tokens or imported constants",
+                "src/App.tsx:7:27: `globalCss()` cannot use `y` at build time: its values must be literals, theme tokens or imported constants",
+                "src/App.tsx:8:18: `keyframes()` cannot use `z` at build time: its values must be literals, theme tokens or imported constants",
+                "src/App.tsx:9:18: `css()` cannot use `x` at build time: its values must be literals, theme tokens or imported constants",
+            ]
+        );
     }
 
     #[test]
@@ -13384,6 +13485,36 @@ globalCss({
 
     #[test]
     #[serial]
+    fn test_stylesheet_evaluation_errors() {
+        reset_class_map();
+        reset_file_map();
+        let error = extract(
+            "broken.css.ts",
+            "import { type StyleRule, style } from '@devup-ui/react';\nconst tokens = { brand: 'red' };\nexport const a = style({ color: tokens.accent.toUpperCase() });",
+            ExtractOption::default(),
+        )
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+        assert!(
+            error.starts_with("JS execution error: TypeError"),
+            "{error}"
+        );
+
+        // Devup UI's own APIs still compile when evaluation fails
+        reset_class_map();
+        reset_file_map();
+        let output = extract(
+            "own.css.ts",
+            "import type { DevupProps } from '@devup-ui/react';\nimport { css } from '@devup-ui/react';\nexport const a = css({ color: 'red' });",
+            ExtractOption::default(),
+        )
+        .unwrap();
+        assert!(!output.code.contains("css("), "{}", output.code);
+    }
+
+    #[test]
+    #[serial]
     fn test_vanilla_extract_execution_fallback() {
         // Test vanilla-extract file with execution error (covers line 116 fallback)
         reset_class_map();
@@ -16212,7 +16343,7 @@ const styles = stylex.create({
             assert_eq!(
                 message,
                 format!(
-                    "`stylex.create()` cannot use `{shown}` at build time: its values must be literals, theme tokens or imported constants"
+                    "test.tsx:2:47: `stylex.create()` cannot use `{shown}` at build time: its values must be literals, theme tokens or imported constants"
                 )
             );
         }
@@ -18251,6 +18382,108 @@ export class Scale {}",
         ("/src/value.js", "module.exports = 5;"),
     ];
 
+    const STYLEX_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/vars.stylex.ts",
+            r"import * as stylex from '@stylexjs/stylex';
+import { defineConsts, create } from '@stylexjs/stylex';
+import sx from '@stylexjs/stylex';
+import other from './brand';
+import { BRAND } from './brand';
+export const colors = stylex.defineVars({ primary: 'blue', brand: BRAND, dynamic: getColor(), [computedKey]: 'x' });
+export const consts = defineConsts({ gap: '8px', size: 4, dynamic: getSize() });
+export const contract = sx.createThemeContract({ accent: null });
+export const dark = stylex.createTheme(colors, { primary: 'navy' });
+export const notStylex = other.defineVars({ a: 'b' });
+export const unknownCallee = missing.defineVars({ a: 'b' });
+export const called = stylex({ a: 'b' });
+export const nested = stylex.types.defineVars({ a: 'b' });
+export const memberOfNamed = create.defineVars({ a: 'b' });
+export const indirect = (0, stylex.defineVars)({ a: 'b' });
+export const styles = stylex.create({ base: { color: 'red' } });
+export const unknownTheme = stylex.createTheme(unknown, { primary: 'navy' });
+export const notContract = stylex.createTheme(consts, { primary: 'navy' });",
+        ),
+        (
+            "/src/brand.ts",
+            "export const BRAND = 'green';\nexport default {};",
+        ),
+        (
+            "/src/themes.ts",
+            r"import * as stylex from '@stylexjs/stylex';
+import { colors } from './vars.stylex';
+export const light = stylex.createTheme(colors, { primary: 'white' });",
+        ),
+    ];
+
+    #[test]
+    #[serial]
+    fn test_stylex_values_imported_from_other_modules() {
+        for single_css in [true, false] {
+            reset_class_map();
+            reset_file_map();
+            let option = ExtractOption {
+                single_css,
+                ..ExtractOption::default()
+            };
+            let resolver = memory_resolver(STYLEX_MODULES);
+            let extract_module = |path: &str| {
+                let code = STYLEX_MODULES
+                    .iter()
+                    .find(|(file, _)| *file == path)
+                    .map(|(_, code)| *code)
+                    .unwrap();
+                extract_with_modules(path, code, option.clone(), false, &resolver).unwrap()
+            };
+            let vars = extract_module("/src/vars.stylex.ts");
+            let themes = extract_module("/src/themes.ts");
+            let app = extract_with_modules(
+                "/src/App.tsx",
+                r"import * as stylex from '@stylexjs/stylex';
+import { colors, consts, contract, dark } from './vars.stylex';
+import { light } from './themes';
+const s = stylex.create({ base: { color: colors.primary, backgroundColor: colors.brand, marginTop: consts.gap, zIndex: consts.size, borderColor: contract.accent } });
+const custom = stylex.createTheme(colors, { primary: 'purple' });
+export const A = () => <div {...stylex.props(dark, light, custom, s.base)} />;",
+                option.clone(),
+                false,
+                &resolver,
+            )
+            .unwrap();
+            let styles = format!("{:?}", app.styles);
+            // Each name the defining modules generate is the one the importer reads
+            let text_after = |code: &str, marker: &str, end: char| {
+                let (_, rest) = code.split_once(marker).unwrap();
+                rest.split(end).next().unwrap().to_string()
+            };
+            for key in ["primary", "brand"] {
+                let reference = format!(
+                    "var({})",
+                    text_after(&vars.code, &format!("\"{key}\": \"var("), ')')
+                );
+                assert!(
+                    styles.contains(&reference),
+                    "{reference} missing from {styles}"
+                );
+            }
+            for (module, name) in [(&vars.code, "dark"), (&themes.code, "light")] {
+                let class = text_after(module, &format!("export const {name} = \""), '"');
+                assert!(
+                    app.code.contains(&class),
+                    "{class} missing from {}",
+                    app.code
+                );
+            }
+            assert!(styles.contains("value: \"8px\""), "{styles}");
+            assert!(styles.contains("--"), "{styles}");
+            assert!(!app.code.contains("createTheme"), "{}", app.code);
+            assert_eq!(
+                app.dependencies,
+                vec!["/src/brand.ts", "/src/themes.ts", "/src/vars.stylex.ts"]
+            );
+        }
+    }
+
     const CONSTANT_MODULES: &[(&str, &str)] = &[
         (
             "/src/tokens.ts",
@@ -18521,7 +18754,7 @@ export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
                 extract("test.tsx", code, ExtractOption::default())
                     .err()
                     .map(|error| error.to_string()),
-                Some(error.to_string()),
+                Some(format!("test.tsx:2:1: {error}")),
             );
         }
     }

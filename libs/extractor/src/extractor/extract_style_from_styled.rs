@@ -26,7 +26,7 @@ use oxc_ast::{
     },
     builder::AstBuilder,
 };
-use oxc_span::SPAN;
+use oxc_span::{GetSpan, SPAN};
 use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 fn extract_base_tag_and_class_name(
@@ -109,9 +109,9 @@ pub fn extract_style_from_styled<'a>(
     split_filename: Option<&str>,
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
-) -> (ExtractResult<'a>, Expression<'a>, Option<String>) {
+) -> (ExtractResult<'a>, Expression<'a>, Vec<(u32, String)>) {
     let mut composed_classes = Vec::new();
-    let mut error = None;
+    let mut errors = Vec::new();
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(&call.callee, imports)
             .0
@@ -126,7 +126,7 @@ pub fn extract_style_from_styled<'a>(
             None if call.arguments.len() > 1
                 || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))) =>
             {
-                error = Some(uncomposable_error(&call.arguments));
+                errors.push((call.span.start, uncomposable_error(&call.arguments)));
             }
             None => {}
         }
@@ -144,8 +144,9 @@ pub fn extract_style_from_styled<'a>(
             statements,
             unplaced,
         } = css_to_style_template(&tag.quasi, 0, &None);
-        if let Some(index) = unplaced.first() {
-            error = Some(unplaced_error(&tag.quasi.expressions[*index]));
+        for index in unplaced {
+            let expression = &tag.quasi.expressions[index];
+            errors.push((expression.span().start, unplaced_error(expression)));
         }
         let mut props_styles: Vec<ExtractStyleProp<'_>> = styles
             .into_iter()
@@ -280,7 +281,7 @@ pub fn extract_style_from_styled<'a>(
     (
         result.unwrap_or_else(ExtractResult::default),
         new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
-        error,
+        errors,
     )
 }
 
