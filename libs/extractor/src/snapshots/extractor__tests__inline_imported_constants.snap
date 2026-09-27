@@ -1,0 +1,314 @@
+---
+source: libs/extractor/src/lib.rs
+expression: "ToBTreeSet::from(output)"
+---
+ToBTreeSet {
+    styles: {
+        Static(
+            ExtractStaticStyle {
+                property: "background",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "border-color",
+                value: "green",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "bottom",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "blue",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "column-rule-color",
+                value: "purple",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "content",
+                value: "olive",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "fill",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "flood-color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "lighting-color",
+                value: "orange",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "margin",
+                value: "-8px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "outline-color",
+                value: "teal",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "padding",
+                value: "16px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stop-color",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "stroke",
+                value: "navy",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "text-decoration-color",
+                value: "red",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Static(
+            ExtractStaticStyle {
+                property: "width",
+                value: "10px",
+                level: 0,
+                selector: None,
+                style_order: None,
+                layer: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "accent-color",
+                level: 0,
+                identifier: "DYNAMIC",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "caret-color",
+                level: 0,
+                identifier: "MUTABLE",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "color",
+                level: 0,
+                identifier: "PRIMARY",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "column-gap",
+                level: 0,
+                identifier: "colors[key]",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex",
+                level: 0,
+                identifier: "notThere",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-basis",
+                level: 0,
+                identifier: "gone",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-grow",
+                level: 0,
+                identifier: "helper",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "flex-shrink",
+                level: 0,
+                identifier: "looped",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "gap",
+                level: 0,
+                identifier: "colors.skip",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "left",
+                level: 0,
+                identifier: "NEG_STRING",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "order",
+                level: 0,
+                identifier: "alsoMutable",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "right",
+                level: 0,
+                identifier: "TEMPLATE_EXPRESSION",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "row-gap",
+                level: 0,
+                identifier: "colors.nope",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "top",
+                level: 0,
+                identifier: "missing",
+                selector: None,
+                style_order: None,
+            },
+        ),
+        Dynamic(
+            ExtractDynamicStyle {
+                property: "z-index",
+                level: 0,
+                identifier: "NOT_OBJECT",
+                selector: None,
+                style_order: None,
+            },
+        ),
+    },
+    code: "import \"@devup-ui/react/devup-ui.css\";\nimport * as Devup from \"@devup-ui/react\";\nimport { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from \"./tokens\";\nimport orange from \"./tokens\";\nimport * as tokens from \"./tokens\";\nimport named from \"./named\";\nimport { handler } from \"./handler\";\nimport { unused } from \"./unused\";\nimport missing from \"./missing\";\nexport const a = <div {...colors} onClick={handler} className={`a b c d e f g h i k m n o p q r s t v x z _ ab a-d af ah aj al an ap ${colors?.className || \"\"}`} style={{\n\t...{\n\t\t\"--j\": MUTABLE,\n\t\t\"--l\": DYNAMIC,\n\t\t\"--u\": missing,\n\t\t\"--w\": NEG_STRING,\n\t\t\"--y\": TEMPLATE_EXPRESSION,\n\t\t\"--aa\": NOT_OBJECT,\n\t\t\"--ac\": colors.skip,\n\t\t\"--ae\": colors.nope,\n\t\t\"--ag\": colors[key],\n\t\t\"--ai\": alsoMutable,\n\t\t\"--ak\": notThere,\n\t\t\"--am\": gone,\n\t\t\"--ao\": helper,\n\t\t\"--aq\": looped\n\t},\n\t...colors?.style\n}} />;\nexport const b = \"a\";\nexport const c = <div className=\"ar\" />;\nexport const d = ({ style, className, ...rest }) => <div {...rest} className={[\"a\", className].filter(Boolean).join(\" \")} style={style} />;\nexport const e = (PRIMARY) => <div className=\"as\" style={{ \"--at\": PRIMARY }} />;\nexport const f = {\n\tPRIMARY: \"red\",\n\tunused,\n\tSIZE: 4\n};\nexport const g = <div color={\"red\"} />;\nexport const h = <Devup.Inner.Box color={4} />;\nexport const i = Devup[\"css\"]({ color: 4 });\n",
+}

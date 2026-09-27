@@ -6,6 +6,7 @@ mod extractor;
 mod gen_class_name;
 mod gen_style;
 mod import_alias_visit;
+mod imported_constants;
 #[cfg(feature = "vanilla-extract")]
 mod module_loader;
 mod prop_modify_utils;
@@ -262,9 +263,7 @@ fn extract_with_source_map(
     code: &str,
     option: ExtractOption,
     source_map: bool,
-    #[cfg_attr(not(feature = "vanilla-extract"), allow(unused_variables))] resolver: Option<
-        &ModuleResolver,
-    >,
+    resolver: Option<&ModuleResolver>,
 ) -> Result<ExtractOutput, Box<dyn Error>> {
     // Step 1: Transform import aliases
     // e.g., `import styled from '@emotion/styled'` → `import { styled } from '@devup-ui/react'`
@@ -291,7 +290,6 @@ fn extract_with_source_map(
         });
     }
 
-    #[cfg_attr(not(feature = "vanilla-extract"), allow(unused_mut))]
     let mut dependencies = std::collections::BTreeSet::new();
     // Step 3: Handle vanilla-extract style files (.css.ts, .css.js)
     // `processed_code` is Some only when vanilla-extract generation succeeded;
@@ -346,14 +344,13 @@ fn extract_with_source_map(
     #[cfg(not(feature = "vanilla-extract"))]
     let processed_code: Option<String> = None;
     // For vanilla-extract files, if no styles were collected, return early
-    let dependencies: Vec<String> = dependencies.into_iter().collect();
     if processed_code.as_deref() == Some("") {
         return Ok(ExtractOutput {
             styles: FxHashSet::default(),
             code: code.to_string(),
             map: None,
             css_file: None,
-            dependencies,
+            dependencies: dependencies.into_iter().collect(),
         });
     }
 
@@ -380,6 +377,17 @@ fn extract_with_source_map(
     if fatal_error {
         return Err("Parser panicked".into());
     }
+    if let Some(resolver) = resolver
+        && processed_code.is_none()
+    {
+        dependencies.extend(imported_constants::inline_imported_constants(
+            &oxc_ast::builder::AstBuilder::new(&allocator),
+            &mut program,
+            filename,
+            &option.package,
+            resolver,
+        ));
+    }
     let mut visitor = DevupVisitor::new(
         &allocator,
         filename,
@@ -403,7 +411,7 @@ fn extract_with_source_map(
         code: result.code,
         map: result.map.map(|m| m.to_json_string()),
         css_file: Some(css_file),
-        dependencies,
+        dependencies: dependencies.into_iter().collect(),
     })
 }
 
@@ -18079,6 +18087,101 @@ export class Scale {}",
         ),
         ("/src/anonymous.ts", "export default class { }"),
     ];
+
+    const CONSTANT_MODULES: &[(&str, &str)] = &[
+        (
+            "/src/tokens.ts",
+            r"import { base } from './base';
+import * as spaced from './base';
+export const PRIMARY = 'red';
+export const SIZE = 4;
+export const NEG = -2;
+export const TEMPLATE = `10px`;
+export const colors = { primary: 'blue', nested: { deep: 'green' }, fromBase: base, [computed]: 'x', skip: fn(), ...rest } as const;
+export const ALIAS = (PRIMARY satisfies string);
+export let MUTABLE = 'no';
+export const DYNAMIC = fn(), [destructured] = [1];
+export const NEG_STRING = -'a';
+export const TEMPLATE_EXPRESSION = `${PRIMARY}`;
+export const SPACED = spaced.value;
+export const NOT_OBJECT = PRIMARY.length;
+const LOCAL = 'purple';
+export { LOCAL as renamed, MUTABLE as alsoMutable };
+export { base as reBase, missing as notThere } from './base';
+export { gone } from './missing';
+export * from './base';
+export * from './missing';
+export * as ns from './base';
+export default 'orange';
+export function helper() {}",
+        ),
+        (
+            "/src/base.ts",
+            r"import { x } from './loop';
+export const base = 'teal';
+export const value = 'navy';
+export default 'hidden-by-star';
+export const looped = x;",
+        ),
+        (
+            "/src/loop.ts",
+            "import { looped } from './base';\nexport const x = looped;",
+        ),
+        (
+            "/src/named.ts",
+            "const DEFAULT = 'olive';\nexport default DEFAULT;",
+        ),
+        ("/src/handler.ts", "export const handler = () => {};"),
+    ];
+
+    #[test]
+    #[serial]
+    fn test_inline_imported_constants() {
+        reset_class_map();
+        reset_file_map();
+        let output = extract_with_modules(
+            "/src/App.tsx",
+            r"import { Box, css, styled } from '@devup-ui/react';
+import * as Devup from '@devup-ui/react';
+import { PRIMARY, SIZE, NEG, TEMPLATE, colors, ALIAS, MUTABLE, DYNAMIC, renamed, alsoMutable, reBase, notThere, gone, value, ns, NEG_STRING, TEMPLATE_EXPRESSION, SPACED, NOT_OBJECT, helper, looped } from './tokens';
+import orange from './tokens';
+import * as tokens from './tokens';
+import named from './named';
+import { handler } from './handler';
+import { unused } from './unused';
+import missing from './missing';
+export const a = <Box color={PRIMARY} p={SIZE} m={NEG} w={TEMPLATE} bg={colors.primary} borderColor={colors.nested.deep} outlineColor={colors['fromBase']} textDecorationColor={ALIAS} caretColor={MUTABLE} accentColor={DYNAMIC} columnRuleColor={renamed} fill={reBase} stroke={value} stopColor={ns.value} floodColor={tokens.PRIMARY} lightingColor={orange} content={named} top={missing} left={NEG_STRING} right={TEMPLATE_EXPRESSION} bottom={SPACED} zIndex={NOT_OBJECT} gap={colors.skip} rowGap={colors.nope} columnGap={colors[key]} order={alsoMutable} flex={notThere} flexBasis={gone} flexGrow={helper} flexShrink={looped} {...colors} onClick={handler} />;
+export const b = css({ color: PRIMARY, [key]: SIZE });
+export const c = <Devup.Box color={colors.primary} />;
+export const d = styled.div`color: ${PRIMARY};`;
+export const e = (PRIMARY) => <Box color={PRIMARY} />;
+export const f = { PRIMARY, unused, SIZE: tokens.SIZE };
+export const g = <div color={PRIMARY} />;
+export const h = <Devup.Inner.Box color={SIZE} />;
+export const i = Devup['css']({ color: SIZE });",
+            ExtractOption {
+                package: "@devup-ui/react".to_string(),
+                css_dir: "@devup-ui/react".to_string(),
+                single_css: true,
+                import_main_css: false,
+                import_aliases: HashMap::new(),
+            },
+            false,
+            &memory_resolver(CONSTANT_MODULES),
+        )
+        .unwrap();
+        assert_eq!(
+            output.dependencies,
+            [
+                "/src/base.ts",
+                "/src/handler.ts",
+                "/src/loop.ts",
+                "/src/named.ts",
+                "/src/tokens.ts"
+            ]
+        );
+        assert_debug_snapshot!(ToBTreeSet::from(output));
+    }
 
     #[test]
     #[serial]
