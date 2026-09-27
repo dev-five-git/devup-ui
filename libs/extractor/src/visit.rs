@@ -48,7 +48,7 @@ use strum::IntoEnumIterator;
 use crate::utils::{
     ParsedStyleOrder, StyleArguments, expression_to_style_order, get_str_by_property_key,
     get_string_by_literal_expression, get_string_by_property_key, jsx_expression_to_style_order,
-    style_arguments, unwrap_syntax_only, unwrap_syntax_only_mut,
+    style_arguments, uncomposable_error, unwrap_syntax_only, unwrap_syntax_only_mut,
 };
 use oxc_ast::builder::AstBuilder;
 use oxc_span::SPAN;
@@ -83,6 +83,8 @@ pub struct DevupVisitor<'a> {
     split_filename: Option<String>,
     pub css_files: Vec<String>,
     pub styles: FxHashSet<ExtractStyleValue>,
+    /// Styles the file writes that cannot be extracted at build time
+    pub errors: Vec<String>,
     styled_imports: FxHashSet<String>,
     /// Tracked `StyleX` default/namespace import name (e.g., `stylex` from `import stylex from '...'`)
     stylex_import: Option<String>,
@@ -140,6 +142,7 @@ impl<'a> DevupVisitor<'a> {
             compat_package: format!("{package}/compat"),
             css_files,
             styles: FxHashSet::default(),
+            errors: Vec::new(),
             import_object: None,
             jsx_object: None,
             util_imports: FxHashMap::default(),
@@ -738,13 +741,14 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if is_styled {
-                let (result, new_expr) = extract_style_from_styled(
+                let (result, new_expr, error) = extract_style_from_styled(
                     &self.ast,
                     it,
                     self.split_filename.as_deref(),
                     &self.imports,
                     &attrs,
                 );
+                self.errors.extend(error);
                 self.styles.extend(
                     result
                         .styles
@@ -1110,7 +1114,8 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
             };
 
             if let Some(util_type) = util_type {
-                let composed_classes = if matches!(util_type.as_ref(), UtilType::Css)
+                let is_css = matches!(util_type.as_ref(), UtilType::Css);
+                let composed_classes = if is_css
                     && let Some(StyleArguments { classes, rules }) =
                         style_arguments(&self.ast, &call.arguments)
                 {
@@ -1118,6 +1123,12 @@ impl<'a> VisitMut<'a> for DevupVisitor<'a> {
                         oxc_allocator::Vec::from_array_in([Argument::from(rules)], &self.ast);
                     classes
                 } else {
+                    if is_css
+                        && (call.arguments.len() > 1
+                            || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))))
+                    {
+                        self.errors.push(uncomposable_error(&call.arguments));
+                    }
                     vec![]
                 };
                 if call.arguments.len() == 1 {

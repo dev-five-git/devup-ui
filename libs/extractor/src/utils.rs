@@ -16,7 +16,7 @@ use oxc_codegen::{Codegen, CodegenOptions};
 #[cfg(test)]
 use oxc_parser::Parser;
 use oxc_span::{SPAN, SourceType};
-use oxc_syntax::operator::{LogicalOperator, UnaryOperator};
+use oxc_syntax::operator::{BinaryOperator, LogicalOperator, UnaryOperator};
 
 /// Check if a filename is a vanilla-extract style file.
 ///
@@ -126,6 +126,24 @@ fn minify_codegen_options() -> CodegenOptions {
 }
 
 pub(super) fn expression_to_code(expression: &Expression) -> String {
+    generate_code(expression, minify_codegen_options())
+}
+
+/// `expression` as it would be written, for messages
+pub(super) fn readable_code(expression: &Expression) -> String {
+    let code = generate_code(expression, CodegenOptions::default());
+    let code = code.trim_end().trim_end_matches(';');
+    match expression {
+        Expression::ObjectExpression(_) => code
+            .strip_prefix('(')
+            .and_then(|code| code.strip_suffix(')'))
+            .unwrap_or(code),
+        _ => code,
+    }
+    .to_string()
+}
+
+fn generate_code(expression: &Expression, options: CodegenOptions) -> String {
     let allocator = Allocator::default();
     let builder = oxc_ast::builder::AstBuilder::new(&allocator);
     // Build the one-statement `Program` directly instead of parsing an empty
@@ -147,10 +165,7 @@ pub(super) fn expression_to_code(expression: &Expression) -> String {
         &builder,
     );
 
-    Codegen::new()
-        .with_options(minify_codegen_options())
-        .build(&program)
-        .code
+    Codegen::new().with_options(options).build(&program).code
 }
 
 pub(super) fn is_same_expression<'a>(a: &Expression<'a>, b: &Expression<'a>) -> bool {
@@ -523,7 +538,7 @@ pub(super) fn style_arguments<'a>(
             } => merge_conditional_properties(
                 ast_builder,
                 &mut merged,
-                test,
+                &test,
                 consequent.map_or(&[], |object| &object.properties),
                 alternate.map_or(&[], |object| &object.properties),
             )?,
@@ -538,7 +553,7 @@ pub(super) fn style_arguments<'a>(
 enum StylePart<'b, 'a> {
     Rules(&'b ObjectExpression<'a>),
     Conditional {
-        test: &'b Expression<'a>,
+        test: Expression<'a>,
         consequent: Option<&'b ObjectExpression<'a>>,
         alternate: Option<&'b ObjectExpression<'a>>,
     },
@@ -565,56 +580,156 @@ fn branch<'b, 'a>(expression: &'b Expression<'a>) -> Option<Branch<'b, 'a>> {
     }
 }
 
+/// `value` as a class: itself when it is a string, nothing otherwise, as the
+/// libraries skip `true` and other non-class values
+fn string_class<'a>(ast_builder: &AstBuilder<'a>, value: &Expression<'a>) -> Expression<'a> {
+    if matches!(
+        value,
+        Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+    ) {
+        return value.clone_in(ast_builder.allocator());
+    }
+    let is_string = Expression::new_binary_expression(
+        SPAN,
+        Expression::new_unary_expression(
+            SPAN,
+            UnaryOperator::Typeof,
+            value.clone_in(ast_builder.allocator()),
+            ast_builder,
+        ),
+        BinaryOperator::StrictEquality,
+        Expression::new_string_literal(SPAN, "string", None, ast_builder),
+        ast_builder,
+    );
+    Expression::new_conditional_expression(
+        SPAN,
+        is_string,
+        value.clone_in(ast_builder.allocator()),
+        Expression::new_string_literal(SPAN, "", None, ast_builder),
+        ast_builder,
+    )
+}
+
+pub(super) fn uncomposable_error(arguments: &[Argument<'_>]) -> String {
+    let arguments: Vec<String> = arguments
+        .iter()
+        .map(|argument| {
+            argument
+                .as_expression()
+                .map_or_else(|| "...".to_string(), readable_code)
+        })
+        .collect();
+    format!(
+        "Cannot compose `{}` at build time: each style must be a rule object, a class, or a condition choosing between them",
+        arguments.join(", ")
+    )
+}
+
 fn collect_style_parts<'b, 'a>(
     ast_builder: &AstBuilder<'a>,
     expression: &'b Expression<'a>,
     parts: &mut Vec<StylePart<'b, 'a>>,
     classes: &mut Vec<Expression<'a>>,
 ) -> Option<()> {
-    let (test, consequent, alternate) = match unwrap_syntax_only(expression) {
-        Expression::ArrayExpression(array) => {
-            for element in &array.elements {
-                collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
-            }
-            return Some(());
-        }
-        Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
-            (&logical.left, branch(&logical.right)?, Branch::Empty)
-        }
-        Expression::ConditionalExpression(conditional) => (
-            &conditional.test,
-            branch(&conditional.consequent)?,
-            branch(&conditional.alternate)?,
-        ),
-        _ => {
-            match branch(expression)? {
-                Branch::Rules(object) => parts.push(StylePart::Rules(object)),
-                Branch::Class(class) => classes.push(class.clone_in(ast_builder.allocator())),
-                Branch::Empty => {}
-            }
-            return Some(());
-        }
-    };
+    let clone = |expression: &Expression<'a>| expression.clone_in(ast_builder.allocator());
     let class = |branch: &Branch<'b, 'a>| match branch {
-        Branch::Class(class) => Some(class.clone_in(ast_builder.allocator())),
+        Branch::Class(class) => Some(clone(class)),
         _ => None,
     };
     let rules = |branch: &Branch<'b, 'a>| match branch {
         Branch::Rules(object) => Some(*object),
         _ => None,
     };
-    let (class_true, class_false) = (class(&consequent), class(&alternate));
+    let (test, class_true, rules_true, class_false, rules_false) =
+        match unwrap_syntax_only(expression) {
+            Expression::ArrayExpression(array) => {
+                for element in &array.elements {
+                    collect_style_parts(ast_builder, element.as_expression()?, parts, classes)?;
+                }
+                return Some(());
+            }
+            Expression::LogicalExpression(logical) if logical.operator == LogicalOperator::And => {
+                let right = branch(&logical.right)?;
+                (
+                    clone(&logical.left),
+                    class(&right),
+                    rules(&right),
+                    None,
+                    None,
+                )
+            }
+            // `left || right` and `left ?? right`: `left` while it applies, `right`
+            // otherwise
+            Expression::LogicalExpression(logical) => match branch(&logical.left)? {
+                Branch::Rules(object) => {
+                    parts.push(StylePart::Rules(object));
+                    return Some(());
+                }
+                Branch::Empty => {
+                    if logical.operator == LogicalOperator::Coalesce
+                        && matches!(
+                            unwrap_syntax_only(&logical.left),
+                            Expression::BooleanLiteral(_)
+                        )
+                    {
+                        return Some(());
+                    }
+                    return collect_style_parts(ast_builder, &logical.right, parts, classes);
+                }
+                Branch::Class(left) => {
+                    let right = branch(&logical.right)?;
+                    let test = if logical.operator == LogicalOperator::Or {
+                        clone(left)
+                    } else {
+                        Expression::new_binary_expression(
+                            SPAN,
+                            clone(left),
+                            BinaryOperator::Inequality,
+                            Expression::new_null_literal(SPAN, ast_builder),
+                            ast_builder,
+                        )
+                    };
+                    (
+                        test,
+                        Some(string_class(ast_builder, left)),
+                        None,
+                        class(&right),
+                        rules(&right),
+                    )
+                }
+            },
+            Expression::ConditionalExpression(conditional) => {
+                let (consequent, alternate) = (
+                    branch(&conditional.consequent)?,
+                    branch(&conditional.alternate)?,
+                );
+                (
+                    clone(&conditional.test),
+                    class(&consequent),
+                    rules(&consequent),
+                    class(&alternate),
+                    rules(&alternate),
+                )
+            }
+            _ => {
+                match branch(expression)? {
+                    Branch::Rules(object) => parts.push(StylePart::Rules(object)),
+                    Branch::Class(class) => classes.push(clone(class)),
+                    Branch::Empty => {}
+                }
+                return Some(());
+            }
+        };
     if class_true.is_some() || class_false.is_some() {
         let empty = || Expression::new_string_literal(SPAN, "", None, ast_builder);
         classes.push(Expression::new_conditional_expression(
             SPAN,
-            test.clone_in(ast_builder.allocator()),
+            clone(&test),
             class_true.unwrap_or_else(empty),
             class_false.unwrap_or_else(empty),
             ast_builder,
         ));
     }
-    let (rules_true, rules_false) = (rules(&consequent), rules(&alternate));
     if rules_true.is_some() || rules_false.is_some() {
         parts.push(StylePart::Conditional {
             test,
@@ -624,7 +739,6 @@ fn collect_style_parts<'b, 'a>(
     }
     Some(())
 }
-
 /// Merge `test ? consequent : alternate` into `merged` one property at a time,
 /// so each property becomes `test ? value : fallback` over what came before.
 /// A class per branch would not do: which of two atomic classes wins depends on
@@ -908,7 +1022,31 @@ mod tests {
         assert_eq!(compose("f({ a: 1 }, flag ? null : y())"), None);
         assert_eq!(compose("f({ a: 1 }, cond && { [k]: 1 })"), None);
         assert_eq!(compose("f({ b: 1 }, cond && { b: { c: 1 } })"), None);
-        assert_eq!(compose("f({ a: 1 }, cond || { a: 2 })"), None);
+        let classes = |classes: &[&str]| classes.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            compose("f({ a: 1 }, cond || { a: 2 })"),
+            Some((
+                classes(&["cond?typeof cond===`string`?cond:``:``;"]),
+                "({a:cond?1:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, cond ?? { a: 2 })"),
+            Some((
+                classes(&["cond!=null?typeof cond===`string`?cond:``:``;"]),
+                "({a:cond!=null?1:2});".to_string()
+            ))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, 's' || 'b')"),
+            Some((classes(&["`s`?`s`:`b`;"]), "({a:1});".to_string()))
+        );
+        assert_eq!(
+            compose("f({ a: 1 }, null || { a: 2 }, false ?? { a: 3 }, { b: 1 } || x)"),
+            Some((classes(&[]), "({a:2,b:1});".to_string()))
+        );
+        assert_eq!(compose("f({ a: 1 }, cond || y())"), None);
+        assert_eq!(compose("f({ a: 1 }, y() || { a: 2 })"), None);
         assert_eq!(
             compose(
                 "f([{ a: 1, b: { c: 1 }, d: { e: 1 } }, null, undefined, false, [{ a: 2, b: { f: 2 }, d: 3, [g]: 1, ...h, 'i': 1 }]], { [g]: 2, i: 2 })"

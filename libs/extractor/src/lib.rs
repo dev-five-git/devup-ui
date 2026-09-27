@@ -396,6 +396,9 @@ fn extract_with_source_map(
         if global { None } else { Some(bucket) },
     );
     visitor.visit_program(&mut program);
+    if let Some(error) = visitor.errors.into_iter().next() {
+        return Err(error.into());
+    }
     let codegen_options = if source_map {
         CodegenOptions {
             source_map_path: Some(PathBuf::from(filename)),
@@ -18249,25 +18252,54 @@ export const hover = style({ selectors: { [`${base}:hover &`]: { color: 'red' } 
             extract(
                 "test.tsx",
                 r"import { css } from '@devup-ui/react';
+import styled from '@emotion/styled';
 export const a = css({ color: 'red', p: 1 }, cond && { color: 'blue', _hover: { color: 'green' } });
 export const b = css([{ m: 1 }, flag ? { m: 2 } : { m: 3, bg: 'red' }]);
 export const c = css({ color: 'red' }, cond && other, flag ? 'x' : null, [undefined, false]);
 export const d = css({ _hover: { color: 'red' } }, cond && { _hover: { bg: 'blue' } });
 export const e = css({ color: 'red' }, flag ? other : { color: 'blue' });
-export const f = css({ _hover: 'x' }, cond && { _hover: { color: 'blue' } });
-export const g = css({ color: 'red' }, cond && { [key]: 'blue' });
 export const h = css({ color: 'red' }, cond || { color: 'blue' });
-export const i = css({ color: 'red' }, cond ? null : undefined);",
+export const i = css({ color: 'red' }, cond ? null : undefined);
+export const j = css({ color: 'red' }, value ?? { color: 'blue' });
+export const K = styled.div(base, cond && { color: 'blue' }, { margin: 1 });",
                 ExtractOption {
                     package: "@devup-ui/react".to_string(),
                     css_dir: "@devup-ui/react".to_string(),
                     single_css: true,
                     import_main_css: false,
-                    import_aliases: HashMap::new(),
+                    import_aliases: HashMap::from([(
+                        "@emotion/styled".to_string(),
+                        ImportAlias::DefaultToNamed("styled".to_string()),
+                    )]),
                 },
             )
             .unwrap()
         ));
+        for (code, error) in [
+            (
+                "import { css } from '@devup-ui/react';\ncss({ _hover: 'x' }, cond && { _hover: { color: 'blue' } });",
+                "Cannot compose `{ _hover: \"x\" }, cond && { _hover: { color: \"blue\" } }` at build time: each style must be a rule object, a class, or a condition choosing between them",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\ncss([{ color: 'red' }, cond && { [key]: 'blue' }]);",
+                "Cannot compose `[{ color: \"red\" }, cond && { [key]: \"blue\" }]` at build time: each style must be a rule object, a class, or a condition choosing between them",
+            ),
+            (
+                "import { css } from '@devup-ui/react';\ncss({ color: 'red' }, ...rest);",
+                "Cannot compose `{ color: \"red\" }, ...` at build time: each style must be a rule object, a class, or a condition choosing between them",
+            ),
+            (
+                "import { styled } from '@devup-ui/react';\nstyled.div({ color: 'red' }, getStyles());",
+                "Cannot compose `{ color: \"red\" }, getStyles()` at build time: each style must be a rule object, a class, or a condition choosing between them",
+            ),
+        ] {
+            assert_eq!(
+                extract("test.tsx", code, ExtractOption::default())
+                    .err()
+                    .map(|error| error.to_string()),
+                Some(error.to_string()),
+            );
+        }
     }
 
     #[test]

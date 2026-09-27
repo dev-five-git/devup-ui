@@ -9,11 +9,11 @@ use crate::{
         ExtractResult,
         extract_style_from_expression::{LiteralHandling, extract_style_from_expression},
     },
-    gen_class_name::gen_class_names,
+    gen_class_name::{gen_class_names, merge_expression_for_class_name},
     gen_style::gen_styles,
     utils::{
-        StyleArguments, merge_object_expressions, style_arguments, unwrap_syntax_only,
-        unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
+        StyleArguments, merge_object_expressions, style_arguments, uncomposable_error,
+        unwrap_syntax_only, unwrap_syntax_only_mut, wrap_array_filter, wrap_direct_call,
     },
 };
 use oxc_allocator::{CloneIn, FromIn, GetAllocator};
@@ -108,16 +108,27 @@ pub fn extract_style_from_styled<'a>(
     split_filename: Option<&str>,
     imports: &FxHashMap<String, ExportVariableKind>,
     attrs: &[Expression<'a>],
-) -> (ExtractResult<'a>, Expression<'a>) {
+) -> (ExtractResult<'a>, Expression<'a>, Option<String>) {
+    let mut composed_classes = Vec::new();
+    let mut error = None;
     if let Expression::CallExpression(call) = expression
         && extract_base_tag_and_class_name(&call.callee, imports)
             .0
             .is_some()
-        && let Some(StyleArguments { classes, rules }) =
-            style_arguments(ast_builder, &call.arguments)
-        && classes.is_empty()
     {
-        call.arguments = oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
+        match style_arguments(ast_builder, &call.arguments) {
+            Some(StyleArguments { classes, rules }) => {
+                call.arguments =
+                    oxc_allocator::Vec::from_array_in([Argument::from(rules)], ast_builder);
+                composed_classes = classes;
+            }
+            None if call.arguments.len() > 1
+                || matches!(call.arguments.first(), Some(Argument::ArrayExpression(_))) =>
+            {
+                error = Some(uncomposable_error(&call.arguments));
+            }
+            None => {}
+        }
     }
     let (result, new_expr) = if let Expression::TaggedTemplateExpression(tag) = expression
         && let (Some(tag_name), default_class_name) =
@@ -193,7 +204,15 @@ pub fn extract_style_from_styled<'a>(
             styles.extend(default_class_name.into_iter().map(ExtractStyleProp::Static));
         }
 
-        let class_name = gen_class_names(ast_builder, &mut styles, style_order, split_filename);
+        let class_name = merge_expression_for_class_name(
+            ast_builder,
+            composed_classes.into_iter().chain(gen_class_names(
+                ast_builder,
+                &mut styles,
+                style_order,
+                split_filename,
+            )),
+        );
         let styled_component = apply_attrs(
             ast_builder,
             create_styled_component(
@@ -220,6 +239,7 @@ pub fn extract_style_from_styled<'a>(
     (
         result.unwrap_or_else(ExtractResult::default),
         new_expr.unwrap_or_else(|| expression.clone_in(ast_builder.allocator())),
+        error,
     )
 }
 
