@@ -31,7 +31,12 @@ import {
   setDebug,
   setPrefix,
 } from '@devup-ui/wasm'
-import type { EnvironmentModuleNode, PluginOption, UserConfig } from 'vite'
+import type {
+  EnvironmentModuleNode,
+  ModuleNode,
+  PluginOption,
+  UserConfig,
+} from 'vite'
 
 /**
  * CSS entry files emitted by devup-ui: `devup-ui.css`, `devup-ui-3.css`, ...
@@ -449,6 +454,32 @@ export function DevupUI({
         )
       }
       environment.hot.send({ type: 'full-reload' })
+      return []
+    },
+    // Vite 5 fallback: Vite 6+ does not call this hook when `hotUpdate` exists.
+    async handleHotUpdate({ file, server, modules, timestamp }) {
+      if (resolve(file) !== resolve(devupFile) || !existsSync(devupFile)) {
+        return
+      }
+
+      await writeDataFiles({
+        package: libPackage,
+        cssDir,
+        devupFile,
+        distDir,
+        singleCss,
+      })
+
+      const invalidatedModules = new Set<ModuleNode>()
+      for (const mod of modules) {
+        server.moduleGraph.invalidateModule(
+          mod,
+          invalidatedModules,
+          timestamp,
+          true,
+        )
+      }
+      server.ws.send({ type: 'full-reload' })
       return []
     },
     resolveId(id, importer) {

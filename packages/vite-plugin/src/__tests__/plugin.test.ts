@@ -65,6 +65,17 @@ interface ViteTestPlugin {
     this: { environment: HotUpdateEnvironment },
     options: { file: string; modules: object[]; timestamp: number },
   ) => Promise<unknown[] | undefined>
+  handleHotUpdate: (context: {
+    file: string
+    server: {
+      moduleGraph: {
+        invalidateModule: (...args: unknown[]) => void
+      }
+      ws: { send: (...args: unknown[]) => void }
+    }
+    modules: object[]
+    timestamp: number
+  }) => Promise<unknown[] | undefined>
   load: (id: string) => string | undefined
   transform: (
     this: {
@@ -206,6 +217,7 @@ describe('devupUIVitePlugin', () => {
       config: expect.any(Function),
       load: expect.any(Function),
       watchChange: expect.any(Function),
+      handleHotUpdate: expect.any(Function),
       hotUpdate: expect.any(Function),
       enforce: 'pre',
       transform: expect.any(Function),
@@ -843,6 +855,67 @@ describe('devupUIVitePlugin', () => {
     await plugin.watchChange('wrong')
   })
 
+  it('should invalidate and reload on devup hot update', async () => {
+    writeFileSpy.mockResolvedValueOnce(undefined)
+    getThemeInterfaceSpy.mockReturnValue('interface code')
+    existsSyncSpy.mockReturnValue(true)
+    readFileSpy.mockResolvedValueOnce(JSON.stringify({ theme: 'theme' }))
+    const invalidateModule = mock()
+    const send = mock()
+    const module = {}
+    const plugin = createPlugin({})
+
+    const result = await plugin.handleHotUpdate({
+      file: 'devup.json',
+      server: {
+        moduleGraph: { invalidateModule },
+        ws: { send },
+      },
+      modules: [module],
+      timestamp: 1,
+    })
+
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      'interface code',
+      'utf-8',
+    )
+    expect(invalidateModule).toHaveBeenCalledWith(
+      module,
+      expect.any(Set),
+      1,
+      true,
+    )
+    expect(send).toHaveBeenCalledWith({ type: 'full-reload' })
+    expect(result).toEqual([])
+  })
+
+  it('should skip hot update for unrelated files', async () => {
+    existsSyncSpy.mockReturnValue(true)
+    const invalidateModule = mock()
+    const send = mock()
+    const plugin = createPlugin({})
+
+    const result = await plugin.handleHotUpdate({
+      file: 'other.json',
+      server: {
+        moduleGraph: { invalidateModule },
+        ws: { send },
+      },
+      modules: [],
+      timestamp: 1,
+    })
+
+    expect(result).toBeUndefined()
+    expect(writeFileSpy).not.toHaveBeenCalledWith(
+      join('df', 'theme.d.ts'),
+      expect.any(String),
+      'utf-8',
+    )
+    expect(invalidateModule).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
   function createHotUpdateEnvironment(consumer: 'client' | 'server') {
     return {
       config: { consumer },
@@ -851,7 +924,7 @@ describe('devupUIVitePlugin', () => {
     }
   }
 
-  it('should invalidate and reload on devup hot update', async () => {
+  it('should invalidate and reload the client on a devup.json change', async () => {
     writeFileSpy.mockResolvedValueOnce(undefined)
     getThemeInterfaceSpy.mockReturnValue('interface code')
     existsSyncSpy.mockReturnValue(true)
