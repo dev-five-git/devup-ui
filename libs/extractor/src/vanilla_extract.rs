@@ -591,7 +591,13 @@ fn register_vanilla_extract_apis(
             }),
             1,
         ),
-        ("fontFace", api(collector, font_face), 1),
+        (
+            "fontFace",
+            api(collector, |collector, args, context| {
+                Ok(font_face(collector, args, context))
+            }),
+            1,
+        ),
         ("globalFontFace", api(collector, global_font_face), 2),
         ("createVar", api(collector, create_var), 0),
         ("fallbackVar", NativeFunction::from_fn_ptr(fallback_var), 2),
@@ -743,16 +749,12 @@ fn keyframes(collector: &StyleCollector, args: &[JsValue], context: &mut Context
 }
 
 /// `fontFace(rule, debugId?)`: a generated family for one rule or a list of them
-fn font_face(
-    collector: &StyleCollector,
-    args: &[JsValue],
-    context: &mut Context,
-) -> JsResult<JsValue> {
+fn font_face(collector: &StyleCollector, args: &[JsValue], context: &mut Context) -> JsValue {
     let family = collector
         .borrow_mut()
         .identifier(js_str(args.get_or_undefined(1)), "font");
-    declare_font_faces(collector, &family, args.get_or_undefined(0), context)?;
-    Ok(js_string!(family).into())
+    declare_font_faces(collector, &family, args.get_or_undefined(0), context);
+    js_string!(family).into()
 }
 
 fn global_font_face(
@@ -761,7 +763,7 @@ fn global_font_face(
     context: &mut Context,
 ) -> JsResult<JsValue> {
     let family = to_text(args.get_or_undefined(0), context)?;
-    declare_font_faces(collector, &family, args.get_or_undefined(1), context)?;
+    declare_font_faces(collector, &family, args.get_or_undefined(1), context);
     Ok(JsValue::undefined())
 }
 
@@ -770,9 +772,9 @@ fn declare_font_faces(
     family: &str,
     rules: &JsValue,
     context: &mut Context,
-) -> JsResult<()> {
+) {
     let family = format!("\"fontFamily\":{}", json_string(family));
-    let rules = match array_items(rules, context)? {
+    let rules = match array_items(rules, context).ok().flatten() {
         Some(items) => items,
         None => Vec::from([rules.clone()]),
     };
@@ -786,7 +788,6 @@ fn declare_font_faces(
         };
         collector.borrow_mut().styles.font_faces.push(face);
     }
-    Ok(())
 }
 
 /// `createVar(debugId?)` / `createVar(declaration, debugId?)`: a `var()` of a
