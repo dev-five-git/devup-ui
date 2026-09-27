@@ -2,6 +2,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
@@ -958,8 +959,9 @@ export interface CreateModuleResolverOptions {
 }
 
 /**
- * Resolve the imports of extracted files the way the import graph does
- * (relative paths and tsconfig `paths`, not packages), reading each module.
+ * Resolve the imports of extracted files like the bundler: relative paths,
+ * tsconfig `paths`, then packages in `node_modules` (`exports` conditions,
+ * `module`, `main`), reading each module.
  */
 export function createModuleResolver({
   cwd = process.cwd(),
@@ -971,22 +973,28 @@ export function createModuleResolver({
 ) => ResolvedModule | undefined {
   const { aliases, baseDir } = readPathAliases(tsconfigPath)
   return (specifier, importer) => {
-    const bases = specifier.startsWith('.')
-      ? [resolve(dirname(resolve(cwd, importer)), specifier)]
+    const from = resolve(cwd, importer)
+    const path = specifier.startsWith('.')
+      ? resolveSourceFile(resolve(dirname(from), specifier))
       : isAbsolute(specifier)
-        ? [specifier]
-        : resolveAliasCandidates(specifier, { aliases, aliasBaseDir: baseDir })
-    for (const base of bases) {
-      const path = resolveSourceFile(base)
-      if (path) return { path: toId(path), code: readFileSync(path, 'utf-8') }
-    }
-    return undefined
+        ? resolveSourceFile(specifier)
+        : (resolveAliasCandidates(specifier, {
+            aliases,
+            aliasBaseDir: baseDir,
+          })
+            .map(resolveSourceFile)
+            .find(Boolean) ?? resolvePackage(specifier, from))
+    return path
+      ? { path: toId(path), code: readFileSync(path, 'utf-8') }
+      : undefined
   }
 }
 
+const sourceExtensions = [...jsExtensions, '.cjs']
+
 /** `resolveFile`, also completing a name like `theme.css` to `theme.css.ts`. */
 function resolveSourceFile(base: string): string | undefined {
-  const candidates = jsExtensions.includes(extname(base))
+  const candidates = sourceExtensions.includes(extname(base))
     ? [base]
     : [
         ...jsExtensions.map((extension) => `${base}${extension}`),
@@ -996,6 +1004,91 @@ function resolveSourceFile(base: string): string | undefined {
   return found && resolve(found)
 }
 
+/** Conditions of package `exports`, in the order a bundler prefers them */
+const packageConditions = ['import', 'module', 'default', 'require', 'node']
+
+function resolvePackage(
+  specifier: string,
+  importer: string,
+): string | undefined {
+  const parts = specifier.split('/')
+  const nameLength = specifier.startsWith('@') ? 2 : 1
+  const name = parts.slice(0, nameLength).join('/')
+  const packageDir = findPackage(dirname(importer), name)
+  if (!packageDir) return undefined
+  const found = resolvePackageEntry(
+    packageDir,
+    JSON.parse(
+      readFileSync(join(packageDir, 'package.json'), 'utf-8'),
+    ) as Record<string, unknown>,
+    ['.', ...parts.slice(nameLength)].join('/'),
+  )
+  return found && realpathSync(found)
+}
+
+function findPackage(dir: string, name: string): string | undefined {
+  const packageDir = join(dir, 'node_modules', name)
+  if (isFile(join(packageDir, 'package.json'))) return packageDir
+  const parent = dirname(dir)
+  return parent === dir ? undefined : findPackage(parent, name)
+}
+function resolvePackageEntry(
+  dir: string,
+  manifest: Record<string, unknown>,
+  subpath: string,
+): string | undefined {
+  if (manifest.exports !== undefined) {
+    const target = exportsTarget(manifest.exports, subpath)
+    return target === undefined
+      ? undefined
+      : resolveSourceFile(join(dir, target))
+  }
+  if (subpath !== '.') return resolveSourceFile(join(dir, subpath))
+  const main = [manifest.module, manifest.main].find(
+    (entry): entry is string => typeof entry === 'string',
+  )
+  return resolveSourceFile(join(dir, main ?? 'index'))
+}
+
+function exportsTarget(exports: unknown, subpath: string): string | undefined {
+  const subpaths =
+    isRecord(exports) && !Array.isArray(exports)
+      ? Object.keys(exports).filter((key) => key.startsWith('.'))
+      : []
+  if (subpaths.length === 0) {
+    return subpath === '.' ? conditionTarget(exports) : undefined
+  }
+  const map = exports as Record<string, unknown>
+  if (subpath in map) return conditionTarget(map[subpath])
+  for (const key of subpaths) {
+    const [prefix, suffix = ''] = key.split('*')
+    if (
+      key.includes('*') &&
+      subpath.startsWith(prefix) &&
+      subpath.endsWith(suffix) &&
+      subpath.length >= prefix.length + suffix.length
+    ) {
+      const matched = subpath.slice(
+        prefix.length,
+        subpath.length - suffix.length,
+      )
+      return conditionTarget(map[key])?.replaceAll('*', matched)
+    }
+  }
+  return undefined
+}
+
+function conditionTarget(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value.map(conditionTarget).find(Boolean)
+  }
+  if (!isRecord(value)) return undefined
+  return packageConditions
+    .filter((condition) => condition in value)
+    .map((condition) => conditionTarget(value[condition]))
+    .find(Boolean)
+}
 function resolveAliasCandidates(
   specifier: string,
   context: Pick<ResolveContext, 'aliases' | 'aliasBaseDir'>,
